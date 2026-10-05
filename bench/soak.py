@@ -13,6 +13,12 @@ fatal, stalled); at the end inflight back to 0 within --drain-s (no slot leak) a
 
   python3 bench/soak.py --base http://127.0.0.1:8000 --model DeepSeek-V4.1-Flash-TF --minutes 30 --out soak.json
 Exit 0 on PASS (0 errors, drained, 391, no fatal).
+
+``--kinds g16`` (the G16-G19 serving-leak soaks): agent traffic on top of the mix above. ``agent``
+is a coding agent's session that grows a turn at a time (40 tools, a tool call and its result appended each turn,
+1-4K tokens a turn) up to ``--agent-max-k`` thousand tokens (120), then starts over; each worker keeps its own
+session, so up to four grow side by side. ``image`` sends an image part (a 1-pixel PNG). The controller
+also idles every worker for 30-90 s with probability ``--idle-p`` (0.15), as a client between turns does.
 """
 
 from __future__ import annotations
@@ -41,15 +47,55 @@ SCHEMA = {"type": "object", "properties": {"title": {"type": "string"}, "year": 
           "required": ["title", "year", "tags"]}
 TOOL = [{"type": "function", "function": {"name": "get_weather", "description": "Weather for a city", "parameters": {
     "type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]
+KINDS_AGENT = [("agent", 30), ("code", 12), ("prose", 10), ("structured", 9), ("tool", 9), ("thinking", 6),
+             ("long", 8), ("nonstream", 5), ("disconnect", 4), ("image", 7)]
+AGENT_TOOLS = [{"type": "function", "function": {
+    "name": f"tool_{i}", "description": f"Workspace operation {i}: reads, edits or searches files. " * 3,
+    "parameters": {"type": "object", "properties": {f"arg{j}": {"type": "string", "description": "path, pattern or text"}
+                                                    for j in range(4)}, "required": ["arg0"]}}} for i in range(40)]
+PNG_1PX = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 WORDS = "amber basin cobalt drift ember fable grove harbor island jetty kelp lumen marsh north orbit pine quay ridge".split()
 
 
-def body_for(kind: str, model: str, rng: random.Random) -> tuple[dict, bool]:
+def _text(rng: random.Random, tokens: int) -> str:
+    return " ".join(f"{rng.choice(WORDS)}_{rng.randrange(10000)}" for _ in range(max(1, tokens // 3)))
+
+
+def agent_body(sess: dict, rng: random.Random, max_k: int) -> dict:
+    """The next turn of a worker's agent session (``sess``: its messages, grown here)."""
+
+    msgs = sess.get("messages")
+    if not msgs or sess.get("chars", 0) > max_k * 1000 * 4:
+        msgs = sess["messages"] = [
+            {"role": "system", "content": "You are a coding agent working in a repository. " + _text(rng, 2000)},
+            {"role": "user", "content": "Fix the failing tests. " + _text(rng, rng.randrange(200, 2000))}]
+        sess["chars"], sess["turn"] = sum(len(m["content"]) for m in msgs), 0
+    else:
+        sess["turn"] += 1
+        cid = f"call_{sess['turn']}_{rng.randrange(1 << 30)}"
+        result = _text(rng, rng.randrange(1000, 4000))
+        msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": cid, "type": "function", "function": {
+                     "name": f"tool_{rng.randrange(40)}", "arguments": json.dumps({"arg0": f"src/{rng.choice(WORDS)}.py"})}}]},
+                 {"role": "tool", "tool_call_id": cid, "content": result}]
+        sess["chars"] += len(result) + 120
+    return {"messages": list(msgs), "tools": AGENT_TOOLS, "reasoning_effort": "low", "max_tokens": 400,
+            "temperature": 0.6}
+
+
+def body_for(kind: str, model: str, rng: random.Random, sess: dict | None = None,
+             agent_max_k: int = 120) -> tuple[dict, bool]:
     """(request body, streamed)."""
 
     off = {"chat_template_kwargs": {"enable_thinking": False}}
     t = rng.choice([0.0, 0.7])
-    if kind == "code":
+    if kind == "agent":
+        b = agent_body(sess if sess is not None else {}, rng, agent_max_k)
+    elif kind == "image":
+        b = dict(off, messages=[{"role": "user", "content": [
+            {"type": "text", "text": "What does this image show? One sentence."},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + PNG_1PX}}]}], max_tokens=96,
+            temperature=t)
+    elif kind == "code":
         b = dict(off, messages=[{"role": "user", "content": rng.choice(CODE)}], max_tokens=384, temperature=t)
     elif kind in ("prose", "nonstream", "disconnect"):
         b = dict(off, messages=[{"role": "user", "content": rng.choice(PROSE)}], max_tokens=384, temperature=t)
@@ -78,9 +124,11 @@ class Soak:
         self.active = 1
         self.rec: list[dict] = []
         self.health: list[dict] = []
+        self.kinds = KINDS_AGENT if getattr(a, "kinds", "g6") == "g16" else KINDS
+        self.sessions = [{} for _ in range(4)]
 
-    def one(self, kind: str, rng: random.Random) -> dict:
-        body, streamed = body_for(kind, self.a.model, rng)
+    def one(self, kind: str, rng: random.Random, worker: int = 0) -> dict:
+        body, streamed = body_for(kind, self.a.model, rng, self.sessions[worker], getattr(self.a, "agent_max_k", 120))
         r = {"kind": kind, "t": round(time.time() - self.t0, 1), "error": None, "check": None, "cancel": False}
         cancel_at = rng.randint(1, 20) if streamed and rng.random() < self.a.cancel_p else None
         timeout = rng.uniform(2, 5) if kind == "disconnect" else self.a.timeout
@@ -101,6 +149,11 @@ class Soak:
                         if not line.startswith("data:") or line == "data: [DONE]":
                             continue
                         c = json.loads(line[5:])
+                        if c.get("error"):          # G19: an in-stream error event (e.g. the floor's 503 refusal
+                            err = c["error"]        # after the 200 headers) was logged as "empty reply" in G18
+                            r["error"] = ("stream error: " + str(err.get("message") if isinstance(err, dict)
+                                                                 else err))[:200]
+                            break
                         for ch in c.get("choices") or []:
                             d = ch.get("delta") or {}
                             if r.get("ttft_s") is None and (d.get("content") or d.get("reasoning_content")
@@ -130,18 +183,18 @@ class Soak:
                     r["check"] = f"structured reply not JSON: {text[:80]!r}"
             elif kind == "tool" and not calls:
                 r["check"] = "no tool call"
-            elif kind not in ("tool",) and not text.strip():
+            elif kind not in ("tool",) and not text.strip() and not (kind == "agent" and calls):
                 r["error"] = "empty reply"
         return r
 
     def worker(self, i: int) -> None:
         rng = random.Random(self.a.seed * 100 + i)
-        names, weights = zip(*KINDS)
+        names, weights = zip(*self.kinds)
         while not self.stop.is_set():
             if i >= self.active:
                 time.sleep(1)
                 continue
-            r = self.one(rng.choices(names, weights)[0], rng)
+            r = self.one(rng.choices(names, weights)[0], rng, i)
             with self.lock:
                 self.rec.append(r)
             if r["error"]:
@@ -150,7 +203,12 @@ class Soak:
     def control(self) -> None:
         rng = random.Random(self.a.seed)
         while not self.stop.wait(rng.uniform(45, 120)):
-            self.active = rng.randint(1, 4)
+            idle = rng.random() < getattr(self.a, "idle_p", 0.0)
+            self.active = 0 if idle else rng.randint(1, 4)
+            if idle:                                # every worker idles for 30-90 s, then 1-4 again
+                if self.stop.wait(rng.uniform(30, 90)):
+                    break
+                self.active = rng.randint(1, 4)
             print(f"[soak] {round(time.time() - self.t0)} s: {self.active} concurrent; {len(self.rec)} done", flush=True)
 
     def poll(self) -> None:
@@ -179,7 +237,7 @@ class Soak:
     def report(self, drained: bool, drain_s: float) -> dict:
         rec = self.rec
         by: dict[str, dict] = {}
-        for k, _ in KINDS:
+        for k, _ in self.kinds:
             xs = [r for r in rec if r["kind"] == k]
             ok = [r for r in xs if not r["error"] and not r["cancel"]]
             tt = sorted(r["ttft_s"] for r in ok if r.get("ttft_s") is not None)
@@ -224,7 +282,7 @@ def health(base: str) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--base", default="http://127.0.0.1:8000")
+    ap.add_argument("--base", default="http://127.0.0.1:8001")
     ap.add_argument("--model", default="DeepSeek-V4.1-Flash-TF")
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--cancel-p", type=float, default=0.15)
@@ -232,7 +290,12 @@ def main(argv=None) -> int:
     ap.add_argument("--drain-s", type=float, default=120)
     ap.add_argument("--seed", type=int, default=6)
     ap.add_argument("--out", default="")
+    ap.add_argument("--kinds", choices=("g6", "g16"), default="g6", help="g16: + agent sessions, images, idle spells")
+    ap.add_argument("--agent-max-k", type=int, default=120, help="agent sessions start over past this many K tokens")
+    ap.add_argument("--idle-p", type=float, default=None, help="chance a control step idles all workers (g16: 0.15)")
     a = ap.parse_args(argv)
+    if a.idle_p is None:
+        a.idle_p = 0.15 if a.kinds == "g16" else 0.0
     out = Soak(a).run()
     print(json.dumps({k: v for k, v in out.items() if k not in ("by_kind", "error_samples", "check_samples")}), flush=True)
     for k, v in out["by_kind"].items():

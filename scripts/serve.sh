@@ -5,6 +5,9 @@
 #                                prebuild (PREBUILD=0 skips it)
 #   scripts/serve.sh prebuild    build the CUDA extensions into CACHE_VOL on both nodes, no weights loaded
 #                                (scripts/prebuild_ext.py; stale build locks removed first); the server must be stopped
+#                                then `cache` (below)
+#   scripts/serve.sh cache       the cache volume's data files on both nodes: config/pfdense-table.json at
+#                                TF_DSV41_PF_DENSE_TABLE, and the image routing bias at TF_DSV41_BIAS_VL (IMAGES=native)
 #   scripts/serve.sh preflight [static]   read-only checks of both nodes (image, weights, Engram shards, RoCE ports;
 #                                not static: the HTTP / rendezvous ports, GPUs idle, the RoCE-failed marker)
 #   scripts/serve.sh start       preflight, drop caches, memory gate, rank 1 on the worker then rank 0 here, wait for
@@ -265,9 +268,11 @@ cmd_start() {
 # while rank 0 is younger than WATCH_GRACE, and while WATCH_LEASE (optional: a file you touch while you benchmark or
 # maintain the pair) is younger than WATCH_LEASE_MIN minutes. A tick is bad when a rank exited or /health fails;
 # WATCH_FAILS bad ticks in a row heal (WATCH_HEAL=1: restart in the background) at most once every WATCH_MIN_HEAL s.
+# A rank that exited with code 70 is the engine's fail-fast (TF_DSV41_FAILFAST: a failure on either rank ends both in
+# ~1 s): the pair is known dead and consistent, so it heals on the first tick, at most once every WATCH_FF_MIN_HEAL s.
 # "Both absent" after a reboot heals (a `stop` before the reboot does not survive it; boot-start.sh starts first).
 WATCH_GRACE="${WATCH_GRACE:-1800}"; WATCH_FAILS="${WATCH_FAILS:-3}"; WATCH_HEAL="${WATCH_HEAL:-0}"
-WATCH_MIN_HEAL="${WATCH_MIN_HEAL:-1800}"; WATCH_ALERT="${WATCH_ALERT:-}"
+WATCH_MIN_HEAL="${WATCH_MIN_HEAL:-1800}"; WATCH_FF_MIN_HEAL="${WATCH_FF_MIN_HEAL:-120}"; WATCH_ALERT="${WATCH_ALERT:-}"
 WATCH_LEASE="${WATCH_LEASE:-}"; WATCH_LEASE_MIN="${WATCH_LEASE_MIN:-20}"
 lease_fresh() { [[ -n "$WATCH_LEASE" && -f "$WATCH_LEASE" ]] && (( $(date +%s) - $(stat -c %Y "$WATCH_LEASE") < WATCH_LEASE_MIN * 60 )); }
 stopped_before_reboot() { local b; read -r b _ < "$STATE_DIR/stopped" 2>/dev/null || return 1; [[ -n "$b" && "$b" != "$(boot_id)" ]]; }
@@ -295,12 +300,18 @@ watch_tick() {
         else bad="/health $code ${body:0:300}"; fi
     fi
     if [[ -z "$bad" ]]; then echo 0 > "$fails_f"; return 0; fi
+    local need=$WATCH_FAILS min=$WATCH_MIN_HEAL e0 e1
+    e0=$(docker inspect -f '{{.State.ExitCode}}' "$NAME-r0" 2>/dev/null || true)
+    e1=$(wssh docker inspect -f "'{{.State.ExitCode}}'" "$NAME-r1" 2>/dev/null || true)
+    if [[ "$r0" == false && "$e0" == 70 ]] || [[ "$r1" == false && "$e1" == 70 ]]; then
+        need=1; min=$WATCH_FF_MIN_HEAL; bad="$bad (fail-fast exit 70)"
+    fi
     fails=$((fails + 1)); echo "$fails" > "$fails_f"
-    log "watch: bad tick $fails of $WATCH_FAILS: $bad"
-    (( fails >= WATCH_FAILS )) || return 0
+    log "watch: bad tick $fails of $need: $bad"
+    (( fails >= need )) || return 0
     last=$(cat "$heal_f" 2>/dev/null || echo 0)
     if [[ "$WATCH_HEAL" != 1 ]]; then alert "unhealthy ($bad); WATCH_HEAL=0, not restarting"; return 1; fi
-    if (( now - last < WATCH_MIN_HEAL )); then alert "unhealthy ($bad); healed $((now - last))s ago, waiting"; return 1; fi
+    if (( now - last < min )); then alert "unhealthy ($bad); healed $((now - last))s ago, waiting"; return 1; fi
     echo "$now" > "$heal_f"; echo 0 > "$fails_f"
     alert "unhealthy ($bad); restarting both ranks"
     setsid env DSV41_TF_LOCKED=1 flock "$STATE_DIR/lock" "$0" restart >>"$STATE_DIR/heal.log" 2>&1 < /dev/null &
@@ -341,6 +352,23 @@ cmd_prebuild() { # both nodes: the CUDA extensions into CACHE_VOL with nothing e
         log "prebuild failed (head rc=$rc0, worker rc=$rc1); full output in $tmp"; exit 1
     fi
     rm -rf "$tmp"; log "prebuild: every extension built on both nodes"
+    cache_files
+}
+
+cache_files() { # the cache volume's data files on both nodes: the pfdense tuning table (TF_DSV41_PF_DENSE_TABLE) and,
+    # for TF_DSV41_IMAGES=native, the image routing bias the EXL3 packs dropped (TF_DSV41_BIAS_VL; 66 KB fetched by
+    # range requests from deepseek-ai/DeepSeek-V4.1-Flash, so both nodes need network access once)
+    local tbl="${TF_DSV41_PF_DENSE_TABLE:-}" bvl="${TF_DSV41_BIAS_VL:-}" put
+    if [[ -n "$tbl" && "$tbl" == /cache/* && -f config/pfdense-table.json ]]; then
+        put="docker run --rm -i -v $CACHE_VOL:/cache --entrypoint sh $IMAGE -c 'mkdir -p \$(dirname $tbl) && cat > $tbl'"
+        bash -c "$put" < config/pfdense-table.json && wssh "$put" < config/pfdense-table.json \
+            && log "cache: config/pfdense-table.json -> $tbl on both nodes" || { log "cache: copying the pfdense table failed"; exit 1; }
+    fi
+    if [[ "${TF_DSV41_IMAGES:-}" == native && -n "$bvl" && "$bvl" == /cache/* ]]; then
+        local fetch="docker run --rm -v $CACHE_VOL:/cache -e HF_HUB_OFFLINE=0 --entrypoint sh $IMAGE -c 'test -f $bvl/bias_vl.safetensors || python -m tensorfold.families.deepseek_v41.cuda.bias_vl_fetch $bvl'"
+        bash -c "$fetch" && wssh "$fetch" && log "cache: $bvl/bias_vl.safetensors on both nodes" \
+            || { log "cache: fetching the image routing bias failed (TF_DSV41_IMAGES=native needs it)"; exit 1; }
+    fi
 }
 
 cmd_run() { # MODULE [ARGS...]: an engine module on both ranks (rank 1 on the worker in the background, rank 0 here)
@@ -366,6 +394,7 @@ cmd_run() { # MODULE [ARGS...]: an engine module on both ranks (rank 1 on the wo
 case "${1:-}" in
 build) cmd_build ;;
 prebuild) cmd_prebuild ;;
+cache) cache_files ;;
 run) shift; cmd_run "$@" ;;
 start) cmd_start ;;
 restart) take_lock; stop_both; log "stopped"; cmd_start ;;
