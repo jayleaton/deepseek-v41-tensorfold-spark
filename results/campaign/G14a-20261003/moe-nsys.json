@@ -1,0 +1,117 @@
+{
+ "off": {
+  "1": {
+   "windows": 26,
+   "chains": 1040,
+   "chains_a_window": 40.0,
+   "span_us": 207.2,
+   "span_med_us": 210.1,
+   "launches": 10,
+   "idle_us": 11.4,
+   "idle_med_us": 10.0,
+   "kinds_us": {
+    "x3ld / grouped": 165.53,
+    "router": 18.25,
+    "epilogue": 4.48,
+    "prune": 4.34,
+    "combine": 3.85,
+    "rot_in": 3.3,
+    "group": 3.3,
+    "casts": 2.26
+   }
+  },
+  "2": {
+   "windows": 39,
+   "chains": 1560,
+   "chains_a_window": 40.0,
+   "span_us": 303.4,
+   "span_med_us": 304.3,
+   "launches": 10,
+   "idle_us": null,
+   "idle_med_us": null,
+   "kinds_us": {
+    "x3ld / grouped": 257.4,
+    "router": 18.98,
+    "group": 5.18,
+    "epilogue": 5.05,
+    "prune": 4.54,
+    "combine": 4.31,
+    "rot_in": 3.78,
+    "casts": 2.29
+   }
+  },
+  "4": {
+   "windows": 9,
+   "chains": 360,
+   "chains_a_window": 40.0,
+   "span_us": 466.4,
+   "span_med_us": 462.1,
+   "launches": 10,
+   "idle_us": null,
+   "idle_med_us": null,
+   "kinds_us": {
+    "x3ld / grouped": 408.76,
+    "router": 25.52,
+    "group": 8.47,
+    "epilogue": 5.66,
+    "combine": 4.83,
+    "rot_in": 4.56,
+    "prune": 4.43,
+    "casts": 2.37
+   }
+  }
+ },
+ "on": {
+  "1": {
+   "windows": 25,
+   "chains": 1000,
+   "chains_a_window": 40.0,
+   "span_us": 210.8,
+   "span_med_us": 212.1,
+   "launches": 9,
+   "idle_us": 15.0,
+   "idle_med_us": 13.1,
+   "kinds_us": {
+    "x3ld / grouped": 222.55,
+    "fused router+tail": 37.47,
+    "epilogue": 12.64,
+    "rot_in": 4.61,
+    "combine": 4.37
+   }
+  },
+  "2": {
+   "windows": 41,
+   "chains": 1640,
+   "chains_a_window": 40.0,
+   "span_us": 301.4,
+   "span_med_us": 300.4,
+   "launches": 9,
+   "idle_us": null,
+   "idle_med_us": null,
+   "kinds_us": {
+    "x3ld / grouped": 312.34,
+    "fused router+tail": 38.96,
+    "epilogue": 13.19,
+    "combine": 4.92,
+    "rot_in": 4.08
+   }
+  },
+  "4": {
+   "windows": 9,
+   "chains": 360,
+   "chains_a_window": 40.0,
+   "span_us": 463.8,
+   "span_med_us": 458.0,
+   "launches": 9,
+   "idle_us": null,
+   "idle_med_us": null,
+   "kinds_us": {
+    "x3ld / grouped": 463.29,
+    "fused router+tail": 49.09,
+    "epilogue": 12.71,
+    "combine": 5.57,
+    "rot_in": 3.2
+   }
+  }
+ }
+}

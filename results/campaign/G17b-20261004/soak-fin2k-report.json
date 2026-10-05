@@ -1,0 +1,79 @@
+{
+ "tag": "fin2k",
+ "hours": 1.0,
+ "thresholds": {
+  "rss": 0.1,
+  "reserved": 0.1,
+  "avail": 0.15,
+  "avail_min": 4.0,
+  "idle_back": 0.5,
+  "warm_min": 30
+ },
+ "ranks": {
+  "r0": {
+   "samples": 420,
+   "probe_lines": 421,
+   "rss_slope_gib_h": 0.9481383654743454,
+   "reserved_slope_gib_h": 0.0,
+   "avail_slope_gib_h": -1.097959969407849,
+   "avail_min_gib": 3.685,
+   "rss_first_gib": 1.843,
+   "rss_warm_gib": 3.777,
+   "rss_max_gib": 4.343,
+   "rss_end_traffic_gib": 3.884,
+   "rss_after_idle_gib": 3.884,
+   "reserved_warm_gib": 103.55,
+   "reserved_end_gib": 103.56,
+   "glibc_free_max_gib": 0.4,
+   "glibc_free_end_gib": 0.32,
+   "trims": {
+    "trims": 122,
+    "idle": 17,
+    "busy": 0,
+    "back": 15.55
+   }
+  },
+  "r1": {
+   "samples": 420,
+   "probe_lines": 422,
+   "rss_slope_gib_h": 0.46361570295198057,
+   "reserved_slope_gib_h": 0.0,
+   "avail_slope_gib_h": -0.4291148730004037,
+   "avail_min_gib": 3.273,
+   "rss_first_gib": 1.947,
+   "rss_warm_gib": 3.419,
+   "rss_max_gib": 3.929,
+   "rss_end_traffic_gib": 3.478,
+   "rss_after_idle_gib": 3.478,
+   "reserved_warm_gib": 102.59,
+   "reserved_end_gib": 102.6,
+   "glibc_free_max_gib": 0.28,
+   "glibc_free_end_gib": 0.13,
+   "trims": {
+    "trims": 121,
+    "idle": 16,
+    "busy": 0,
+    "back": 6.51
+   }
+  }
+ },
+ "fails": [
+  "r0: RssAnon slope 0.948 GiB/h > 0.1",
+  "r0: MemAvailable slope -1.098 GiB/h < -0.15",
+  "r0: MemAvailable min 3.685 GiB < 4.0",
+  "r1: RssAnon slope 0.464 GiB/h > 0.1",
+  "r1: MemAvailable slope -0.429 GiB/h < -0.15",
+  "r1: MemAvailable min 3.273 GiB < 4.0",
+  "soak.py FAIL: {'requests': 828, 'errors': 4, 'cancelled': 132, 'drained': True, 'answer_17x23': '391', 'pass': False}"
+ ],
+ "soak": {
+  "requests": 828,
+  "errors": 4,
+  "cancelled": 132,
+  "drained": true,
+  "answer_17x23": "391",
+  "pass": false
+ },
+ "stall_lines": 0,
+ "pass": false
+}

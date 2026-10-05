@@ -1,0 +1,198 @@
+{
+ "cells": {
+  "off/full/8192": {
+   "median": 1256.4,
+   "boots": [
+    1116.1,
+    1396.7
+   ]
+  },
+  "off/full/32768": {
+   "median": 1838.05,
+   "boots": [
+    1839.0,
+    1837.1
+   ]
+  },
+  "off/full/65536": {
+   "median": 1898.25,
+   "boots": [
+    1896.0,
+    1900.5
+   ]
+  },
+  "off/full/131072": {
+   "median": 1859.4,
+   "boots": [
+    1853.9,
+    1864.9
+   ]
+  },
+  "final-2k/full/8192": {
+   "median": 1090.95,
+   "boots": [
+    810.1,
+    1371.8
+   ]
+  },
+  "final-2k/full/32768": {
+   "median": 1962.65,
+   "boots": [
+    1996.7,
+    1928.6
+   ]
+  },
+  "final-2k/full/65536": {
+   "median": 1858.45,
+   "boots": [
+    1816.5,
+    1900.4
+   ]
+  },
+  "final-2k/full/131072": {
+   "median": 1842.5,
+   "boots": [
+    1747.9,
+    1937.1
+   ]
+  },
+  "off-2k/full/8192": {
+   "median": 1068.6,
+   "boots": [
+    1093.6,
+    1043.6
+   ]
+  },
+  "off-2k/full/32768": {
+   "median": 2121.55,
+   "boots": [
+    2120.1,
+    2123.0
+   ]
+  },
+  "off-2k/full/65536": {
+   "median": 1904.25,
+   "boots": [
+    1888.4,
+    1920.1
+   ]
+  },
+  "off-2k/full/131072": {
+   "median": 1808.45,
+   "boots": [
+    1827.5,
+    1789.4
+   ]
+  },
+  "off/replay/8192": {
+   "median": 1249.15,
+   "boots": [
+    1461.0,
+    1037.3
+   ]
+  },
+  "off/replay/32768": {
+   "median": 1995.8,
+   "boots": [
+    1999.5,
+    1992.1
+   ]
+  },
+  "off/replay/65536": {
+   "median": 1925.9,
+   "boots": [
+    1874.4,
+    1977.4
+   ]
+  },
+  "off/replay/131072": {
+   "median": 1747.0,
+   "boots": [
+    1754.4,
+    1739.6
+   ]
+  },
+  "final-2k/replay/8192": {
+   "median": 1078.05,
+   "boots": [
+    1109.3,
+    1046.8
+   ]
+  },
+  "final-2k/replay/32768": {
+   "median": 2227.55,
+   "boots": [
+    2156.2,
+    2298.9
+   ]
+  },
+  "final-2k/replay/65536": {
+   "median": 1947.55,
+   "boots": [
+    1981.8,
+    1913.3
+   ]
+  },
+  "final-2k/replay/131072": {
+   "median": 1849.1999999999998,
+   "boots": [
+    1875.8,
+    1822.6
+   ]
+  },
+  "off-2k/replay/8192": {
+   "median": 1084.25,
+   "boots": [
+    917.9,
+    1250.6
+   ]
+  },
+  "off-2k/replay/32768": {
+   "median": 1912.1499999999999,
+   "boots": [
+    1522.1,
+    2302.2
+   ]
+  },
+  "off-2k/replay/65536": {
+   "median": 1773.95,
+   "boots": [
+    1723.0,
+    1824.9
+   ]
+  },
+  "off-2k/replay/131072": {
+   "median": 1752.85,
+   "boots": [
+    1685.4,
+    1820.3
+   ]
+  }
+ },
+ "exact": {
+  "off/full": {
+   "checked": 8,
+   "bad": []
+  },
+  "final-2k/full": {
+   "checked": 8,
+   "bad": []
+  },
+  "off-2k/full": {
+   "checked": 8,
+   "bad": []
+  },
+  "off/replay": {
+   "checked": 8,
+   "bad": []
+  },
+  "final-2k/replay": {
+   "checked": 8,
+   "bad": []
+  },
+  "off-2k/replay": {
+   "checked": 8,
+   "bad": []
+  }
+ }
+}

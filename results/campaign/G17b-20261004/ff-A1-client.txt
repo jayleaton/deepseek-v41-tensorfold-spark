@@ -1,0 +1,1 @@
+status 500 after 15.3 s (21:42:20): b'{"error": {"message": "RuntimeError: rank 1 closed the fate channel (the process exited or was killed); both ranks are restarting", "type": "server_error"}}'

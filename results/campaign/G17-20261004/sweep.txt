@@ -1,0 +1,97 @@
+[G16D] pfdense sweep wq_a 5120x1280 K2 10 lanes: pick -> cfg 5 g4 (68 TFLOP/s at 2048), small 4
+  M 2048: off 0.761 ms (35 TFLOP/s; rot 0.189, unpack 0.074, GEMM ~54); fused best cfg 5 g4 0.397 ms (68), pick 6 g8 0.944 (28); rot + fused 0.586 vs off 0.761 (model 84)
+     cfg TFLOP/s at M 2048: 0:57 1:42 2:54 3:40 4:44 5:68 6:30 7:50
+  M 1024: off 0.387 ms (35 TFLOP/s; rot 0.050, unpack 0.074, GEMM ~51); fused best cfg 5 g4 0.201 ms (67), pick 0 g8 0.244 (55); rot + fused 0.251 vs off 0.387 (model 73)
+     cfg TFLOP/s at M 1024: 0:55 1:42 2:52 3:39 4:43 5:67 6:26 7:49
+  M 300: off 0.207 ms (19 TFLOP/s; rot 0.009, unpack 0.073, GEMM ~31); fused best cfg 4 g1 0.157 ms (25), pick 3 g8 0.190 (21); rot + fused 0.165 vs off 0.207 (model 46)
+     cfg TFLOP/s at M 300: 0:24 1:24 2:23 3:22 4:25 5:24 6:17 7:14
+  M 2048: off 0.726 ms (37 TFLOP/s; rot 0.201, unpack 0.075, GEMM ~60); fused best cfg 5 g4 0.392 ms (69), pick 6 g8 0.780 (34); rot + fused 0.593 vs off 0.726 (model 84)
+     cfg TFLOP/s at M 2048: 0:56 1:44 2:54 3:45 4:48 5:69 6:35 7:51
+  M 1024: off 0.385 ms (35 TFLOP/s; rot 0.052, unpack 0.075, GEMM ~52); fused best cfg 5 g1 0.199 ms (68), pick 0 g8 0.292 (46); rot + fused 0.251 vs off 0.385 (model 73)
+     cfg TFLOP/s at M 1024: 0:53 1:44 2:52 3:44 4:46 5:68 6:31 7:50
+  M 300: off 0.213 ms (19 TFLOP/s; rot 0.009, unpack 0.075, GEMM ~30); fused best cfg 4 g8 0.148 ms (27), pick 3 g8 0.166 (24); rot + fused 0.157 vs off 0.213 (model 46)
+     cfg TFLOP/s at M 300: 0:24 1:25 2:24 3:26 4:27 5:25 6:19 7:15
+  M 2048: off 0.452 ms (24 TFLOP/s; rot 0.190, unpack 0.031, GEMM ~47); fused best cfg 5 g16 0.199 ms (54), pick 6 g8 0.392 (27); rot + fused 0.389 vs off 0.452 (model 78)
+     cfg TFLOP/s at M 2048: 0:45 1:33 2:42 3:31 4:37 5:54 6:27 7:40
+  M 1024: off 0.236 ms (23 TFLOP/s; rot 0.051, unpack 0.030, GEMM ~35); fused best cfg 4 g16 0.158 ms (34), pick 3 g8 0.175 (31); rot + fused 0.209 vs off 0.236 (model 59)
+     cfg TFLOP/s at M 1024: 0:33 1:33 2:32 3:31 4:34 5:33 6:21 7:20
+  M 300: off 0.148 ms (11 TFLOP/s; rot 0.009, unpack 0.030, GEMM ~14); fused best cfg 6 g4 0.109 ms (14), pick 6 g8 0.109 (14); rot + fused 0.118 vs off 0.148 (model 37)
+     cfg TFLOP/s at M 300: 0:9 1:10 2:9 3:11 4:11 5:10 6:14 7:6
+  M 2048: off 0.426 ms (25 TFLOP/s; rot 0.189, unpack 0.032, GEMM ~52); fused best cfg 5 g1 0.196 ms (55), pick 6 g8 0.359 (30); rot + fused 0.385 vs off 0.426 (model 78)
+     cfg TFLOP/s at M 2048: 0:43 1:35 2:41 3:36 4:40 5:55 6:32 7:41
+  M 1024: off 0.234 ms (23 TFLOP/s; rot 0.051, unpack 0.032, GEMM ~35); fused best cfg 4 g1 0.147 ms (36), pick 3 g8 0.169 (32); rot + fused 0.198 vs off 0.234 (model 59)
+     cfg TFLOP/s at M 1024: 0:34 1:35 2:33 3:34 4:36 5:34 6:24 7:20
+  M 300: off 0.148 ms (11 TFLOP/s; rot 0.009, unpack 0.032, GEMM ~15); fused best cfg 6 g1 0.095 ms (17), pick 6 g8 0.096 (16); rot + fused 0.104 vs off 0.148 (model 37)
+     cfg TFLOP/s at M 300: 0:10 1:10 2:10 3:12 4:13 5:10 6:17 7:6
+  M 2048: off 0.426 ms (25 TFLOP/s; rot 0.188, unpack 0.032, GEMM ~52); fused best cfg 5 g1 0.198 ms (54), pick 6 g8 0.391 (27); rot + fused 0.386 vs off 0.426 (model 78)
+     cfg TFLOP/s at M 2048: 0:44 1:33 2:42 3:32 4:37 5:54 6:27 7:40
+  M 1024: off 0.238 ms (23 TFLOP/s; rot 0.054, unpack 0.031, GEMM ~35); fused best cfg 4 g1 0.157 ms (34), pick 3 g8 0.175 (31); rot + fused 0.211 vs off 0.238 (model 59)
+     cfg TFLOP/s at M 1024: 0:32 1:33 2:31 3:31 4:34 5:33 6:21 7:20
+  M 300: off 0.150 ms (11 TFLOP/s; rot 0.009, unpack 0.031, GEMM ~14); fused best cfg 6 g16 0.109 ms (14), pick 6 g8 0.109 (14); rot + fused 0.118 vs off 0.150 (model 37)
+     cfg TFLOP/s at M 300: 0:9 1:10 2:9 3:11 4:11 5:10 6:14 7:6
+  M 2048: off 1.956 ms (44 TFLOP/s; rot 0.017, unpack 0.277, GEMM ~52); fused best cfg 0 g8 1.494 ms (58), pick 0 g8 1.494 (58); rot + fused 1.510 vs off 1.956 (model 75)
+     cfg TFLOP/s at M 2048: 0:58 1:40 2:54 3:40 4:45 5:55 6:30 7:42
+  M 1024: off 1.121 ms (38 TFLOP/s; rot 0.009, unpack 0.260, GEMM ~50); fused best cfg 0 g1 0.778 ms (55), pick 0 g8 0.821 (52); rot + fused 0.786 vs off 1.121 (model 75)
+     cfg TFLOP/s at M 1024: 0:55 1:40 2:52 3:39 4:43 5:54 6:29 7:42
+  M 300: off 0.618 ms (20 TFLOP/s; rot 0.005, unpack 0.260, GEMM ~36); fused best cfg 0 g4 0.284 ms (44), pick 0 g8 0.285 (44); rot + fused 0.289 vs off 0.618 (model 77)
+     cfg TFLOP/s at M 300: 0:44 1:31 2:41 3:35 4:38 5:44 6:27 7:24
+  M 2048: off 0.566 ms (38 TFLOP/s; rot 0.015, unpack 0.058, GEMM ~44); fused best cfg 0 g4 0.392 ms (55), pick 0 g8 0.402 (53); rot + fused 0.407 vs off 0.566 (model 68)
+     cfg TFLOP/s at M 2048: 0:55 1:39 2:51 3:39 4:43 5:48 6:29 7:40
+  M 1024: off 0.330 ms (33 TFLOP/s; rot 0.009, unpack 0.058, GEMM ~41); fused best cfg 0 g1 0.215 ms (50), pick 0 g8 0.220 (49); rot + fused 0.224 vs off 0.330 (model 68)
+     cfg TFLOP/s at M 1024: 0:50 1:37 2:46 3:36 4:40 5:49 6:28 7:39
+  M 300: off 0.147 ms (21 TFLOP/s; rot 0.005, unpack 0.058, GEMM ~37); fused best cfg 5 g1 0.062 ms (50), pick 0 g8 0.074 (43); rot + fused 0.067 vs off 0.147 (model 77)
+     cfg TFLOP/s at M 300: 0:43 1:33 2:38 3:30 4:35 5:50 6:24 7:19
+  M 2048: off 0.071 ms (4 TFLOP/s; rot 0.007, unpack 0.006, GEMM ~5); fused best cfg 6 g16 0.017 ms (16), pick 6 g8 0.017 (16); rot + fused 0.025 vs off 0.071 (model 41)
+     cfg TFLOP/s at M 2048: 0:11 1:11 2:9 3:12 4:14 5:10 6:16 7:5
+  M 1024: off 0.042 ms (3 TFLOP/s; rot 0.005, unpack 0.006, GEMM ~4); fused best cfg 6 g8 0.015 ms (9), pick 6 g8 0.015 (9); rot + fused 0.020 vs off 0.042 (model 21)
+     cfg TFLOP/s at M 1024: 0:5 1:5 2:5 3:6 4:7 5:5 6:9 7:3
+  M 300: off 0.041 ms (1 TFLOP/s; rot 0.004, unpack 0.006, GEMM ~1); fused best cfg 6 g16 0.015 ms (3), pick 0 g8 0.025 (2); rot + fused 0.019 vs off 0.041 (model 4)
+     cfg TFLOP/s at M 300: 0:2 1:2 2:1 3:2 4:2 5:2 6:3 7:1
+  M 2048: off 0.513 ms (34 TFLOP/s; rot 0.144, unpack 0.048, GEMM ~54); fused best cfg 5 g16 0.299 ms (57), pick 3 g8 0.419 (41); rot + fused 0.443 vs off 0.513 (model 77)
+     cfg TFLOP/s at M 2048: 0:55 1:43 2:52 3:41 4:45 5:57 6:28 7:39
+  M 1024: off 0.331 ms (26 TFLOP/s; rot 0.029, unpack 0.049, GEMM ~34); fused best cfg 5 g16 0.162 ms (53), pick 6 g8 0.314 (27); rot + fused 0.192 vs off 0.331 (model 77)
+     cfg TFLOP/s at M 1024: 0:44 1:33 2:41 3:31 4:36 5:53 6:27 7:38
+  M 300: off 0.186 ms (14 TFLOP/s; rot 0.011, unpack 0.054, GEMM ~21); fused best cfg 6 g8 0.112 ms (23), pick 6 g8 0.112 (23); rot + fused 0.123 vs off 0.186 (model 72)
+     cfg TFLOP/s at M 300: 0:19 1:19 2:18 3:22 4:22 5:19 6:23 7:11
+  M 2048: off 1.807 ms (48 TFLOP/s; rot 0.145, unpack 0.248, GEMM ~61); fused best cfg 5 g16 1.146 ms (75), pick 0 g8 1.358 (63); rot + fused 1.290 vs off 1.807 (model 83)
+     cfg TFLOP/s at M 2048: 0:66 1:46 2:62 3:45 4:49 5:75 6:31 7:55
+  M 1024: off 0.923 ms (47 TFLOP/s; rot 0.030, unpack 0.251, GEMM ~67); fused best cfg 5 g1 0.659 ms (65), pick 3 g8 0.964 (45); rot + fused 0.689 vs off 0.923 (model 83)
+     cfg TFLOP/s at M 1024: 0:64 1:45 2:61 3:45 4:48 5:65 6:30 7:48
+  M 300: off 0.563 ms (22 TFLOP/s; rot 0.009, unpack 0.251, GEMM ~42); fused best cfg 0 g1 0.310 ms (41), pick 6 g8 0.491 (26); rot + fused 0.319 vs off 0.563 (model 72)
+     cfg TFLOP/s at M 300: 0:41 1:32 2:39 3:31 4:35 5:40 6:26 7:29
+  M 2048: off 0.623 ms (39 TFLOP/s; rot 0.189, unpack 0.057, GEMM ~64); fused best cfg 5 g1 0.347 ms (70), pick 3 g8 0.408 (59); rot + fused 0.536 vs off 0.623 (model 88)
+     cfg TFLOP/s at M 2048: 0:68 1:57 2:65 3:59 4:61 5:70 6:53 7:49
+  M 1024: off 0.452 ms (27 TFLOP/s; rot 0.048, unpack 0.082, GEMM ~37); fused best cfg 5 g4 0.222 ms (55), pick 6 g8 0.233 (52); rot + fused 0.270 vs off 0.452 (model 88)
+     cfg TFLOP/s at M 1024: 0:52 1:42 2:50 3:45 4:50 5:55 6:52 7:48
+  M 300: off 0.244 ms (14 TFLOP/s; rot 0.012, unpack 0.073, GEMM ~22); fused best cfg 6 g16 0.091 ms (39), pick 6 g8 0.093 (38); rot + fused 0.103 vs off 0.244 (model 82)
+     cfg TFLOP/s at M 300: 0:24 1:24 2:23 3:31 4:31 5:24 6:39 7:14
+  M 2048: off 0.623 ms (39 TFLOP/s; rot 0.189, unpack 0.056, GEMM ~64); fused best cfg 5 g8 0.353 ms (68), pick 3 g8 0.444 (54); rot + fused 0.542 vs off 0.623 (model 88)
+     cfg TFLOP/s at M 2048: 0:68 1:55 2:64 3:55 4:58 5:68 6:39 7:48
+  M 1024: off 0.372 ms (32 TFLOP/s; rot 0.052, unpack 0.055, GEMM ~46); fused best cfg 5 g8 0.223 ms (54), pick 6 g8 0.312 (39); rot + fused 0.275 vs off 0.372 (model 88)
+     cfg TFLOP/s at M 1024: 0:52 1:41 2:48 3:42 4:44 5:54 6:39 7:47
+  M 300: off 0.274 ms (13 TFLOP/s; rot 0.009, unpack 0.057, GEMM ~17); fused best cfg 6 g16 0.107 ms (33), pick 6 g8 0.107 (33); rot + fused 0.115 vs off 0.274 (model 82)
+     cfg TFLOP/s at M 300: 0:23 1:24 2:22 3:29 4:29 5:24 6:33 7:14
+  M 2048: off 0.771 ms (31 TFLOP/s; rot 0.013, unpack 0.066, GEMM ~35); fused best cfg 0 g1 0.432 ms (56), pick 0 g8 0.450 (54); rot + fused 0.445 vs off 0.771 (model 72)
+     cfg TFLOP/s at M 2048: 0:56 1:44 2:52 3:44 4:48 5:54 6:47 7:42
+  M 1024: off 0.360 ms (34 TFLOP/s; rot 0.008, unpack 0.062, GEMM ~42); fused best cfg 0 g16 0.232 ms (52), pick 3 g8 0.293 (41); rot + fused 0.241 vs off 0.360 (model 72)
+     cfg TFLOP/s at M 1024: 0:52 1:41 2:49 3:42 4:46 5:50 6:46 7:37
+  M 300: off 0.242 ms (15 TFLOP/s; rot 0.008, unpack 0.078, GEMM ~23); fused best cfg 6 g1 0.091 ms (39), pick 6 g8 0.091 (39); rot + fused 0.099 vs off 0.242 (model 63)
+     cfg TFLOP/s at M 300: 0:33 1:27 2:33 3:32 4:35 5:37 6:39 7:23
+  M 2048: off 0.627 ms (39 TFLOP/s; rot 0.013, unpack 0.058, GEMM ~43); fused best cfg 0 g1 0.425 ms (57), pick 0 g8 0.453 (53); rot + fused 0.438 vs off 0.627 (model 72)
+     cfg TFLOP/s at M 2048: 0:57 1:40 2:50 3:42 4:47 5:54 6:34 7:42
+  M 1024: off 0.453 ms (27 TFLOP/s; rot 0.009, unpack 0.059, GEMM ~31); fused best cfg 0 g1 0.228 ms (53), pick 3 g8 0.345 (35); rot + fused 0.237 vs off 0.453 (model 72)
+     cfg TFLOP/s at M 1024: 0:53 1:40 2:49 3:40 4:44 5:49 6:33 7:36
+  M 300: off 0.182 ms (19 TFLOP/s; rot 0.005, unpack 0.058, GEMM ~30); fused best cfg 0 g1 0.097 ms (37), pick 6 g8 0.127 (28); rot + fused 0.102 vs off 0.182 (model 63)
+     cfg TFLOP/s at M 300: 0:37 1:29 2:32 3:31 4:34 5:36 6:28 7:23
+  M 2048: off 12.239 ms (53 TFLOP/s; rot 0.228, unpack 1.756, GEMM ~63); fused best cfg 5 g4 8.223 ms (78), pick 0 g8 8.785 (73); rot + fused 8.451 vs off 12.239 (model 87)
+     cfg TFLOP/s at M 2048: 0:75 1:59 2:73 3:61 4:62 5:78 6:55 7:65
+  M 1024: off 7.271 ms (44 TFLOP/s; rot 0.084, unpack 1.864, GEMM ~61); fused best cfg 5 g4 4.158 ms (77), pick 0 g8 4.508 (71); rot + fused 4.242 vs off 7.271 (model 87)
+     cfg TFLOP/s at M 1024: 0:74 1:58 2:72 3:61 4:62 5:77 6:55 7:63
+  M 300: off 4.241 ms (22 TFLOP/s; rot 0.011, unpack 1.954, GEMM ~41); fused best cfg 5 g8 1.604 ms (59), pick 0 g8 1.744 (54); rot + fused 1.614 vs off 4.241 (model 79)
+     cfg TFLOP/s at M 300: 0:56 1:45 2:55 3:55 4:56 5:59 6:50 7:37
+  M 2048: off 12.386 ms (52 TFLOP/s; rot 0.231, unpack 1.994, GEMM ~63); fused best cfg 5 g8 8.406 ms (77), pick 0 g8 8.641 (75); rot + fused 8.637 vs off 12.386 (model 87)
+     cfg TFLOP/s at M 2048: 0:76 1:56 2:71 3:58 4:60 5:77 6:40 7:65
+  M 1024: off 7.378 ms (44 TFLOP/s; rot 0.084, unpack 2.104, GEMM ~62); fused best cfg 5 g16 4.272 ms (75), pick 0 g8 4.390 (73); rot + fused 4.356 vs off 7.378 (model 87)
+     cfg TFLOP/s at M 1024: 0:74 1:56 2:70 3:57 4:58 5:75 6:40 7:65
+  M 300: off 4.295 ms (22 TFLOP/s; rot 0.011, unpack 1.919, GEMM ~40); fused best cfg 5 g4 1.618 ms (58), pick 0 g8 1.704 (55); rot + fused 1.629 vs off 4.295 (model 79)
+     cfg TFLOP/s at M 300: 0:55 1:43 2:54 3:52 4:52 5:58 6:37 7:36

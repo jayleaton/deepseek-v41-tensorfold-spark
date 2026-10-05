@@ -1,0 +1,28 @@
+== full prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                         1256      1838      1898      1859   (2 boots)
+final-2k                    1091      1963      1858      1842   (2 boots)
+off-2k                      1069      2122      1904      1808   (2 boots)
+final-2k vs off           -13.2%     +6.8%     -2.1%     -0.9%
+off-2k vs off             -14.9%    +15.4%     +0.3%     -2.7%
+off / kit                  1.17x     1.71x     1.79x     1.80x
+final-2k / kit             1.02x     1.83x     1.75x     1.79x
+off-2k / kit               1.00x     1.97x     1.80x     1.75x
+exact off          full: 8 / 8 (first token + reply digest == off b1)
+exact final-2k     full: 8 / 8 (first token + reply digest == off b1)
+exact off-2k       full: 8 / 8 (first token + reply digest == off b1)
+
+== replay prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                         1249      1996      1926      1747   (2 boots)
+final-2k                    1078      2228      1948      1849   (2 boots)
+off-2k                      1084      1912      1774      1753   (2 boots)
+final-2k vs off           -13.7%    +11.6%     +1.1%     +5.9%
+off-2k vs off             -13.2%     -4.2%     -7.9%     +0.3%
+off / kit                  1.16x     1.86x     1.82x     1.69x
+final-2k / kit             1.00x     2.07x     1.84x     1.79x
+off-2k / kit               1.01x     1.78x     1.67x     1.70x
+exact off          replay: 8 / 8 (first token + reply digest == off b1)
+exact final-2k     replay: 8 / 8 (first token + reply digest == off b1)
+exact off-2k       replay: 8 / 8 (first token + reply digest == off b1)
+

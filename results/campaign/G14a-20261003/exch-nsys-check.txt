@@ -1,0 +1,5 @@
+qmd columns non-null: [(0, 0, 0)]
+1-row gather kernels (nsys HW trace, rank 0, serving prose/code): n 2158, dur p10/med/mean/p90 9.2/26.2/31.9/40.7 us; overlapped by other kernels med 25.8 us; gap after previous same-stream kernel med 0.22 us
+kernels overlapping a gather: [('tfl2pf::segments_kernel', 2079)]
+gathers overlapped by L2PF: n 2079 med 26.3 p90 40.6; not overlapped: n 79 med 8.96 p90 211.681; L2PF started 0.1 us before the gather (med)
+L2PF segments_kernel a 1-row window: 119 launches, dur med 64.2 us

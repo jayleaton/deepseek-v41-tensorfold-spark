@@ -13,6 +13,7 @@ data are not included.
 | `prefill/` | cold prefill, one slot: `m2-pf-g7x-s-all4.json` (production prefill, 8K-128K), `m2-pf-g7-full4.json` (no replay, every lever), `m2-pf-g7-basefull.json` (no replay, base kernels) | `m2bench --prefill` |
 | `not-adopted/verify-budget/` | the lossy verify budget: speed (`m2-g10b-*.json`), greedy replies vs exact (`greedy-*.json`), generation-based MMLU (`mmlugen-*.json`), the pick (`budget-pick.txt`) | `m2bench`, test servers |
 | `not-adopted/pdl-l2pf/` | PDL and L2-prefetch A/B (`g10-speed.md`) and the L2 probe on GB10 (`l2probe.json`) | `m2bench`, `l2probe` |
+| `campaign/G14-*` ... `campaign/G19-*` | the summary files of the G14-G19 windows: speed tables (`g15-depth-speed.txt`, `speed-table.txt`, `m2-*.json`), prefill tables (`pf-table.txt`, `m2-g16pf-*.json`), soak reports (`summary-soak.txt`, `soak-*.json`), stress reports, fail-fast checks (`ff-*`), gate reports, the pfdense sweep (`G17-20261004/sweep.txt`, `pfdense-table.json`). Engine and driver logs and memory samplers are not included | `m2bench`, `gate`, `bench/` |
 | `not-adopted/drafter/` | draft acceptance analysis of 34,753 DSpark passes (`draftsim.json`); drafter self-distillation: offline evaluation (`trainA.json`, `trainB.json`) and engine runs without / with the deltas (`m2-g11-off.json`, `m2-g11-A.json`, `m2-g11-B.json`) | `draftsim`, `dsparktrain`, `m2bench` |
 
 In `m2bench` reports: `workloads.<name>.t0` / `.t07` are the single-stream runs (tok/s, tokens a round, the reply's

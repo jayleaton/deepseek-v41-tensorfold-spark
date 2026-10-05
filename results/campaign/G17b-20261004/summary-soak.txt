@@ -1,0 +1,9 @@
+SOAK 2026-10-04T17:19:18Z, sources 0bdd276ada19e65730b6d409011c35ced5367d7f, image glm53-tensorfold:b13-060
+[dsv41 22:42:34] speed: verdict prod: FAIL: struct T0 -2.1% (>= -1.5; a lone window is unchanged); boots 1 / off 1 (3 each)
+[dsv41 22:42:34] speed: verdict spn: FAIL: boots 1 / off 1 (3 each)
+[dsv41 23:05:12] speed: verdict prod: FAIL: steady cells mean -0.03% (>= +0.5) / min -1.63% (>= -1.5); boots 2 / off 2 (3 each)
+[dsv41 23:05:12] speed: verdict spn: FAIL: boots 2 / off 2 (3 each)
+[dsv41 00:09:15] soak fin2k: traffic rc=1; {'n': 42, 'ok': 0, 'cancelled': 42, 'errors': 0, 'check_fails': 0, 'ttft_p50': None, 'ttft_p95': None, 'total_p50': None, 'total_p95': None} [soak] image: {'n': 50, 'ok': 47, 'cancelled': 3, 'errors': 0, 'check_fails': 0, 'ttft_p50': 0.367, 'ttft_p95': 7.347, 'total_p50': 0.766, 'total_p95': 7.497} 
+fin2k r0: RssAnon 1.84 -> warm 3.78 -> max 4.34 -> end 3.88 -> idle 3.88 GiB, slope 0.95 GiB/h; reserved slope 0.00; MemAvailable slope -1.10, min 3.69; glibc free max 0.40; trims {'trims': 122, 'idle': 17, 'busy': 0, 'back': 15.55}
+fin2k r1: RssAnon 1.95 -> warm 3.42 -> max 3.93 -> end 3.48 -> idle 3.48 GiB, slope 0.46 GiB/h; reserved slope 0.00; MemAvailable slope -0.43, min 3.27; glibc free max 0.28; trims {'trims': 121, 'idle': 16, 'busy': 0, 'back': 6.51}
+fin2k: FAIL: r0: RssAnon slope 0.948 GiB/h > 0.1; r0: MemAvailable slope -1.098 GiB/h < -0.15; r0: MemAvailable min 3.685 GiB < 4.0; r1: RssAnon slope 0.464 GiB/h > 0.1; r1: MemAvailable slope -0.429 GiB/h < -0.15; r1: MemAvailable min 3.273 GiB < 4.0; soak.py FAIL: {'requests': 828, 'errors': 4, 'cancelled': 132, 'drained': True, 'answer_17x23': '391', 'pass': False}

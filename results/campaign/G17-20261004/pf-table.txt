@@ -1,0 +1,76 @@
+== full prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                          832       851       839       777   (2 boots)
+cd                           924       950       943       895   (2 boots)
+cdx                          922       951       949       900   (1 boots)
+combo                        886       894       857       858   (1 boots)
+copies                       856       859       837       796   (1 boots)
+dense                        839       858       852       803   (1 boots)
+dense-t                      868       886       882       838   (1 boots)
+mhcpf                        863       850       859       833   (1 boots)
+xovl                         815       830       824       790   (1 boots)
+cd vs off                 +11.1%    +11.7%    +12.5%    +15.2%
+cdx vs off                +10.8%    +11.8%    +13.1%    +15.8%
+combo vs off               +6.6%     +5.0%     +2.1%    +10.3%
+copies vs off              +2.9%     +1.0%     -0.2%     +2.4%
+dense vs off               +0.9%     +0.9%     +1.5%     +3.3%
+dense-t vs off             +4.4%     +4.1%     +5.1%     +7.9%
+mhcpf vs off               +3.8%     -0.1%     +2.4%     +7.2%
+xovl vs off                -2.0%     -2.4%     -1.8%     +1.6%
+off / kit                  0.78x     0.79x     0.79x     0.75x
+cd / kit                   0.86x     0.88x     0.89x     0.87x
+cdx / kit                  0.86x     0.88x     0.90x     0.87x
+combo / kit                0.83x     0.83x     0.81x     0.83x
+copies / kit               0.80x     0.80x     0.79x     0.77x
+dense / kit                0.78x     0.80x     0.80x     0.78x
+dense-t / kit              0.81x     0.82x     0.83x     0.81x
+mhcpf / kit                0.80x     0.79x     0.81x     0.81x
+xovl / kit                 0.76x     0.77x     0.78x     0.77x
+exact off          full: 8 / 8 (first token + reply digest == off b1)
+exact cd           full: 8 / 8 (first token + reply digest == off b1)
+exact cdx          full: 4 / 4 (first token + reply digest == off b1)
+exact combo        full: 4 / 4 (first token + reply digest == off b1)
+exact copies       full: 4 / 4 (first token + reply digest == off b1)
+exact dense        full: 4 / 4 (first token + reply digest == off b1)
+exact dense-t      full: 4 / 4 (first token + reply digest == off b1)
+exact mhcpf        full: 4 / 4 (first token + reply digest == off b1)
+exact xovl         full: 4 / 4 (first token + reply digest == off b1)
+
+== replay prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                         1621      1757      1743      1691   (2 boots)
+cd                          1832      1993      1981      1907   (2 boots)
+cdx                         1821      1985      1976      1902   (1 boots)
+combo                       1739      1884      1871      1810   (1 boots)
+copies                      1647      1788      1799      1740   (1 boots)
+dense                       1668      1783      1772      1715   (1 boots)
+dense-t                     1725      1858      1847      1781   (1 boots)
+mhcpf                       1688      1825      1819      1761   (1 boots)
+xovl                        1594      1722      1712      1663   (1 boots)
+cd vs off                 +13.1%    +13.4%    +13.6%    +12.8%
+cdx vs off                +12.3%    +13.0%    +13.4%    +12.5%
+combo vs off               +7.3%     +7.2%     +7.4%     +7.0%
+copies vs off              +1.6%     +1.7%     +3.2%     +2.9%
+dense vs off               +2.9%     +1.5%     +1.7%     +1.4%
+dense-t vs off             +6.4%     +5.7%     +6.0%     +5.3%
+mhcpf vs off               +4.2%     +3.9%     +4.4%     +4.2%
+xovl vs off                -1.7%     -2.0%     -1.8%     -1.7%
+off / kit                  1.51x     1.63x     1.64x     1.64x
+cd / kit                   1.71x     1.85x     1.87x     1.85x
+cdx / kit                  1.70x     1.85x     1.86x     1.85x
+combo / kit                1.62x     1.75x     1.77x     1.76x
+copies / kit               1.54x     1.66x     1.70x     1.69x
+dense / kit                1.55x     1.66x     1.67x     1.66x
+dense-t / kit              1.61x     1.73x     1.74x     1.73x
+mhcpf / kit                1.57x     1.70x     1.72x     1.71x
+xovl / kit                 1.49x     1.60x     1.62x     1.61x
+exact off          replay: 8 / 8 (first token + reply digest == off b1)
+exact cd           replay: 8 / 8 (first token + reply digest == off b1)
+exact cdx          replay: 4 / 4 (first token + reply digest == off b1)
+exact combo        replay: 4 / 4 (first token + reply digest == off b1)
+exact copies       replay: 4 / 4 (first token + reply digest == off b1)
+exact dense        replay: 4 / 4 (first token + reply digest == off b1)
+exact dense-t      replay: 4 / 4 (first token + reply digest == off b1)
+exact mhcpf        replay: 4 / 4 (first token + reply digest == off b1)
+exact xovl         replay: 4 / 4 (first token + reply digest == off b1)
+

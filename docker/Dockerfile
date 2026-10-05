@@ -5,8 +5,8 @@
 # scripts/serve.sh build builds it on the head and ships it to the worker (docker save | ssh worker docker load).
 #
 # The production measurements in README.md ran an image of this content: the same base, xgrammar 0.2.8,
-# transformers 5.17.0, and the engine tree these patches produce (engine commit 767ad9f in the development history:
-# G13's speed and quality rows ran it; older rows name their commit).
+# transformers 5.17.0, and the engine tree these patches produce (engine commit 7bd2d67 in the development history,
+# plus a packaging-only fix; G19's rows ran 7bd2d67; older rows name their commit).
 FROM nvcr.io/nvidia/pytorch:26.07-py3
 
 ENV PIP_NO_CACHE_DIR=1 \
@@ -34,9 +34,9 @@ RUN test -f /usr/include/infiniband/verbs.h || (apt-get update \
 RUN python -c "import torch; print(torch.__version__)" > /tmp/torch-before.txt \
  && pip install --no-deps "xgrammar==0.2.8" \
  && pip install "transformers==5.17.0" \
- && python -c "import torch, xgrammar, transformers; \
+ && python -c "import importlib.metadata as md, torch, xgrammar, transformers; \
 v = open('/tmp/torch-before.txt').read().strip(); assert torch.__version__ == v, (torch.__version__, v); \
-print('xgrammar', xgrammar.__version__, 'transformers', transformers.__version__, 'torch', torch.__version__)" \
+print('xgrammar', md.version('xgrammar'), 'transformers', transformers.__version__, 'torch', torch.__version__)" \
  && rm /tmp/torch-before.txt
 
 # TensorFold v0.6.0 (the submodule) + patches/*.patch in order. TF_SRC: another source tree in the build context
@@ -52,7 +52,10 @@ RUN cd /src/TensorFold \
       echo "applying $p"; git apply --whitespace=nowarn "$p" || patch -p1 --forward < "$p" || exit 1; done; fi \
  && pip install --no-deps /src/TensorFold \
  && pip install "huggingface-hub>=0.24" "tokenizers>=0.20" "safetensors>=0.4" "jinja2>=3.1" \
- && python -c "import tensorfold.families.deepseek_v41 as f, torch, triton; \
+ && python -c "import tensorfold.families.deepseek_v41 as f, torch, triton, pathlib; \
+d = pathlib.Path(f.__file__).parent / 'cuda'; \
+miss = [n for n in ('csa2/attn_cuda.cpp', 'csa2/attn_cuda.cu', 'csa2/topk_cuda.cu', 'pfdense.cuh', 'pfdense_args.h') if not (d / n).is_file()]; \
+assert not miss, ('kernel sources missing from the installed package', miss); \
 print('tensorfold', f.__file__, 'torch', torch.__version__, 'triton', triton.__version__)"
 
 ARG TF_SRC_COMMIT=""

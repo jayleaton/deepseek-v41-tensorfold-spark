@@ -1,0 +1,208 @@
+G15 experts 2026-10-03T23:16:55Z, sources 6e03615621c833ec54bcc43d4330b345eb8ffd11, image glm53-tensorfold:b13-060
+GPU tests: 9 passed, 1 warning in 23.27s
+CPU tests: 77 passed, 1 warning in 38.88s
+.[G15] 6 x 540 KiB gate splits: cold 114.4 us, after the map's prefetch 105.1 us (29 -> 32 GB/s)
+[G15] engine xmap {'TF_DSV41_XMAP': 'post'}: post 464, prev 0, records 0, windows 0, drained 0
+[G15] engine xmap {'TF_DSV41_XMAP': 'prev'}: post 0, prev 464, records 464, windows 58, drained 0
+[G15] engine xmap {'TF_DSV41_XMAP': 'both', 'TF_DSV41_XMAP_SITE': 'f', 'TF_DSV41_XMAP_GBPS': '150'}: post 464, prev 464, records 464, windows 58, drained 0
+[G15] engine xmap {'TF_DSV41_XMAP_TRACE': '@', 'TF_DSV41_XMAP_TRACE_PREGATE': '1', 'TF_DSV41_XMAP_TRACE_W': '8'}: post 0, prev 0, records 464, windows 58, drained 44
+== xmap-trace-c1.txt
+windows (decode, deduplicated): 2474
+U(R): distinct routed experts a layer
+  R  1:   4.94 (uniform   6.00, ratio 0.82; n 67920)
+  R  2:   8.24 (uniform  11.91, ratio 0.69; n 14160)
+  R  3:  11.30 (uniform  17.72, ratio 0.64; n 5520)
+  R  4:  13.86 (uniform  23.44, ratio 0.59; n 3920)
+  R  5:  15.62 (uniform  29.08, ratio 0.54; n 1080)
+  R  6:  18.96 (uniform  34.62, ratio 0.55; n 5840)
+  R  7:  13.45 (uniform  40.08, ratio 0.34; n 80)
+  R  8:  18.50 (uniform  45.46, ratio 0.41; n 120)
+  R  9:  26.02 (uniform  50.75, ratio 0.51; n 40)
+  R 10:  27.85 (uniform  55.95, ratio 0.50; n 40)
+  R 11:  29.12 (uniform  61.08, ratio 0.48; n 40)
+  R 12:  30.60 (uniform  66.12, ratio 0.46; n 40)
+  R 13:  32.23 (uniform  71.09, ratio 0.45; n 40)
+  R 14:  34.02 (uniform  75.98, ratio 0.45; n 40)
+  R 15:  35.67 (uniform  80.79, ratio 0.44; n 40)
+  R 16:  36.40 (uniform  85.53, ratio 0.43; n 40)
+maps: recall (of the window's distinct experts) / precision (of the named ones)
+  affinity@12        recall 0.448  precision 0.242  (n 48243)
+  affinity@2         recall 0.146  precision 0.451  (n 48243)
+  affinity@4         recall 0.234  precision 0.370  (n 48243)
+  affinity@6         recall 0.301  precision 0.320  (n 48243)
+  pre_attn           recall 0.537  precision 0.434  (n 98960)
+  pre_attn/row       recall 0.536  precision 0.860  (n 174440)
+  pre_attn@12        recall 0.510  precision 0.442  (n 98960)
+  pre_attn@2         recall 0.254  precision 0.738  (n 98960)
+  pre_attn@4         recall 0.389  precision 0.579  (n 98960)
+  pre_attn@6         recall 0.454  precision 0.461  (n 98960)
+  pre_next           recall 0.777  precision 0.638  (n 96486)
+  pre_next/row       recall 0.767  precision 0.953  (n 170079)
+  pre_next@12        recall 0.744  precision 0.647  (n 96486)
+  pre_next@2         recall 0.310  precision 0.909  (n 96486)
+  pre_next@4         recall 0.541  precision 0.804  (n 96486)
+  pre_next@6         recall 0.662  precision 0.669  (n 96486)
+  prev-any           recall 0.361  precision 0.363  (n 98920)
+  prev-any@12        recall 0.347  precision 0.364  (n 98920)
+  prev-any@2         recall 0.158  precision 0.502  (n 98920)
+  prev-any@4         recall 0.261  precision 0.418  (n 98920)
+  prev-any@6         recall 0.310  precision 0.382  (n 98920)
+  prev-same          recall 0.361  precision 0.363  (n 98760)
+  prev-same@12       recall 0.347  precision 0.365  (n 98760)
+  prev-same@2        recall 0.158  precision 0.502  (n 98760)
+  prev-same@4        recall 0.261  precision 0.418  (n 98760)
+  prev-same@6        recall 0.310  precision 0.382  (n 98760)
+bytes model (upper bound: every named expert's first gate split from L2, the gap the only limit):
+  exact (post)   precision 1.00: 1 row(s):   7.4 us a layer, 0.30 ms a window; 4 row(s):  13.7 us a layer, 0.55 ms a window; 16 row(s):  19.6 us a layer, 0.78 ms a window
+  prev-any@6     precision 0.38: 1 row(s):   2.8 us a layer, 0.11 ms a window; 4 row(s):   3.4 us a layer, 0.14 ms a window; 16 row(s):   3.4 us a layer, 0.14 ms a window
+  pre_next@6     precision 0.67: 1 row(s):   5.0 us a layer, 0.20 ms a window; 4 row(s):   6.0 us a layer, 0.24 ms a window; 16 row(s):   6.0 us a layer, 0.24 ms a window
+  pre_attn@6     precision 0.46: 1 row(s):   3.4 us a layer, 0.14 ms a window; 4 row(s):   4.2 us a layer, 0.17 ms a window; 16 row(s):   4.2 us a layer, 0.17 ms a window
+  affinity@6     precision 0.32: 1 row(s):   2.4 us a layer, 0.10 ms a window; 4 row(s):   2.9 us a layer, 0.12 ms a window; 16 row(s):   2.9 us a layer, 0.12 ms a window
+== xmap-trace-c4.txt
+windows (decode, deduplicated): 2552
+U(R): distinct routed experts a layer
+  R  1:   4.94 (uniform   6.00, ratio 0.82; n 68800)
+  R  2:   8.25 (uniform  11.91, ratio 0.69; n 15640)
+  R  3:  11.40 (uniform  17.72, ratio 0.64; n 6120)
+  R  4:  14.08 (uniform  23.44, ratio 0.60; n 4080)
+  R  5:  16.64 (uniform  29.08, ratio 0.57; n 760)
+  R  6:  19.02 (uniform  34.62, ratio 0.55; n 4560)
+  R  7:  21.40 (uniform  40.08, ratio 0.53; n 280)
+  R  8:  25.29 (uniform  45.46, ratio 0.56; n 680)
+  R  9:  29.13 (uniform  50.75, ratio 0.57; n 160)
+  R 10:  34.09 (uniform  55.95, ratio 0.61; n 400)
+  R 11:  37.68 (uniform  61.08, ratio 0.62; n 120)
+  R 12:  36.38 (uniform  66.12, ratio 0.55; n 80)
+  R 13:  32.23 (uniform  71.09, ratio 0.45; n 40)
+  R 14:  34.02 (uniform  75.98, ratio 0.45; n 40)
+  R 15:  35.67 (uniform  80.79, ratio 0.44; n 40)
+  R 16:  50.28 (uniform  85.53, ratio 0.59; n 280)
+maps: recall (of the window's distinct experts) / precision (of the named ones)
+  affinity@12        recall 0.485  precision 0.261  (n 49764)
+  affinity@2         recall 0.161  precision 0.496  (n 49764)
+  affinity@4         recall 0.259  precision 0.406  (n 49764)
+  affinity@6         recall 0.332  precision 0.350  (n 49764)
+  pre_attn           recall 0.532  precision 0.429  (n 102080)
+  pre_attn/row       recall 0.526  precision 0.853  (n 187200)
+  pre_attn@12        recall 0.503  precision 0.439  (n 102080)
+  pre_attn@2         recall 0.250  precision 0.730  (n 102080)
+  pre_attn@4         recall 0.382  precision 0.574  (n 102080)
+  pre_attn@6         recall 0.446  precision 0.456  (n 102080)
+  pre_next           recall 0.779  precision 0.639  (n 99528)
+  pre_next/row       recall 0.766  precision 0.951  (n 182520)
+  pre_next@12        recall 0.742  precision 0.650  (n 99528)
+  pre_next@2         recall 0.307  precision 0.908  (n 99528)
+  pre_next@4         recall 0.536  precision 0.805  (n 99528)
+  pre_next@6         recall 0.657  precision 0.671  (n 99528)
+  prev-any           recall 0.360  precision 0.362  (n 102040)
+  prev-any@12        recall 0.345  precision 0.366  (n 102040)
+  prev-any@2         recall 0.156  precision 0.502  (n 102040)
+  prev-any@4         recall 0.258  precision 0.418  (n 102040)
+  prev-any@6         recall 0.307  precision 0.382  (n 102040)
+  prev-same          recall 0.361  precision 0.363  (n 101760)
+  prev-same@12       recall 0.345  precision 0.366  (n 101760)
+  prev-same@2        recall 0.156  precision 0.502  (n 101760)
+  prev-same@4        recall 0.258  precision 0.418  (n 101760)
+  prev-same@6        recall 0.307  precision 0.382  (n 101760)
+bytes model (upper bound: every named expert's first gate split from L2, the gap the only limit):
+  exact (post)   precision 1.00: 1 row(s):   7.4 us a layer, 0.30 ms a window; 4 row(s):  13.7 us a layer, 0.55 ms a window; 16 row(s):  19.6 us a layer, 0.78 ms a window
+  prev-any@6     precision 0.38: 1 row(s):   2.8 us a layer, 0.11 ms a window; 4 row(s):   3.4 us a layer, 0.14 ms a window; 16 row(s):   3.4 us a layer, 0.14 ms a window
+  pre_next@6     precision 0.67: 1 row(s):   5.0 us a layer, 0.20 ms a window; 4 row(s):   6.0 us a layer, 0.24 ms a window; 16 row(s):   6.0 us a layer, 0.24 ms a window
+  pre_attn@6     precision 0.46: 1 row(s):   3.4 us a layer, 0.14 ms a window; 4 row(s):   4.1 us a layer, 0.16 ms a window; 16 row(s):   4.1 us a layer, 0.16 ms a window
+  affinity@6     precision 0.35: 1 row(s):   2.6 us a layer, 0.10 ms a window; 4 row(s):   3.2 us a layer, 0.13 ms a window; 16 row(s):   3.2 us a layer, 0.13 ms a window
+== xmap-window.txt
+config         boots   1 row   2 row   4 row   8 row  16 row   vs off 1 / 2 / 4 / 8 / 16   spread  exact  digest==off
+off                3   22.03   26.63   36.16   51.25   71.90                                     0.12  True  True
+both               3   22.71   27.05   36.70   51.55   72.21   +0.68 +0.42 +0.54 +0.30 +0.31     0.24  True  True
+bothf150           3   23.06   27.41   36.91   51.75   72.08   +1.03 +0.78 +0.75 +0.50 +0.17     0.14  True  True
+post               3   22.25   26.67   36.11   51.09   71.48   +0.22 +0.04 -0.06 -0.16 -0.43     0.18  True  True
+post8              3   22.20   26.68   36.10   51.16   71.70   +0.17 +0.05 -0.06 -0.09 -0.20     0.21  True  True
+prev               3   22.69   27.09   36.54   51.65   72.36   +0.66 +0.46 +0.38 +0.40 +0.46     0.16  True  True
+== xmap-nsys.txt
+== off, 1 row(s): 280 chains (280 with the dominant sequence of 10 kernels, 1 sequences); span 213.15 us, device idle 1.82 us, 2+ kernels at once 0.0 us; router / fused 17.79 us, of it overlapped by other kernels 0.0 us; streams a chain {1: 280}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             146     0.00    17.79        -     0.00   0.0    0.00
+   _prune                                              146    18.02     4.35     0.22     0.22   0.0    0.00
+   at::native::vectorized_elementwise_kernel           146    22.72     0.96     0.19     0.19   0.0    0.00
+   at::native::unrolled_elementwise_kernel             146    24.06     1.28     0.19     0.19   0.0    0.00
+   ::group_kernel                                      146    25.76     3.36     0.19     0.19   0.0    0.00
+   ::rot_in_kernel                                     146    29.57     3.76     0.19     0.19   0.0    0.00
+   dsv41_x3ld::ld_kernel                               146    33.71   102.29     0.19     0.19   0.0    0.00
+   ::gateup_epilogue_kernel                            146   136.41     3.74     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               146   141.36    67.53     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               146   209.16     3.97     0.19     0.19   0.0    0.00
+== off, 2 row(s): 3160 chains (3160 with the dominant sequence of 10 kernels, 1 sequences); span 308.38 us, device idle 1.85 us, 2+ kernels at once 0.0 us; router / fused 19.9 us, of it overlapped by other kernels 0.0 us; streams a chain {1: 3160}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             149     0.00    19.90        -     0.00   0.0    0.00
+   _prune                                              149    20.13     4.67     0.22     0.22   0.0    0.00
+   at::native::vectorized_elementwise_kernel           149    25.28     0.93     0.19     0.19   0.0    0.00
+   at::native::unrolled_elementwise_kernel             149    26.50     1.22     0.19     0.19   0.0    0.00
+   ::group_kernel                                      149    28.03     5.18     0.19     0.19   0.0    0.00
+   ::rot_in_kernel                                     149    33.53     3.78     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               149    37.63   161.18     0.19     0.19   0.0    0.00
+   ::gateup_epilogue_kernel                            149   199.28     3.90     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               149   204.96    99.45     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               149   304.28     4.26     0.19     0.19   0.0    0.00
+== off, 4 row(s): 160 chains (160 with the dominant sequence of 10 kernels, 1 sequences); span 516.71 us, device idle 1.82 us, 2+ kernels at once 0.0 us; router / fused 27.95 us, of it overlapped by other kernels 0.0 us; streams a chain {1: 160}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             155     0.00    27.95        -     0.00   0.0    0.00
+   _prune                                              155    28.16     4.42     0.22     0.22   0.0    0.00
+   at::native::vectorized_elementwise_kernel           155    32.83     0.93     0.19     0.19   0.0    0.00
+   at::native::unrolled_elementwise_kernel             155    33.98     1.47     0.19     0.19   0.0    0.00
+   ::group_kernel                                      155    35.62     8.83     0.19     0.19   0.0    0.00
+   ::rot_in_kernel                                     155    44.40     4.54     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               155    49.05   289.96     0.19     0.19   0.0    0.00
+   ::gateup_epilogue_kernel                            155   338.06     4.05     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               155   343.64   167.26     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               155   511.29     5.22     0.19     0.19   0.0    0.00
+== post, 1 row(s): 480 chains (468 with the dominant sequence of 11 kernels, 2 sequences); span 217.37 us, device idle 0.83 us, 2+ kernels at once 32.42 us; router / fused 18.24 us, of it overlapped by other kernels 0.0 us; streams a chain {2: 480}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             148     0.00    18.21        -     0.00   0.0    0.00
+   dsv41_xmap::prefetch_kernel                         146    18.43    33.38        -     0.19   6.0   32.22
+   _prune                                              148    18.56    13.12     0.34   -33.25   1.0   13.12
+   at::native::vectorized_elementwise_kernel           148    32.40     2.08     0.19   -19.74   1.0    2.06
+   at::native::unrolled_elementwise_kernel             148    34.96     2.03     0.19   -16.88   1.0    2.02
+   ::group_kernel                                      148    37.87     3.46     0.19   -13.74   1.0    3.39
+   ::rot_in_kernel                                     148    41.76     4.18     0.22    -9.90   1.0    4.06
+   dsv41_x3ld::ld_kernel                               148    46.35    91.05     0.19    -5.20   1.0    5.20
+   ::gateup_epilogue_kernel                            148   138.73     6.00     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               148   144.91    67.71     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               148   212.93     4.06     0.19     0.19   0.0    0.00
+== post, 2 row(s): 2960 chains (2886 with the dominant sequence of 11 kernels, 2 sequences); span 309.53 us, device idle 0.83 us, 2+ kernels at once 39.65 us; router / fused 20.29 us, of it overlapped by other kernels 0.0 us; streams a chain {2: 2960}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             152     0.00    20.29        -     0.00   0.0    0.00
+   dsv41_xmap::prefetch_kernel                         150    20.51    40.78        -     0.19   6.0   39.62
+   _prune                                              152    20.64    10.37     0.32   -40.64   1.0   10.37
+   at::native::vectorized_elementwise_kernel           152    31.61     1.63     0.19   -29.57   1.0    1.63
+   at::native::unrolled_elementwise_kernel             152    33.73     2.11     0.19   -27.39   1.0    2.11
+   ::group_kernel                                      152    36.40     5.38     0.19   -24.82   1.0    5.38
+   ::rot_in_kernel                                     152    42.40     4.86     0.22   -18.85   1.0    4.83
+   dsv41_x3ld::ld_kernel                               152    47.65   150.38     0.19   -13.82   1.0   13.82
+   ::gateup_epilogue_kernel                            152   198.04     6.85     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               152   204.89    99.20     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               152   304.39     4.61     0.19     0.19   0.0    0.00
+== post, 4 row(s): 160 chains (156 with the dominant sequence of 11 kernels, 2 sequences); span 517.19 us, device idle 0.83 us, 2+ kernels at once 44.21 us; router / fused 27.77 us, of it overlapped by other kernels 0.0 us; streams a chain {2: 160}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             160     0.00    27.77        -     0.00   0.0    0.00
+   dsv41_xmap::prefetch_kernel                         158    27.98    45.38        -     0.19   6.0   44.22
+   _prune                                              160    28.11     9.62     0.35   -45.23   1.0    9.62
+   at::native::vectorized_elementwise_kernel           160    37.82     2.74     0.19   -35.36   1.0    2.74
+   at::native::unrolled_elementwise_kernel             160    40.82     3.84     0.19   -32.62   1.0    3.84
+   ::group_kernel                                      160    44.98     9.92     0.19   -28.67   1.0    9.92
+   ::rot_in_kernel                                     160    55.12     6.19     0.22   -18.08   1.0    6.19
+   dsv41_x3ld::ld_kernel                               160    61.58   271.85     0.19   -11.65   1.0   11.65
+   ::gateup_epilogue_kernel                            160   333.53     8.14     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               160   341.80   165.68     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               160   509.42     5.38     0.19     0.19   0.0    0.00
+== xmap-verdict.txt
+tests: pass
+trace c1: 2474 windows; U(R) R1 4.9, R2 8.2, R3 11.3, R4 13.9, R5 15.6, R6 19.0, R7 13.4, R8 18.5, R9 26.0, R10 27.9, R11 29.1, R12 30.6, R13 32.2, R14 34.0, R15 35.7, R16 36.4
+trace c1: affinity@6 rec 0.30 / prec 0.32; pre_attn@6 rec 0.45 / prec 0.46; pre_next/row rec 0.77 / prec 0.95; pre_next@6 rec 0.66 / prec 0.67; prev-any@6 rec 0.31 / prec 0.38; prev-same@6 rec 0.31 / prec 0.38
+trace c4: 2552 windows; U(R) R1 4.9, R2 8.3, R3 11.4, R4 14.1, R5 16.6, R6 19.0, R7 21.4, R8 25.3, R9 29.1, R10 34.1, R11 37.7, R12 36.4, R13 32.2, R14 34.0, R15 35.7, R16 50.3
+trace c4: affinity@6 rec 0.33 / prec 0.35; pre_attn@6 rec 0.45 / prec 0.46; pre_next/row rec 0.77 / prec 0.95; pre_next@6 rec 0.66 / prec 0.67; prev-any@6 rec 0.31 / prec 0.38; prev-same@6 rec 0.31 / prec 0.38
+both: +0.68 / +0.42 / +0.54 / +0.30 / +0.31 ms at 1 / 2 / 4 / 8 / 16 rows; exact (digest == off) True: fail
+bothf150: +1.03 / +0.78 / +0.75 / +0.50 / +0.17 ms at 1 / 2 / 4 / 8 / 16 rows; exact (digest == off) True: fail
+post: +0.22 / +0.04 / -0.06 / -0.16 / -0.43 ms at 1 / 2 / 4 / 8 / 16 rows; exact (digest == off) True: fail
+post8: +0.17 / +0.05 / -0.06 / -0.09 / -0.20 ms at 1 / 2 / 4 / 8 / 16 rows; exact (digest == off) True: fail
+prev: +0.66 / +0.46 / +0.38 / +0.40 / +0.46 ms at 1 / 2 / 4 / 8 / 16 rows; exact (digest == off) True: fail
+adopt (window): nothing (TF_DSV41_XMAP stays 0); confirm with the speed step before prod.env

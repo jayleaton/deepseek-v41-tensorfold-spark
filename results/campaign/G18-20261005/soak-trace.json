@@ -1,0 +1,134 @@
+{
+ "minutes": 45.0,
+ "requests": 231,
+ "errors": 0,
+ "check_fails": 0,
+ "cancelled": 36,
+ "drained": true,
+ "drain_s": 0.0,
+ "answer_17x23": "391",
+ "fatal_seen": false,
+ "stalled_seen": false,
+ "inflight_max": 4,
+ "by_kind": {
+  "agent": {
+   "n": 79,
+   "ok": 66,
+   "cancelled": 13,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 14.211,
+   "ttft_p95": 65.617,
+   "total_p50": 23.305500000000002,
+   "total_p95": 87.838
+  },
+  "code": {
+   "n": 27,
+   "ok": 25,
+   "cancelled": 2,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.169,
+   "ttft_p95": 9.537,
+   "total_p50": 9.608,
+   "total_p95": 105.95
+  },
+  "prose": {
+   "n": 22,
+   "ok": 18,
+   "cancelled": 4,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.217,
+   "ttft_p95": 3.526,
+   "total_p50": 15.761,
+   "total_p95": 98.265
+  },
+  "structured": {
+   "n": 23,
+   "ok": 22,
+   "cancelled": 1,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.467,
+   "ttft_p95": 3.85,
+   "total_p50": 2.5025000000000004,
+   "total_p95": 5.541
+  },
+  "tool": {
+   "n": 20,
+   "ok": 19,
+   "cancelled": 1,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.647,
+   "ttft_p95": 100.361,
+   "total_p50": 2.389,
+   "total_p95": 101.498
+  },
+  "thinking": {
+   "n": 8,
+   "ok": 5,
+   "cancelled": 3,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.728,
+   "ttft_p95": 2.162,
+   "total_p50": 11.571,
+   "total_p95": 47.474
+  },
+  "long": {
+   "n": 18,
+   "ok": 17,
+   "cancelled": 1,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 41.673,
+   "ttft_p95": 156.24,
+   "total_p50": 41.68,
+   "total_p95": 156.35
+  },
+  "nonstream": {
+   "n": 11,
+   "ok": 11,
+   "cancelled": 0,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": null,
+   "ttft_p95": null,
+   "total_p50": 57.753,
+   "total_p95": 386.43
+  },
+  "disconnect": {
+   "n": 10,
+   "ok": 0,
+   "cancelled": 10,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": null,
+   "ttft_p95": null,
+   "total_p50": null,
+   "total_p95": null
+  },
+  "image": {
+   "n": 13,
+   "ok": 12,
+   "cancelled": 1,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 1.339,
+   "ttft_p95": 3.279,
+   "total_p50": 1.7429999999999999,
+   "total_p95": 3.989
+  }
+ },
+ "health_end": {
+  "inflight": 0,
+  "fatal": null,
+  "stalled": null,
+  "running": 0
+ },
+ "error_samples": [],
+ "check_samples": [],
+ "pass": true
+}

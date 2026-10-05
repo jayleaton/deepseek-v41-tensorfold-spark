@@ -19,8 +19,11 @@ HEAD_IP --port MASTER_PORT`, and mounts `OUT` (default `results/run-<time>/`) at
 ```bash
 scripts/serve.sh stop
 OUT=$PWD/results/run-speed scripts/serve.sh run tensorfold.families.deepseek_v41.cuda.m2bench \
-    --out /out/m2.json --only code,prose,structured --streams 1,2,4 --c-sampling mixed --reps 2
+    --out /out/m2.json --only code,prose,structured --streams 1,2,4 --c-sampling mixed --reps 2 \
+    --c-same code,prose --c-reps 2 --c-exact
 ```
+
+The G15-G19 speed checks ran this set two or three times on fresh boots, interleaving the configurations compared.
 
 - Single stream: each workload at T = 0 and T = 0.7 (keyed), tok/s from the first to the last token of a 384-token
   reply, the median of `--reps`. Every reply is compared with the serial reply (`draft=False`): `exact_all` must be
@@ -28,6 +31,10 @@ OUT=$PWD/results/run-speed scripts/serve.sh run tensorfold.families.deepseek_v41
 - `--streams 1,2,4`: 1, 2 and 4 concurrent requests cycling code, prose, a JSON task and a copy-heavy edit, every
   other one at T = 0.7 (`--c-sampling mixed`; `greedy` for all T = 0). `decode_aggregate_tok_s` = all tokens / (last
   token - first token): the cells the README reports, the same definition as the kit's `multiturn` aggregate.
+- `--c-same code,prose`: same-workload cells (C2-code, C4-prose, ...); `--c-distinct` gives each stream its own
+  prompt of the workload (otherwise the same prompt runs on every stream). Every multi-stream cell also reports the
+  **steady** aggregate (all streams live). `--c-exact` replays every concurrent stream alone and serial and compares
+  the replies (`concurrent_exact_all`).
 - `m2bench` sizes the request slots for `--context` (16,384 by default), not the production 300K pool.
 - `TF_DSV41_PHASES=1` adds per-phase host timings; `--nsys code|prose|c2|...` runs one workload under
   `cudaProfilerStart/Stop` for an nsys capture (add the nsys entrypoint yourself).
@@ -36,11 +43,13 @@ OUT=$PWD/results/run-speed scripts/serve.sh run tensorfold.families.deepseek_v41
 
 ```bash
 OUT=$PWD/results/run-prefill scripts/serve.sh run tensorfold.families.deepseek_v41.cuda.m2bench \
-    --out /out/prefill.json --prefill 8192,32768,65536,131072 --context 139264 --parallel 1
+    --out /out/prefill.json --prefill 8192,32768,65536,131072 --prefill-reply 32 --context 139264 --parallel 1
 TF_DSV41_PREFILL=full OUT=... scripts/serve.sh run ... --prefill ...     # the exact prefill
 ```
 
-One slot, fresh random text, after a 2K warm-up; tok/s and TTFT from the batcher.
+One slot, fresh random text, after a 2K warm-up; tok/s and TTFT from the batcher. `--prefill-reply 32` also records
+the first token and a SHA-256 of a 32-token greedy reply at each size: the G17-G19 tables compare them across
+configurations and boots (prefill levers and row counts must not change them).
 
 **Top-1 agreement with the kit** (needs the kit's prompt-logprobs capture, included):
 
@@ -70,6 +79,7 @@ MASTER_PORT=29561 HEAD_STATE=... WORKER_STATE=... scripts/serve.sh start`).
 | `bench/tooleval/chains.py --mode off\|low\|high` | 6 multi-step tool scenarios with simulated tools, history sent back as agent clients do; 12 points | >= 10 |
 | `bench/tooleval/run.sh setup`, then `teb\|sb\|both\|chains\|own off\|low\|high` | tool-eval-bench (69 scenarios; category C = multi-step) and spark-bench TrueScore at pinned commits | |
 | `bench/soak.py --minutes 30` | 1-4 streams of mixed kinds (code, prose, structured, tools, thinking, 8K-48K documents), ~15% streamed cancels, ~5% client disconnects; `/health` every 10 s | 0 errors, inflight back to 0, 17*23 = 391 |
+| `bench/soak.py --minutes 60 --kinds g16` | the same plus growing agent sessions (40 tools, to 120K tokens, screenshots), image requests and idle gaps: the G16-G19 serving-memory soaks. In-stream error events (a refusal after the 200) count as errors | 0 errors; sample RssAnon and MemAvailable on both nodes (G19: RssAnon slope < 0) |
 | `bench/stress.py stress --long 299000 --dctx 65536 --decode 2048` | one 299K prefill while three 64K prompts decode 2,048 tokens (ignore_eos) | every stream complete; watch MemAvailable on both nodes |
 | `bench/stress.py admit` | seconds to the first token of one request after a start (admission) | |
 

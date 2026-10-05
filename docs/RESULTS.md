@@ -1,7 +1,7 @@
 # Results
 
-Everything measured on one pair of DGX Sparks (GB10, 128 GB each, CX7 link, RoCE), 2026-10-01 to 10-03, on
-`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`. Development ran in numbered test windows (G1-G13); the window
+Everything measured on one pair of DGX Sparks (GB10, 128 GB each, CX7 link, RoCE), 2026-10-01 to 10-05, on
+`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`. Development ran in numbered test windows (G1-G19); the window
 names are kept so the raw files in [`../results/`](../results/README.md) can be matched to a row. How each cell is
 measured: [BENCHMARKS.md](BENCHMARKS.md).
 
@@ -29,17 +29,26 @@ measured: [BENCHMARKS.md](BENCHMARKS.md).
 Two findings from the baseline that shaped the work: the kit's C4 is *below* its C2 (4 x 4 verify rows run slower
 than 2 x 4), and the kit renders `reasoning_effort: "low"` as effort 25 (vLLM's mapping), not DeepSeek's 50.
 
-## 2. The final configuration (G10 / G11, engine = this repository's patches; decode updated in G13)
+## 2. The production configuration (engine = this repository's patches; G19, `7bd2d67`)
 
 | tok/s (T=0 / T=0.7; C = decode aggregate) | code | prose | structured | C1 | C2 | C4 | 1-row window |
 | --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| **G19 production** (`7bd2d67`, the config's words, mean of 2 boots) | **84.74 / 78.15** | **46.75 / 47.98** | **121.27 / 122.91** | **87.62** | **74.07** | **101.09** | ~21.8 ms |
+| G18 production (`cd4245a`, 1,024-row prefill; G19's same-session reference) | 85.37 / 78.06 | 47.09 / 48.18 | 121.74 / 123.09 | 87.50 | 74.03 | 100.29 | |
+| G14 combo (`356a188`, mean of 3 boots) | 86.58 / 78.87 | 46.24 / 48.78 | 122.21 / 123.67 | 87.69 | 74.63 | 100.66 | 21.7-21.8 ms |
 | **G13 production** (`767ad9f`, MHC_CUDA + ATTN_CUDA + DENSE_V3) | **82.83 / 75.02** | **44.25 / 45.30** | **117.84 / 117.59** | **85.05** | **70.27** | **96.61** | **~23.4-24.8 ms** |
 | G13, the same engine with the three off (same session) | 81.74 / 71.94 | 41.28 / 42.22 | 116.79 / 116.61 | 82.46 | 67.64 | 93.95 | 26.8-27.0 ms |
 | G10 / G11 final (`38f6500`) | 79.0-81.5 / 72 | 40.9-41.2 / 42 | 116.6 / 117.5 | 82-83 | 67.1 | 93.5 | 26.9 ms |
 | kit | 41.9-45 | 32.5 | 38-50 | 32.2 | 46.7 | 37.6 | |
 | G13 production / kit | 1.8-2.0x | 1.36x | 2.3-3.1x | 2.6x | 1.5x | 2.6x | |
+| **G19 production / kit** | **1.9-2.0x** | **1.44x** | **2.4-3.2x** | **2.7x** | **1.59x** | **2.7x** | |
 
-`exact_all True` (drafted == serial) in every run. DSpark tokens a round (G10 / G11): code 3.88, prose 1.57-1.59,
+Steady aggregates (all streams live, G19): C2 88.7, C4 136.0 (code-only C4 192.5, prose-only C4 120.2). G19 vs its
+G18 reference: every cell within 1.5%, exact on both boots (drafted == serial, every concurrent stream == the same
+request alone, replies == the reference). G14's own boots read a little higher than the later windows' on the same
+levers (boot-to-boot spread ~1-1.5 tok/s on code); later windows changed prefill, memory and images, not decode.
+
+G13 rows below for history. `exact_all True` (drafted == serial) in every run. DSpark tokens a round (G10 / G11): code 3.88, prose 1.57-1.59,
 structured 5.91; in G13 code read 3.80 (the depth policy reads the cheaper calibrated windows and drafts a little
 differently; the replies are the same). G13 gates on the production set: top-1 vs the kit 0.9961 (first copy 0.9502),
 equal to the rewrites off; MMLU-200 0-shot 87.5% (175 / 200); tool chains thinking off 11 / 12; a tool call
@@ -62,11 +71,39 @@ Earlier gates with the same prefill path (G7 engine commit): MMLU-200 replay / f
 200 answers equal); MMLU with a 20-question preamble, replay / full 81.1 / 81.1% (178 of 180 equal); needles at 32K /
 128K / 299K found in 19.9 / 74.0 / 195 s (replay) and 32K / 128K in 34.7 / 137.3 s (full).
 
-### Prefill (G7, one slot, cold, fresh random text after a 2K warm-up; tok/s)
+### Prefill (one slot, cold, fresh random text after a 2K warm-up; tok/s)
+
+G19, engine `7bd2d67`, `m2bench --prefill --prefill-reply 32`, median of 2 boots, every cell exact (the first token
+and a 32-token reply digest equal the 1,024-row reference's):
+
+| config | full 8K | 32K | 64K | 128K | replay 8K | 32K | 64K | 128K |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **2,048 rows, adaptive, keep 4.5 GiB (production)** | **1,561** | **2,025** | - | - | **2,028** | **2,310** | - | - |
+| 2,048 rows, adaptive, keep 4.0 (the soaked setting) | 1,568 | 2,126 | 2,197 | 2,152 | 2,026 | 2,311 | 2,294 | 2,118 |
+| 2,048 rows, adaptive, keep 5 (the engine default) | 1,069 | 2,122 | 1,904 | 1,808 | 1,084 | 1,912 | 1,774 | 1,753 |
+| 1,024 rows (G16-G18 production) | 1,256 | 1,838 | 1,898 | 1,859 | 1,249 | 1,996 | 1,926 | 1,747 |
+| kit | 1,073 | 1,075 | 1,060 | 1,031 | 1,073 | 1,075 | 1,060 | 1,031 |
+
+At keep 5 the worker's mid-prefill usable memory less the priced 2,048-row transient sits just under 5 GiB, so rows
+flapped 2,048 <-> 1,024 with an allocator release at each step down (up to -46% at 8K). The 1,024-row 8K cells
+(~1,250) are low against G17's 1,842 for the same words; not investigated. Over HTTP (the G19 stress server's
+first-token probe, best of 2) replay reads 2,052 / 2,224 / 2,305 / 2,290 / 2,202 tok/s at 8K / 16K / 32K / 64K / 128K.
+
+G17, engine `0bdd276` (the same prefill kernels), the levers one at a time at 1,024 rows (2 boots):
+
+| full / replay at 32K | tok/s | vs off |
+| --- | ---: | ---: |
+| off (G16 production words) | 853 / 1,763 | |
+| `PF_COPIES` + `MHC_PF` + `PF_DENSE=fused` with the swept table ("final") | 952 / 1,990 | +11.6% / +12.9% |
+| final at 2,048 rows | 1,109 / 2,285 | +30.0% / +29.7% |
+| `FULL_CONE` alone (full) | 1,619 | +89.9% |
+| final + `FULL_CONE` (full) | 1,828 | +114.4% |
+
+The G7 table (before G16's memory cap and G17's kernels), for history:
 
 | config | 8K | 32K | 64K | 128K |
 | --- | ---: | ---: | ---: | ---: |
-| **replay + every prefill lever (production)** | **1,833** | **2,043** | **2,068** | **1,953** |
+| **replay + every prefill lever (G7-G15 production)** | **1,833** | **2,043** | **2,068** | **1,953** |
 | replay, base kernels | 1,343 | 1,421 | 1,407 | 1,379 |
 | full (no replay), every lever | 969 | 1,004 | 1,003 | 876 |
 | full, base | 756 | 772 | 764 | 739 |
@@ -75,7 +112,7 @@ Earlier gates with the same prefill path (G7 engine commit): MMLU-200 replay / f
 TTFT at 128K: 67 s. One run of the production prefill was anomalous (854 tok/s at 128K: both GPUs at ~36 W instead of
 ~52 W at normal clocks) and did not reproduce in two later runs.
 
-### Strict mode (G13: every precision trade off)
+### Strict mode (G13: every precision trade off; not re-run on the current engine)
 
 Production's set with `TF_DSV41_EXPERT_TOPP=0`, `EXPERT_RENORM=orig`, `MHC_FN=fp32`, `KIT_ROUNDING=0`, `LOGITS=fp32`,
 `INDEX_KV=bf16` and `PREFILL=full`; the fast prefill GEMMs and the fused prefill attention stay on. Same build and
@@ -112,6 +149,10 @@ prepared folders with parallel O_DIRECT readers; M1 measured 18 s for the weight
 | G9 | 80.2 | 39.9 | 114.5 | 76.0 | 63.0 | 92.8 | decode glue (bit for bit) + bf16 mHC weights; routed-expert pruning p85k (x1.05) |
 | G10 (final) | 79.0-81.5 | 40.9-41.2 | 116.6 | 82-83 | 67.1 | 93.5 | cross-op L2 prefetch, 12 MiB a site (code +2.5%, prose +3.5%) |
 | G13 | 82.8 | 44.25 | 117.8 | 85.1 | 70.3 | 96.6 | three CUDA rewrites, bit for bit: the mHC boundary in one launch, the decode attention core + indexer top-k, dense EXL3 over a coalesced repack (1-row window 26.8 -> ~23.4 ms) |
+| G14 | 86.6 | 46.2 | 122.2 | 87.7 | 74.6 | 100.7 | the round plan through a RoCE host mailbox, BRANCHES on priority streams, the paced L2 prefetch, the faster RoCE kernel (1-row window 23.4 -> 21.8 ms) |
+| G15-G16 | 85.3-86.0 | 46.0-47.0 | 121.6 | 87.6-87.8 | 73.6-74.5 | 99.3-102.3 | calibration VERSION 4 (prose +2.8%); native images; the memory cap (1,024-row prefill: replay 32K 2,015 -> 1,753); the graph-cache and vision fixes |
+| G17-G18 | 84.9 | 47.0 | 122.0 | 87.6 | 74.2 | 100.3 | prefill kernels and the full-mode cone (replay 32K 1,990, full 1,828 at 1,024 rows); fail-fast; the priced two-rank floor; the session-index fix |
+| G19 | 84.7 | 46.8 | 121.3 | 87.6 | 74.1 | 101.1 | adaptive 2,048-row prefill (replay 32K 2,310, full 2,025) |
 
 ## 4. Measured and not adopted
 
@@ -130,12 +171,27 @@ prepared folders with parallel O_DIRECT readers; M1 measured 18 s for the weight
 | Streaming top-k from 4K keys | -2% |
 | Shortened decode MoE chain (`TF_DSV41_MOE_FUSED`, G13) | exact (bit for bit R 1..16 on real layers), 9-46 us a layer faster in isolation, but **+0.7 ms** on a 1-row window in the graph and 0 at 2 rows. Off; where the isolated gain goes is not measured yet (nsys) |
 | CSA2 indexer / compressor on a side stream (`TF_DSV41_BRANCHES`, G13) | exact (on == off over 24 windows), but the 1-row window was 26.2 ms in one boot and 31.5 ms in another (+2.25 ms mean); 16 rows -0.55 ms. A fork / join per layer costs more than the overlap returns. Off |
+| `TF_DSV41_PF_XOVL` (a prefill segment's exchanges by row halves on a side stream, G17) | exact; -1.2 to -2.4% alone, nothing added to the final set. Off |
+| `TF_DSV41_SPEC_NUCLEUS` (the speculative DSpark pass after top-p windows, G17) | exact (tokens == serial); C2 steady +1.3%, C4 steady -0.6%, single streams -0.2 to -1.2%: below its pass line. Off |
+| 4,096-row prefill windows (G16) | 4K == 2K bit for bit; +0.66 GiB on the worker; refused at boot without `TF_DSV41_PF_4K_MEMORY_OK=1`. Off |
+| `TF_DSV41_INDEX_BUDGET_MIB=32` at 2,048 rows (G19) | no gain (128K replay -9%). 64 stays |
+| Allocator ceiling (`TF_DSV41_ALLOC_CEIL_GIB`, G16) | at 1.5 GiB it held the worker >= 4.54 GiB in a 1 h soak, but at 1.0 with 2,048 rows a 299K prefill hit an out-of-memory error. Off (fail-fast now ends such a failure in ~1 s) |
+| Joint depth mode 2 (`TF_DSV41_DEPTH_JOINT=2`, G15) | C2 steady +1.7%, but C4-prose steady -8% (bimodal by boot). Off |
+| Expert map L2 prefetch (`TF_DSV41_XMAP`, G15) | +0.22 ms on a 1-row window. Off |
+| Lower `L2PF_PACE_GBPS` (125 / 100, G15) | slower at 1, 2 and 4 rows. 150 stays |
 | Hiding the window graph's submission (G13 d1) | nothing to hide: `graph.replay` takes 0.02 ms of host time a round without a profiler (the 1.3 ms seen earlier was nsys overhead) |
 
 ## 5. Memory
 
 | run | head | worker |
 | --- | ---: | ---: |
+| **G19: 1 h soak, 2,048 rows, adaptive keep 4.0 (906 requests, 0 errors)** | **4.63** | **3.99** |
+| **G19: stress 299K + 3 x 64K + 4 image requests, 2,048 rows** | **5.07** | **4.81** |
+| G18: 1 h soak on the session-index fix, 1,024 rows (760 requests, 0 errors) | 5.49 | 5.02 |
+| G18: 1 h soak, 2,048 rows, fixed rows (900 requests, 1 refusal) | 4.07 | 3.17 |
+| G17: 1 h soak, 2,048 rows, before the session-index fix (828 requests, 4 errors) | 3.69 | 3.27 |
+| G16: 1 h soak with the LRU graph cache and a 1.5 GiB allocator ceiling | 5.02 | 4.54 |
+| G16: stress with the memory cap (1,024 rows, native images) | 5.30 | 5.10 |
 | decode benchmarks (1-4 streams) | >= 10.3 | >= 7.3 |
 | prefill to 128K | 7.6 | 5.66 |
 | soak, 30 min | 5.11 | 4.07 |
@@ -168,7 +224,13 @@ MemAvailable minimum, GiB, 0.5-1 s samplers.
   entries change, by at most 1 fp32 ulp. The engine's code digest changes too, so session entries an older engine saved
   on NVMe are not resumed.
 
-**Open:** the worker's minimum, 3.0-3.7 GiB in every G12 run. The worker is at 4.5-7.8 GiB when the server is ready,
+**Fixed in G16-G19** (details: the README's "Changes since G13" and [campaign/](campaign/README.md)): the CUDA graph
+cache's growth with agent sessions (the serving leak), the graph-eviction cascade, the NVMe session index's
+`list[int]` per entry (the slow drift), a single-rank and unpriced admission floor, failures on one rank stranding the
+other, the vision store's double count. RssAnon now falls over a 1 h soak (-0.4 GiB/h a rank) instead of growing
+(+0.4 to +1.0 GiB/h before).
+
+**Was open after G12 (now covered by the G16 cap, the priced floor and adaptive rows):** the worker's minimum, 3.0-3.7 GiB in every G12 run. The worker is at 4.5-7.8 GiB when the server is ready,
 and the minimum comes in the first ~20K prompt rows (+1.3 GiB of CUDA reservations as the first segments run). It
 comes from the boot budget (4 x 300K pool) and that device-side part, not from growth: from 80K rows on the worker
 stays at 3.7-5.0 GiB. The minimum is under the 5 GiB target and the 4 GiB admission floor.

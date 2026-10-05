@@ -1,0 +1,207 @@
+{
+ "mode": "off",
+ "model": "DeepSeek-V4.1-Flash-TF",
+ "max_points": 12,
+ "scores": [
+  11
+ ],
+ "min_score": 10,
+ "pass": true,
+ "malformed": 0,
+ "reps": [
+  [
+   {
+    "scenario": "weather-then-flight",
+    "points": 2,
+    "calls_ok": true,
+    "answer_ok": true,
+    "turns": 3,
+    "calls": [
+     [
+      "get_weather",
+      {
+       "city": "Oslo"
+      }
+     ],
+     [
+      "search_flights",
+      {
+       "origin": "Oslo",
+       "destination": "Rome",
+       "date": "2026-11-02"
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "The weather in Oslo is sunny (12\u00b0C), so the condition is met.\n\nThe earliest flight from Oslo to Rome on 2026-11-02 is **SK4711**, departing at 08:15.",
+    "seconds": 4.3
+   },
+   {
+    "scenario": "user-orders-total",
+    "points": 2,
+    "calls_ok": true,
+    "answer_ok": true,
+    "turns": 4,
+    "calls": [
+     [
+      "find_user",
+      {
+       "email": "ana@example.com"
+      }
+     ],
+     [
+      "get_orders",
+      {
+       "user_id": "u-8842"
+      }
+     ],
+     [
+      "calc",
+      {
+       "expr": "120.5 + 79.25 + 300.0"
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "The total amount of all orders for ana@example.com is **499.75** (120.50 + 79.25 + 300.00).",
+    "seconds": 4.2
+   },
+   {
+    "scenario": "edit-config",
+    "points": 1,
+    "calls_ok": true,
+    "answer_ok": false,
+    "turns": 8,
+    "calls": [
+     [
+      "list_files",
+      {
+       "path": "/srv/app"
+      }
+     ],
+     [
+      "read_file",
+      {
+       "path": "/srv/app/config.yaml"
+      }
+     ],
+     [
+      "write_file",
+      {
+       "path": "/srv/app/config.yaml",
+       "content": "port: 8080\nworkers: 8\nlog_level: info\n"
+      }
+     ],
+     [
+      "read_file",
+      {
+       "path": "/srv/app/config.yaml"
+      }
+     ],
+     [
+      "write_file",
+      {
+       "path": "/srv/app/config.yaml",
+       "content": "port: 8080\nworkers: 8\nlog_level: info\n"
+      }
+     ],
+     [
+      "read_file",
+      {
+       "path": "/srv/app/config.yaml"
+      }
+     ],
+     [
+      "write_file",
+      {
+       "path": "/srv/app/config.yaml",
+       "content": "port: 8080\nworkers: 8\nlog_level: info\n"
+      }
+     ],
+     [
+      "read_file",
+      {
+       "path": "/srv/app/config.yaml"
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "",
+    "seconds": 10.3
+   },
+   {
+    "scenario": "compound-interest",
+    "points": 2,
+    "calls_ok": true,
+    "answer_ok": true,
+    "turns": 3,
+    "calls": [
+     [
+      "calc",
+      {
+       "expr": "10000 * (1 + 0.05) ** 3"
+      }
+     ],
+     [
+      "calc",
+      {
+       "expr": "11576.25 - 1000"
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "**Final answer: 10576.25**\n\n- Step 1: 10000 \u00d7 (1.05)\u00b3 = 11576.25\n- Step 2: 11576.25 \u2212 1000 = 10576.25\n\nRounded to 2 decimals: **10576.25**",
+    "seconds": 3.7
+   },
+   {
+    "scenario": "retry-after-error",
+    "points": 2,
+    "calls_ok": true,
+    "answer_ok": true,
+    "turns": 3,
+    "calls": [
+     [
+      "get_weather",
+      {
+       "city": "Pariss"
+      }
+     ],
+     [
+      "get_weather",
+      {
+       "city": "Paris"
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "The weather in Paris is rainy with a temperature of 15\u00b0C.\n\nNote: I first called the tool with your exact spelling, \"Pariss\", which returned an error suggesting \"Paris\" \u2014 so the result above is for Paris.",
+    "seconds": 3.9
+   },
+   {
+    "scenario": "geo-timezone",
+    "points": 2,
+    "calls_ok": true,
+    "answer_ok": true,
+    "turns": 3,
+    "calls": [
+     [
+      "geocode",
+      {
+       "place": "Tokyo"
+      }
+     ],
+     [
+      "get_timezone",
+      {
+       "lat": 35.68,
+       "lon": 139.69
+      }
+     ]
+    ],
+    "malformed": [],
+    "final": "Tokyo is in the IANA time zone **Asia/Tokyo**.\n\n- Coordinates: 35.68\u00b0N, 139.69\u00b0E\n- Time zone: Asia/Tokyo (UTC+9, no daylight saving time)",
+    "seconds": 4.0
+   }
+  ]
+ ]
+}

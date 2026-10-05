@@ -220,6 +220,7 @@ def main() -> int:
         print("\n".join(files))
         return 0
     cfg = json.loads((a.config or a.src / "config.json").read_text())
+    cfg = {**cfg, **(cfg.get("text_config") or {})}      # the EXL3 packs nest the text model's keys
     ranks = list(range(a.world)) if a.rank == "all" else [int(a.rank)]
     if a.check:
         return check(a.src, cfg, a.check, ranks, a.world, a.samples)

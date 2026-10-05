@@ -31,7 +31,16 @@ over the file: `CONTEXT=196608 scripts/serve.sh restart`.
 
 | knob | production | off / fallback |
 | --- | --- | --- |
-| `TF_DSV41_PREFILL` | `replay` (~2x prefill) | `full`: the exact prefill, ~kit speed |
+| `TF_DSV41_PREFILL` | `replay` (~2x the kit) | `full`: the exact prefill (with `FULL_CONE=1`: 1.45-2.09x the kit) |
+| `TF_DSV41_PREFILL_CHUNK` / `_ROWS` | 2048 / 2048 | 1024 / 1024 (G16-G18 production: replay 32K 1,996 vs 2,310) |
+| `TF_DSV41_PREFILL_ADAPT` / `_ADAPT_GIB` | 1 (default) / 4.5: rank 0 steps each round's rows down (2,048 / 1,024 / 512, never below `_MIN` 512) when the tighter rank would keep less than this after the round's priced transient; back up with `_UP_GIB` (0.5) more | `_ADAPT=0`: fixed rows. The engine default `_ADAPT_GIB` (5) flaps on GB10 |
+| `TF_DSV41_PF_COPIES`, `TF_DSV41_MHC_PF` | 1, 1 (G17, same bits) | 0 |
+| `TF_DSV41_PF_DENSE` / `_TABLE` | `fused` / `/cache/pfdense-table.json` (G17, same bits; `scripts/serve.sh cache` puts `config/pfdense-table.json` there) | `off`. The table file must exist in the cache volume (a missing file fails the prefill); unset `_TABLE` for the engine's built-in tiles (+1.5-3.4% instead of +5.4-6.9%) |
+| `TF_DSV41_FULL_CONE` | 1: `full` prefill runs the decoder only over its dependency cone (same bits as plain `full`) | 0 |
+| `TF_DSV41_INDEX_BUDGET_MIB` / `_STREAM_MIN` | 64 / 4096 (G16 memory cap, exact) | 256 / 16384 (+1.6 GiB of cached allocator segments in long prefills) |
+| `TF_DSV41_POOL_TOKENS` | 614400: the 4 slots share 614K tokens of KV (a request waits for pages, never refused) | unset: 4 x CONTEXT (+0.6 GiB a rank) |
+| `MALLOC_ARENA_MAX` | 4 | unset: glibc's default arenas |
+| `TF_DSV41_IMAGES` | `native` (+ `TF_DSV41_BIAS_VL`, `_VISION_PREP_MB=64`) | `placeholder` (the engine default: a text notice per image) or `reject` (HTTP 400) |
 | `TF_DSV41_PREFILL_KERNELS` | `fast` | `exact` |
 | `TF_DSV41_FAST_EXPERTS` | `gm` | `grouped`; `tc` is 3-5x slower |
 | `TF_DSV41_EXPERT_TOPP` / `_MIN_K` / `_RENORM` | 0.85 / 3 / kept (lossy, +5%) | delete the three lines: the unpruned model |
@@ -40,6 +49,11 @@ over the file: `CONTEXT=196608 scripts/serve.sh restart`.
 | `TF_DSV41_MHC_CUDA` | 1: an mHC boundary of a decode window as one CUDA launch (G13, same bits) | 0 (the engine's default): the Triton boundary |
 | `TF_DSV41_ATTN_CUDA` | 1: CSA2's decode attention core and the indexer's top-k in CUDA (G13, same bits) | 0: Triton |
 | `TF_DSV41_DENSE_V3` | 1: dense EXL3 linears over a 16-byte-coalesced repack of the trellis (G13, same bits) | 0: x3seg |
+| `TF_DSV41_PLAN_LINK` / `_PLAN_PIN` | `rdma` / `auto` (G14: the round plan through the RoCE host mailbox) | `tcp` (MASTER_PORT + 7) |
+| `TF_DSV41_BRANCHES` / `_PRIO` | 1 / `side` (G14, same bits) | 0 |
+| `TF_DSV41_L2PF_PACE_GBPS` | 150 (G14, same bits) | 0: unpaced |
+| `GLM53_TF_ROCE_FAST` | 1 (G14, the same bytes) | 0 |
+| `TF_DSV41_PDL` | 0: must stay 0 with `DENSE_V3=1` (not bit-exact together; refused at boot) | |
 | `TF_DSV41_GRAPH_MODE` | `rows` | `mix`: C2 / C4 slower |
 | `TF_DSV41_ROUTER` | `gemv` | `fused` / `split` |
 | `GLM53_TF_COMM_BACKEND` | `roce` | `nccl` (-11% / -17%). A RoCE failure at run time writes `/cache/roce-failed` in the cache volume and the next start of both ranks uses NCCL; delete it to retry RoCE |
@@ -52,9 +66,27 @@ Knobs left at their defaults that you may meet in the code: `TF_DSV41_DEPTH` / `
 the default policy reads the boot calibration and caps at 5; `static` + 3 is the kit's), `TF_DSV41_DRAFT_HEAD` (full),
 `TF_DSV41_VERIFY_BUDGET` (unset; lossy, do not use), `TF_DSV41_TREE_PC` (0), `TF_DSV41_DSPARK_DELTA` (unset).
 From G13: `TF_DSV41_MOE_FUSED` (0: the shortened decode MoE chain, exact but +0.7 ms on a 1-row window),
-`TF_DSV41_BRANCHES` (0: the CSA2 indexer / compressor on a side stream, exact but an unstable 1-row window, +2.25 ms
-mean), `TF_DSV41_ATTN_CUDA_PARTS` (`attn,topk`; either alone for an A/B) and `TF_DSV41_MHC_CUDA_ROWS` (16, the largest
-window the mHC kernel takes; 8 measured the same).
+`TF_DSV41_ATTN_CUDA_PARTS` (`attn,topk`; either alone for an A/B) and `TF_DSV41_MHC_CUDA_ROWS` (16, the largest
+window the mHC kernel takes; 8 measured the same). From G15-G17, all off: `TF_DSV41_XMAP`, `TF_DSV41_DEPTH_JOINT=2`,
+`TF_DSV41_PF_XOVL`, `TF_DSV41_PREFILL_TILES`, `TF_DSV41_PF_4K` (refused at boot without `TF_DSV41_PF_4K_MEMORY_OK=1`),
+`TF_DSV41_SPEC_NUCLEUS`, `TF_DSV41_ALLOC_CEIL_GIB` (0), `TF_DSV41_SWITCH_MS` (unset).
+
+Serving safety, on by default (G16-G19):
+
+- `TF_DSV41_FAILFAST` (1): an exception in either rank's round fails every in-flight request with a 500, tells the
+  peer over the plan link's TCP connection, and exits both ranks with code 70 after `TF_DSV41_FAILFAST_GRACE_S` (1.0)
+  s. `scripts/serve.sh watch` heals an exit 70 on its first tick. 0 restores the old behaviour (the peer waits in its
+  exchange: minutes).
+- `TF_DSV41_FLOOR_PRICE` (1): admission prices a prompt's prefill transient (window rows, the indexer's blocks, host
+  buffers) and admits it only if the tighter rank keeps `TF_DSV41_FLOOR_HARD_GIB` after it; rank 1 reports its usable
+  memory every `TF_DSV41_PEER_MEM_S` (0.5) s. A prompt that does not fit waits; with nothing else running it is
+  refused with a 503 after `TF_DSV41_FLOOR_REFUSE_S` (30) s (for a streaming request that refusal arrives as an
+  in-stream error event after the 200).
+- `TF_DSV41_GRAPHS_MAX` (48): the LRU CUDA graph cache; context buckets grow 1.25x past 32K
+  (`TF_DSV41_GRAPH_BUCKET_GROW`; 1 restores equal 2,048-token steps); `TF_DSV41_GRAPH_DIP_ROUNDS` (64): captures
+  refused within that many rounds of a prefill round evict nothing.
+- `TF_DSV41_VISION_MAX_IMAGES` (8): more images in one request are refused (HTTP 400); clients with long agent
+  histories should drop old screenshots.
 
 Host memory and stalls (G12; defaults in brackets):
 
@@ -74,19 +106,23 @@ Host memory and stalls (G12; defaults in brackets):
 
 - **Before a load:** MemFree >= 104 GiB on both nodes.
 - **While serving:** `TF_DSV41_FLOOR_GIB=5` is the MemAvailable target the load-time budget plans for;
-  `TF_DSV41_FLOOR_HARD_GIB=4` is the level below which nothing new is admitted.
-- **Measured:** decode benchmarks >= 7.3 GiB on the worker. In the 4 x 300K stress the worker's minimum is 3.0-3.7
-  GiB, reached in the first ~20K rows of the 299K prefill. That floor comes from the boot budget (4 x 300K KV pool)
-  and the first segments' device-side reservations, not from host growth: since G12 each rank's anonymous RSS
-  grows ~0.7 GiB over the prompt (was 4-5.6). Open; [RESULTS.md](RESULTS.md) section 5. `CONTEXT=196608` lowers
-  it.
+  `TF_DSV41_FLOOR_HARD_GIB=4` is the level below which nothing new is admitted, checked on both ranks with each
+  prompt's prefill transient priced in.
+- **Measured (G19, 2,048-row adaptive prefill):** 299K stress minimum head 5.07 / worker 4.81 GiB; 1 h soak minimum
+  head 4.63 / worker 3.99 GiB (at `_ADAPT_GIB=4.0`; production runs 4.5), RssAnon falling over the hour. The worker
+  binds: 2 GiB less MemTotal than the head, and 6.2-8.4 GiB at serving between identical boots. If it runs short,
+  raise `TF_DSV41_PREFILL_ADAPT_GIB` or go back to 1,024-row windows. [RESULTS.md](RESULTS.md) section 5.
+- **earlyoom:** if the nodes run earlyoom (`-m 2,1` here: SIGTERM below ~2.4 GiB), it is the last backstop under these
+  floors and kills a rank; fail-fast then ends the pair in ~1 s and the watchdog restarts it. Never build CUDA
+  extensions beside loaded weights (`scripts/serve.sh prebuild` exists for that: G16 lost both ranks to it once).
 - Keep other workloads (desktop sessions, other containers, a second model) off both nodes.
 
 ## Watchdog and start at boot
 
 - `scripts/serve.sh watch --once` (the `dsv41-tf-watchdog.timer` tick, every minute): a tick is bad when a rank
   exited or `/health` fails. `WATCH_FAILS` (3) bad ticks in a row restart both ranks in the background
-  (`WATCH_HEAL=1`), at most once every `WATCH_MIN_HEAL` s (1800). It stands down while a start runs, while rank 0 is
+  (`WATCH_HEAL=1`), at most once every `WATCH_MIN_HEAL` s (1800). A rank that exited with code 70 (fail-fast) heals on
+  the first bad tick, at most once every `WATCH_FF_MIN_HEAL` s (120). It stands down while a start runs, while rank 0 is
   younger than `WATCH_GRACE` (1800 s), after a deliberate `serve.sh stop` during the same boot, and while
   `WATCH_LEASE` (an optional file you touch while benchmarking or maintaining the pair) is fresh. `WATCH_ALERT=<cmd>`
   is called with a message on every alert.

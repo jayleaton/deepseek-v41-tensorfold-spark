@@ -1,0 +1,478 @@
+{
+ "knobs": {
+  "GLM53_TF_COMM_BACKEND": "roce",
+  "GLM53_TF_ROCE_FAST": "1",
+  "GLM53_TF_ROCE_MAX_KB": "1024",
+  "TF_DSV41_ATTN_CUDA": "1",
+  "TF_DSV41_BIAS_VL": "/cache/dsv41-bias-vl",
+  "TF_DSV41_BRANCHES": "1",
+  "TF_DSV41_BRANCHES_PRIO": "side",
+  "TF_DSV41_CALIB": "real",
+  "TF_DSV41_CALIB_DIR": "/cache/dsv41-calib",
+  "TF_DSV41_DEFAULT_EFFORT": "high",
+  "TF_DSV41_DENSE": "0",
+  "TF_DSV41_DENSE_V3": "1",
+  "TF_DSV41_DEPTH_JOINT": "0",
+  "TF_DSV41_DISCONNECT": "1",
+  "TF_DSV41_ENGRAM_DIR": "/engram",
+  "TF_DSV41_ENGRAM_FUSE_DEC": "1",
+  "TF_DSV41_ENGRAM_GATE": "1",
+  "TF_DSV41_ENGRAM_NATIVE": "1",
+  "TF_DSV41_EXPERT_LOADS": "1",
+  "TF_DSV41_EXPERT_MIN_K": "3",
+  "TF_DSV41_EXPERT_PREFILL": "0",
+  "TF_DSV41_EXPERT_RENORM": "kept",
+  "TF_DSV41_EXPERT_TOPP": "0.85",
+  "TF_DSV41_FAST_EXPERTS": "gm",
+  "TF_DSV41_FLOOR_GIB": "5",
+  "TF_DSV41_FLOOR_HARD_GIB": "4",
+  "TF_DSV41_GRAMMAR": "1",
+  "TF_DSV41_GRAPH_MODE": "rows",
+  "TF_DSV41_IMAGES": "native",
+  "TF_DSV41_INDEX_BUDGET_MIB": "64",
+  "TF_DSV41_INDEX_DTOPK": "1",
+  "TF_DSV41_INDEX_KV": "fp8",
+  "TF_DSV41_INDEX_STREAM_MIN": "4096",
+  "TF_DSV41_L2PF": "1",
+  "TF_DSV41_L2PF_MB": "12",
+  "TF_DSV41_L2PF_PACE_GBPS": "150",
+  "TF_DSV41_LAUNCH_T0": "1791122679.859239220",
+  "TF_DSV41_MHC_BM": "64",
+  "TF_DSV41_MHC_CUDA": "1",
+  "TF_DSV41_MHC_DEC": "1",
+  "TF_DSV41_MHC_FIN2": "1",
+  "TF_DSV41_MHC_FN": "bf16",
+  "TF_DSV41_MHC_PF": "1",
+  "TF_DSV41_MHC_WARPS": "8",
+  "TF_DSV41_NATIVE_DIR": "/cache/dsv41-native",
+  "TF_DSV41_PARTIAL_BF16": "1",
+  "TF_DSV41_PDL": "0",
+  "TF_DSV41_PF_COPIES": "1",
+  "TF_DSV41_PF_DENSE": "fused",
+  "TF_DSV41_PF_DENSE_TABLE": "/cache/pfdense-table.json",
+  "TF_DSV41_PHASES": "1",
+  "TF_DSV41_PLAIN_TRITON": "1",
+  "TF_DSV41_PLAN_LINK": "rdma",
+  "TF_DSV41_PLAN_PIN": "auto",
+  "TF_DSV41_POOL_TOKENS": "614400",
+  "TF_DSV41_PREFETCH_AHEAD": "1",
+  "TF_DSV41_PREFILL": "replay",
+  "TF_DSV41_PREFILL_ATTN": "fused",
+  "TF_DSV41_PREFILL_ATTN_BMQ": "32",
+  "TF_DSV41_PREFILL_ATTN_WARPS": "8",
+  "TF_DSV41_PREFILL_CHUNK": "2048",
+  "TF_DSV41_PREFILL_GATHER": "bf16",
+  "TF_DSV41_PREFILL_KERNELS": "fast",
+  "TF_DSV41_PREFILL_ROUTER": "gemv",
+  "TF_DSV41_PREFILL_ROWS": "2048",
+  "TF_DSV41_PREPARED": "/prepared",
+  "TF_DSV41_PREPARED_WRITE": "1",
+  "TF_DSV41_RG_NARROW": "2",
+  "TF_DSV41_RG_TAIL": "1",
+  "TF_DSV41_RMS_PAIR": "1",
+  "TF_DSV41_ROPE_INPLACE": "1",
+  "TF_DSV41_ROUTER": "gemv",
+  "TF_DSV41_SCHEMA_PROMPT": "1",
+  "TF_DSV41_SESSIONS": "1",
+  "TF_DSV41_SESSION_RAM_MIB": "256",
+  "TF_DSV41_SPEC_DRAFT": "1",
+  "TF_DSV41_THINKING": "1",
+  "TF_DSV41_TOOL_GRAMMAR": "0",
+  "TF_DSV41_VISION_PREP_MB": "64"
+ },
+ "m2": "DSpark on (depth cost, cap 5, joint off, costs measured); draft head full; draft graphs on: 3 held (3 at boot in 0.2 s, 0 on first use), 4 replays, 0 eager windows; Engram prefetch {'issued': 0, 'hits': 2, 'misses': 2, 'dropped': 0, 'reads': 4943, 'cached': 4944, 'waited': 0, 'ahead': 0, 'kept': 0}; Engram gate: 99 rounds (0 reissued), 0 warm jobs, rows 7632 (7192 cached, 440 read), 98 syncs; first layer ready p50/p90/p99 0.50 / 2.17 / 6.77 ms, all 0.53 / 2.18 / 6.81 ms after queueing; speculative DSpark passes 0 launched, 0 used, 0 dropped, 0 without a graph; graphs on: 10 held (8 at boot in 2.68 s, 2 on first use), 157 replays, 2 eager windows; RoCE exchanges 2057 fast / 166 on NCCL; phases (1, ms a round over 0 rounds): candidates 6783.05, engram.wait 363.82, forward 425.32, graph.capture 281.38, graph.replay 4.03, graph.stage 14.42, spec 0.07",
+ "workloads": {},
+ "kit": {
+  "mixed": 2.27,
+  "mmlu": 1.46,
+  "multiturn": 1.83,
+  "tf": 1.78,
+  "kit": 2.17,
+  "tweet": 3.08,
+  "edit": 3.84,
+  "c4_tok_s": 37.6,
+  "code_tok_s": 36.4,
+  "prose_tok_s": 25.1
+ },
+ "targets": {
+  "code_tok_s": 52.0,
+  "prose_tok_s": 38.0,
+  "tokens_per_round_k3": 3.1
+ },
+ "prefill": [
+  {
+   "tokens": 8192,
+   "ttft_s": 4.04,
+   "wall_s": 4.88,
+   "tok_s": 2027.2,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "0e6a1cdf9f4b3cf3",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 4880.76,
+    "candidates": {
+     "ms": 721.77,
+     "n": 32,
+     "ms_avg": 22.555
+    },
+    "commit": {
+     "ms": 22.05,
+     "n": 37,
+     "ms_avg": 0.596
+    },
+    "engram.wait": {
+     "ms": 414.31,
+     "n": 10,
+     "ms_avg": 41.431
+    },
+    "execute": {
+     "ms": 4877.37,
+     "n": 37,
+     "ms_avg": 131.821
+    },
+    "forward": {
+     "ms": 220.49,
+     "n": 32,
+     "ms_avg": 6.89
+    },
+    "graph.capture": {
+     "ms": 122.85,
+     "n": 2,
+     "ms_avg": 61.423
+    },
+    "graph.replay": {
+     "ms": 1.7,
+     "n": 30,
+     "ms_avg": 0.057
+    },
+    "graph.stage": {
+     "ms": 5.15,
+     "n": 30,
+     "ms_avg": 0.172
+    },
+    "plan": {
+     "ms": 1.36,
+     "n": 37,
+     "ms_avg": 0.037
+    },
+    "prefetch": {
+     "ms": 1.55,
+     "n": 32,
+     "ms_avg": 0.048
+    },
+    "prefill": {
+     "ms": 3618.88,
+     "n": 5,
+     "ms_avg": 723.775
+    },
+    "round": {
+     "ms": 4882.05,
+     "n": 37,
+     "ms_avg": 131.947
+    },
+    "sample": {
+     "ms": 0.54,
+     "n": 37,
+     "ms_avg": 0.015
+    },
+    "share": {
+     "ms": 2.42,
+     "n": 37,
+     "ms_avg": 0.065
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 942.66,
+     "n": 32,
+     "ms_avg": 29.458
+    }
+   }
+  },
+  {
+   "tokens": 32768,
+   "ttft_s": 14.26,
+   "wall_s": 15.07,
+   "tok_s": 2297.1,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "c1bb5db64173f3f1",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 15068.68,
+    "candidates": {
+     "ms": 691.38,
+     "n": 32,
+     "ms_avg": 21.606
+    },
+    "commit": {
+     "ms": 22.95,
+     "n": 49,
+     "ms_avg": 0.468
+    },
+    "engram.wait": {
+     "ms": 645.94,
+     "n": 34,
+     "ms_avg": 18.998
+    },
+    "execute": {
+     "ms": 15059.56,
+     "n": 49,
+     "ms_avg": 307.338
+    },
+    "forward": {
+     "ms": 196.03,
+     "n": 32,
+     "ms_avg": 6.126
+    },
+    "graph.capture": {
+     "ms": 127.43,
+     "n": 2,
+     "ms_avg": 63.716
+    },
+    "graph.replay": {
+     "ms": 0.67,
+     "n": 30,
+     "ms_avg": 0.022
+    },
+    "graph.stage": {
+     "ms": 2.22,
+     "n": 30,
+     "ms_avg": 0.074
+    },
+    "plan": {
+     "ms": 7.32,
+     "n": 49,
+     "ms_avg": 0.149
+    },
+    "prefetch": {
+     "ms": 1.82,
+     "n": 32,
+     "ms_avg": 0.057
+    },
+    "prefill": {
+     "ms": 13634.5,
+     "n": 17,
+     "ms_avg": 802.03
+    },
+    "round": {
+     "ms": 15074.01,
+     "n": 49,
+     "ms_avg": 307.633
+    },
+    "sample": {
+     "ms": 0.56,
+     "n": 49,
+     "ms_avg": 0.011
+    },
+    "share": {
+     "ms": 5.94,
+     "n": 49,
+     "ms_avg": 0.121
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 887.88,
+     "n": 32,
+     "ms_avg": 27.746
+    }
+   }
+  },
+  {
+   "tokens": 65536,
+   "ttft_s": 28.64,
+   "wall_s": 29.45,
+   "tok_s": 2287.9,
+   "first": 65,
+   "reply_n": 32,
+   "reply_sha": "b88d350fbc16e89c",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 29451.78,
+    "candidates": {
+     "ms": 691.6,
+     "n": 32,
+     "ms_avg": 21.612
+    },
+    "commit": {
+     "ms": 16.15,
+     "n": 64,
+     "ms_avg": 0.252
+    },
+    "engram.wait": {
+     "ms": 1000.21,
+     "n": 66,
+     "ms_avg": 15.155
+    },
+    "execute": {
+     "ms": 29367.37,
+     "n": 64,
+     "ms_avg": 458.865
+    },
+    "forward": {
+     "ms": 198.5,
+     "n": 32,
+     "ms_avg": 6.203
+    },
+    "graph.capture": {
+     "ms": 129.81,
+     "n": 2,
+     "ms_avg": 64.904
+    },
+    "graph.replay": {
+     "ms": 0.94,
+     "n": 30,
+     "ms_avg": 0.031
+    },
+    "graph.stage": {
+     "ms": 3.04,
+     "n": 30,
+     "ms_avg": 0.101
+    },
+    "plan": {
+     "ms": 65.74,
+     "n": 65,
+     "ms_avg": 1.011
+    },
+    "prefetch": {
+     "ms": 2.19,
+     "n": 32,
+     "ms_avg": 0.068
+    },
+    "prefill": {
+     "ms": 27610.23,
+     "n": 33,
+     "ms_avg": 836.674
+    },
+    "round": {
+     "ms": 29449.48,
+     "n": 64,
+     "ms_avg": 460.148
+    },
+    "sample": {
+     "ms": 0.66,
+     "n": 64,
+     "ms_avg": 0.01
+    },
+    "share": {
+     "ms": 14.59,
+     "n": 65,
+     "ms_avg": 0.225
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 890.51,
+     "n": 32,
+     "ms_avg": 27.828
+    }
+   }
+  },
+  {
+   "tokens": 131072,
+   "ttft_s": 59.52,
+   "wall_s": 60.28,
+   "tok_s": 2202.1,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "ed5aa2a175ee6de1",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 60282.61,
+    "candidates": {
+     "ms": 728.46,
+     "n": 32,
+     "ms_avg": 22.765
+    },
+    "commit": {
+     "ms": 16.82,
+     "n": 96,
+     "ms_avg": 0.175
+    },
+    "engram.wait": {
+     "ms": 2116.95,
+     "n": 130,
+     "ms_avg": 16.284
+    },
+    "execute": {
+     "ms": 60169.62,
+     "n": 96,
+     "ms_avg": 626.767
+    },
+    "forward": {
+     "ms": 131.28,
+     "n": 32,
+     "ms_avg": 4.103
+    },
+    "graph.capture": {
+     "ms": 78.81,
+     "n": 1,
+     "ms_avg": 78.814
+    },
+    "graph.replay": {
+     "ms": 2.18,
+     "n": 31,
+     "ms_avg": 0.07
+    },
+    "graph.stage": {
+     "ms": 7.82,
+     "n": 31,
+     "ms_avg": 0.252
+    },
+    "plan": {
+     "ms": 76.26,
+     "n": 97,
+     "ms_avg": 0.786
+    },
+    "prefetch": {
+     "ms": 1.72,
+     "n": 32,
+     "ms_avg": 0.054
+    },
+    "prefill": {
+     "ms": 57896.58,
+     "n": 65,
+     "ms_avg": 890.717
+    },
+    "round": {
+     "ms": 60279.08,
+     "n": 96,
+     "ms_avg": 627.907
+    },
+    "sample": {
+     "ms": 0.98,
+     "n": 96,
+     "ms_avg": 0.01
+    },
+    "share": {
+     "ms": 29.94,
+     "n": 97,
+     "ms_avg": 0.309
+    },
+    "spec": {
+     "ms": 0.06,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 860.13,
+     "n": 32,
+     "ms_avg": 26.879
+    }
+   }
+  }
+ ],
+ "exact_all": true,
+ "boot_s": 35.2
+}

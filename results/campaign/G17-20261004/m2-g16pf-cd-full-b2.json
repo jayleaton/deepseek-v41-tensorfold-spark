@@ -1,0 +1,478 @@
+{
+ "knobs": {
+  "GLM53_TF_COMM_BACKEND": "roce",
+  "GLM53_TF_ROCE_FAST": "1",
+  "GLM53_TF_ROCE_MAX_KB": "1024",
+  "TF_DSV41_ATTN_CUDA": "1",
+  "TF_DSV41_BIAS_VL": "/cache/dsv41-bias-vl",
+  "TF_DSV41_BRANCHES": "1",
+  "TF_DSV41_BRANCHES_PRIO": "side",
+  "TF_DSV41_CALIB": "real",
+  "TF_DSV41_CALIB_DIR": "/cache/dsv41-calib",
+  "TF_DSV41_DEFAULT_EFFORT": "high",
+  "TF_DSV41_DENSE": "0",
+  "TF_DSV41_DENSE_V3": "1",
+  "TF_DSV41_DEPTH_JOINT": "0",
+  "TF_DSV41_DISCONNECT": "1",
+  "TF_DSV41_ENGRAM_DIR": "/engram",
+  "TF_DSV41_ENGRAM_FUSE_DEC": "1",
+  "TF_DSV41_ENGRAM_GATE": "1",
+  "TF_DSV41_ENGRAM_NATIVE": "1",
+  "TF_DSV41_EXPERT_LOADS": "1",
+  "TF_DSV41_EXPERT_MIN_K": "3",
+  "TF_DSV41_EXPERT_PREFILL": "0",
+  "TF_DSV41_EXPERT_RENORM": "kept",
+  "TF_DSV41_EXPERT_TOPP": "0.85",
+  "TF_DSV41_FAST_EXPERTS": "gm",
+  "TF_DSV41_FLOOR_GIB": "5",
+  "TF_DSV41_FLOOR_HARD_GIB": "4",
+  "TF_DSV41_GRAMMAR": "1",
+  "TF_DSV41_GRAPH_MODE": "rows",
+  "TF_DSV41_IMAGES": "native",
+  "TF_DSV41_INDEX_BUDGET_MIB": "64",
+  "TF_DSV41_INDEX_DTOPK": "1",
+  "TF_DSV41_INDEX_KV": "fp8",
+  "TF_DSV41_INDEX_STREAM_MIN": "4096",
+  "TF_DSV41_L2PF": "1",
+  "TF_DSV41_L2PF_MB": "12",
+  "TF_DSV41_L2PF_PACE_GBPS": "150",
+  "TF_DSV41_LAUNCH_T0": "1791119073.643216669",
+  "TF_DSV41_MHC_BM": "64",
+  "TF_DSV41_MHC_CUDA": "1",
+  "TF_DSV41_MHC_DEC": "1",
+  "TF_DSV41_MHC_FIN2": "1",
+  "TF_DSV41_MHC_FN": "bf16",
+  "TF_DSV41_MHC_PF": "1",
+  "TF_DSV41_MHC_WARPS": "8",
+  "TF_DSV41_NATIVE_DIR": "/cache/dsv41-native",
+  "TF_DSV41_PARTIAL_BF16": "1",
+  "TF_DSV41_PDL": "0",
+  "TF_DSV41_PF_COPIES": "1",
+  "TF_DSV41_PF_DENSE": "fused",
+  "TF_DSV41_PF_DENSE_TABLE": "/cache/pfdense-table.json",
+  "TF_DSV41_PHASES": "1",
+  "TF_DSV41_PLAIN_TRITON": "1",
+  "TF_DSV41_PLAN_LINK": "rdma",
+  "TF_DSV41_PLAN_PIN": "auto",
+  "TF_DSV41_POOL_TOKENS": "614400",
+  "TF_DSV41_PREFETCH_AHEAD": "1",
+  "TF_DSV41_PREFILL": "full",
+  "TF_DSV41_PREFILL_ATTN": "fused",
+  "TF_DSV41_PREFILL_ATTN_BMQ": "32",
+  "TF_DSV41_PREFILL_ATTN_WARPS": "8",
+  "TF_DSV41_PREFILL_CHUNK": "1024",
+  "TF_DSV41_PREFILL_GATHER": "bf16",
+  "TF_DSV41_PREFILL_KERNELS": "fast",
+  "TF_DSV41_PREFILL_ROUTER": "gemv",
+  "TF_DSV41_PREFILL_ROWS": "1024",
+  "TF_DSV41_PREPARED": "/prepared",
+  "TF_DSV41_PREPARED_WRITE": "1",
+  "TF_DSV41_RG_NARROW": "2",
+  "TF_DSV41_RG_TAIL": "1",
+  "TF_DSV41_RMS_PAIR": "1",
+  "TF_DSV41_ROPE_INPLACE": "1",
+  "TF_DSV41_ROUTER": "gemv",
+  "TF_DSV41_SCHEMA_PROMPT": "1",
+  "TF_DSV41_SESSIONS": "1",
+  "TF_DSV41_SESSION_RAM_MIB": "256",
+  "TF_DSV41_SPEC_DRAFT": "1",
+  "TF_DSV41_THINKING": "1",
+  "TF_DSV41_TOOL_GRAMMAR": "0",
+  "TF_DSV41_VISION_PREP_MB": "64"
+ },
+ "m2": "DSpark on (depth cost, cap 5, joint off, costs measured); draft head full; draft graphs on: 3 held (3 at boot in 0.18 s, 0 on first use), 4 replays, 0 eager windows; Engram prefetch {'issued': 0, 'hits': 2, 'misses': 2, 'dropped': 0, 'reads': 4943, 'cached': 4944, 'waited': 0, 'ahead': 0, 'kept': 0}; Engram gate: 99 rounds (0 reissued), 0 warm jobs, rows 7632 (7192 cached, 440 read), 98 syncs; first layer ready p50/p90/p99 0.54 / 2.42 / 5.64 ms, all 0.59 / 2.45 / 5.68 ms after queueing; speculative DSpark passes 0 launched, 0 used, 0 dropped, 0 without a graph; graphs on: 10 held (8 at boot in 2.8 s, 2 on first use), 157 replays, 2 eager windows; RoCE exchanges 2057 fast / 166 on NCCL; phases (1, ms a round over 0 rounds): candidates 6806.37, engram.wait 387.60, forward 416.83, graph.capture 278.90, graph.replay 3.96, graph.stage 14.51, spec 0.08",
+ "workloads": {},
+ "kit": {
+  "mixed": 2.27,
+  "mmlu": 1.46,
+  "multiturn": 1.83,
+  "tf": 1.78,
+  "kit": 2.17,
+  "tweet": 3.08,
+  "edit": 3.84,
+  "c4_tok_s": 37.6,
+  "code_tok_s": 36.4,
+  "prose_tok_s": 25.1
+ },
+ "targets": {
+  "code_tok_s": 52.0,
+  "prose_tok_s": 38.0,
+  "tokens_per_round_k3": 3.1
+ },
+ "prefill": [
+  {
+   "tokens": 8192,
+   "ttft_s": 8.89,
+   "wall_s": 9.68,
+   "tok_s": 921.6,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "bc176d46bda06b0c",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 9684.15,
+    "candidates": {
+     "ms": 684.3,
+     "n": 32,
+     "ms_avg": 21.384
+    },
+    "commit": {
+     "ms": 17.24,
+     "n": 41,
+     "ms_avg": 0.421
+    },
+    "engram.wait": {
+     "ms": 311.76,
+     "n": 18,
+     "ms_avg": 17.32
+    },
+    "execute": {
+     "ms": 9679.55,
+     "n": 41,
+     "ms_avg": 236.087
+    },
+    "forward": {
+     "ms": 220.07,
+     "n": 32,
+     "ms_avg": 6.877
+    },
+    "graph.capture": {
+     "ms": 119.28,
+     "n": 2,
+     "ms_avg": 59.638
+    },
+    "graph.replay": {
+     "ms": 1.49,
+     "n": 30,
+     "ms_avg": 0.05
+    },
+    "graph.stage": {
+     "ms": 2.7,
+     "n": 30,
+     "ms_avg": 0.09
+    },
+    "plan": {
+     "ms": 1.5,
+     "n": 41,
+     "ms_avg": 0.036
+    },
+    "prefetch": {
+     "ms": 1.22,
+     "n": 32,
+     "ms_avg": 0.038
+    },
+    "prefill": {
+     "ms": 8629.27,
+     "n": 9,
+     "ms_avg": 958.807
+    },
+    "round": {
+     "ms": 9684.89,
+     "n": 41,
+     "ms_avg": 236.217
+    },
+    "sample": {
+     "ms": 0.52,
+     "n": 41,
+     "ms_avg": 0.013
+    },
+    "share": {
+     "ms": 2.87,
+     "n": 41,
+     "ms_avg": 0.07
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 904.73,
+     "n": 32,
+     "ms_avg": 28.273
+    }
+   }
+  },
+  {
+   "tokens": 32768,
+   "ttft_s": 34.52,
+   "wall_s": 35.33,
+   "tok_s": 949.2,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "85d86567378f0359",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 35332.25,
+    "candidates": {
+     "ms": 695.26,
+     "n": 32,
+     "ms_avg": 21.727
+    },
+    "commit": {
+     "ms": 27.93,
+     "n": 65,
+     "ms_avg": 0.43
+    },
+    "engram.wait": {
+     "ms": 686.21,
+     "n": 66,
+     "ms_avg": 10.397
+    },
+    "execute": {
+     "ms": 35322.78,
+     "n": 65,
+     "ms_avg": 543.427
+    },
+    "forward": {
+     "ms": 195.91,
+     "n": 32,
+     "ms_avg": 6.122
+    },
+    "graph.capture": {
+     "ms": 128.25,
+     "n": 2,
+     "ms_avg": 64.123
+    },
+    "graph.replay": {
+     "ms": 1.14,
+     "n": 30,
+     "ms_avg": 0.038
+    },
+    "graph.stage": {
+     "ms": 5.25,
+     "n": 30,
+     "ms_avg": 0.175
+    },
+    "plan": {
+     "ms": 4.86,
+     "n": 65,
+     "ms_avg": 0.075
+    },
+    "prefetch": {
+     "ms": 1.96,
+     "n": 32,
+     "ms_avg": 0.061
+    },
+    "prefill": {
+     "ms": 33941.71,
+     "n": 33,
+     "ms_avg": 1028.537
+    },
+    "round": {
+     "ms": 35343.01,
+     "n": 65,
+     "ms_avg": 543.739
+    },
+    "sample": {
+     "ms": 0.67,
+     "n": 65,
+     "ms_avg": 0.01
+    },
+    "share": {
+     "ms": 13.46,
+     "n": 65,
+     "ms_avg": 0.207
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 891.55,
+     "n": 32,
+     "ms_avg": 27.861
+    }
+   }
+  },
+  {
+   "tokens": 65536,
+   "ttft_s": 69.55,
+   "wall_s": 70.39,
+   "tok_s": 942.3,
+   "first": 65,
+   "reply_n": 32,
+   "reply_sha": "da1206f098bd3573",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 70391.33,
+    "candidates": {
+     "ms": 723.91,
+     "n": 32,
+     "ms_avg": 22.622
+    },
+    "commit": {
+     "ms": 41.73,
+     "n": 97,
+     "ms_avg": 0.43
+    },
+    "engram.wait": {
+     "ms": 1176.46,
+     "n": 130,
+     "ms_avg": 9.05
+    },
+    "execute": {
+     "ms": 70320.51,
+     "n": 97,
+     "ms_avg": 724.954
+    },
+    "forward": {
+     "ms": 196.55,
+     "n": 32,
+     "ms_avg": 6.142
+    },
+    "graph.capture": {
+     "ms": 130.03,
+     "n": 2,
+     "ms_avg": 65.015
+    },
+    "graph.replay": {
+     "ms": 2.08,
+     "n": 30,
+     "ms_avg": 0.069
+    },
+    "graph.stage": {
+     "ms": 2.14,
+     "n": 30,
+     "ms_avg": 0.071
+    },
+    "plan": {
+     "ms": 8.95,
+     "n": 97,
+     "ms_avg": 0.092
+    },
+    "prefetch": {
+     "ms": 1.17,
+     "n": 32,
+     "ms_avg": 0.037
+    },
+    "prefill": {
+     "ms": 68576.05,
+     "n": 65,
+     "ms_avg": 1055.016
+    },
+    "round": {
+     "ms": 70413.7,
+     "n": 97,
+     "ms_avg": 725.914
+    },
+    "sample": {
+     "ms": 0.82,
+     "n": 97,
+     "ms_avg": 0.008
+    },
+    "share": {
+     "ms": 81.34,
+     "n": 97,
+     "ms_avg": 0.839
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 920.87,
+     "n": 32,
+     "ms_avg": 28.777
+    }
+   }
+  },
+  {
+   "tokens": 131072,
+   "ttft_s": 146.48,
+   "wall_s": 147.23,
+   "tok_s": 894.8,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "ed5aa2a175ee6de1",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 147233.74,
+    "candidates": {
+     "ms": 731.92,
+     "n": 32,
+     "ms_avg": 22.873
+    },
+    "commit": {
+     "ms": 64.39,
+     "n": 161,
+     "ms_avg": 0.4
+    },
+    "engram.wait": {
+     "ms": 2197.34,
+     "n": 258,
+     "ms_avg": 8.517
+    },
+    "execute": {
+     "ms": 147153.16,
+     "n": 161,
+     "ms_avg": 913.995
+    },
+    "forward": {
+     "ms": 115.24,
+     "n": 32,
+     "ms_avg": 3.601
+    },
+    "graph.capture": {
+     "ms": 73.65,
+     "n": 1,
+     "ms_avg": 73.649
+    },
+    "graph.replay": {
+     "ms": 0.51,
+     "n": 31,
+     "ms_avg": 0.016
+    },
+    "graph.stage": {
+     "ms": 2.63,
+     "n": 31,
+     "ms_avg": 0.085
+    },
+    "plan": {
+     "ms": 80.95,
+     "n": 161,
+     "ms_avg": 0.503
+    },
+    "prefetch": {
+     "ms": 1.58,
+     "n": 32,
+     "ms_avg": 0.049
+    },
+    "prefill": {
+     "ms": 144673.03,
+     "n": 129,
+     "ms_avg": 1121.496
+    },
+    "round": {
+     "ms": 147277.75,
+     "n": 161,
+     "ms_avg": 914.769
+    },
+    "sample": {
+     "ms": 1.19,
+     "n": 161,
+     "ms_avg": 0.007
+    },
+    "share": {
+     "ms": 37.89,
+     "n": 161,
+     "ms_avg": 0.235
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 847.52,
+     "n": 32,
+     "ms_avg": 26.485
+    }
+   }
+  }
+ ],
+ "exact_all": true,
+ "boot_s": 35.3
+}

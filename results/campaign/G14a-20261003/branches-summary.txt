@@ -1,0 +1,9 @@
+g14bw-off    calib 1/2/4 rows  23.3  29.1  37.3 | 1-row reps r0 24.22, 24.42, 23.94, 23.26 | serving GPU r0/r1 1-row 25.74/25.72 2-row 29.87/29.87 4-row 38.09/38.05 | prose 43.64 tok/s, 1.567 tok/round
+g14bw-off2   calib 1/2/4 rows  23.5  29.4  37.6 | 1-row reps r0 25.85, 24.31, 24.05, 23.45 | serving GPU r0/r1 1-row 25.81/25.71 2-row 29.92/29.82 4-row 38.12/38.18 | prose 43.41 tok/s, 1.567 tok/round
+g14x         calib 1/2/4 rows  23.6  29.4  37.6 | 1-row reps r0 25.52, 23.84, 24.55, 23.58 | serving GPU r0/r1 1-row 25.67/25.66 2-row 29.61/29.52 4-row 38.11/38.09 | prose 43.59 tok/s, 1.567 tok/round
+g14x2        calib 1/2/4 rows  23.3  29.1  37.2 | 1-row reps r0 24.25, 23.44, 23.34, 23.77 | serving GPU r0/r1 1-row 25.86/25.83 2-row 29.77/29.67 4-row 38.67/38.43 | prose 43.69 tok/s, 1.567 tok/round
+g14bw-on1    calib 1/2/4 rows  23.2  28.9  37.2 | 1-row reps r0 24.43, 24.82, 24.13, 23.19 | serving GPU r0/r1 1-row 25.55/25.52 2-row 29.58/29.50 4-row 37.90/37.85 | prose 43.81 tok/s, 1.567 tok/round
+g14bw-on2    calib 1/2/4 rows  23.1  29.2  37.3 | 1-row reps r0 24.14, 23.24, 23.08, 23.75 | serving GPU r0/r1 1-row 25.35/25.30 2-row 29.21/29.17 4-row 37.85/37.52 | prose 43.95 tok/s, 1.561 tok/round
+g14bw-on3    calib 1/2/4 rows  23.1  29.6  37.4 | 1-row reps r0 25.64, 24.53, 23.09, 23.09 | serving GPU r0/r1 1-row 25.37/25.23 2-row 29.33/29.28 4-row 38.16/38.13 | prose 43.25 tok/s, 1.536 tok/round
+g14bn-on1    calib 1/2/4 rows  23.1  29.0  37.2 | 1-row reps r0 24.00, 23.19, 24.39, 23.12 | serving GPU r0/r1 1-row 25.64/25.62 2-row 29.61/29.47 4-row 37.69/37.68 | prose None tok/s, None tok/round
+g14x-l2off   calib 1/2/4 rows  25.0  31.1  39.3 | 1-row reps r0 26.99, 26.31, 25.08, 25.13 | serving GPU r0/r1 1-row 26.94/26.93 2-row 31.22/31.18 4-row 39.79/39.60 | prose 42.23 tok/s, 1.574 tok/round

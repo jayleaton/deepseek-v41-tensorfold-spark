@@ -28,7 +28,8 @@ cheaper attention reads) beats it.
 | router as a CUDA GEMV (G7) | 29.5 |
 | decode glue + bf16 mHC weights (G9) | 28.7 |
 | cross-op L2 prefetch (G10) | 26.9-27.4 |
-| three CUDA rewrites: mHC boundary, attention core + top-k, dense over a coalesced repack (G13) | **~23.4-24.8** |
+| three CUDA rewrites: mHC boundary, attention core + top-k, dense over a coalesced repack (G13) | ~23.4-24.8 |
+| round plan through a RoCE host mailbox, BRANCHES on priority streams, paced L2 prefetch, faster RoCE kernel (G14) | **~21.8** |
 
 The final 1-row window under nsys (G9, before L2 prefetch), per rank: routed + shared experts 9.4 ms, dense EXL3
 matrices 11.5 (155-200 GB/s), mHC 3.0, exchanges 1.7 (0.6 transfer + 1.1 waiting for the other rank), attention 1.3,
@@ -54,6 +55,8 @@ Engram reads. Slot-agnostic row graphs and a GPU-side wait for the Engram rows f
 | Routed-expert pruning in decode, top-p 0.85, at least 3, renormalized | x1.05 (code 77.3, C4 92.1 at the time) | lossy: top-1 0.9944, MMLU-200 88.5% |
 | Cross-op L2 prefetch of the next dense group, 12 MiB a site (GB10: 24 MiB L2) | code +2.5%, prose +3.5%, C2 +2.4% | same |
 | G13: the mHC boundary as one CUDA launch, CSA2's decode attention core + indexer top-k in CUDA, dense EXL3 over a 16-byte-coalesced repack (`TF_DSV41_MHC_CUDA`, `ATTN_CUDA`, `DENSE_V3`) | 1-row window 26.8 -> ~23.4 ms; prose +7.2%, code +1.3%, C2 +3.9%, C4 +2.8% | same (top-1 0.9961 on and off) |
+| G14: the round plan as an RDMA write + flag through a RoCE host mailbox with pinned plan threads (rank 1's window-entry lag +130 -> -9 us), the CSA2 indexer / compressor on dedicated high-priority streams, the L2 prefetch paced at 150 GB/s beside the exchanges, a shorter RoCE all-gather critical path | 1-row window 23.4 -> 21.8 ms; code +3.7%, prose +3.4%, structured +3.3%, C2 +5.4%, C4 +3.3% | same (top-1 0.9961) |
+| G15: calibration VERSION 4 (every verify-table row measured; the 2nd row's price 5.88 -> 4.62 ms, measured 4.66) | prose +2.8% (2-row rounds 33% -> 46%), the rest flat | same |
 
 ## 4. What did not
 
@@ -75,9 +78,17 @@ Engram reads. Slot-agnostic row graphs and a GPU-side wait for the Engram rows f
   the same tokens a round; C2 -2.1%.
 - **More draft candidates, 4-bit / trimmed draft heads, the long projection plan:** within noise or a net loss.
 - **G13's other two rewrites.** A shortened decode MoE chain (`TF_DSV41_MOE_FUSED`) saved 9-46 us a layer in
-  isolation and measured +0.7 ms on a 1-row window in the graph; the CSA2 indexer / compressor on a side stream
-  (`TF_DSV41_BRANCHES`) left the 1-row window unstable between boots (26.2 / 31.5 ms). Both exact, both off. Hiding
-  the graph's submission had nothing to take: 0.02 ms of host time a round without a profiler.
+  isolation and measured +0.7 ms on a 1-row window in the graph (G14's variants: no gain either; off); the CSA2
+  indexer / compressor on a side stream (`TF_DSV41_BRANCHES`) left the 1-row window unstable between boots (26.2 /
+  31.5 ms) until G14 moved it onto dedicated priority streams with one capture stream (-0.53 ms, on). Hiding the
+  graph's submission had nothing to take: 0.02 ms of host time a round without a profiler.
+- **G15-G17:** an expert map that L2-prefetches each routed expert's first gate split (`TF_DSV41_XMAP`: +0.22 ms at 1
+  row), joint depth mode 2 (C4-prose -8%, bimodal by boot), and the speculative DSpark pass after top-p windows
+  (`TF_DSV41_SPEC_NUCLEUS`: C2 steady +1.3%, C4 steady -0.6%). All exact, all off.
+- **Why C4 mixed sits at ~101 against ~136 steady** (G17's study, [campaign/G17-LEVERS.md](campaign/G17-LEVERS.md)):
+  the cell is one prose stream's serial chain. Prose is in every round; 31% of the wall is prose alone at ~36 ms a
+  round, and a 4-live window costs ~114 ms because four distinct streams touch ~57 distinct experts a layer. Only
+  fewer bytes an expert or a better prose drafter move it much.
 - **Drafter self-distillation** is the one lever that moved prose acceptance (+5.5% prose with a LoRA delta trained
   on our own drafting logs) but it cost code acceptance (-4.4%), and the training port disagrees with the engine's
   drafter after position 1. Not adopted; it needs balanced data and that fidelity fixed first.

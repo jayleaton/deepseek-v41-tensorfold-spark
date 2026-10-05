@@ -1,0 +1,167 @@
+{
+ "minutes": 60.0,
+ "requests": 828,
+ "errors": 4,
+ "check_fails": 0,
+ "cancelled": 132,
+ "drained": true,
+ "drain_s": 0.2,
+ "answer_17x23": "391",
+ "fatal_seen": false,
+ "stalled_seen": false,
+ "inflight_max": 4,
+ "by_kind": {
+  "agent": {
+   "n": 273,
+   "ok": 229,
+   "cancelled": 41,
+   "errors": 3,
+   "check_fails": 0,
+   "ttft_p50": 4.835,
+   "ttft_p95": 20.92,
+   "total_p50": 6.984,
+   "total_p95": 24.762
+  },
+  "code": {
+   "n": 98,
+   "ok": 85,
+   "cancelled": 13,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.315,
+   "ttft_p95": 3.26,
+   "total_p50": 5.083,
+   "total_p95": 21.761
+  },
+  "prose": {
+   "n": 77,
+   "ok": 63,
+   "cancelled": 14,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.304,
+   "ttft_p95": 2.755,
+   "total_p50": 14.634,
+   "total_p95": 34.939
+  },
+  "structured": {
+   "n": 72,
+   "ok": 65,
+   "cancelled": 7,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.39,
+   "ttft_p95": 4.078,
+   "total_p50": 1.548,
+   "total_p95": 5.394
+  },
+  "tool": {
+   "n": 73,
+   "ok": 70,
+   "cancelled": 3,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.579,
+   "ttft_p95": 21.015,
+   "total_p50": 0.969,
+   "total_p95": 21.557
+  },
+  "thinking": {
+   "n": 44,
+   "ok": 36,
+   "cancelled": 8,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.384,
+   "ttft_p95": 35.602,
+   "total_p50": 13.863,
+   "total_p95": 52.773
+  },
+  "long": {
+   "n": 63,
+   "ok": 61,
+   "cancelled": 1,
+   "errors": 1,
+   "check_fails": 0,
+   "ttft_p50": 18.789,
+   "ttft_p95": 78.735,
+   "total_p50": 18.891,
+   "total_p95": 78.868
+  },
+  "nonstream": {
+   "n": 36,
+   "ok": 36,
+   "cancelled": 0,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": null,
+   "ttft_p95": null,
+   "total_p50": 8.2955,
+   "total_p95": 26.49
+  },
+  "disconnect": {
+   "n": 42,
+   "ok": 0,
+   "cancelled": 42,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": null,
+   "ttft_p95": null,
+   "total_p50": null,
+   "total_p95": null
+  },
+  "image": {
+   "n": 50,
+   "ok": 47,
+   "cancelled": 3,
+   "errors": 0,
+   "check_fails": 0,
+   "ttft_p50": 0.367,
+   "ttft_p95": 7.347,
+   "total_p50": 0.766,
+   "total_p95": 7.497
+  }
+ },
+ "health_end": {
+  "inflight": 0,
+  "fatal": null,
+  "stalled": null,
+  "running": 0
+ },
+ "error_samples": [
+  {
+   "kind": "long",
+   "t": 2849.0,
+   "error": "empty reply",
+   "check": null,
+   "cancel": false,
+   "total_s": 42.324
+  },
+  {
+   "kind": "agent",
+   "t": 3075.1,
+   "error": "empty reply",
+   "check": null,
+   "cancel": false,
+   "total_s": 36.387
+  },
+  {
+   "kind": "agent",
+   "t": 3459.4,
+   "error": "empty reply",
+   "check": null,
+   "cancel": false,
+   "total_s": 48.107
+  },
+  {
+   "kind": "agent",
+   "t": 3473.2,
+   "error": "empty reply",
+   "check": null,
+   "cancel": false,
+   "total_s": 64.342
+  }
+ ],
+ "check_samples": [],
+ "pass": false
+}

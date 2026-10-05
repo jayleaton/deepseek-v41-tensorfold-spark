@@ -1,0 +1,446 @@
+{
+ "off": {
+  "1": {
+   "chains": 858,
+   "dominant_sequence_chains": 858,
+   "distinct_sequences": 1,
+   "span_us": 211.18,
+   "idle_us": 1.86,
+   "concurrent_us": 0.0,
+   "router_us": 16.66,
+   "router_overlapped_us": 0.0,
+   "streams": {
+    "1": 858
+   },
+   "kernels": [
+    {
+     "kernel": "dsv41_rg::narrow_kernel",
+     "stream": 145,
+     "start_us": 0.0,
+     "dur_us": 16.66,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": 0.0,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "_prune",
+     "stream": 145,
+     "start_us": 16.85,
+     "dur_us": 4.35,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "at::native::vectorized_elementwise_kernel",
+     "stream": 145,
+     "start_us": 21.44,
+     "dur_us": 0.93,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "at::native::unrolled_elementwise_kernel",
+     "stream": 145,
+     "start_us": 22.56,
+     "dur_us": 1.18,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::group_kernel",
+     "stream": 145,
+     "start_us": 24.0,
+     "dur_us": 3.23,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::rot_in_kernel",
+     "stream": 145,
+     "start_us": 27.57,
+     "dur_us": 3.2,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 145,
+     "start_us": 31.14,
+     "dur_us": 102.4,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 145,
+     "start_us": 134.74,
+     "dur_us": 3.68,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 145,
+     "start_us": 139.23,
+     "dur_us": 67.63,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::down_combine_kernel",
+     "stream": 145,
+     "start_us": 207.41,
+     "dur_us": 3.94,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0.0,
+     "overlapped_us": 0.0
+    }
+   ]
+  },
+  "4": {
+   "chains": 297,
+   "dominant_sequence_chains": 297,
+   "distinct_sequences": 1,
+   "span_us": 472.8,
+   "idle_us": 1.82,
+   "concurrent_us": 0.0,
+   "router_us": 25.25,
+   "router_overlapped_us": 0.0,
+   "streams": {
+    "1": 297
+   },
+   "kernels": [
+    {
+     "kernel": "dsv41_rg::narrow_kernel",
+     "stream": 151,
+     "start_us": 0.0,
+     "dur_us": 25.25,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": 0.0,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "_prune",
+     "stream": 151,
+     "start_us": 25.47,
+     "dur_us": 4.45,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "at::native::vectorized_elementwise_kernel",
+     "stream": 151,
+     "start_us": 30.08,
+     "dur_us": 0.93,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "at::native::unrolled_elementwise_kernel",
+     "stream": 151,
+     "start_us": 31.23,
+     "dur_us": 1.44,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::group_kernel",
+     "stream": 151,
+     "start_us": 32.86,
+     "dur_us": 8.83,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::rot_in_kernel",
+     "stream": 151,
+     "start_us": 41.73,
+     "dur_us": 4.45,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 151,
+     "start_us": 46.43,
+     "dur_us": 265.02,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 151,
+     "start_us": 312.55,
+     "dur_us": 4.03,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": 0.22,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 151,
+     "start_us": 316.96,
+     "dur_us": 150.75,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "::down_combine_kernel",
+     "stream": 151,
+     "start_us": 469.19,
+     "dur_us": 5.06,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    }
+   ]
+  }
+ },
+ "on": {
+  "1": {
+   "chains": 825,
+   "dominant_sequence_chains": 691,
+   "distinct_sequences": 3,
+   "span_us": 213.5,
+   "idle_us": 0.58,
+   "concurrent_us": 73.57,
+   "router_us": 35.74,
+   "router_overlapped_us": 29.6,
+   "streams": {
+    "2": 825
+   },
+   "kernels": [
+    {
+     "kernel": "::rot_in_kernel",
+     "stream": 145,
+     "start_us": 0.0,
+     "dur_us": 4.38,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": 0.0,
+     "overlaps_n": 1,
+     "overlapped_us": 1.28
+    },
+    {
+     "kernel": "dsv41_mf::fused_kernel",
+     "stream": 146,
+     "start_us": 3.04,
+     "dur_us": 36.38,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": -1.28,
+     "overlaps_n": 3,
+     "overlapped_us": 29.54
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 145,
+     "start_us": 8.83,
+     "dur_us": 21.57,
+     "gap_same_stream_us": 4.48,
+     "gap_to_latest_end_us": -30.62,
+     "overlaps_n": 1,
+     "overlapped_us": 21.57
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 145,
+     "start_us": 34.02,
+     "dur_us": 5.86,
+     "gap_same_stream_us": 0.22,
+     "gap_to_latest_end_us": -8.35,
+     "overlaps_n": 1,
+     "overlapped_us": 5.82
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 146,
+     "start_us": 40.64,
+     "dur_us": 102.4,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 145,
+     "start_us": 142.18,
+     "dur_us": 38.72,
+     "gap_same_stream_us": 104.74,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 2,
+     "overlapped_us": 38.4
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 146,
+     "start_us": 142.31,
+     "dur_us": 5.02,
+     "gap_same_stream_us": 0.32,
+     "gap_to_latest_end_us": -38.59,
+     "overlaps_n": 1,
+     "overlapped_us": 5.02
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 146,
+     "start_us": 147.84,
+     "dur_us": 60.7,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": -32.9,
+     "overlaps_n": 1,
+     "overlapped_us": 32.9
+    },
+    {
+     "kernel": "dsv41_mf::combine2_kernel",
+     "stream": 145,
+     "start_us": 209.47,
+     "dur_us": 4.13,
+     "gap_same_stream_us": 28.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    }
+   ]
+  },
+  "4": {
+   "chains": 297,
+   "dominant_sequence_chains": 297,
+   "distinct_sequences": 1,
+   "span_us": 472.48,
+   "idle_us": 0.61,
+   "concurrent_us": 74.46,
+   "router_us": 48.06,
+   "router_overlapped_us": 34.91,
+   "streams": {
+    "2": 297
+   },
+   "kernels": [
+    {
+     "kernel": "::rot_in_kernel",
+     "stream": 154,
+     "start_us": 0.0,
+     "dur_us": 2.94,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": 0.0,
+     "overlaps_n": 1,
+     "overlapped_us": 0.26
+    },
+    {
+     "kernel": "dsv41_mf::fused_kernel",
+     "stream": 155,
+     "start_us": 2.66,
+     "dur_us": 48.06,
+     "gap_same_stream_us": null,
+     "gap_to_latest_end_us": -0.26,
+     "overlaps_n": 3,
+     "overlapped_us": 34.91
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 154,
+     "start_us": 9.44,
+     "dur_us": 29.98,
+     "gap_same_stream_us": 6.5,
+     "gap_to_latest_end_us": -41.25,
+     "overlaps_n": 1,
+     "overlapped_us": 29.98
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 154,
+     "start_us": 39.58,
+     "dur_us": 5.47,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": -12.42,
+     "overlaps_n": 1,
+     "overlapped_us": 5.47
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 155,
+     "start_us": 51.01,
+     "dur_us": 264.26,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 154,
+     "start_us": 317.15,
+     "dur_us": 39.97,
+     "gap_same_stream_us": 273.7,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 2,
+     "overlapped_us": 39.62
+    },
+    {
+     "kernel": "::gateup_epilogue_kernel",
+     "stream": 155,
+     "start_us": 317.31,
+     "dur_us": 7.3,
+     "gap_same_stream_us": 0.32,
+     "gap_to_latest_end_us": -39.81,
+     "overlaps_n": 1,
+     "overlapped_us": 7.3
+    },
+    {
+     "kernel": "dsv41_x3ld::ld_kernel",
+     "stream": 155,
+     "start_us": 324.0,
+     "dur_us": 139.84,
+     "gap_same_stream_us": 0.19,
+     "gap_to_latest_end_us": -32.26,
+     "overlaps_n": 1,
+     "overlapped_us": 32.26
+    },
+    {
+     "kernel": "dsv41_mf::combine2_kernel",
+     "stream": 154,
+     "start_us": 466.62,
+     "dur_us": 5.47,
+     "gap_same_stream_us": 107.68,
+     "gap_to_latest_end_us": 0.19,
+     "overlaps_n": 0,
+     "overlapped_us": 0.0
+    }
+   ]
+  }
+ }
+}

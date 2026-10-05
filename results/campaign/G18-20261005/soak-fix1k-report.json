@@ -1,0 +1,76 @@
+{
+ "tag": "fix1k",
+ "hours": 1.0,
+ "thresholds": {
+  "rss": 0.1,
+  "reserved": 0.1,
+  "avail": 0.15,
+  "avail_min": 4.0,
+  "idle_back": 0.5,
+  "warm_min": 30
+ },
+ "ranks": {
+  "r0": {
+   "samples": 421,
+   "probe_lines": 419,
+   "rss_slope_gib_h": -0.3930058376294159,
+   "reserved_slope_gib_h": 0.18434746208734687,
+   "avail_slope_gib_h": -0.6976479748490323,
+   "avail_min_gib": 5.491,
+   "rss_first_gib": 1.838,
+   "rss_warm_gib": 3.435,
+   "rss_max_gib": 3.689,
+   "rss_end_traffic_gib": 3.128,
+   "rss_after_idle_gib": 3.138,
+   "reserved_warm_gib": 102.42,
+   "reserved_end_gib": 102.23,
+   "glibc_free_max_gib": 0.44,
+   "glibc_free_end_gib": 0.34,
+   "trims": {
+    "trims": 101,
+    "idle": 15,
+    "busy": 0,
+    "back": 13.53
+   }
+  },
+  "r1": {
+   "samples": 421,
+   "probe_lines": 420,
+   "rss_slope_gib_h": -0.31722293520779926,
+   "reserved_slope_gib_h": 0.1712929519101575,
+   "avail_slope_gib_h": -0.24082603433512878,
+   "avail_min_gib": 5.022,
+   "rss_first_gib": 1.871,
+   "rss_warm_gib": 2.945,
+   "rss_max_gib": 3.293,
+   "rss_end_traffic_gib": 2.799,
+   "rss_after_idle_gib": 2.803,
+   "reserved_warm_gib": 101.49,
+   "reserved_end_gib": 101.63,
+   "glibc_free_max_gib": 0.34,
+   "glibc_free_end_gib": 0.25,
+   "trims": {
+    "trims": 101,
+    "idle": 15,
+    "busy": 0,
+    "back": 9.48
+   }
+  }
+ },
+ "fails": [
+  "r0: torch reserved slope 0.184 GiB/h > 0.1",
+  "r0: MemAvailable slope -0.698 GiB/h < -0.15",
+  "r1: torch reserved slope 0.171 GiB/h > 0.1",
+  "r1: MemAvailable slope -0.241 GiB/h < -0.15"
+ ],
+ "soak": {
+  "requests": 760,
+  "errors": 0,
+  "cancelled": 122,
+  "drained": true,
+  "answer_17x23": "391",
+  "pass": true
+ },
+ "stall_lines": 0,
+ "pass": false
+}

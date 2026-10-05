@@ -7,311 +7,85 @@ Support me here: https://buymeacoffee.com/jayleaton
 Serve DeepSeek-V4.1-Flash (the 2.9 bpw EXL3 pack) across two NVIDIA DGX Sparks, tensor-parallel over the 200 Gb/s
 CX7 link, behind an OpenAI-compatible API. The engine is [TensorFold](https://github.com/ashhart/TensorFold) 0.6.0
 (pinned, unmodified submodule) plus two patches applied at image build: the two-Spark engine stack from the
-[GLM-5.3-Flash recipe](https://github.com/jayleaton/glm53-tensorfold-spark) and a new DeepSeek-V4.1-Flash family
-written for this model: CSA2 attention with FP8 KV rows and the lightning indexer, Single-Pass mHC, Engram rows read
-from local NVMe, EXL3 expert and dense kernels tuned for GB10, **exact** DSpark speculative decoding, CED
-bounded-replay prefill, 4 request slots over a shared FP8 KV pool (4 x 300K tokens), sessions with an NVMe tier,
-prepared per-rank folders for ~40 s restarts, structured output and DSML tool calls.
+[GLM-5.3-Flash recipe](https://github.com/jayleaton/glm53-tensorfold-spark) and a DeepSeek-V4.1-Flash family written
+for this model: exact DSpark speculative decoding, CED bounded-replay and exact full prefill, 4 request slots over a
+shared FP8 KV pool, NVMe sessions, native image input, structured output and tool calls, and both ranks failing fast
+together instead of hanging.
 
-> **Work in progress.** Measured on one pair of Sparks, against one baseline. Knobs, defaults and numbers may change.
-> Read [What is not solved](#what-is-not-solved) before relying on it.
-
-SPDX-License-Identifier: Apache-2.0 (this project's own code, scripts, benchmarks and docs; see [Licensing](#licensing)).
+> **Work in progress.** Measured on one pair of Sparks, against one baseline. Read
+> [what is not solved](docs/KNOWN-ISSUES.md) before relying on it.
 
 ## Results
 
-Hardware: two DGX Sparks (GB10, 128 GB unified memory each), one QSFP cable between their CX7 ports, RoCE. Weights:
-[`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw),
-the uncensored variant of [Mia-AiLab's 2.9 bpw EXL3 pack](https://huggingface.co/Mia-AiLab/DeepSeek-V4.1-Flash-EXL3-2.9bpw)
-(same layout). Baseline: [MiaAI-Lab's 2x DGX Spark vLLM kit](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks)
-on the same pair and the same weights (vLLM TP=2, DSpark k=3, its moe_x kernel engaged), measured with our own
-clients on 2026-10-01. Our side: the configuration in [`config/prod.env.example`](config/prod.env.example) on the
-engine these patches build. Raw files: [`results/`](results/README.md).
+Two DGX Sparks (GB10, 128 GB each, one QSFP cable, RoCE), weights
+[`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw).
+Baseline: [MiaAI-Lab's 2x DGX Spark vLLM kit](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks) on
+the same pair and weights. Ours: [`config/prod.env.example`](config/prod.env.example) on engine `7bd2d67` (G19).
 
 ### Speed (tok/s)
 
 | | **TensorFold (this recipe)** | MiaAI-Lab vLLM kit | ratio |
 | --- | ---: | ---: | ---: |
-| Code, 1 stream, greedy | **82.8** | 41.9-45.0 | **1.8-2.0x** |
-| Prose (essay), 1 stream, greedy | **44.25** | 32.5 | 1.36x |
-| Structured (count 1-200), 1 stream, greedy | **117.8** | 38.0 (50.2 on a JSON task) | **2.3-3.1x** |
-| 1 stream, decode aggregate | **85.1** | 32.2 | **2.6x** |
-| 2 streams, decode aggregate | **70.3** | 46.7 | 1.5x |
-| 4 streams, decode aggregate | **96.6** | 37.6 | **2.6x** |
-| Cold prefill 8K / 32K / 64K / 128K (CED replay, the default) | **1,833 / 2,043 / 2,068 / 1,953** | 1,073 / 1,075 / 1,060 / 1,031 | **1.7-1.95x** |
-| Cold prefill, `TF_DSV41_PREFILL=full` (no replay) | 969 / 1,004 / 1,003 / 876 | same | 0.85-0.95x |
+| Code, 1 stream, greedy | **84.7** | 41.9-45.0 | **1.9-2.0x** |
+| Prose (essay), 1 stream, greedy | **46.8** | 32.5 | 1.44x |
+| Structured (count 1-200), 1 stream, greedy | **121.3** | 38.0 (50.2 on a JSON task) | **2.4-3.2x** |
+| 1 stream, decode aggregate | **87.6** | 32.2 | **2.7x** |
+| 2 streams, decode aggregate | **74.1** | 46.7 | 1.59x |
+| 4 streams, decode aggregate (steady, all four live) | **101.1** (136.0) | 37.6 | **2.7x** |
+| Cold prefill 8K / 32K / 64K / 128K (CED replay, the default) | **2,028 / 2,310 / 2,294 / 2,118** | 1,073 / 1,075 / 1,060 / 1,031 | **1.89-2.16x** |
+| Cold prefill, `TF_DSV41_PREFILL=full` (exact: no replay) | **1,561 / 2,025 / 2,197 / 2,152** | same | **1.45-2.09x** |
 | Start to ready | **34-44 s** | 378 s | ~9x |
 
-At temperature 0.7 the single-stream cells are code 75.0, prose 45.3, structured 117.6. The decode cells are G13
-(engine `767ad9f` with `TF_DSV41_MHC_CUDA`, `ATTN_CUDA` and `DENSE_V3` on): against the same engine with the three off,
-in the same session, code +1.3%, prose +7.2%, C2 +3.9%, C4 +2.8%, and the 1-token verify step 26.8 -> ~23.4-24.8 ms
-([`docs/campaign/G13-RESULTS.md`](docs/campaign/G13-RESULTS.md)). Before G13 (`38f6500`): code 79.0-81.5, prose
-40.9-41.2, structured 116.6, C1 / C2 / C4 82-83 / 67.1 / 93.5.
+Decode: mean of 2 boots of the shipped build. Prefill: 8K / 32K on the shipped `TF_DSV41_PREFILL_ADAPT_GIB=4.5`,
+64K / 128K on the soaked 4.0. Start to ready not re-measured since G11.
 
 ### Quality and robustness
 
 | | **TensorFold** | kit |
 | --- | --- | --- |
-| Teacher-forced top-1 agreement with the kit (8 prompts x 2,048 positions) | 0.9961 (first copy of each prompt: 0.9502); the same with the G13 rewrites on or off | 1 by definition |
+| Teacher-forced top-1 agreement with the kit (8 prompts x 2,048 positions) | **0.9961** (first copy of each prompt: 0.9502); the same with every G13-G17 lever on or off | 1 by definition |
 | MMLU-200, 0-shot, greedy, thinking off | **87.5%** | 87.5% |
 | MMLU-200 with a 20-question preamble (~2.1K-token prompts), replay vs full prefill | 81.1% / 81.1% (178 of 180 answers equal) | - |
 | Needle at 32K / 128K / 299K (replay prefill) | found (19.9 s / 74.0 s / 195 s) | - |
-| Multi-step tool chains (`bench/tooleval/chains.py`, 6 scenarios, 12 points), thinking off / high | 11 / 12, 11 / 12 (G13: off 11 / 12) | - |
+| Multi-step tool chains (`bench/tooleval/chains.py`, 6 scenarios, 12 points), thinking off / high | 11 / 12, 11 / 12 | - |
 | tool-eval-bench category C (multi-step), thinking off | 8 / 8 (score 100) | - |
 | Structured output: 12 JSON-schema cases + 10 tool-choice cases (drafted == serial == batched, valid, no markup) | 22 / 22 | - |
-| 30-minute soak (1-4 streams, cancels, disconnects, long prompts) | 529 requests, 0 errors, drained | - |
-| Stress: one 299K prefill + three 64K prompts decoding 2,048 tokens each | every stream completes; 299K prefill **175 s**; host RSS growth ~0.7 GiB a rank; worker MemAvailable minimum 3.0-3.7 GiB (the boot budget, not growth) | 4.40 GiB at <= 256K (lighter load) |
+| Image input (native: DeepSeek's ViT on rank 0): 20 visual questions | 20 / 20 | - |
+| 1 h soak (agent sessions to 120K tokens with screenshots, short chats with cancels, 24-200K prompts, image requests) | **906 requests, 0 errors**, 0 capacity refusals; RssAnon falling (-0.4 GiB/h a rank); MemAvailable min head 4.63 / worker 3.99 GiB | - |
+| Stress: one 299K prefill + three 64K prompts decoding 2,048 tokens each + 4 image requests | every stream completes; 299K first token **157 s**; MemAvailable min head 5.07 / worker 4.81 GiB | 4.40 GiB at <= 256K (lighter load) |
 
-Top-1, MMLU-200 and tool chains (thinking off) were re-run on the current engine (G13, `767ad9f` + the three
-rewrites): top-1 0.9961, the same as with the rewrites off (they change no bits; the G10 / G11 runs on `38f6500` read
-0.9963), MMLU-200 87.5% (175 / 200), chains 11 / 12, drafted == serial in every run. Structured output, soak and the
-chains with thinking ran on `38f6500`; the stress row on `a6f5792` (G12); the 20-question MMLU and the needles on the
-G7 engine commit with the same prefill path. On the current engine a 299K prefill takes 175 s inside the stress (three other streams
-decoding), against 181-185 s before the G12 memory fixes; the needles were not re-run.
-
-### What measures what
-
-- **Decode cells, ours:** `m2bench` (inside the engine, both ranks, no HTTP; `scripts/serve.sh run`), tok/s from the
-  first to the last token of a 384-token reply, the median of the repetitions (2 by default), request slots sized
-  for 16K tokens. Prompts: an LRU-cache
-  class with tests (code), a 400-word essay (prose), counting 1 to 200 (structured). The cells are one G13 run of the
-  production configuration (`results/campaign/G13-20261003/m2-g13cs-combo.json`); earlier configurations gave ranges
-  over several runs (G10 / G11 in the development log).
-- **Decode cells, kit:** HTTP clients (`glmbench`, `multiturn` of the GLM recipe): code = a 64-token code reply
-  (41.9) and a 512-token one (45.0), prose = a 200-token essay, structured = count 1-200, thinking off.
-- **2 / 4 streams:** both sides report decode aggregate = all tokens / (last token - first token). Ours mixes code,
-  prose, a JSON task and a copy-heavy edit, every other stream at T = 0.7; the kit's mix is its chat / code prompts,
-  256 tokens each. Same metric, different prompts.
-- **Prefill:** one request, cold, after a 2K warm-up. Ours: fresh random text through `m2bench --prefill` (measured
-  at the G7 engine commit; G8-G11 and G13 changed decode paths only, and G12's host-memory fixes were measured only
-  on the 299K stress prefill: 175 s). The kit: a repeated filler document over HTTP.
-  Repeated fillers can make Engram reads look cheaper, so the kit's cells are not pessimistic.
-- **Start to ready:** ours = `docker run` to `/v1/models` answering, with prepared folders and compiled kernels
-  cached, page cache dropped first. The kit's = its start script to `/health` on freshly rebooted nodes. The first
-  start of a new image is slower (kernel builds, ~80 s) and the very first writes the prepared folders (~95 GB a node).
-- **Top-1:** the kit's `prompt_logprobs` (top 5) over 8 built-in prompts repeated to 2,048 tokens
-  ([`results/kit-baseline/oracle-kit.json`](results/kit-baseline/oracle-kit.json)), our engine teacher-forced on the
-  same token ids. "First copy" counts only each prompt's first pass, before the model can copy itself.
-- **Not RigMark.** No RigMark receipt exists for this model yet; every cell comes from the clients above.
-
-[`docs/RESULTS.md`](docs/RESULTS.md) has every table, the lever-by-lever history and the negatives;
-[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) how to rerun each cell.
-
-### What "exact" means here, and what is approximate
-
-- **Exact:** speculative decoding never changes a reply. Every verify row is the serial step at its position (row-
-  invariant kernels) and its token is the request's keyed choice at that absolute position, so drafted == serial at
-  T = 0 and at T > 0, and batched == alone. Every benchmark run checks it (`exact_all`).
-- **Approximate by design, on in the measured config:**
-  - CED decoder bounded replay for prompts (`TF_DSV41_PREFILL=replay`, DeepSeek's own technique: the decoder half
-    runs only over a prompt's last 128 tokens). `full` is the exact prefill at about the kit's speed.
-  - Routed-expert pruning in decode (`TF_DSV41_EXPERT_TOPP=0.85`, at least 3 experts, renormalized): +5% decode,
-    MMLU-200 88.5% alone. Delete three lines of the config to serve the unpruned model.
-  - mHC mixing weights in bf16 (`TF_DSV41_MHC_FN=bf16`): +2-5% prose, top-1 vs the kit 0.9963.
-- **Not bit-identical to the kit.** Different kernels and summation orders; the agreement is the top-1 row above.
-
-### Strict mode: every precision trade off
-
-The same engine and the G13 rewrites (which change no bits) with every knob that trades precision turned off:
-`TF_DSV41_EXPERT_TOPP=0` (no expert pruning), `EXPERT_RENORM=orig`, `MHC_FN=fp32`, `KIT_ROUNDING=0`, `LOGITS=fp32`,
-`INDEX_KV=bf16`, `PREFILL=full` (no bounded replay). The fast prefill GEMMs and the fused prefill attention stay on.
-Measured in G13, same build, same session ([`docs/campaign/G13-RESULTS.md`](docs/campaign/G13-RESULTS.md)):
-
-| | strict | production | kit | strict / kit |
-| --- | ---: | ---: | ---: | ---: |
-| Code, 1 stream, greedy | **76.9** | 82.8 | 41.9-45.0 | 1.71-1.83x |
-| Prose, 1 stream, greedy | **44.2** | 44.25 | 32.5 | 1.36x |
-| Structured, 1 stream, greedy | **111.9** | 117.8 | 38.0-50.2 | 2.24-2.95x |
-| 1 / 2 / 4 streams, decode aggregate | **79.0 / 64.0 / 89.5** | 85.1 / 70.3 / 96.6 | 32.2 / 46.7 / 37.6 | 2.45x / 1.37x / 2.38x |
-| Cold prefill 8K / 32K / 64K / 128K | **915 / 965 / 959 / 923** | (replay) 1,833-2,068 | 1,073 / 1,075 / 1,060 / 1,031 | **0.85-0.90x** |
-| Teacher-forced top-1 vs the kit | 0.9963 | 0.9961 | 1 | |
-
-Decode costs 5-9% against production (prose at T = 0 is level only because the strict reply drafts a little better on
-that prompt; at T = 0.7 it is -6.9%), and is still 1.4-2.9x the kit. Prefill without replay is below the kit. Strict
-MMLU and tool chains were not run.
-
-### Where we are not at 2x
-
-Prose (1.36x) and 2 streams (1.5x). Prose drafts poorly: DSpark keeps ~1.6 tokens a round on prose against ~3.8 on
-code, so prose speed is the verify window's cost. A 1-row window is ~23.4 ms since G13 (26.9 before) against a
-bandwidth floor of ~17 ms a rank (the 2.9 bpw weights read once), and the second row costs ~6 ms more because a
-second token brings ~5 new experts a layer. That is why G13's rewrites helped prose (+7.2%) far more than code (+1.3%:
-code verifies ~4.6 rows a round, where the savings are smaller). 2 streams pair a code stream with a T = 0.7 prose stream, so the prose stream sets the pace.
-[`docs/DECODE.md`](docs/DECODE.md) has the roofline and what was tried.
+Every run checks **drafted == serial**, **batched == alone**, and bit-identical outputs across prefill row sizes. How
+each cell was measured, what is exact and what is approximate, and strict mode: [`docs/METHOD.md`](docs/METHOD.md).
 
 ## Quick start
-
-Requirements:
-
-- two DGX Sparks with their CX7 ports cabled and addressed (one link subnet), Docker with the NVIDIA runtime on both,
-  and passwordless ssh from the head to the worker over the link;
-- on each node's local NVMe: ~100 GB for the weights, ~95 GB for the Engram shards, ~95 GB for the prepared
-  folders, and room for the session tier (`TF_DSV41_SESSION_DISK_GIB`, 128 GB by default);
-- nothing else on the GPUs: the stack plans for a 4-5 GiB MemAvailable floor out of 128 GB a node.
-
-**1. Clone and configure** (on the head):
 
 ```bash
 git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
-cp config/prod.env.example config/prod.env
-$EDITOR config/prod.env      # every <placeholder>: WORKER_SSH, HEAD_IP, the paths on each node; check the NIC names
+cp config/prod.env.example config/prod.env && $EDITOR config/prod.env
+scripts/serve.sh build && scripts/serve.sh preflight && scripts/serve.sh start
 ```
 
-**2. Weights** (on both nodes, byte-identical):
+Weights, Engram shards, requirements and unattended operation: [`docs/INSTALL.md`](docs/INSTALL.md).
 
-```bash
-hf download dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw --local-dir <HEAD_MODEL>    # and <WORKER_MODEL>
-```
+## Documentation
 
-**3. Engram shards.** The EXL3 packs do not carry the Engram tables (layers 1 and 14, ~101 GB each). They come from
-DeepSeek's original checkpoint; each rank keeps its half of the hash heads (~47 GiB a layer) on local NVMe:
-
-```bash
-mkdir -p <src> && hf download deepseek-ai/DeepSeek-V4.1-Flash model.safetensors.index.json --local-dir <src>
-python3 scripts/pack_engram.py --src <src> --list                 # the shard files that hold the tables
-hf download deepseek-ai/DeepSeek-V4.1-Flash <those files> --local-dir <src>
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --out <HEAD_ENGRAM> --rank 0
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --out <dir> --rank 1   # copy to <WORKER_ENGRAM> on the worker
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --check <HEAD_ENGRAM> --rank 0
-```
-
-`pack_engram.py` writes the format the engine reads (`engram-l{1,14}-r{rank}of2.bin`) from the source tensors'
-raw bytes; it is tested against the engine's reader on synthetic tables. The measured runs used shards packed by
-the MiaAI-Lab kit (`./start.sh pack`), which writes the same format; `--check` compares either with the source.
-
-**4. Build, check, start:**
-
-```bash
-scripts/serve.sh build        # docker/Dockerfile: TensorFold v0.6.0 + patches/, shipped to the worker, then prebuild
-scripts/serve.sh preflight    # image on both nodes, weights, Engram shards, RoCE ports, free ports, idle GPUs
-scripts/serve.sh start        # memory gate, rank 1 then rank 0, /v1/models, slot check, canary
-```
-
-`build` ends with `scripts/serve.sh prebuild`: the CUDA extensions (15, the G13 kernels included) are compiled into
-the `CACHE_VOL` volume on both nodes with no weights loaded, so no extension is built beside the weights. Run it again
-after clearing the volume. The first start compiles the Triton kernels and writes the prepared rank folders
-(`TF_DSV41_PREPARED_WRITE=1`, ~95 GB a node, several minutes); later starts read them back in ~40 s. Then:
-
-```bash
-curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model": "DeepSeek-V4.1-Flash-TF",
-  "messages": [{"role": "user", "content": "What is 17 * 23?"}], "reasoning_effort": "low"}'
-scripts/serve.sh status | logs [0|1] | canary | stop | restart
-```
-
-**5. Run it unattended** (optional): a watchdog tick every minute (heals after 3 bad ticks, at most every 30 min)
-and a start at boot.
-
-```bash
-mkdir -p ~/.config/systemd/user && cp scripts/systemd/dsv41-* ~/.config/systemd/user/
-$EDITOR ~/.config/systemd/user/dsv41-*.service        # WorkingDirectory= this checkout
-loginctl enable-linger "$USER"
-systemctl --user daemon-reload && systemctl --user enable --now dsv41-tf-watchdog.timer && systemctl --user enable dsv41-boot-start.service
-```
-
-`scripts/serve.sh` drops the page cache on both nodes around a start (`DROP_CACHES=1`: needs `sudo -n` or root for
-`/proc/sys/vm/drop_caches`; otherwise it logs and continues). [`docs/OPERATIONS.md`](docs/OPERATIONS.md) covers the
-knobs, the memory gates, the watchdog, and how to turn each lever off.
-
-## API
-
-OpenAI-compatible on `HOST:PORT` (`127.0.0.1:8000` by default: put your own proxy and authentication in front):
-`/v1/chat/completions` (streaming, tool calls, `response_format`), `/v1/completions` (text or token ids),
-`/tokenize`, `/v1/models` (`max_model_len`), `/health`, `/metrics`.
-
-Thinking follows DeepSeek-V4.1's encoding (`Reasoning Effort: N (range 1-100)`), on by default
-(`TF_DSV41_THINKING=0` turns it off). Both the top-level `reasoning_effort` and
-`chat_template_kwargs.reasoning_effort` are read (the kwargs win):
-
-| value | thinking | effort |
-| --- | --- | ---: |
-| `none`, `minimal` | off | - |
-| `low` | on | 50 |
-| `medium`, `high` (default: `TF_DSV41_DEFAULT_EFFORT`) | on | 75 |
-| `xhigh`, `max` | on | 100 |
-| an integer 1-100 | on | that |
-
-`chat_template_kwargs.enable_thinking` (or `thinking`) true / false sets the mode directly. Note: the kit's vLLM
-path renders `low` as 25; we keep DeepSeek's 50.
-
-## The engine
-
-`vendor/TensorFold` is upstream TensorFold v0.6.0, unmodified. `patches/` holds two patches, applied in order by the
-Dockerfile:
-
-| patch | what | licence |
-| --- | --- | --- |
-| [`0001-spark-stack-060.patch`](patches/0001-spark-stack-060.patch) | the GLM-5.3-Flash two-Spark engine (`families/glm5_next/spark/`) rebased onto 0.6.0, the CUDA communicator interface (`cuda/comm.py`), the family `CUDA_SERVE` hook (`cli.py`, `families/glm5_next/__init__.py`), the server's descriptor fix (`server/cancellation.py`), packaging (`pyproject.toml`), recipes and tests |
-| [`0002-deepseek-v41-family.patch`](patches/0002-deepseek-v41-family.patch) | `families/deepseek_v41/` and its tests, the EXL3 linear's device-side skip (`cuda/exl3/linear.*`), fp64 in `cuda/comm.py`, `--kv-dtype fp8` (`cli_args.py`), model aliases in the GLM server, packaging, NOTICE entries |
-
-Together they are every engine change production runs (development commit `767ad9f`, 390 files over v0.6.0): applying
-them to v0.6.0 reproduces that tree except for reworded comments and the excluded draft-vocabulary files
-([`docs/ENGINE.md`](docs/ENGINE.md) lists each difference).
-
-[`docs/ENGINE.md`](docs/ENGINE.md) explains how the patches were produced, how to get the same tree as a git branch,
-and how to run the engine's test suites. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) summarises the model and the
-TP=2 split.
-
-## What is not solved
-
-- **The worker's memory floor.** In the 4 x 300K stress the worker's MemAvailable bottoms out at 3.0-3.7 GiB early in
-  the 299K prefill, under our own 5 GiB target and the 4 GiB admission floor (nothing new is admitted below it). It
-  comes from the boot budget (the 4 x 300K KV pool) and the first segments' CUDA reservations, not from host growth
-  (fixed in G12). Open. `CONTEXT=196608` lowers the exposure.
-- **Prose and 2 streams** are not at 2x (above).
-- **Two G13 rewrites ship off.** The shortened decode MoE chain (`TF_DSV41_MOE_FUSED`) and the CSA2 indexer /
-  compressor on a side stream (`TF_DSV41_BRANCHES`) are exact but did not help: MOE_FUSED measured +0.7 ms on a 1-row
-  window, and BRANCHES left the 1-row window unstable between boots (26.2 / 31.5 ms, +2.25 ms on average). Both are in
-  the engine, default 0. The CUDA attention core in `TF_DSV41_ATTN_CUDA` is slower than Triton on its own and helps
-  only with the top-k beside it.
-- **`/health`** reports `drafted_total` / `accepted_total` as 0 for this family (the counters are not wired).
-- **Vision** is not wired for this family.
-- **No trimmed draft-head vocabulary is shipped** (`TF_DSV41_DRAFT_HEAD=trim`, off by default and not adopted). The
-  development ranking was counted from private chat transcripts and is excluded, so `trim` needs
-  `TF_DSV41_DRAFT_VOCAB=<file>` and `tests/test_dsv41_draft_head.py::test_shipped_ranking` fails. A ranking of your
-  own traffic (`scripts/campaign/draftvocab.py`) or of public text (the GLM recipe's `bench/draftvocab_public.py`
-  method on this tokenizer) can be used.
-
-## Layout
-
-| path | what |
+| | |
 | --- | --- |
-| `vendor/TensorFold` | upstream TensorFold v0.6.0 (submodule) |
-| `patches/` | the engine changes ([`docs/ENGINE.md`](docs/ENGINE.md)) |
-| `docker/Dockerfile` | the image: NVIDIA PyTorch 26.07 + xgrammar + TensorFold with the patches |
-| `config/prod.env.example` | the measured configuration, with placeholders for your hosts and paths |
-| `scripts/serve.sh` | build / prebuild / preflight / start / stop / status / watchdog / `run` (engine benchmarks on both ranks) |
-| `scripts/prebuild_ext.py` | builds every CUDA extension a rank loads (`scripts/serve.sh prebuild` runs it in the image on both nodes) |
-| `scripts/pack_engram.py` | the per-rank Engram shards from DeepSeek's checkpoint |
-| `scripts/canary.py`, `scripts/boot-start.sh`, `scripts/systemd/` | post-start canary, start at boot, watchdog units |
-| `scripts/check-public.sh` | the sanitizer this repository was checked with |
-| `bench/` | HTTP clients: quality (MMLU, needles), structured output, soak, stress, tool calling |
-| `docs/` | results, benchmark method, architecture, decode roofline and lessons, operations, the engine |
-| `results/` | the raw files behind the tables ([`results/README.md`](results/README.md)); `results/campaign/` every tracked result of the development windows G1-G13 |
-| `docs/campaign/` | the development log: plans, targets, the landscape study, the results of every window ([`docs/campaign/README.md`](docs/campaign/README.md)) |
-| `engine/`, `tests/` | the development staging tree: the PyTorch reference model (the correctness oracle), the kernels and serving layer before they were ported into the TensorFold family, and their tests |
-| `scripts/campaign/` | analysis tools of the windows (nsys window / idle / skew breakdowns, summaries), the draft-vocabulary study tool, the porting script |
-
-## Licensing
-
-| Part | License |
-| --- | --- |
-| This project's code, patches, scripts, benchmarks and docs | **Apache License 2.0** ([`LICENSE`](LICENSE), [`NOTICE`](NOTICE)). Redistributions, modified or not, must keep the copyright line and the NOTICE attributions and state their changes. |
-| TensorFold (`vendor/TensorFold`) | Apache License 2.0 from 0.6.0 (code written before 0.6.0 keeps its MIT notice), Copyright 2026 TensorFold contributors; unmodified submodule, the patches are applied at build time. The TensorFold code the patches modify stays under its license. Its third-party notices: `vendor/TensorFold/THIRD_PARTY_NOTICES.md` (the patches extend it). |
-| Files the patches add | keep the SPDX notice written in them: the DeepSeek-V4.1-Flash family (`families/deepseek_v41/`, its tests) is MIT, Copyright (c) 2026 Jay Leaton; the GLM Spark engine (`families/glm5_next/spark/`) is MIT ([`NOTICE`](NOTICE)). |
-| RoCE all-gather and fast-prefill kernels in `patches/0001` | adapted from / re-implementing [b12x](https://github.com/local-inference-lab/b12x) (Apache-2.0, Luke Alonso and the b12x contributors); details in [`NOTICE`](NOTICE). |
-| Fat-expert MoE kernel structure in `patches/0001` | adapted from the Apache-2.0 [Reederey87 kit](https://github.com/Reederey87/glm53-flash-exl3-2x-dgx-spark) (code MiaAI-Lab contributed under MIT before 2026-09-07); its NOTICE is reproduced in [`NOTICE`](NOTICE). |
-| Ported upstream code in `patches/0001` | from later TensorFold releases (0.3.6.2, 0.5.0), MIT, Copyright (c) 2026 TensorFold contributors; each ported piece names its source commit. |
-| xgrammar (structured output) | Apache-2.0 ([mlc-ai/xgrammar](https://github.com/mlc-ai/xgrammar)), installed into the image by pip, not vendored. |
-| Docker base image | NVIDIA Deep Learning Container License (`nvcr.io/nvidia/pytorch:26.07-py3`) |
-| Model weights (not included) | `dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw` (measured here), its base `Mia-AiLab/DeepSeek-V4.1-Flash-EXL3-2.9bpw`, and `deepseek-ai/DeepSeek-V4.1-Flash` (for the Engram tables): each under its model card's terms. The uncensored weights have refusals removed; you are responsible for how you use them. |
-
-Nothing from the MiaAI-Lab DeepSeek kit's AGPL-3.0 code is included: the engine reads the pack and the Engram shard
-format (file-format facts), and implements DeepSeek's prompt encoding from DeepSeek's own MIT `encoding.py`.
+| [INSTALL](docs/INSTALL.md) | requirements, weights, Engram shards, build, start, watchdog |
+| [API](docs/API.md) / [IMAGES](docs/IMAGES.md) | endpoints, thinking and effort, image input |
+| [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, turning each lever off |
+| [METHOD](docs/METHOD.md) / [RESULTS](docs/RESULTS.md) / [BENCHMARKS](docs/BENCHMARKS.md) | how it was measured, every table, how to rerun |
+| [CHANGELOG](docs/CHANGELOG.md) | bug fixes and new levers since G13 |
+| [KNOWN-ISSUES](docs/KNOWN-ISSUES.md) | what is not solved |
+| [PROJECT](docs/PROJECT.md) / [ENGINE](docs/ENGINE.md) / [ARCHITECTURE](docs/ARCHITECTURE.md) / [DECODE](docs/DECODE.md) | patches, layout, model split, decode roofline |
+| [campaign/](docs/campaign/README.md) | the development log, windows G1-G19 |
 
 ## Credits
 
-- [DeepSeek](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash): DeepSeek-V4.1-Flash and its prompt encoding;
+- [DeepSeek](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash): DeepSeek-V4.1-Flash, its prompt encoding and its
+  image path (the engine's image input re-implements `inference/vision.py` and `image_processor.py`, MIT; the
+  unmodified files are test oracles in `patches/0002`);
   the ideas this engine implements come from DeepSeek's papers and code: the
   [V4.1-Flash technical report](https://arxiv.org/abs/2609.19969) (CED and bounded replay, CSA2, mHC),
   [DSpark](https://arxiv.org/abs/2607.05147) with [DeepSpec](https://github.com/deepseek-ai/DeepSpec), and
@@ -341,31 +115,21 @@ format (file-format facts), and implements DeepSeek's prompt encoding from DeepS
   stack's fat-expert kernels adapt.
 - [The vLLM project](https://github.com/vllm-project/vllm): the DeepSeek-V4 / V4.1 implementation our kernels' math
   follows (cited per file; no code copied).
+- [bertholomus / BertholomusAI (Albert Lee)](https://github.com/bertholomus/TensorFold), branch `deepseek-v41-tp2`
+  (Apache-2.0): ideas we re-implemented (no code copied): geometric context buckets for the CUDA graphs (ours: 1.25x
+  past 32K), an allocator ceiling (its `_memory_ceiling`; ours `TF_DSV41_ALLOC_CEIL_GIB`, shipped off), the GIL
+  switch-interval knob (`TF_DSV41_SWITCH_MS`) and failing fast across both ranks.
+- Issue and pull-request authors on this repository: **WireLLM** (#3, the host memory growth), **ZackO2o** (#4, the
+  missing `csa2` kernel sources) and **flashosophy** (#6, the four-Spark work that surfaced the `xgrammar` and
+  `text_config` build bugs); see [Changes since G13](docs/CHANGELOG.md).
 - [mlc-ai/xgrammar](https://github.com/mlc-ai/xgrammar): the grammar engine behind structured output.
 - [SeraphimSerapis/tool-eval-bench](https://github.com/SeraphimSerapis/tool-eval-bench) and
   [Weschera/spark-bench](https://github.com/Weschera/spark-bench): the tool-calling benchmarks.
 - [MMLU](https://github.com/hendrycks/test) (Hendrycks et al.): the 200 questions in `bench/data/`.
 - NVIDIA: the DGX Spark and the PyTorch container.
 
-## Current focus
+## Licensing
 
-**G13: decode kernel rewrites** (engine `767ad9f`, [`docs/campaign/G13-RESULTS.md`](docs/campaign/G13-RESULTS.md)).
-Five rewrites from the rewrite study ([`docs/campaign/REWRITE-PLAN.md`](docs/campaign/REWRITE-PLAN.md)), each behind
-a lever that defaults to 0, each exact (drafted == serial, same gate top-1). Three are on in the config:
-
-- `TF_DSV41_MHC_CUDA`: an mHC boundary as one CUDA launch (1-row window -1.3 ms).
-- `TF_DSV41_ATTN_CUDA`: CSA2's decode attention core and the indexer's top-k in CUDA (-0.7 ms).
-- `TF_DSV41_DENSE_V3`: the dense EXL3 linears over a 16-byte-coalesced repack (-1.2 ms at 2-16 rows).
-
-Together: the 1-token step 26.8 -> ~23.4-24.8 ms, prose +7.2% (44.25 tok/s), code +1.3% (82.8), C2 +3.9%, C4 +2.8%;
-gate top-1 0.9961, MMLU-200 87.5%, tool chains pass. `TF_DSV41_MOE_FUSED` and `TF_DSV41_BRANCHES` ship off (no
-gain, above). `scripts/serve.sh build` now prebuilds every CUDA extension, the new ones included.
-
-**Fixed in G12** (engine `a6f5792`, [`docs/campaign/G12-RESULTS.md`](docs/campaign/G12-RESULTS.md)): host memory
-growth in long prompts (torch's embedded mimalloc kept cross-thread frees; ~0.7 GiB a rank now, was 4.1-5.6), the
-19-minute stall (transparent-huge-page compaction; `MIMALLOC_ALLOW_THP=0`), and the fast-prefill segmentation
-dependence (RoPE tables in fixed blocks).
-
-**Still open:** the worker's boot-time memory floor of ~3-3.7 GiB in the stress; where MOE_FUSED's isolated gain goes
-inside the window graph (an nsys run); BRANCHES' slow boot; strict-mode MMLU and tool chains; the 2K anomaly and the
-~11% gap between HTTP and in-engine prefill in upstream's `prefill_cold`.
+This project's code, patches, scripts, benchmarks and docs: **Apache License 2.0** ([`LICENSE`](LICENSE),
+[`NOTICE`](NOTICE)). TensorFold, the added files, the adapted kernels, the base image and the model weights each keep
+their own terms: [`docs/LICENSING.md`](docs/LICENSING.md).
