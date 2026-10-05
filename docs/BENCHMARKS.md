@@ -66,6 +66,10 @@ levers (the fast kernels only cover prompt rows).
 
 ## 2. HTTP clients: `bench/` (standard library only)
 
+**Prefix-cache pitfall.** A prompt that repeats earlier text (a repeated filler document, the same prompt run twice)
+is served from the session cache and prefills only the new tokens. Use unique text per prompt and check
+`usage.prompt_tokens_details.cached_tokens` in the reply: close to `prompt_tokens` means it hit the cache.
+
 Against a running server (`scripts/serve.sh start`; a second test server: `PORT=8001 NAME=dsv41-tf-test
 MASTER_PORT=29561 HEAD_STATE=... WORKER_STATE=... scripts/serve.sh start`).
 

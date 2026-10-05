@@ -16,6 +16,9 @@ Thinking follows DeepSeek-V4.1's encoding (`Reasoning Effort: N (range 1-100)`),
 | `xhigh`, `max` | on | 100 |
 | an integer 1-100 | on | that |
 
+Effort sets how long the model thinks, not how fast it decodes (one report measured ~38% fewer thinking tokens at
+`low` than at `max`; tok/s unchanged).
+
 `chat_template_kwargs.enable_thinking` (or `thinking`) true / false sets the mode directly. Note: the kit's vLLM
 path renders `low` as 25; we keep DeepSeek's 50.
 

@@ -88,6 +88,14 @@ Serving safety, on by default (G16-G19):
 - `TF_DSV41_VISION_MAX_IMAGES` (8): more images in one request are refused (HTTP 400); clients with long agent
   histories should drop old screenshots.
 
+**One slot (`PARALLEL=1`).** `prompt + max_tokens` past the slot's capacity is refused at submit time with a 400.
+Admission is first in, first out: a prompt held back for memory waits at the head of the queue, and the requests
+behind it wait too, until it is admitted or refused (`TF_DSV41_FLOOR_REFUSE_S`). With a single slot, set a client-side
+prompt limit and timeout.
+
+**Reported configuration (not measured by us):** `CONTEXT=1048576 PARALLEL=1` with FP8 KV serves a 1M-token request;
+@ZackO2o reported retrieval at 60K and ~2,000 tok/s prefill out to 270K in #5.
+
 Host memory and stalls (G12; defaults in brackets):
 
 - `TF_DSV41_STALL_S` (300; 0 = off): a round that runs longer prints a stall report on both ranks (rank, round, phase,

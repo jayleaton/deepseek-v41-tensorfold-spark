@@ -17,6 +17,11 @@ cp config/prod.env.example config/prod.env
 $EDITOR config/prod.env      # every <placeholder>: WORKER_SSH, HEAD_IP, the paths on each node; check the NIC names
 ```
 
+Copy the example **whole** and edit only the placeholders. The engine's own defaults are the conservative settings,
+not the measured configuration: drafting (`TF_DSV41_SPEC_DRAFT`), the router GEMV, the L2 prefetch and measured
+calibration are off by default. A minimal config decodes at roughly the serial rate (~43 tok/s on a code prompt)
+instead of ~85 (reported by @ZackO2o in #5).
+
 **2. Weights** (on both nodes, byte-identical):
 
 ```bash
