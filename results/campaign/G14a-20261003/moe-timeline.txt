@@ -1,0 +1,46 @@
+== off, 1 row(s): 858 chains (858 with the dominant sequence of 10 kernels, 1 sequences); span 211.18 us, device idle 1.86 us, 2+ kernels at once 0.0 us; router / fused 16.66 us, of it overlapped by other kernels 0.0 us; streams a chain {1: 858}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             145     0.00    16.66        -     0.00   0.0    0.00
+   _prune                                              145    16.85     4.35     0.22     0.22   0.0    0.00
+   at::native::vectorized_elementwise_kernel           145    21.44     0.93     0.19     0.19   0.0    0.00
+   at::native::unrolled_elementwise_kernel             145    22.56     1.18     0.19     0.19   0.0    0.00
+   ::group_kernel                                      145    24.00     3.23     0.19     0.19   0.0    0.00
+   ::rot_in_kernel                                     145    27.57     3.20     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               145    31.14   102.40     0.19     0.19   0.0    0.00
+   ::gateup_epilogue_kernel                            145   134.74     3.68     0.22     0.22   0.0    0.00
+   dsv41_x3ld::ld_kernel                               145   139.23    67.63     0.19     0.19   0.0    0.00
+   ::down_combine_kernel                               145   207.41     3.94     0.19     0.19   0.0    0.00
+== off, 4 row(s): 297 chains (297 with the dominant sequence of 10 kernels, 1 sequences); span 472.8 us, device idle 1.82 us, 2+ kernels at once 0.0 us; router / fused 25.25 us, of it overlapped by other kernels 0.0 us; streams a chain {1: 297}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   dsv41_rg::narrow_kernel                             151     0.00    25.25        -     0.00     0    0.00
+   _prune                                              151    25.47     4.45     0.22     0.22     0    0.00
+   at::native::vectorized_elementwise_kernel           151    30.08     0.93     0.19     0.19     0    0.00
+   at::native::unrolled_elementwise_kernel             151    31.23     1.44     0.19     0.19     0    0.00
+   ::group_kernel                                      151    32.86     8.83     0.19     0.19     0    0.00
+   ::rot_in_kernel                                     151    41.73     4.45     0.22     0.22     0    0.00
+   dsv41_x3ld::ld_kernel                               151    46.43   265.02     0.19     0.19     0    0.00
+   ::gateup_epilogue_kernel                            151   312.55     4.03     0.22     0.22     0    0.00
+   dsv41_x3ld::ld_kernel                               151   316.96   150.75     0.19     0.19     0    0.00
+   ::down_combine_kernel                               151   469.19     5.06     0.19     0.19     0    0.00
+== on, 1 row(s): 825 chains (691 with the dominant sequence of 9 kernels, 3 sequences); span 213.5 us, device idle 0.58 us, 2+ kernels at once 73.57 us; router / fused 35.74 us, of it overlapped by other kernels 29.6 us; streams a chain {2: 825}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   ::rot_in_kernel                                     145     0.00     4.38        -     0.00     1    1.28
+   dsv41_mf::fused_kernel                              146     3.04    36.38        -    -1.28     3   29.54
+   dsv41_x3ld::ld_kernel                               145     8.83    21.57     4.48   -30.62     1   21.57
+   ::gateup_epilogue_kernel                            145    34.02     5.86     0.22    -8.35     1    5.82
+   dsv41_x3ld::ld_kernel                               146    40.64   102.40     0.19     0.19     0    0.00
+   dsv41_x3ld::ld_kernel                               145   142.18    38.72   104.74     0.19     2   38.40
+   ::gateup_epilogue_kernel                            146   142.31     5.02     0.32   -38.59     1    5.02
+   dsv41_x3ld::ld_kernel                               146   147.84    60.70     0.19   -32.90     1   32.90
+   dsv41_mf::combine2_kernel                           145   209.47     4.13    28.19     0.19     0    0.00
+== on, 4 row(s): 297 chains (297 with the dominant sequence of 9 kernels, 1 sequences); span 472.48 us, device idle 0.61 us, 2+ kernels at once 74.46 us; router / fused 48.06 us, of it overlapped by other kernels 34.91 us; streams a chain {2: 297}
+   kernel                                           stream    start      dur gap/strm  gap/any ovl n  ovl us
+   ::rot_in_kernel                                     154     0.00     2.94        -     0.00     1    0.26
+   dsv41_mf::fused_kernel                              155     2.66    48.06        -    -0.26     3   34.91
+   dsv41_x3ld::ld_kernel                               154     9.44    29.98     6.50   -41.25     1   29.98
+   ::gateup_epilogue_kernel                            154    39.58     5.47     0.19   -12.42     1    5.47
+   dsv41_x3ld::ld_kernel                               155    51.01   264.26     0.19     0.19     0    0.00
+   dsv41_x3ld::ld_kernel                               154   317.15    39.97   273.70     0.19     2   39.62
+   ::gateup_epilogue_kernel                            155   317.31     7.30     0.32   -39.81     1    7.30
+   dsv41_x3ld::ld_kernel                               155   324.00   139.84     0.19   -32.26     1   32.26
+   dsv41_mf::combine2_kernel                           154   466.62     5.47   107.68     0.19     0    0.00

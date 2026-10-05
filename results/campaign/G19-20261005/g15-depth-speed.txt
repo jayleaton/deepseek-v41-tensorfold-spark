@@ -1,0 +1,27 @@
+existing cells (tok/s; C1 / C2 / C4 = decode aggregate, the old numbers)
+config   boot   code T0  code T.7  prose T0 prose T.7 struct T0 struct T.7        C1        C2        C4
+prod     b1       85.37     78.20     47.05     48.34    122.06    122.79     87.50     74.14    100.22
+prod     b2       85.37     77.92     47.12     48.02    121.41    123.40     87.49     73.91    100.36
+prod     mean     85.37     78.06     47.09     48.18    121.74    123.09     87.50     74.03    100.29
+combo    b1       84.88     78.16     46.97     47.97    121.25    123.09     87.69     73.99    100.85
+combo    b2       84.60     78.13     46.52     48.00    121.28    122.72     87.55     74.16    101.33
+combo    mean     84.74     78.15     46.75     47.98    121.27    122.91     87.62     74.07    101.09
+
+fair cells (st = steady aggregate while all streams live; prose@ = the prose stream's own steady tok/s; dec = decode aggregate)
+config   boot     C2 st    C2c st    C2p st     C4 st    C4c st    C4p st  prose@C2  prose@C4   C2c dec   C2p dec   C4c dec   C4p dec
+prod     b1       88.45    117.56     69.77    138.57    192.92    119.73     27.25     12.52    118.53     69.16    195.78    119.39
+prod     b2       88.76    117.47     69.46    137.25    189.97    119.53     27.45     12.61    118.44     68.92    192.31    119.19
+prod     mean     88.61    117.52     69.61    137.91    191.44    119.63     27.35     12.56    118.48     69.04    194.05    119.29
+combo    b1       88.90    115.77     69.53    135.12    193.48    120.31     27.60     12.91    116.35     68.96    195.38    119.98
+combo    b2       88.57    117.14     69.88    136.95    191.53    119.99     27.28     12.29    118.10     69.29    194.12    119.58
+combo    mean     88.73    116.45     69.70    136.03    192.50    120.15     27.44     12.61    117.22     69.12    194.75    119.78
+
+config   boot  exact(all / concurrent)  replies==off  joint (mode: rounds, rows / round, drafts / round, zero-depth slots)  C2 code / prose tok/round  C2 / C4 all-live share
+prod     b1    True / True  None  off: 0, 0.00, 0.00, 0   3.65 /  1.68   0.60 /  0.43
+prod     b2    True / True  None  off: 0, 0.00, 0.00, 0   3.65 /  1.67   0.60 /  0.44
+combo    b1    True / True  True  off: 0, 0.00, 0.00, 0   3.65 /  1.68   0.60 /  0.46
+combo    b2    True / True  True  off: 0, 0.00, 0.00, 0   3.65 /  1.68   0.60 /  0.43
+
+combo vs prod (means over boots; expected from jointsim in brackets):
+  code T0 -0.7%, code T.7 +0.1%, prose T0 -0.7%, prose T.7 -0.4%, struct T0 -0.4%, struct T.7 -0.2%, C1 +0.1%, C2 +0.1%, C4 +0.8%, C2 st +0.1%, C2c st -0.9%, C2p st +0.1%, C4 st -1.4%, C4c st +0.6%, C4p st +0.4%, prose@C2 +0.3%, prose@C4 +0.3%, C2c dec -1.1%, C2p dec +0.1%, C4c dec +0.4%, C4p dec +0.4%
+  verdict combo: FAIL: steady cells mean -0.17% (>= +0.5) / min -1.36% (>= -1.5); boots 2 / prod 2 (3 each)

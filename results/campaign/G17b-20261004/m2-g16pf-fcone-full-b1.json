@@ -1,0 +1,386 @@
+{
+ "knobs": {
+  "GLM53_TF_COMM_BACKEND": "roce",
+  "GLM53_TF_ROCE_FAST": "1",
+  "GLM53_TF_ROCE_MAX_KB": "1024",
+  "TF_DSV41_ATTN_CUDA": "1",
+  "TF_DSV41_BIAS_VL": "/cache/dsv41-bias-vl",
+  "TF_DSV41_BRANCHES": "1",
+  "TF_DSV41_BRANCHES_PRIO": "side",
+  "TF_DSV41_CALIB": "real",
+  "TF_DSV41_CALIB_DIR": "/cache/dsv41-calib",
+  "TF_DSV41_DEFAULT_EFFORT": "high",
+  "TF_DSV41_DENSE": "0",
+  "TF_DSV41_DENSE_V3": "1",
+  "TF_DSV41_DEPTH_JOINT": "0",
+  "TF_DSV41_DISCONNECT": "1",
+  "TF_DSV41_ENGRAM_DIR": "/engram",
+  "TF_DSV41_ENGRAM_FUSE_DEC": "1",
+  "TF_DSV41_ENGRAM_GATE": "1",
+  "TF_DSV41_ENGRAM_NATIVE": "1",
+  "TF_DSV41_EXPERT_LOADS": "1",
+  "TF_DSV41_EXPERT_MIN_K": "3",
+  "TF_DSV41_EXPERT_PREFILL": "0",
+  "TF_DSV41_EXPERT_RENORM": "kept",
+  "TF_DSV41_EXPERT_TOPP": "0.85",
+  "TF_DSV41_FAST_EXPERTS": "gm",
+  "TF_DSV41_FLOOR_GIB": "5",
+  "TF_DSV41_FLOOR_HARD_GIB": "4",
+  "TF_DSV41_FULL_CONE": "1",
+  "TF_DSV41_GRAMMAR": "1",
+  "TF_DSV41_GRAPH_MODE": "rows",
+  "TF_DSV41_IMAGES": "native",
+  "TF_DSV41_INDEX_BUDGET_MIB": "64",
+  "TF_DSV41_INDEX_DTOPK": "1",
+  "TF_DSV41_INDEX_KV": "fp8",
+  "TF_DSV41_INDEX_STREAM_MIN": "4096",
+  "TF_DSV41_L2PF": "1",
+  "TF_DSV41_L2PF_MB": "12",
+  "TF_DSV41_L2PF_PACE_GBPS": "150",
+  "TF_DSV41_LAUNCH_T0": "1791124496.929218233",
+  "TF_DSV41_MHC_BM": "64",
+  "TF_DSV41_MHC_CUDA": "1",
+  "TF_DSV41_MHC_DEC": "1",
+  "TF_DSV41_MHC_FIN2": "1",
+  "TF_DSV41_MHC_FN": "bf16",
+  "TF_DSV41_MHC_PF": "1",
+  "TF_DSV41_MHC_WARPS": "8",
+  "TF_DSV41_NATIVE_DIR": "/cache/dsv41-native",
+  "TF_DSV41_PARTIAL_BF16": "1",
+  "TF_DSV41_PDL": "0",
+  "TF_DSV41_PF_COPIES": "1",
+  "TF_DSV41_PF_DENSE": "fused",
+  "TF_DSV41_PF_DENSE_TABLE": "/cache/pfdense-table.json",
+  "TF_DSV41_PHASES": "1",
+  "TF_DSV41_PLAIN_TRITON": "1",
+  "TF_DSV41_PLAN_LINK": "rdma",
+  "TF_DSV41_PLAN_PIN": "auto",
+  "TF_DSV41_POOL_TOKENS": "614400",
+  "TF_DSV41_PREFETCH_AHEAD": "1",
+  "TF_DSV41_PREFILL": "full",
+  "TF_DSV41_PREFILL_ATTN": "fused",
+  "TF_DSV41_PREFILL_ATTN_BMQ": "32",
+  "TF_DSV41_PREFILL_ATTN_WARPS": "8",
+  "TF_DSV41_PREFILL_CHUNK": "1024",
+  "TF_DSV41_PREFILL_GATHER": "bf16",
+  "TF_DSV41_PREFILL_KERNELS": "fast",
+  "TF_DSV41_PREFILL_ROUTER": "gemv",
+  "TF_DSV41_PREFILL_ROWS": "1024",
+  "TF_DSV41_PREPARED": "/prepared",
+  "TF_DSV41_PREPARED_WRITE": "1",
+  "TF_DSV41_RG_NARROW": "2",
+  "TF_DSV41_RG_TAIL": "1",
+  "TF_DSV41_RMS_PAIR": "1",
+  "TF_DSV41_ROPE_INPLACE": "1",
+  "TF_DSV41_ROUTER": "gemv",
+  "TF_DSV41_SCHEMA_PROMPT": "1",
+  "TF_DSV41_SESSIONS": "1",
+  "TF_DSV41_SESSION_RAM_MIB": "256",
+  "TF_DSV41_SPEC_DRAFT": "1",
+  "TF_DSV41_THINKING": "1",
+  "TF_DSV41_TOOL_GRAMMAR": "0",
+  "TF_DSV41_VISION_PREP_MB": "64"
+ },
+ "m2": "DSpark on (depth cost, cap 5, joint off, costs measured); draft head full; draft graphs on: 3 held (3 at boot in 0.19 s, 0 on first use), 4 replays, 0 eager windows; Engram prefetch {'issued': 0, 'hits': 2, 'misses': 2, 'dropped': 0, 'reads': 4943, 'cached': 4944, 'waited': 0, 'ahead': 0, 'kept': 0}; Engram gate: 99 rounds (0 reissued), 0 warm jobs, rows 7632 (7192 cached, 440 read), 98 syncs; first layer ready p50/p90/p99 0.79 / 2.32 / 4.66 ms, all 0.84 / 2.35 / 4.70 ms after queueing; speculative DSpark passes 0 launched, 0 used, 0 dropped, 0 without a graph; graphs on: 10 held (8 at boot in 2.43 s, 2 on first use), 157 replays, 2 eager windows; RoCE exchanges 2057 fast / 166 on NCCL; phases (1, ms a round over 0 rounds): candidates 6792.03, engram.wait 383.19, forward 407.86, graph.capture 273.62, graph.replay 3.92, graph.stage 14.52, spec 0.07",
+ "workloads": {},
+ "kit": {
+  "mixed": 2.27,
+  "mmlu": 1.46,
+  "multiturn": 1.83,
+  "tf": 1.78,
+  "kit": 2.17,
+  "tweet": 3.08,
+  "edit": 3.84,
+  "c4_tok_s": 37.6,
+  "code_tok_s": 36.4,
+  "prose_tok_s": 25.1
+ },
+ "targets": {
+  "code_tok_s": 52.0,
+  "prose_tok_s": 38.0,
+  "tokens_per_round_k3": 3.1
+ },
+ "prefill": [
+  {
+   "tokens": 8192,
+   "ttft_s": 5.87,
+   "wall_s": 6.67,
+   "tok_s": 1394.8,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "bc176d46bda06b0c",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 6668.87,
+    "candidates": {
+     "ms": 684.79,
+     "n": 32,
+     "ms_avg": 21.4
+    },
+    "commit": {
+     "ms": 19.28,
+     "n": 42,
+     "ms_avg": 0.459
+    },
+    "engram.wait": {
+     "ms": 271.97,
+     "n": 18,
+     "ms_avg": 15.109
+    },
+    "execute": {
+     "ms": 6665.75,
+     "n": 41,
+     "ms_avg": 162.579
+    },
+    "forward": {
+     "ms": 212.71,
+     "n": 32,
+     "ms_avg": 6.647
+    },
+    "graph.capture": {
+     "ms": 118.84,
+     "n": 2,
+     "ms_avg": 59.421
+    },
+    "graph.replay": {
+     "ms": 1.62,
+     "n": 30,
+     "ms_avg": 0.054
+    },
+    "graph.stage": {
+     "ms": 2.31,
+     "n": 30,
+     "ms_avg": 0.077
+    },
+    "plan": {
+     "ms": 1.97,
+     "n": 41,
+     "ms_avg": 0.048
+    },
+    "prefetch": {
+     "ms": 1.11,
+     "n": 32,
+     "ms_avg": 0.035
+    },
+    "prefill": {
+     "ms": 5612.4,
+     "n": 9,
+     "ms_avg": 623.6
+    },
+    "round": {
+     "ms": 6671.6,
+     "n": 41,
+     "ms_avg": 162.722
+    },
+    "sample": {
+     "ms": 0.54,
+     "n": 41,
+     "ms_avg": 0.013
+    },
+    "share": {
+     "ms": 2.87,
+     "n": 41,
+     "ms_avg": 0.07
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 897.86,
+     "n": 32,
+     "ms_avg": 28.058
+    }
+   }
+  },
+  {
+   "tokens": 32768,
+   "ttft_s": 17.93,
+   "wall_s": 18.72,
+   "tok_s": 1827.7,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "85d86567378f0359",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 18724.66,
+    "candidates": {
+     "ms": 683.01,
+     "n": 32,
+     "ms_avg": 21.344
+    },
+    "commit": {
+     "ms": 15.04,
+     "n": 64,
+     "ms_avg": 0.235
+    },
+    "engram.wait": {
+     "ms": 537.91,
+     "n": 66,
+     "ms_avg": 8.15
+    },
+    "execute": {
+     "ms": 18710.26,
+     "n": 65,
+     "ms_avg": 287.85
+    },
+    "forward": {
+     "ms": 195.75,
+     "n": 32,
+     "ms_avg": 6.117
+    },
+    "graph.capture": {
+     "ms": 130.06,
+     "n": 2,
+     "ms_avg": 65.029
+    },
+    "graph.replay": {
+     "ms": 0.88,
+     "n": 30,
+     "ms_avg": 0.029
+    },
+    "graph.stage": {
+     "ms": 3.26,
+     "n": 30,
+     "ms_avg": 0.109
+    },
+    "plan": {
+     "ms": 4.63,
+     "n": 65,
+     "ms_avg": 0.071
+    },
+    "prefetch": {
+     "ms": 1.53,
+     "n": 32,
+     "ms_avg": 0.048
+    },
+    "prefill": {
+     "ms": 17323.72,
+     "n": 33,
+     "ms_avg": 524.961
+    },
+    "round": {
+     "ms": 18730.76,
+     "n": 65,
+     "ms_avg": 288.166
+    },
+    "sample": {
+     "ms": 0.65,
+     "n": 65,
+     "ms_avg": 0.01
+    },
+    "share": {
+     "ms": 14.03,
+     "n": 65,
+     "ms_avg": 0.216
+    },
+    "spec": {
+     "ms": 0.05,
+     "n": 32,
+     "ms_avg": 0.002
+    },
+    "window": {
+     "ms": 879.13,
+     "n": 32,
+     "ms_avg": 27.473
+    }
+   }
+  },
+  {
+   "tokens": 65536,
+   "ttft_s": 34.57,
+   "wall_s": 35.38,
+   "tok_s": 1895.7,
+   "first": 65,
+   "reply_n": 32,
+   "reply_sha": "da1206f098bd3573",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 35384.36,
+    "candidates": {
+     "ms": 700.25,
+     "n": 32,
+     "ms_avg": 21.883
+    },
+    "commit": {
+     "ms": 29.64,
+     "n": 97,
+     "ms_avg": 0.306
+    },
+    "engram.wait": {
+     "ms": 925.07,
+     "n": 130,
+     "ms_avg": 7.116
+    },
+    "execute": {
+     "ms": 35303.83,
+     "n": 97,
+     "ms_avg": 363.957
+    },
+    "forward": {
+     "ms": 194.18,
+     "n": 32,
+     "ms_avg": 6.068
+    },
+    "graph.capture": {
+     "ms": 129.2,
+     "n": 2,
+     "ms_avg": 64.6
+    },
+    "graph.replay": {
+     "ms": 0.95,
+     "n": 30,
+     "ms_avg": 0.032
+    },
+    "graph.stage": {
+     "ms": 1.96,
+     "n": 30,
+     "ms_avg": 0.065
+    },
+    "plan": {
+     "ms": 9.12,
+     "n": 97,
+     "ms_avg": 0.094
+    },
+    "prefetch": {
+     "ms": 1.22,
+     "n": 32,
+     "ms_avg": 0.038
+    },
+    "prefill": {
+     "ms": 33553.53,
+     "n": 65,
+     "ms_avg": 516.208
+    },
+    "round": {
+     "ms": 35395.15,
+     "n": 97,
+     "ms_avg": 364.898
+    },
+    "sample": {
+     "ms": 0.91,
+     "n": 97,
+     "ms_avg": 0.009
+    },
+    "share": {
+     "ms": 79.05,
+     "n": 97,
+     "ms_avg": 0.815
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 894.87,
+     "n": 32,
+     "ms_avg": 27.965
+    }
+   }
+  }
+ ],
+ "exact_all": true,
+ "boot_s": 34.6
+}

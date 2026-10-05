@@ -1,0 +1,476 @@
+{
+ "knobs": {
+  "GLM53_TF_COMM_BACKEND": "roce",
+  "GLM53_TF_ROCE_FAST": "1",
+  "GLM53_TF_ROCE_MAX_KB": "1024",
+  "TF_DSV41_ATTN_CUDA": "1",
+  "TF_DSV41_BIAS_VL": "/cache/dsv41-bias-vl",
+  "TF_DSV41_BRANCHES": "1",
+  "TF_DSV41_BRANCHES_PRIO": "side",
+  "TF_DSV41_CALIB": "real",
+  "TF_DSV41_CALIB_DIR": "/cache/dsv41-calib",
+  "TF_DSV41_DEFAULT_EFFORT": "high",
+  "TF_DSV41_DENSE": "0",
+  "TF_DSV41_DENSE_V3": "1",
+  "TF_DSV41_DEPTH_JOINT": "0",
+  "TF_DSV41_DISCONNECT": "1",
+  "TF_DSV41_ENGRAM_DIR": "/engram",
+  "TF_DSV41_ENGRAM_FUSE_DEC": "1",
+  "TF_DSV41_ENGRAM_GATE": "1",
+  "TF_DSV41_ENGRAM_NATIVE": "1",
+  "TF_DSV41_EXPERT_LOADS": "1",
+  "TF_DSV41_EXPERT_MIN_K": "3",
+  "TF_DSV41_EXPERT_PREFILL": "0",
+  "TF_DSV41_EXPERT_RENORM": "kept",
+  "TF_DSV41_EXPERT_TOPP": "0.85",
+  "TF_DSV41_FAST_EXPERTS": "gm",
+  "TF_DSV41_FLOOR_GIB": "5",
+  "TF_DSV41_FLOOR_HARD_GIB": "4",
+  "TF_DSV41_GRAMMAR": "1",
+  "TF_DSV41_GRAPH_MODE": "rows",
+  "TF_DSV41_IMAGES": "native",
+  "TF_DSV41_INDEX_BUDGET_MIB": "64",
+  "TF_DSV41_INDEX_DTOPK": "1",
+  "TF_DSV41_INDEX_KV": "fp8",
+  "TF_DSV41_INDEX_STREAM_MIN": "4096",
+  "TF_DSV41_L2PF": "1",
+  "TF_DSV41_L2PF_MB": "12",
+  "TF_DSV41_L2PF_PACE_GBPS": "150",
+  "TF_DSV41_LAUNCH_T0": "1791117619.655482370",
+  "TF_DSV41_MHC_BM": "64",
+  "TF_DSV41_MHC_CUDA": "1",
+  "TF_DSV41_MHC_DEC": "1",
+  "TF_DSV41_MHC_FIN2": "1",
+  "TF_DSV41_MHC_FN": "bf16",
+  "TF_DSV41_MHC_PF": "1",
+  "TF_DSV41_MHC_WARPS": "8",
+  "TF_DSV41_NATIVE_DIR": "/cache/dsv41-native",
+  "TF_DSV41_PARTIAL_BF16": "1",
+  "TF_DSV41_PDL": "0",
+  "TF_DSV41_PF_COPIES": "1",
+  "TF_DSV41_PHASES": "1",
+  "TF_DSV41_PLAIN_TRITON": "1",
+  "TF_DSV41_PLAN_LINK": "rdma",
+  "TF_DSV41_PLAN_PIN": "auto",
+  "TF_DSV41_POOL_TOKENS": "614400",
+  "TF_DSV41_PREFETCH_AHEAD": "1",
+  "TF_DSV41_PREFILL": "replay",
+  "TF_DSV41_PREFILL_ATTN": "fused",
+  "TF_DSV41_PREFILL_ATTN_BMQ": "32",
+  "TF_DSV41_PREFILL_ATTN_WARPS": "8",
+  "TF_DSV41_PREFILL_CHUNK": "1024",
+  "TF_DSV41_PREFILL_GATHER": "bf16",
+  "TF_DSV41_PREFILL_KERNELS": "fast",
+  "TF_DSV41_PREFILL_ROUTER": "gemv",
+  "TF_DSV41_PREFILL_ROWS": "1024",
+  "TF_DSV41_PREPARED": "/prepared",
+  "TF_DSV41_PREPARED_WRITE": "1",
+  "TF_DSV41_RG_NARROW": "2",
+  "TF_DSV41_RG_TAIL": "1",
+  "TF_DSV41_RMS_PAIR": "1",
+  "TF_DSV41_ROPE_INPLACE": "1",
+  "TF_DSV41_ROUTER": "gemv",
+  "TF_DSV41_SCHEMA_PROMPT": "1",
+  "TF_DSV41_SESSIONS": "1",
+  "TF_DSV41_SESSION_RAM_MIB": "256",
+  "TF_DSV41_SPEC_DRAFT": "1",
+  "TF_DSV41_THINKING": "1",
+  "TF_DSV41_TOOL_GRAMMAR": "0",
+  "TF_DSV41_VISION_PREP_MB": "64"
+ },
+ "m2": "DSpark on (depth cost, cap 5, joint off, costs measured); draft head full; draft graphs on: 3 held (3 at boot in 0.19 s, 0 on first use), 4 replays, 0 eager windows; Engram prefetch {'issued': 0, 'hits': 2, 'misses': 2, 'dropped': 0, 'reads': 4943, 'cached': 4944, 'waited': 0, 'ahead': 0, 'kept': 0}; Engram gate: 99 rounds (0 reissued), 0 warm jobs, rows 7632 (7192 cached, 440 read), 98 syncs; first layer ready p50/p90/p99 0.55 / 2.32 / 4.55 ms, all 0.59 / 2.39 / 4.60 ms after queueing; speculative DSpark passes 0 launched, 0 used, 0 dropped, 0 without a graph; graphs on: 10 held (8 at boot in 2.8 s, 2 on first use), 157 replays, 2 eager windows; RoCE exchanges 2057 fast / 166 on NCCL; phases (1, ms a round over 0 rounds): candidates 6770.53, engram.wait 375.68, forward 415.46, graph.capture 276.76, graph.replay 4.51, graph.stage 16.99, spec 0.08",
+ "workloads": {},
+ "kit": {
+  "mixed": 2.27,
+  "mmlu": 1.46,
+  "multiturn": 1.83,
+  "tf": 1.78,
+  "kit": 2.17,
+  "tweet": 3.08,
+  "edit": 3.84,
+  "c4_tok_s": 37.6,
+  "code_tok_s": 36.4,
+  "prose_tok_s": 25.1
+ },
+ "targets": {
+  "code_tok_s": 52.0,
+  "prose_tok_s": 38.0,
+  "tokens_per_round_k3": 3.1
+ },
+ "prefill": [
+  {
+   "tokens": 8192,
+   "ttft_s": 4.71,
+   "wall_s": 5.57,
+   "tok_s": 1739.2,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "0e6a1cdf9f4b3cf3",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 5575.0,
+    "candidates": {
+     "ms": 748.47,
+     "n": 32,
+     "ms_avg": 23.39
+    },
+    "commit": {
+     "ms": 21.85,
+     "n": 41,
+     "ms_avg": 0.533
+    },
+    "engram.wait": {
+     "ms": 297.26,
+     "n": 18,
+     "ms_avg": 16.515
+    },
+    "execute": {
+     "ms": 5570.59,
+     "n": 41,
+     "ms_avg": 135.868
+    },
+    "forward": {
+     "ms": 214.94,
+     "n": 32,
+     "ms_avg": 6.717
+    },
+    "graph.capture": {
+     "ms": 124.88,
+     "n": 2,
+     "ms_avg": 62.438
+    },
+    "graph.replay": {
+     "ms": 0.7,
+     "n": 30,
+     "ms_avg": 0.023
+    },
+    "graph.stage": {
+     "ms": 3.75,
+     "n": 30,
+     "ms_avg": 0.125
+    },
+    "plan": {
+     "ms": 1.49,
+     "n": 41,
+     "ms_avg": 0.036
+    },
+    "prefetch": {
+     "ms": 2.14,
+     "n": 32,
+     "ms_avg": 0.067
+    },
+    "prefill": {
+     "ms": 4268.98,
+     "n": 9,
+     "ms_avg": 474.331
+    },
+    "round": {
+     "ms": 5575.9,
+     "n": 41,
+     "ms_avg": 135.997
+    },
+    "sample": {
+     "ms": 0.55,
+     "n": 41,
+     "ms_avg": 0.013
+    },
+    "share": {
+     "ms": 2.83,
+     "n": 41,
+     "ms_avg": 0.069
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 963.83,
+     "n": 32,
+     "ms_avg": 30.12
+    }
+   }
+  },
+  {
+   "tokens": 32768,
+   "ttft_s": 17.39,
+   "wall_s": 18.2,
+   "tok_s": 1884.1,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "c1bb5db64173f3f1",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 18204.21,
+    "candidates": {
+     "ms": 700.82,
+     "n": 32,
+     "ms_avg": 21.901
+    },
+    "commit": {
+     "ms": 23.12,
+     "n": 65,
+     "ms_avg": 0.356
+    },
+    "engram.wait": {
+     "ms": 616.03,
+     "n": 66,
+     "ms_avg": 9.334
+    },
+    "execute": {
+     "ms": 18194.37,
+     "n": 65,
+     "ms_avg": 279.913
+    },
+    "forward": {
+     "ms": 186.86,
+     "n": 32,
+     "ms_avg": 5.839
+    },
+    "graph.capture": {
+     "ms": 119.44,
+     "n": 2,
+     "ms_avg": 59.721
+    },
+    "graph.replay": {
+     "ms": 0.86,
+     "n": 30,
+     "ms_avg": 0.029
+    },
+    "graph.stage": {
+     "ms": 1.93,
+     "n": 30,
+     "ms_avg": 0.064
+    },
+    "plan": {
+     "ms": 4.49,
+     "n": 65,
+     "ms_avg": 0.069
+    },
+    "prefetch": {
+     "ms": 1.28,
+     "n": 32,
+     "ms_avg": 0.04
+    },
+    "prefill": {
+     "ms": 16638.88,
+     "n": 33,
+     "ms_avg": 504.208
+    },
+    "round": {
+     "ms": 18209.21,
+     "n": 65,
+     "ms_avg": 280.142
+    },
+    "sample": {
+     "ms": 0.65,
+     "n": 65,
+     "ms_avg": 0.01
+    },
+    "share": {
+     "ms": 8.57,
+     "n": 65,
+     "ms_avg": 0.132
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 888.15,
+     "n": 32,
+     "ms_avg": 27.755
+    }
+   }
+  },
+  {
+   "tokens": 65536,
+   "ttft_s": 35.02,
+   "wall_s": 35.83,
+   "tok_s": 1871.2,
+   "first": 65,
+   "reply_n": 32,
+   "reply_sha": "b88d350fbc16e89c",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 35834.09,
+    "candidates": {
+     "ms": 697.45,
+     "n": 32,
+     "ms_avg": 21.795
+    },
+    "commit": {
+     "ms": 15.78,
+     "n": 96,
+     "ms_avg": 0.164
+    },
+    "engram.wait": {
+     "ms": 1092.05,
+     "n": 130,
+     "ms_avg": 8.4
+    },
+    "execute": {
+     "ms": 35755.69,
+     "n": 97,
+     "ms_avg": 368.615
+    },
+    "forward": {
+     "ms": 192.98,
+     "n": 32,
+     "ms_avg": 6.031
+    },
+    "graph.capture": {
+     "ms": 125.65,
+     "n": 2,
+     "ms_avg": 62.823
+    },
+    "graph.replay": {
+     "ms": 0.72,
+     "n": 30,
+     "ms_avg": 0.024
+    },
+    "graph.stage": {
+     "ms": 1.97,
+     "n": 30,
+     "ms_avg": 0.066
+    },
+    "plan": {
+     "ms": 67.74,
+     "n": 97,
+     "ms_avg": 0.698
+    },
+    "prefetch": {
+     "ms": 1.27,
+     "n": 32,
+     "ms_avg": 0.04
+    },
+    "prefill": {
+     "ms": 33750.0,
+     "n": 65,
+     "ms_avg": 519.231
+    },
+    "round": {
+     "ms": 35844.37,
+     "n": 97,
+     "ms_avg": 369.53
+    },
+    "sample": {
+     "ms": 0.86,
+     "n": 97,
+     "ms_avg": 0.009
+    },
+    "share": {
+     "ms": 17.8,
+     "n": 97,
+     "ms_avg": 0.184
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 890.83,
+     "n": 32,
+     "ms_avg": 27.838
+    }
+   }
+  },
+  {
+   "tokens": 131072,
+   "ttft_s": 72.44,
+   "wall_s": 73.2,
+   "tok_s": 1809.5,
+   "first": 223,
+   "reply_n": 32,
+   "reply_sha": "ed5aa2a175ee6de1",
+   "phases": {
+    "mode": "1",
+    "wall_ms": 73197.94,
+    "candidates": {
+     "ms": 734.37,
+     "n": 32,
+     "ms_avg": 22.949
+    },
+    "commit": {
+     "ms": 15.6,
+     "n": 160,
+     "ms_avg": 0.097
+    },
+    "engram.wait": {
+     "ms": 973.26,
+     "n": 258,
+     "ms_avg": 3.772
+    },
+    "execute": {
+     "ms": 73138.05,
+     "n": 160,
+     "ms_avg": 457.113
+    },
+    "forward": {
+     "ms": 122.79,
+     "n": 32,
+     "ms_avg": 3.837
+    },
+    "graph.capture": {
+     "ms": 75.23,
+     "n": 1,
+     "ms_avg": 75.229
+    },
+    "graph.replay": {
+     "ms": 1.55,
+     "n": 31,
+     "ms_avg": 0.05
+    },
+    "graph.stage": {
+     "ms": 3.64,
+     "n": 31,
+     "ms_avg": 0.117
+    },
+    "plan": {
+     "ms": 17.25,
+     "n": 161,
+     "ms_avg": 0.107
+    },
+    "prefetch": {
+     "ms": 2.27,
+     "n": 32,
+     "ms_avg": 0.071
+    },
+    "prefill": {
+     "ms": 70451.03,
+     "n": 129,
+     "ms_avg": 546.132
+    },
+    "round": {
+     "ms": 73192.7,
+     "n": 160,
+     "ms_avg": 457.454
+    },
+    "sample": {
+     "ms": 1.23,
+     "n": 160,
+     "ms_avg": 0.008
+    },
+    "share": {
+     "ms": 31.87,
+     "n": 161,
+     "ms_avg": 0.198
+    },
+    "spec": {
+     "ms": 0.04,
+     "n": 32,
+     "ms_avg": 0.001
+    },
+    "window": {
+     "ms": 857.56,
+     "n": 32,
+     "ms_avg": 26.799
+    }
+   }
+  }
+ ],
+ "exact_all": true,
+ "boot_s": 35.8
+}

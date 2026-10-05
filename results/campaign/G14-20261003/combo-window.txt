@@ -1,0 +1,13 @@
+config            boot  table 1/2/4/16 ms             passes (slower rank) 1/2/4/16    r0 / r1 1-row   exact digest
+off               b1    23.57  29.40  37.52  70.68       23.57  28.25  37.69  72.86    23.57 /  23.57   True 095a3459a7
+off               b2    23.40  29.28  37.41  72.94       23.46  28.08  37.54  73.06    23.46 /  23.46   True 095a3459a7
+off               b3    23.57  29.37  37.46  70.67       23.58  28.17  37.68  72.92    23.57 /  23.58   True 095a3459a7
+combo             b1    21.67  28.00  35.80  71.09       21.71  26.40  35.87  71.56    21.71 /  21.71   True 095a3459a7
+combo             b2    21.73  27.77  35.78  71.22       21.71  26.42  35.84  71.72    21.71 /  21.71   True 095a3459a7
+combo             b3    21.76  27.79  36.00  70.48       21.80  26.64  36.13  71.77    21.80 /  21.80   True 095a3459a7
+
+config            boots  passes 1/2/4/16 (median of boot medians)   vs off 1 / 2 / 4 / 16 ms          boot-table 1/2/4/16 medians     spread1 outl exact digest==off
+off                   3   23.57  28.17  37.68  72.92        -      -      -      -    23.57  29.37  37.46  70.68   0.114  0  True  None
+combo                 3   21.71  26.42  35.87  71.72    -1.86  -1.75  -1.82  -1.20    21.73  27.79  35.80  71.09   0.095  0  True  True
+
+calibration, G14 method (2 warm-ups, median of 5, recheck rows 1-2): 6 boots, |boot table - pass median| at 1 row: median 0.029, max 0.060 ms; outliers (> +1 ms) 0

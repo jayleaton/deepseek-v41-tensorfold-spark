@@ -1,0 +1,5 @@
+SOAK 2026-10-05T11:54:46Z, sources 7bd2d67d16c6ef4f0405eca915aa58aedde4940f, image glm53-tensorfold:b13-060
+[dsv41 18:44:42] soak g19: traffic rc=0; {'n': 46, 'ok': 0, 'cancelled': 46, 'errors': 0, 'check_fails': 0, 'ttft_p50': None, 'ttft_p95': None, 'total_p50': None, 'total_p95': None} [soak] image: {'n': 54, 'ok': 51, 'cancelled': 3, 'errors': 0, 'check_fails': 0, 'ttft_p50': 0.357, 'ttft_p95': 1.926, 'total_p50': 0.702, 'total_p95': 3.023} 
+g19 r0: RssAnon 1.82 -> warm 3.91 -> max 3.97 -> end 3.32 -> idle 3.24 GiB, slope -0.38 GiB/h; reserved slope -0.33; MemAvailable slope 0.32, min 4.63; glibc free max 0.53; trims {'trims': 119, 'idle': 17, 'busy': 0, 'back': 18.69}
+g19 r1: RssAnon 1.96 -> warm 3.31 -> max 3.43 -> end 2.92 -> idle 2.83 GiB, slope -0.38 GiB/h; reserved slope -0.23; MemAvailable slope 0.31, min 3.99; glibc free max 0.34; trims {'trims': 118, 'idle': 16, 'busy': 0, 'back': 8.95}
+g19: FAIL: r1: MemAvailable min 3.991 GiB < 4.0

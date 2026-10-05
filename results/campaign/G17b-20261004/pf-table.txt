@@ -1,0 +1,36 @@
+== full prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                          836       853       844       808   (2 boots)
+cone                        1249      1619      1677         -   (2 boots)
+fcone                       1394      1828      1893         -   (2 boots)
+final                        926       952       945       897   (2 boots)
+final-2k                    1064      1109      1093      1032   (2 boots)
+cone vs off               +49.4%    +89.9%    +98.7%         -
+fcone vs off              +66.7%   +114.4%   +124.2%         -
+final vs off              +10.7%    +11.6%    +11.9%    +10.9%
+final-2k vs off           +27.2%    +30.0%    +29.5%    +27.6%
+off / kit                  0.78x     0.79x     0.80x     0.78x
+cone / kit                 1.16x     1.51x     1.58x         -
+fcone / kit                1.30x     1.70x     1.79x         -
+final / kit                0.86x     0.89x     0.89x     0.87x
+final-2k / kit             0.99x     1.03x     1.03x     1.00x
+exact off          full: 8 / 8 (first token + reply digest == off b1)
+exact cone         full: 6 / 6 (first token + reply digest == off b1)
+exact fcone        full: 6 / 6 (first token + reply digest == off b1)
+exact final        full: 8 / 8 (first token + reply digest == off b1)
+exact final-2k     full: 8 / 8 (first token + reply digest == off b1)
+
+== replay prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+off                         1631      1763      1752      1696   (2 boots)
+final                       1842      1990      1980      1906   (2 boots)
+final-2k                    2025      2285      2273      2017   (2 boots)
+final vs off              +13.0%    +12.9%    +13.0%    +12.4%
+final-2k vs off           +24.2%    +29.7%    +29.8%    +19.0%
+off / kit                  1.52x     1.64x     1.65x     1.64x
+final / kit                1.72x     1.85x     1.87x     1.85x
+final-2k / kit             1.89x     2.13x     2.14x     1.96x
+exact off          replay: 8 / 8 (first token + reply digest == off b1)
+exact final        replay: 8 / 8 (first token + reply digest == off b1)
+exact final-2k     replay: 8 / 8 (first token + reply digest == off b1)
+

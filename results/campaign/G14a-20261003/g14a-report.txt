@@ -1,0 +1,454 @@
+== BRANCHES boots: calibration table (rank-0 log; slower rank's best of reps, 2+ rows fitted), the raw calibration runs per rank (ms between syncs; first = warm-up), serving window GPU ms per rank (CUDA events; median [p10-p90] n)
+-- g14bw-off: table 1 / 2 / 4 rows 23.3 / 29.1 / 37.3 ms
+   r0 calib local best (us): 1 row 23262, 2 rows 27849, 4 rows 37381
+   r0 calib 1 row(s) runs: 24.22, 24.42, 23.94, 23.26
+   r0 calib 2 row(s) runs: 28.76, 28.06, 27.92, 27.85
+   r0 calib 4 row(s) runs: 38.02, 38.22, 37.41, 37.38
+   r0 serving GPU ms: 1x1 rows 25.739 [24.636-26.882] n113; 2x1 rows 29.866 [28.5-31.541] n198; 3x1 rows 34.399 [32.911-36.503] n135; 4x1 rows 38.094 [36.288-40.936] n27
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23264, 2 rows 27835, 4 rows 37378
+   r1 calib 1 row(s) runs: 24.21, 24.42, 23.92, 23.26
+   r1 calib 2 row(s) runs: 28.72, 28.10, 27.93, 27.84
+   r1 calib 4 row(s) runs: 38.03, 38.21, 37.40, 37.38
+   r1 serving GPU ms: 1x1 rows 25.719 [24.629-26.868] n113; 2x1 rows 29.871 [28.556-31.339] n198; 3x1 rows 34.338 [32.641-36.428] n135; 4x1 rows 38.054 [36.316-40.752] n27
+   r1 exchanges a 1-row calibration window: [84]
+-- g14bw-off2: table 1 / 2 / 4 rows 23.5 / 29.4 / 37.6 ms
+   r0 calib local best (us): 1 row 23451, 2 rows 28088, 4 rows 37647
+   r0 calib 1 row(s) runs: 25.85, 24.31, 24.05, 23.45
+   r0 calib 2 row(s) runs: 29.66, 28.11, 28.14, 28.09
+   r0 calib 4 row(s) runs: 38.88, 37.71, 38.24, 37.65
+   r0 serving GPU ms: 1x1 rows 25.813 [24.994-26.98] n115; 2x1 rows 29.917 [28.458-31.431] n195; 3x1 rows 34.607 [32.999-36.654] n135; 4x1 rows 38.125 [36.362-40.048] n28
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23446, 2 rows 28083, 4 rows 37663
+   r1 calib 1 row(s) runs: 25.36, 24.34, 24.07, 23.45
+   r1 calib 2 row(s) runs: 29.66, 28.11, 28.15, 28.08
+   r1 calib 4 row(s) runs: 38.88, 37.71, 38.22, 37.66
+   r1 serving GPU ms: 1x1 rows 25.708 [24.857-26.856] n115; 2x1 rows 29.821 [28.237-31.438] n195; 3x1 rows 34.588 [32.896-36.435] n135; 4x1 rows 38.178 [36.334-39.764] n28
+   r1 exchanges a 1-row calibration window: [84]
+-- g14bw-on1: table 1 / 2 / 4 rows 23.2 / 28.9 / 37.2 ms
+   r0 calib local best (us): 1 row 23195, 2 rows 27763, 4 rows 37278
+   r0 calib 1 row(s) runs: 24.43, 24.82, 24.13, 23.19
+   r0 calib 2 row(s) runs: 28.68, 28.01, 27.80, 27.76
+   r0 calib 4 row(s) runs: 37.85, 37.30, 37.30, 37.28
+   r0 serving GPU ms: 1x1 rows 25.555 [24.491-26.557] n111; 2x1 rows 29.58 [28.293-30.79] n202; 3x1 rows 34.187 [32.658-35.915] n133; 4x1 rows 37.899 [35.925-39.977] n27
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23199, 2 rows 27765, 4 rows 37278
+   r1 calib 1 row(s) runs: 24.46, 24.81, 24.13, 23.20
+   r1 calib 2 row(s) runs: 28.62, 28.07, 27.79, 27.77
+   r1 calib 4 row(s) runs: 37.85, 37.31, 37.29, 37.28
+   r1 serving GPU ms: 1x1 rows 25.519 [24.437-26.569] n111; 2x1 rows 29.497 [28.206-30.754] n202; 3x1 rows 34.077 [32.502-35.899] n133; 4x1 rows 37.855 [35.964-39.939] n27
+   r1 exchanges a 1-row calibration window: [84]
+-- g14bw-on2: table 1 / 2 / 4 rows 23.1 / 29.2 / 37.3 ms
+   r0 calib local best (us): 1 row 23083, 2 rows 27803, 4 rows 37256
+   r0 calib 1 row(s) runs: 24.14, 23.24, 23.08, 23.75
+   r0 calib 2 row(s) runs: 29.69, 27.81, 27.80, 27.83
+   r0 calib 4 row(s) runs: 37.75, 37.26, 37.37, 37.40
+   r0 serving GPU ms: 1x1 rows 25.346 [24.489-26.513] n126; 2x1 rows 29.212 [28.179-30.649] n185; 3x1 rows 34.018 [32.362-35.589] n135; 4x1 rows 37.848 [35.87-40.333] n28
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23080, 2 rows 27803, 4 rows 37265
+   r1 calib 1 row(s) runs: 24.07, 23.21, 23.08, 23.77
+   r1 calib 2 row(s) runs: 29.70, 27.80, 27.82, 27.82
+   r1 calib 4 row(s) runs: 37.74, 37.27, 37.37, 37.40
+   r1 serving GPU ms: 1x1 rows 25.304 [24.357-26.432] n126; 2x1 rows 29.167 [28.066-30.709] n185; 3x1 rows 34.057 [32.262-35.587] n135; 4x1 rows 37.524 [35.796-40.383] n28
+   r1 exchanges a 1-row calibration window: [84]
+-- g14bw-on3: table 1 / 2 / 4 rows 23.1 / 29.6 / 37.4 ms
+   r0 calib local best (us): 1 row 23089, 2 rows 27723, 4 rows 37385
+   r0 calib 1 row(s) runs: 25.64, 24.53, 23.09, 23.09
+   r0 calib 2 row(s) runs: 28.57, 27.83, 27.75, 27.72
+   r0 calib 4 row(s) runs: 39.96, 37.38, 38.13, 39.25
+   r0 serving GPU ms: 1x1 rows 25.373 [24.466-26.402] n142; 2x1 rows 29.333 [28.155-30.931] n173; 3x1 rows 34.048 [32.604-35.869] n138; 4x1 rows 38.159 [36.001-40.047] n29
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23097, 2 rows 27718, 4 rows 37384
+   r1 calib 1 row(s) runs: 25.42, 24.52, 23.10, 23.10
+   r1 calib 2 row(s) runs: 28.57, 27.81, 27.76, 27.72
+   r1 calib 4 row(s) runs: 39.95, 37.38, 38.14, 39.24
+   r1 serving GPU ms: 1x1 rows 25.227 [24.352-26.23] n142; 2x1 rows 29.28 [28.047-30.883] n173; 3x1 rows 33.888 [32.596-35.829] n138; 4x1 rows 38.134 [35.802-39.848] n29
+   r1 exchanges a 1-row calibration window: [84]
+-- g14bn-on1: table 1 / 2 / 4 rows 23.1 / 29.0 / 37.2 ms
+   r0 calib local best (us): 1 row 23120, 2 rows 27812, 4 rows 37590
+   r0 calib 1 row(s) runs: 24.00, 23.19, 24.39, 23.12
+   r0 calib 2 row(s) runs: 29.79, 27.82, 27.81, 27.90
+   r0 calib 4 row(s) runs: 37.75, 38.17, 37.95, 37.59
+   r0 serving GPU ms: 1x1 rows 25.638 [24.781-26.963] n24; 2x1 rows 29.608 [28.591-30.968] n48; 3x1 rows 34.34 [32.635-35.78] n24; 4x1 rows 37.686 [37.132-38.035] n7
+   r0 exchanges a 1-row calibration window: [84]
+   r1 calib local best (us): 1 row 23115, 2 rows 27809, 4 rows 37589
+   r1 calib 1 row(s) runs: 24.14, 23.19, 24.39, 23.11
+   r1 calib 2 row(s) runs: 29.80, 27.81, 27.81, 27.91
+   r1 calib 4 row(s) runs: 37.76, 38.15, 37.95, 37.59
+   r1 serving GPU ms: 1x1 rows 25.622 [24.738-26.764] n24; 2x1 rows 29.47 [28.451-30.793] n48; 3x1 rows 34.143 [32.878-35.808] n24; 4x1 rows 37.679 [37.126-38.405] n7
+   r1 exchanges a 1-row calibration window: [84]
+
+== exchanges (g14x): RoCE trace ring, both ranks
+   captures: 17; ops a capture: {8: 3, 83: 14}
+   capture 1: 83 exchanges, bytes a rank: {6144: 2, 10240: 81}
+   capture 4: 83 exchanges, bytes a rank: {12288: 2, 20480: 81}
+   capture 7: 83 exchanges, bytes a rank: {18432: 2, 30720: 81}
+   capture 10: 83 exchanges, bytes a rank: {24576: 2, 40960: 81}
+   capture 13: 83 exchanges, bytes a rank: {30720: 2, 51200: 81}
+   capture 16: 83 exchanges, bytes a rank: {36864: 2, 61440: 81}
+   capture 19: 83 exchanges, bytes a rank: {43008: 2, 71680: 81}
+   capture 22: 83 exchanges, bytes a rank: {49152: 2, 81920: 81}
+   capture 34: 83 exchanges, bytes a rank: {73728: 2, 122880: 81}
+   capture 37: 83 exchanges, bytes a rank: {98304: 2, 163840: 81}
+   capture 40: 83 exchanges, bytes a rank: {147456: 2, 245760: 81}
+   capture 43: 83 exchanges, bytes a rank: {196608: 2, 327680: 81}
+   capture 46: 83 exchanges, bytes a rank: {294912: 2, 491520: 81}
+   capture 49: 83 exchanges, bytes a rank: {393216: 2, 655360: 81}
+   all exchange calls (bytes, captured, phase): [[4, False, 'boot', 1], [7, False, 'boot', 1], [8, False, 'calib', 71], [16, False, 'calib', 11], [16, False, 'serve', 60], [24, False, 'calib', 11], [32, False, 'calib', 11], [32, False, 'serve', 89], [40, False, 'calib', 11], [48, False, 'calib', 11], [48, False, 'serve', 63], [56, False, 'calib', 11], [64, False, 'calib', 22], [64, False, 'serve', 17], [72, False, 'calib', 11], [72, False, 'serve', 52], [80, False, 'calib', 11], [80, False, 'serve', 1], [88, False, 'calib', 11], [96, False, 'calib', 11], [100, False, 'boot', 1], [104, False, 'calib', 11], [112, False, 'calib', 11], [120, False, 'calib', 11]]
+-- calibration 1-row windows: 11 traced, 84 exchanges each; window ms r0 [25.52, 23.84, 24.55, 23.58, 24.35, 23.71, 23.67, 23.58, 23.58, 23.63, 23.59] r1 [25.54, 23.82, 24.55, 23.57, 24.35, 23.71, 23.67, 23.58, 23.57, 23.64, 23.59]
+   a window (sums, us): total r0 1399.392 / r1 1417.664; stage 184.32 / 180.928; wait 610.912 / 706.304; copy 571.392 / 531.04; transport (min wait) 180.736; skew 996.288; exchanges where r0 waited longer 40.0
+   critical path (the late rank's exchange kernels): 829.472 us = stage 187.936 + wait 180.736 + copy 452.32; the early rank's extra wait 1177.344; both ranks waited in 314 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 5.664 [5.024-10.432] us; late rank's poll 0.896 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.888/3.68; stage1 1.792/1.92/2.464; wait0 0.896/5.872/18.272; wait1 0.864/5.664/18.752; copy0 3.776/5.056/12.96; copy1 3.808/4.704/11.072; total0 6.592/16.224/30.848; total1 6.592/16.096/27.776; transport 0.864/0.928/4.544; skew 2.4/11.264/22.496; notice0 1790922598712014.2/1790922598712014.5/1790922598712014.8; notice1 1790922596870014.2/1790922596870014.8/1790922596870015.2; post0 0.256/0.336/0.512; post1 0.24/0.288/0.48; late_total 6.528/7.456/17.632; late_copy 3.776/3.904/10.368; early_wait 6.688/12.432/23.744
+   by position (med us: transport, skew, who waits: 1 = r0 waits longer):
+     # 0 total r0   20.16 r1    6.72  stage  1.82/ 1.82  copy  3.90/ 3.94  transport   0.90  skew  13.60  r0 waits 1.0
+     # 1 total r0    7.68 r1   28.00  stage  2.05/ 4.10  copy  4.70/ 7.01  transport   0.93  skew  16.42  r0 waits 0.0
+     # 2 total r0    7.39 r1   22.24  stage  1.82/ 1.86  copy  4.42/ 9.34  transport   0.96  skew   8.96  r0 waits 0.0
+     # 3 total r0   23.26 r1   14.24  stage  4.54/ 6.27  copy  3.84/ 4.22  transport   2.72  skew  12.80  r0 waits 1.0
+     # 4 total r0   17.63 r1   17.54  stage  1.89/ 1.82  copy  4.86/ 4.03  transport   0.90  skew  16.13  r0 waits 0.0
+     # 5 total r0   18.43 r1   16.06  stage  1.82/ 1.82  copy  6.18/ 6.14  transport   0.90  skew   9.15  r0 waits 1.0
+     # 6 total r0   20.67 r1    6.98  stage  2.21/ 2.08  copy  4.45/ 4.10  transport   0.86  skew  12.64  r0 waits 1.0
+     # 7 total r0   37.06 r1    6.75  stage  1.79/ 2.08  copy 10.37/ 3.81  transport   0.90  skew  21.34  r0 waits 1.0
+     # 8 total r0   10.46 r1   20.35  stage  1.82/ 1.92  copy  6.02/ 8.51  transport   2.11  skew   8.64  r0 waits 0.0
+     # 9 total r0   10.94 r1   13.38  stage  1.98/ 1.82  copy  3.90/ 4.99  transport   2.88  skew   6.08  r0 waits 1.0
+     #10 total r0   17.92 r1   12.32  stage  1.82/ 1.82  copy  5.76/ 5.76  transport   0.93  skew  12.74  r0 waits 1.0
+     #11 total r0   13.38 r1    9.09  stage  1.89/ 1.92  copy  4.06/ 3.94  transport   2.85  skew   4.58  r0 waits 1.0
+     #12 total r0   19.65 r1   13.82  stage  1.79/ 1.89  copy  7.26/ 6.56  transport   1.41  skew   8.45  r0 waits 0.0
+     #13 total r0    8.45 r1   15.65  stage  1.82/ 1.86  copy  4.00/ 5.66  transport   1.82  skew   7.97  r0 waits 0.0
+     #14 total r0   22.11 r1    6.69  stage  1.82/ 1.86  copy  6.40/ 3.87  transport   0.90  skew  13.09  r0 waits 1.0
+     #15 total r0   10.66 r1   11.71  stage  1.79/ 2.05  copy  4.00/ 4.35  transport   2.34  skew   5.70  r0 waits 0.0
+     #16 total r0   20.93 r1   18.27  stage  1.95/ 2.02  copy  4.10/ 4.42  transport   0.93  skew  15.84  r0 waits 1.0
+     #17 total r0    9.76 r1   19.33  stage  2.05/ 1.82  copy  4.16/ 9.57  transport   3.55  skew   4.74  r0 waits 0.0
+     #18 total r0   18.14 r1   22.21  stage  1.86/ 1.89  copy  7.36/11.97  transport   2.94  skew   6.37  r0 waits 0.0
+     #19 total r0   14.14 r1    9.86  stage  1.82/ 1.92  copy  5.02/ 4.19  transport   3.10  skew   4.00  r0 waits 1.0
+     #20 total r0   22.43 r1   17.86  stage  1.82/ 1.98  copy  6.56/ 8.35  transport   1.44  skew   7.81  r0 waits 1.0
+     #21 total r0    6.75 r1   18.14  stage  1.92/ 1.86  copy  3.90/ 6.05  transport   0.93  skew   9.86  r0 waits 0.0
+     #22 total r0   22.75 r1    7.04  stage  2.02/ 1.89  copy  4.67/ 4.29  transport   0.90  skew  14.34  r0 waits 1.0
+     #23 total r0   10.14 r1   11.49  stage  2.02/ 2.08  copy  3.94/ 4.10  transport   1.89  skew   7.62  r0 waits 0.0
+     #24 total r0   21.47 r1   17.38  stage  1.82/ 1.92  copy  5.44/ 5.76  transport   0.90  skew  14.82  r0 waits 1.0
+     #25 total r0    6.59 r1   18.37  stage  1.79/ 1.82  copy  3.78/ 5.70  transport   0.99  skew   9.60  r0 waits 0.0
+     #26 total r0   22.43 r1   23.84  stage  1.82/ 1.92  copy  8.77/10.43  transport   3.07  skew  10.66  r0 waits 0.0
+     #27 total r0   29.06 r1    6.91  stage  1.79/ 2.05  copy 15.14/ 3.90  transport   0.90  skew  10.75  r0 waits 1.0
+     #28 total r0    7.04 r1   24.96  stage  1.79/ 1.82  copy  4.32/ 4.38  transport   0.90  skew  17.86  r0 waits 0.0
+     #29 total r0   14.05 r1   11.14  stage  1.95/ 1.89  copy  6.14/ 4.74  transport   3.01  skew   5.57  r0 waits 1.0
+     #30 total r0   15.39 r1   19.36  stage  4.35/ 3.84  copy  6.40/ 5.66  transport   1.15  skew  12.26  r0 waits 0.0
+     #31 total r0   11.71 r1   25.57  stage  2.14/ 1.98  copy  7.30/ 4.45  transport   0.90  skew  18.94  r0 waits 0.0
+     #32 total r0    9.60 r1   17.22  stage  2.14/ 1.92  copy  4.10/ 7.62  transport   0.93  skew   8.93  r0 waits 0.0
+     #33 total r0   23.90 r1    9.60  stage  1.92/ 2.05  copy 12.51/ 4.77  transport   2.30  skew   6.27  r0 waits 1.0
+     #34 total r0   16.80 r1   10.98  stage  2.08/ 2.08  copy  4.70/ 3.97  transport   2.66  skew   9.57  r0 waits 1.0
+     #35 total r0   25.38 r1    6.53  stage  1.92/ 1.82  copy  3.87/ 3.87  transport   0.86  skew  19.17  r0 waits 1.0
+     #36 total r0   30.18 r1    6.66  stage  2.05/ 1.82  copy 15.10/ 3.90  transport   0.90  skew  11.10  r0 waits 1.0
+     #37 total r0    6.46 r1   25.82  stage  1.82/ 1.79  copy  3.71/ 7.01  transport   0.90  skew  18.50  r0 waits 0.0
+     #38 total r0    6.62 r1   20.54  stage  1.79/ 2.11  copy  3.81/ 6.59  transport   0.93  skew  12.16  r0 waits 0.0
+     #39 total r0   22.53 r1    6.66  stage  1.79/ 1.79  copy  9.86/ 3.94  transport   0.90  skew  10.85  r0 waits 1.0
+     #40 total r0   15.94 r1    7.58  stage  1.82/ 1.82  copy  4.54/ 3.84  transport   1.92  skew   6.43  r0 waits 1.0
+     #41 total r0   38.91 r1   20.51  stage  4.80/ 5.09  copy 13.41/ 8.45  transport   4.42  skew  18.24  r0 waits 1.0
+     #42 total r0   24.93 r1    8.48  stage  1.82/ 1.79  copy  6.46/ 4.86  transport   0.90  skew  13.57  r0 waits 1.0
+     #43 total r0   30.46 r1   29.15  stage  4.45/ 4.10  copy 20.64/ 7.26  transport   2.75  skew  11.81  r0 waits 0.0
+     #44 total r0   17.82 r1   25.25  stage  4.32/ 1.98  copy 11.20/11.36  transport   1.76  skew   9.60  r0 waits 0.0
+     #45 total r0   30.46 r1   17.86  stage  4.19/ 1.79  copy 14.24/ 9.28  transport   3.30  skew   8.80  r0 waits 1.0
+     #46 total r0   30.91 r1    6.91  stage  1.92/ 2.11  copy 12.74/ 3.81  transport   0.90  skew  14.53  r0 waits 1.0
+     #47 total r0   30.08 r1   19.46  stage  1.82/ 3.74  copy 15.04/11.26  transport   2.53  skew   8.48  r0 waits 1.0
+     #48 total r0   13.95 r1   16.93  stage  1.86/ 1.82  copy  4.67/ 9.95  transport   3.62  skew   4.03  r0 waits 1.0
+     #49 total r0   30.91 r1   19.97  stage  1.86/ 6.02  copy 11.10/ 9.89  transport   4.32  skew  12.58  r0 waits 1.0
+     #50 total r0   22.66 r1   11.14  stage  4.06/ 3.14  copy  6.40/ 4.22  transport   4.06  skew   3.94  r0 waits 1.0
+     #51 total r0    8.38 r1   24.70  stage  2.11/ 2.08  copy  5.50/ 6.02  transport   0.90  skew  15.20  r0 waits 0.0
+     #52 total r0   14.59 r1    8.86  stage  1.82/ 1.89  copy  5.18/ 3.94  transport   1.95  skew   7.17  r0 waits 1.0
+     #53 total r0   23.17 r1   11.68  stage  1.92/ 1.89  copy  6.02/ 7.62  transport   0.90  skew  13.57  r0 waits 1.0
+     #54 total r0   18.46 r1    9.76  stage  4.42/ 1.79  copy  5.79/ 4.22  transport   1.86  skew   8.74  r0 waits 1.0
+     #55 total r0    6.59 r1   23.97  stage  1.82/ 1.79  copy  3.78/ 5.76  transport   0.93  skew  16.10  r0 waits 0.0
+     #56 total r0   18.34 r1    6.91  stage  3.14/ 1.92  copy  5.28/ 4.03  transport   0.90  skew   9.73  r0 waits 1.0
+     #57 total r0   24.99 r1    6.56  stage  1.82/ 1.86  copy  5.38/ 3.84  transport   0.90  skew  18.14  r0 waits 1.0
+     #58 total r0   20.90 r1    6.69  stage  2.05/ 1.92  copy  6.46/ 3.84  transport   0.90  skew   9.79  r0 waits 1.0
+     #59 total r0   23.58 r1    7.74  stage  1.92/ 1.79  copy 10.69/ 4.10  transport   1.82  skew   9.54  r0 waits 1.0
+     #60 total r0   18.91 r1    6.75  stage  1.82/ 1.92  copy  7.42/ 3.87  transport   0.86  skew  10.14  r0 waits 1.0
+     #61 total r0    6.88 r1   24.96  stage  1.82/ 1.95  copy  4.03/ 8.10  transport   0.93  skew  14.56  r0 waits 0.0
+     #62 total r0    9.09 r1   14.82  stage  1.89/ 1.89  copy  3.81/ 6.40  transport   3.33  skew   3.55  r0 waits 0.0
+     #63 total r0   21.31 r1   19.14  stage  1.82/ 1.82  copy  4.93/ 4.06  transport   0.90  skew  13.44  r0 waits 1.0
+     #64 total r0    6.98 r1   17.92  stage  1.95/ 1.89  copy  3.78/ 5.73  transport   1.41  skew   8.64  r0 waits 0.0
+     #65 total r0   26.78 r1    6.56  stage  1.82/ 1.76  copy  5.28/ 3.94  transport   0.86  skew  19.52  r0 waits 1.0
+     #66 total r0   27.71 r1    6.88  stage  1.95/ 1.98  copy 14.27/ 3.87  transport   0.90  skew  10.21  r0 waits 1.0
+     #67 total r0   16.13 r1   21.79  stage  2.21/ 2.02  copy 11.46/ 4.45  transport   0.90  skew  15.07  r0 waits 0.0
+     #68 total r0   10.75 r1   10.50  stage  1.95/ 1.82  copy  4.00/ 4.13  transport   1.47  skew   7.46  r0 waits 1.0
+     #69 total r0    6.53 r1   23.74  stage  1.79/ 1.86  copy  3.84/ 4.80  transport   0.93  skew  15.94  r0 waits 0.0
+     #70 total r0    6.56 r1   22.08  stage  1.86/ 2.02  copy  3.84/ 6.37  transport   0.90  skew  12.99  r0 waits 0.0
+     #71 total r0    7.10 r1   23.87  stage  1.82/ 1.82  copy  3.97/ 9.98  transport   0.93  skew  11.20  r0 waits 0.0
+     #72 total r0    6.62 r1   18.21  stage  1.82/ 1.86  copy  3.87/ 5.15  transport   0.90  skew  11.07  r0 waits 0.0
+     #73 total r0    6.56 r1   23.26  stage  1.82/ 1.79  copy  3.78/ 4.96  transport   0.93  skew  16.51  r0 waits 0.0
+     #74 total r0    6.59 r1   25.34  stage  1.86/ 1.95  copy  3.81/ 7.58  transport   0.90  skew  15.65  r0 waits 0.0
+     #75 total r0   20.80 r1   19.36  stage  1.89/ 1.82  copy  8.35/ 7.68  transport   1.31  skew  10.02  r0 waits 0.0
+     #76 total r0   14.43 r1   13.34  stage  1.98/ 1.79  copy  7.07/ 5.50  transport   3.94  skew   2.43  r0 waits 0.0
+     #77 total r0   22.75 r1    6.66  stage  1.82/ 1.92  copy  5.18/ 3.90  transport   0.90  skew  14.30  r0 waits 1.0
+     #78 total r0   16.64 r1    7.68  stage  2.02/ 1.98  copy  6.14/ 3.87  transport   1.86  skew   8.48  r0 waits 1.0
+     #79 total r0    6.56 r1   23.81  stage  1.82/ 1.79  copy  3.84/ 7.78  transport   0.93  skew  13.34  r0 waits 0.0
+     #80 total r0    6.53 r1   24.45  stage  1.82/ 1.86  copy  3.81/ 6.34  transport   0.90  skew  14.85  r0 waits 0.0
+     #81 total r0   18.72 r1   22.40  stage  1.89/ 1.79  copy  9.57/ 8.80  transport   5.82  skew   5.15  r0 waits 0.0
+     #82 total r0   15.52 r1   10.30  stage  4.64/ 1.95  copy  4.96/ 4.03  transport   2.43  skew   4.93  r0 waits 1.0
+     #83 total r0    9.54 r1    9.28  stage  2.56/ 1.66  copy  4.06/ 3.26  transport   1.89  skew   4.03  r0 waits 0.0
+-- calibration 2-row windows: 11 traced, 84 exchanges each; window ms r0 [30.41, 28.84, 28.64, 28.24, 28.31, 28.37, 28.33, 28.25, 28.28, 28.22, 28.29] r1 [30.37, 28.88, 28.65, 28.24, 28.3, 28.37, 28.33, 28.25, 28.28, 28.21, 28.29]
+   a window (sums, us): total r0 1490.016 / r1 1514.88; stage 180.416 / 182.144; wait 744.0 / 813.408; copy 562.496 / 514.88; transport (min wait) 200.64; skew 1067.744; exchanges where r0 waited longer 42.0
+   critical path (the late rank's exchange kernels): 863.2 us = stage 183.328 + wait 200.64 + copy 467.456; the early rank's extra wait 1284.864; both ranks waited in 355 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 6.992 [5.984-10.384] us; late rank's poll 0.896 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.888/2.464; stage1 1.792/1.92/2.24; wait0 0.896/7.264/20.0; wait1 0.864/6.88/19.52; copy0 3.872/5.232/12.352; copy1 3.872/4.736/11.2; total0 6.688/18.4/29.536; total1 6.656/17.92/30.944; transport 0.864/0.992/5.76; skew 2.72/13.056/23.84; notice0 1790922598712014.8/1790922598712015.0/1790922598712015.2; notice1 1790922596870015.5/1790922596870016.0/1790922596870016.8; post0 0.24/0.272/0.288; post1 0.224/0.24/0.256; late_total 6.592/7.584/19.2; late_copy 3.84/4.0/10.688; early_wait 8.288/14.304/24.736
+-- calibration 4-row windows: 11 traced, 84 exchanges each; window ms r0 [38.52, 37.8, 37.76, 37.81, 37.84, 37.78, 37.77, 38.53, 37.96, 38.56, 37.75] r1 [38.52, 37.8, 37.77, 37.82, 37.83, 37.79, 37.78, 38.53, 37.93, 38.59, 37.75]
+   a window (sums, us): total r0 1630.208 / r1 1758.752; stage 187.424 / 179.072; wait 848.544 / 1006.688; copy 583.264 / 538.752; transport (min wait) 271.872; skew 1359.616; exchanges where r0 waited longer 39.0
+   critical path (the late rank's exchange kernels): 977.376 us = stage 183.584 + wait 271.872 + copy 518.176; the early rank's extra wait 1635.968; both ranks waited in 412 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 9.328 [7.984-12.08] us; late rank's poll 0.992 us
+   an exchange (p10 / med / p90 us): stage0 1.824/1.952/2.624; stage1 1.824/1.92/2.24; wait0 0.896/8.512/22.848; wait1 0.928/11.344/24.896; copy0 4.0/5.456/12.288; copy1 4.0/5.248/11.104; total0 6.976/19.936/33.696; total1 6.944/21.344/37.28; transport 0.736/1.376/7.968; skew 3.424/15.568/29.216; notice0 1790922598712016.2/1790922598712016.8/1790922598712017.0; notice1 1790922596870018.5/1790922596870019.2/1790922596870020.0; post0 0.256/0.272/0.288; post1 0.224/0.24/0.256; late_total 6.816/8.848/21.376; late_copy 3.968/4.224/11.904; early_wait 11.488/17.296/30.304
+-- serving (65536 / 65536 ops in the rings): globaltimer is not CLOCK_REALTIME here (offset 1790922598.712 s, taken as the 1st percentile of proxy seen - doorbell); the proxy's notice above that floor: med 168.926 us, p90 306.237 us
+   serving 1-row windows matched: 112 (first 84 exchanges after the host's replay call)
+   a window (sums, us): total r0 1645.856 / r1 1798.544; stage 181.424 / 169.824; wait 907.744 / 1111.84; copy 533.296 / 514.4; transport 165.36; skew 1863.696; r0 waited longer in 39.5 of 84
+   critical path (the late rank's exchange kernels): 792.32 us = stage 184.016 + wait 165.36 + copy 432.08; the early rank's extra wait 2016.48; both waited in 3000 of 9408: x med 5.528 us; late poll 0.896 us
+   exchange #0 (the window's first: rank arrival): skew 126.48 us, transport 0.896 us, r0 waits longer 1.0
+   an exchange (p10 / med / p90 us): stage0 1.76/1.856/3.296; stage1 1.696/1.824/2.144; wait0 0.896/4.896/18.112; wait1 0.864/6.336/22.88; copy0 3.744/4.768/11.808; copy1 3.776/4.416/11.392; total0 6.528/14.368/29.504; total1 6.528/16.288/34.592; transport 0.864/0.928/4.384; skew 2.528/11.296/33.632; notice0 1790922598712143.0/1790922598712243.0/1790922598712333.5; notice1 1790922596870103.2/1790922596870138.0/1790922596870170.2; post0 0.224/0.24/0.256; post1 0.224/0.24/0.272; late_total 6.464/7.136/16.352; late_copy 3.744/3.872/9.216; early_wait 6.72/12.608/34.592
+   r0 serving window GPU ms: 1x1 25.667 n112; 2x1 29.606 n197; 4x1 38.11 n28
+   r0 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']
+   r1 serving window GPU ms: 1x1 25.658 n112; 2x1 29.52 n197; 4x1 38.087 n28
+   r1 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']
+
+== exchanges (g14x2): RoCE trace ring, both ranks
+   captures: 17; ops a capture: {8: 3, 83: 14}
+   capture 1: 83 exchanges, bytes a rank: {6144: 2, 10240: 81}
+   capture 4: 83 exchanges, bytes a rank: {12288: 2, 20480: 81}
+   capture 7: 83 exchanges, bytes a rank: {18432: 2, 30720: 81}
+   capture 10: 83 exchanges, bytes a rank: {24576: 2, 40960: 81}
+   capture 13: 83 exchanges, bytes a rank: {30720: 2, 51200: 81}
+   capture 16: 83 exchanges, bytes a rank: {36864: 2, 61440: 81}
+   capture 19: 83 exchanges, bytes a rank: {43008: 2, 71680: 81}
+   capture 22: 83 exchanges, bytes a rank: {49152: 2, 81920: 81}
+   capture 34: 83 exchanges, bytes a rank: {73728: 2, 122880: 81}
+   capture 37: 83 exchanges, bytes a rank: {98304: 2, 163840: 81}
+   capture 40: 83 exchanges, bytes a rank: {147456: 2, 245760: 81}
+   capture 43: 83 exchanges, bytes a rank: {196608: 2, 327680: 81}
+   capture 46: 83 exchanges, bytes a rank: {294912: 2, 491520: 81}
+   capture 49: 83 exchanges, bytes a rank: {393216: 2, 655360: 81}
+   all exchange calls (bytes, captured, phase): [[4, False, 'boot', 1], [7, False, 'boot', 1], [8, False, 'calib', 71], [16, False, 'calib', 11], [16, False, 'serve', 60], [24, False, 'calib', 11], [32, False, 'calib', 11], [32, False, 'serve', 90], [40, False, 'calib', 11], [48, False, 'calib', 11], [48, False, 'serve', 62], [56, False, 'calib', 11], [64, False, 'calib', 22], [64, False, 'serve', 17], [72, False, 'calib', 11], [72, False, 'serve', 52], [80, False, 'calib', 11], [80, False, 'serve', 1], [88, False, 'calib', 11], [96, False, 'calib', 11], [100, False, 'boot', 1], [104, False, 'calib', 11], [112, False, 'calib', 11], [120, False, 'calib', 11]]
+-- calibration 1-row windows: 11 traced, 84 exchanges each; window ms r0 [24.25, 23.44, 23.34, 23.77, 23.58, 23.32, 23.31, 23.3, 24.58, 23.96, 23.28] r1 [24.28, 23.41, 23.35, 23.76, 23.57, 23.33, 23.32, 23.3, 24.6, 23.94, 23.27]
+   a window (sums, us): total r0 1421.28 / r1 1356.576; stage 187.104 / 186.208; wait 657.984 / 658.08; copy 567.552 / 534.816; transport (min wait) 192.64; skew 888.416; exchanges where r0 waited longer 45.0
+   critical path (the late rank's exchange kernels): 863.328 us = stage 192.16 + wait 192.64 + copy 472.288; the early rank's extra wait 1102.24; both ranks waited in 371 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 5.664 [5.088-9.872] us; late rank's poll 0.896 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.92/3.296; stage1 1.664/1.888/3.68; wait0 0.896/6.752/18.528; wait1 0.864/4.784/16.768; copy0 3.776/5.472/11.68; copy1 3.776/4.512/12.0; total0 6.688/17.088/28.736; total1 6.496/13.28/28.704; transport 0.864/1.376/4.896; skew 1.888/9.696/21.408; notice0 1790922598718327.0/1790922598718327.5/1790922598718328.0; notice1 1790922596882524.5/1790922596882525.8/1790922596882527.2; post0 0.256/0.352/0.544; post1 0.24/0.416/0.576; late_total 6.464/8.0/17.28; late_copy 3.744/3.904/9.568; early_wait 6.432/11.104/22.72
+   by position (med us: transport, skew, who waits: 1 = r0 waits longer):
+     # 0 total r0   24.32 r1    6.50  stage  1.86/ 1.66  copy  4.00/ 3.90  transport   0.90  skew  17.54  r0 waits 1.0
+     # 1 total r0   16.03 r1   21.63  stage  4.35/ 4.58  copy  6.56/ 4.48  transport   2.21  skew  11.07  r0 waits 0.0
+     # 2 total r0   18.59 r1    7.87  stage  2.94/ 2.88  copy  5.31/ 3.94  transport   0.90  skew   9.57  r0 waits 1.0
+     # 3 total r0   11.94 r1   31.58  stage  6.05/ 7.42  copy  3.23/ 4.67  transport   0.93  skew  19.39  r0 waits 0.0
+     # 4 total r0   37.60 r1    6.50  stage  1.92/ 1.86  copy  5.70/ 3.78  transport   0.86  skew  33.73  r0 waits 1.0
+     # 5 total r0   22.85 r1    6.82  stage  1.82/ 1.82  copy  6.59/ 4.13  transport   0.86  skew  11.78  r0 waits 1.0
+     # 6 total r0   17.22 r1   15.62  stage  3.62/ 3.71  copy  4.00/ 6.59  transport   4.45  skew   4.86  r0 waits 1.0
+     # 7 total r0   26.02 r1    6.91  stage  1.95/ 2.02  copy 12.45/ 4.00  transport   0.90  skew  12.48  r0 waits 1.0
+     # 8 total r0    9.73 r1   16.29  stage  1.86/ 1.70  copy  4.61/ 6.11  transport   2.27  skew   6.11  r0 waits 0.0
+     # 9 total r0   10.59 r1   16.51  stage  1.98/ 2.05  copy  3.84/ 4.29  transport   2.43  skew   6.11  r0 waits 0.0
+     #10 total r0   21.54 r1   15.74  stage  1.98/ 1.82  copy 11.14/ 8.10  transport   4.77  skew   2.34  r0 waits 1.0
+     #11 total r0   12.45 r1    9.22  stage  1.86/ 1.79  copy  3.87/ 3.81  transport   2.85  skew   3.90  r0 waits 1.0
+     #12 total r0   20.22 r1   12.48  stage  1.89/ 1.92  copy  8.80/ 7.07  transport   3.46  skew   5.92  r0 waits 1.0
+     #13 total r0   14.46 r1    8.90  stage  1.98/ 1.89  copy  4.51/ 3.81  transport   3.30  skew   3.84  r0 waits 1.0
+     #14 total r0   11.46 r1   19.90  stage  1.98/ 1.89  copy  5.79/ 7.94  transport   1.47  skew   9.09  r0 waits 0.0
+     #15 total r0   17.28 r1    7.94  stage  1.92/ 2.02  copy  3.94/ 3.81  transport   1.38  skew   7.55  r0 waits 1.0
+     #16 total r0   22.02 r1    7.71  stage  1.89/ 1.95  copy  5.82/ 4.61  transport   0.93  skew  11.10  r0 waits 1.0
+     #17 total r0   20.06 r1    9.02  stage  2.11/ 1.92  copy  5.50/ 3.90  transport   0.90  skew  10.82  r0 waits 1.0
+     #18 total r0   17.12 r1   19.23  stage  2.05/ 1.76  copy  5.57/ 4.77  transport   0.90  skew   9.28  r0 waits 0.0
+     #19 total r0   11.42 r1    9.79  stage  1.86/ 1.82  copy  3.90/ 3.90  transport   1.44  skew   7.39  r0 waits 1.0
+     #20 total r0    9.25 r1   21.50  stage  1.86/ 1.82  copy  5.09/ 9.70  transport   1.86  skew   7.78  r0 waits 0.0
+     #21 total r0   12.03 r1   12.86  stage  2.11/ 2.11  copy  4.58/ 4.42  transport   2.46  skew   5.54  r0 waits 0.0
+     #22 total r0   22.34 r1   10.50  stage  1.89/ 1.82  copy  4.26/ 3.90  transport   0.93  skew  14.94  r0 waits 1.0
+     #23 total r0   14.37 r1    9.76  stage  2.11/ 1.95  copy  5.66/ 4.00  transport   3.42  skew   3.01  r0 waits 1.0
+     #24 total r0    7.07 r1   24.03  stage  1.86/ 1.70  copy  4.03/ 8.38  transport   0.90  skew  11.39  r0 waits 0.0
+     #25 total r0   18.82 r1    6.69  stage  1.92/ 1.79  copy  5.79/ 3.84  transport   0.93  skew  11.10  r0 waits 1.0
+     #26 total r0   25.41 r1    7.39  stage  2.02/ 1.92  copy  7.39/ 4.32  transport   0.99  skew  13.86  r0 waits 1.0
+     #27 total r0   19.52 r1   12.80  stage  1.98/ 2.05  copy  7.81/ 7.52  transport   1.98  skew   9.76  r0 waits 1.0
+     #28 total r0   16.32 r1   24.51  stage  1.82/ 1.73  copy  8.29/ 9.15  transport   0.99  skew  10.59  r0 waits 0.0
+     #29 total r0   20.00 r1    9.60  stage  1.92/ 1.98  copy  9.31/ 4.03  transport   1.89  skew   6.56  r0 waits 1.0
+     #30 total r0   11.68 r1   22.62  stage  4.10/ 4.32  copy  6.11/ 4.42  transport   1.34  skew  12.13  r0 waits 0.0
+     #31 total r0    7.39 r1   24.77  stage  2.14/ 2.02  copy  4.10/ 3.94  transport   0.90  skew  17.95  r0 waits 0.0
+     #32 total r0   13.54 r1   27.74  stage  3.20/ 2.98  copy  4.48/14.24  transport   0.90  skew   9.22  r0 waits 0.0
+     #33 total r0   28.16 r1   25.18  stage  3.01/ 4.06  copy  8.13/15.07  transport   4.54  skew  14.53  r0 waits 1.0
+     #34 total r0   18.75 r1    9.34  stage  2.02/ 1.98  copy  8.83/ 4.03  transport   1.86  skew   7.90  r0 waits 1.0
+     #35 total r0   24.42 r1    6.43  stage  1.79/ 1.70  copy  7.42/ 3.81  transport   0.90  skew  12.90  r0 waits 1.0
+     #36 total r0   20.48 r1    6.66  stage  2.05/ 1.98  copy  6.05/ 3.78  transport   0.90  skew  12.86  r0 waits 1.0
+     #37 total r0    6.56 r1   25.25  stage  1.82/ 1.79  copy  3.84/ 6.72  transport   0.90  skew  15.68  r0 waits 0.0
+     #38 total r0    7.55 r1   17.22  stage  1.82/ 1.79  copy  3.90/ 5.79  transport   1.57  skew   8.58  r0 waits 0.0
+     #39 total r0   25.60 r1    6.69  stage  1.82/ 1.73  copy  7.90/ 3.97  transport   0.93  skew  14.30  r0 waits 1.0
+     #40 total r0   14.40 r1    7.90  stage  1.92/ 1.92  copy  4.26/ 3.84  transport   2.11  skew   6.11  r0 waits 1.0
+     #41 total r0   11.68 r1   20.80  stage  1.82/ 1.73  copy  6.05/10.88  transport   3.65  skew   4.32  r0 waits 0.0
+     #42 total r0   11.10 r1   24.64  stage  1.82/ 1.66  copy  7.46/ 8.58  transport   1.86  skew  11.78  r0 waits 0.0
+     #43 total r0   30.40 r1   31.10  stage  4.00/ 4.35  copy 14.94/17.41  transport   4.64  skew   6.75  r0 waits 1.0
+     #44 total r0   18.53 r1    9.60  stage  2.21/ 3.78  copy  6.14/ 4.32  transport   0.93  skew  10.24  r0 waits 1.0
+     #45 total r0   39.49 r1   27.39  stage  1.82/ 3.58  copy 15.17/16.29  transport   6.78  skew  12.67  r0 waits 1.0
+     #46 total r0   15.23 r1   30.30  stage  3.04/ 1.98  copy  8.77/14.46  transport   1.79  skew  13.22  r0 waits 0.0
+     #47 total r0   25.44 r1   22.98  stage  1.82/ 1.79  copy 15.17/ 8.99  transport   4.16  skew  10.85  r0 waits 1.0
+     #48 total r0    7.87 r1   15.74  stage  1.79/ 1.82  copy  3.78/ 5.25  transport   0.90  skew   8.83  r0 waits 0.0
+     #49 total r0   19.33 r1   31.84  stage  4.26/ 1.76  copy  8.83/ 9.82  transport   6.08  skew  13.06  r0 waits 0.0
+     #50 total r0   12.58 r1   16.80  stage  2.11/ 4.22  copy  5.31/ 4.64  transport   1.54  skew   8.90  r0 waits 0.0
+     #51 total r0   22.85 r1    6.88  stage  1.82/ 1.95  copy  8.32/ 4.03  transport   0.90  skew  12.00  r0 waits 1.0
+     #52 total r0   27.94 r1    7.55  stage  3.30/ 2.85  copy  8.67/ 3.78  transport   0.90  skew  14.94  r0 waits 1.0
+     #53 total r0   23.49 r1    6.94  stage  1.82/ 1.79  copy 10.21/ 3.90  transport   1.38  skew   8.83  r0 waits 1.0
+     #54 total r0   17.54 r1   10.14  stage  3.26/ 4.16  copy  5.44/ 4.06  transport   2.30  skew   6.34  r0 waits 1.0
+     #55 total r0   22.05 r1    6.66  stage  1.82/ 1.76  copy  5.79/ 3.84  transport   0.90  skew  15.46  r0 waits 1.0
+     #56 total r0   16.90 r1   11.78  stage  3.36/ 3.90  copy  5.54/ 4.83  transport   3.30  skew   5.31  r0 waits 1.0
+     #57 total r0   22.02 r1    7.90  stage  1.86/ 1.70  copy  9.57/ 4.06  transport   1.92  skew   7.01  r0 waits 1.0
+     #58 total r0    8.83 r1   17.79  stage  1.89/ 2.05  copy  4.29/ 5.09  transport   1.54  skew   8.77  r0 waits 0.0
+     #59 total r0    7.58 r1   25.31  stage  1.82/ 1.76  copy  3.87/ 7.14  transport   0.93  skew  12.67  r0 waits 0.0
+     #60 total r0   14.05 r1   11.87  stage  1.82/ 2.02  copy  5.41/ 3.90  transport   2.82  skew   5.95  r0 waits 1.0
+     #61 total r0    7.10 r1   24.22  stage  1.82/ 1.66  copy  4.03/10.11  transport   1.41  skew  12.13  r0 waits 0.0
+     #62 total r0    7.65 r1   16.38  stage  1.82/ 1.95  copy  3.84/ 4.10  transport   0.96  skew   8.93  r0 waits 0.0
+     #63 total r0   12.38 r1   21.09  stage  1.79/ 1.66  copy  4.86/ 6.43  transport   2.37  skew  10.24  r0 waits 0.0
+     #64 total r0    8.35 r1   18.02  stage  2.02/ 1.95  copy  3.94/ 5.73  transport   1.86  skew   8.48  r0 waits 0.0
+     #65 total r0   19.71 r1    7.30  stage  1.79/ 1.66  copy  7.14/ 3.81  transport   0.90  skew  10.08  r0 waits 1.0
+     #66 total r0   12.58 r1    8.99  stage  1.89/ 1.95  copy  4.26/ 3.84  transport   2.56  skew   6.02  r0 waits 1.0
+     #67 total r0   20.19 r1    7.94  stage  1.79/ 1.95  copy  6.53/ 4.35  transport   0.90  skew   9.70  r0 waits 1.0
+     #68 total r0   18.02 r1    6.40  stage  1.82/ 1.66  copy  5.38/ 3.81  transport   0.90  skew   9.60  r0 waits 1.0
+     #69 total r0    6.72 r1   21.54  stage  1.79/ 1.70  copy  3.84/ 8.19  transport   1.02  skew  10.62  r0 waits 0.0
+     #70 total r0   11.55 r1   10.30  stage  2.02/ 1.95  copy  3.97/ 3.87  transport   3.30  skew   3.26  r0 waits 1.0
+     #71 total r0   23.10 r1    6.56  stage  1.79/ 1.73  copy  3.97/ 3.97  transport   0.96  skew  14.43  r0 waits 1.0
+     #72 total r0   12.83 r1    9.92  stage  1.95/ 1.66  copy  5.12/ 4.06  transport   1.92  skew   7.10  r0 waits 1.0
+     #73 total r0   10.85 r1   21.98  stage  1.82/ 1.66  copy  5.28/ 6.27  transport   0.93  skew  12.70  r0 waits 0.0
+     #74 total r0    6.98 r1   22.37  stage  2.05/ 2.24  copy  3.87/ 6.78  transport   0.90  skew  12.99  r0 waits 0.0
+     #75 total r0   23.04 r1    6.69  stage  1.82/ 1.76  copy  6.69/ 3.87  transport   0.90  skew  16.77  r0 waits 1.0
+     #76 total r0   15.10 r1   10.56  stage  3.17/ 2.94  copy  5.60/ 3.87  transport   1.38  skew   7.74  r0 waits 1.0
+     #77 total r0   20.58 r1    8.83  stage  1.82/ 1.70  copy  8.77/ 4.29  transport   2.21  skew   7.81  r0 waits 1.0
+     #78 total r0   11.26 r1   10.30  stage  2.11/ 1.79  copy  4.70/ 3.90  transport   3.30  skew   4.13  r0 waits 1.0
+     #79 total r0    9.57 r1   22.08  stage  1.98/ 1.79  copy  4.00/ 5.47  transport   0.90  skew  12.16  r0 waits 0.0
+     #80 total r0   11.87 r1   10.30  stage  1.98/ 2.02  copy  5.15/ 3.84  transport   1.89  skew   7.68  r0 waits 1.0
+     #81 total r0    8.38 r1   21.02  stage  1.92/ 1.82  copy  4.42/ 7.04  transport   2.02  skew   9.02  r0 waits 0.0
+     #82 total r0    6.85 r1   15.20  stage  1.95/ 1.89  copy  3.90/ 3.97  transport   0.90  skew   8.64  r0 waits 0.0
+     #83 total r0   19.23 r1    8.32  stage  1.66/ 1.60  copy  3.23/ 3.20  transport   0.90  skew  13.73  r0 waits 1.0
+-- calibration 2-row windows: 11 traced, 84 exchanges each; window ms r0 [39.86, 28.82, 27.87, 27.84, 27.89, 27.84, 27.9, 27.87, 27.85, 28.52, 27.92] r1 [39.87, 28.8, 27.86, 27.85, 27.87, 27.86, 27.88, 27.89, 27.83, 28.53, 27.92]
+   a window (sums, us): total r0 1394.56 / r1 1538.976; stage 195.104 / 190.368; wait 663.264 / 783.968; copy 536.128 / 537.28; transport (min wait) 220.896; skew 1042.496; exchanges where r0 waited longer 39.0
+   critical path (the late rank's exchange kernels): 918.944 us = stage 202.528 + wait 220.896 + copy 490.624; the early rank's extra wait 1245.728; both ranks waited in 431 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 6.976 [5.856-10.864] us; late rank's poll 0.896 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.92/3.424; stage1 1.792/1.92/3.616; wait0 0.896/6.016/18.944; wait1 0.896/7.968/19.52; copy0 3.84/5.024/11.488; copy1 3.84/5.28/11.68; total0 6.752/16.528/29.696; total1 6.752/18.272/30.144; transport 0.864/1.632/5.76; skew 2.592/11.952/23.616; notice0 1790922598718328.5/1790922598718329.2/1790922598718330.0; notice1 1790922596882528.0/1790922596882529.5/1790922596882531.0; post0 0.24/0.256/0.272; post1 0.24/0.256/0.272; late_total 6.624/8.704/19.68; late_copy 3.808/4.0/11.104; early_wait 7.872/13.568/24.896
+-- calibration 4-row windows: 11 traced, 84 exchanges each; window ms r0 [37.94, 37.35, 37.4, 38.03, 37.31, 37.35, 37.71, 37.33, 37.35, 37.28, 37.34] r1 [37.95, 37.35, 37.4, 38.03, 37.32, 37.36, 37.7, 37.33, 37.35, 37.29, 37.34]
+   a window (sums, us): total r0 1588.96 / r1 1729.376; stage 197.44 / 184.64; wait 804.704 / 980.448; copy 575.008 / 555.328; transport (min wait) 296.928; skew 1211.136; exchanges where r0 waited longer 39.0
+   critical path (the late rank's exchange kernels): 1015.168 us = stage 195.616 + wait 296.928 + copy 522.624; the early rank's extra wait 1496.992; both ranks waited in 458 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 9.592 [7.904-12.4] us; late rank's poll 1.024 us
+   an exchange (p10 / med / p90 us): stage0 1.824/1.952/3.424; stage1 1.792/1.888/3.136; wait0 0.928/9.12/20.992; wait1 0.992/10.672/22.816; copy0 4.032/5.76/11.904; copy1 3.968/5.456/11.232; total0 7.008/20.96/31.296; total1 7.008/21.312/33.728; transport 0.864/1.888/8.896; skew 2.048/13.952/25.376; notice0 1790922598718332.5/1790922598718333.5/1790922598718334.2; notice1 1790922596882536.8/1790922596882538.8/1790922596882540.8; post0 0.24/0.256/0.272; post1 0.24/0.256/0.272; late_total 6.88/9.616/22.528; late_copy 3.968/4.368/12.0; early_wait 10.816/16.304/26.432
+-- serving (65536 / 65536 ops in the rings): globaltimer is not CLOCK_REALTIME here (offset 1790922598.718 s, taken as the 1st percentile of proxy seen - doorbell); the proxy's notice above that floor: med 137.072 us, p90 195.627 us
+   serving 1-row windows matched: 112 (first 84 exchanges after the host's replay call)
+   a window (sums, us): total r0 2014.368 / r1 1932.0; stage 182.56 / 178.448; wait 1310.448 / 1208.88; copy 539.104 / 525.568; transport 171.424; skew 2346.96; r0 waited longer in 43.0 of 84
+   critical path (the late rank's exchange kernels): 834.832 us = stage 198.8 + wait 171.424 + copy 452.992; the early rank's extra wait 2512.544; both waited in 3263 of 9408: x med 5.616 us; late poll 0.896 us
+   exchange #0 (the window's first: rank arrival): skew 102.352 us, transport 0.896 us, r0 waits longer 1.0
+   an exchange (p10 / med / p90 us): stage0 1.696/1.888/3.392; stage1 1.664/1.824/3.424; wait0 0.896/6.016/20.128; wait1 0.896/5.472/22.016; copy0 3.776/4.928/11.392; copy1 3.776/4.672/11.456; total0 6.56/16.32/31.808; total1 6.496/15.488/34.56; transport 0.864/0.96/4.608; skew 2.24/10.88/44.448; notice0 1790922598718435.8/1790922598718478.0/1790922598718517.0; notice1 1790922596882771.2/1790922596882867.0/1790922596882955.0; post0 0.224/0.256/0.272; post1 0.24/0.272/0.288; late_total 6.4/7.68/17.344; late_copy 3.744/3.904/9.632; early_wait 6.656/12.128/45.76
+   r0 serving window GPU ms: 1x1 25.863 n112; 2x1 29.767 n198; 4x1 38.67 n28
+   r0 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']
+   r1 serving window GPU ms: 1x1 25.83 n112; 2x1 29.671 n198; 4x1 38.429 n28
+   r1 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']
+
+== exchanges (g14x-l2off): RoCE trace ring, both ranks
+   captures: 17; ops a capture: {8: 3, 83: 14}
+   capture 1: 83 exchanges, bytes a rank: {6144: 2, 10240: 81}
+   capture 4: 83 exchanges, bytes a rank: {12288: 2, 20480: 81}
+   capture 7: 83 exchanges, bytes a rank: {18432: 2, 30720: 81}
+   capture 10: 83 exchanges, bytes a rank: {24576: 2, 40960: 81}
+   capture 13: 83 exchanges, bytes a rank: {30720: 2, 51200: 81}
+   capture 16: 83 exchanges, bytes a rank: {36864: 2, 61440: 81}
+   capture 19: 83 exchanges, bytes a rank: {43008: 2, 71680: 81}
+   capture 22: 83 exchanges, bytes a rank: {49152: 2, 81920: 81}
+   capture 34: 83 exchanges, bytes a rank: {73728: 2, 122880: 81}
+   capture 37: 83 exchanges, bytes a rank: {98304: 2, 163840: 81}
+   capture 40: 83 exchanges, bytes a rank: {147456: 2, 245760: 81}
+   capture 43: 83 exchanges, bytes a rank: {196608: 2, 327680: 81}
+   capture 46: 83 exchanges, bytes a rank: {294912: 2, 491520: 81}
+   capture 49: 83 exchanges, bytes a rank: {393216: 2, 655360: 81}
+   all exchange calls (bytes, captured, phase): [[4, False, 'boot', 1], [7, False, 'boot', 1], [8, False, 'calib', 71], [16, False, 'calib', 11], [16, False, 'serve', 60], [24, False, 'calib', 11], [32, False, 'calib', 11], [32, False, 'serve', 81], [40, False, 'calib', 11], [48, False, 'calib', 11], [48, False, 'serve', 71], [56, False, 'calib', 11], [64, False, 'calib', 22], [64, False, 'serve', 17], [72, False, 'calib', 11], [72, False, 'serve', 51], [80, False, 'calib', 11], [80, False, 'serve', 1], [88, False, 'calib', 11], [96, False, 'calib', 11], [100, False, 'boot', 1], [104, False, 'calib', 11], [112, False, 'calib', 11], [120, False, 'calib', 11]]
+-- calibration 1-row windows: 11 traced, 84 exchanges each; window ms r0 [26.99, 26.31, 25.08, 25.13, 25.07, 25.09, 25.06, 25.07, 25.84, 25.05, 25.04] r1 [26.99, 26.32, 25.08, 25.14, 25.07, 25.1, 25.05, 25.08, 25.84, 25.06, 25.03]
+   a window (sums, us): total r0 959.328 / r1 1064.8; stage 144.32 / 143.936; wait 490.976 / 595.2; copy 324.288 / 325.984; transport (min wait) 147.456; skew 783.68; exchanges where r0 waited longer 39.0
+   critical path (the late rank's exchange kernels): 622.208 us = stage 144.256 + wait 147.456 + copy 324.832; the early rank's extra wait 919.776; both ranks waited in 271 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 5.104 [4.864-5.296] us; late rank's poll 0.896 us
+   an exchange (p10 / med / p90 us): stage0 1.696/1.728/1.792; stage1 1.696/1.728/1.792; wait0 0.896/4.32/12.896; wait1 0.896/5.952/15.616; copy0 3.808/3.872/3.968; copy1 3.84/3.904/4.0; total0 6.464/9.984/18.624; total1 6.496/11.52/21.312; transport 0.896/0.928/3.968; skew 1.984/8.848/17.152; notice0 1790922598718809.0/1790922598718809.5/1790922598718810.2; notice1 1790922596883616.0/1790922596883617.2/1790922596883618.5; post0 0.24/0.336/0.48; post1 0.24/0.304/0.448; late_total 6.432/6.592/9.696; late_copy 3.808/3.872/3.968; early_wait 5.984/9.76/18.048
+   by position (med us: transport, skew, who waits: 1 = r0 waits longer):
+     # 0 total r0    6.53 r1   18.40  stage  1.70/ 1.70  copy  3.87/ 3.84  transport   0.90  skew  11.78  r0 waits 0.0
+     # 1 total r0    6.53 r1   17.50  stage  1.70/ 1.70  copy  3.90/ 3.94  transport   0.93  skew  10.98  r0 waits 0.0
+     # 2 total r0   15.14 r1    6.53  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.90  skew   8.61  r0 waits 1.0
+     # 3 total r0    5.54 r1   13.02  stage  1.44/ 1.44  copy  3.23/ 3.17  transport   0.83  skew   7.55  r0 waits 0.0
+     # 4 total r0   13.82 r1    7.49  stage  1.73/ 1.73  copy  3.87/ 3.84  transport   1.38  skew   7.65  r0 waits 1.0
+     # 5 total r0    6.66 r1   15.71  stage  1.73/ 1.73  copy  3.90/ 3.90  transport   0.90  skew   9.09  r0 waits 0.0
+     # 6 total r0    8.93 r1   12.54  stage  1.73/ 1.73  copy  3.87/ 3.87  transport   3.30  skew   3.62  r0 waits 0.0
+     # 7 total r0   11.33 r1    9.66  stage  1.73/ 1.70  copy  3.84/ 3.90  transport   2.40  skew   5.57  r0 waits 1.0
+     # 8 total r0    6.46 r1   18.18  stage  1.70/ 1.70  copy  3.87/ 3.87  transport   0.90  skew  11.68  r0 waits 0.0
+     # 9 total r0   16.45 r1    6.62  stage  1.73/ 1.73  copy  3.87/ 3.97  transport   0.90  skew   9.92  r0 waits 1.0
+     #10 total r0    6.50 r1   20.77  stage  1.70/ 1.70  copy  3.87/ 3.90  transport   0.90  skew  14.30  r0 waits 0.0
+     #11 total r0   15.46 r1    6.56  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.90  skew   9.76  r0 waits 1.0
+     #12 total r0    6.50 r1   17.66  stage  1.70/ 1.73  copy  3.87/ 3.87  transport   0.90  skew  11.23  r0 waits 0.0
+     #13 total r0   12.03 r1    9.15  stage  1.73/ 1.73  copy  3.87/ 3.94  transport   2.56  skew   5.02  r0 waits 1.0
+     #14 total r0    6.59 r1   15.81  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   0.90  skew   9.38  r0 waits 0.0
+     #15 total r0   10.88 r1   10.24  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   2.91  skew   4.38  r0 waits 1.0
+     #16 total r0   19.90 r1    6.50  stage  1.70/ 1.73  copy  3.87/ 3.87  transport   0.90  skew  13.38  r0 waits 1.0
+     #17 total r0    6.50 r1   18.21  stage  1.73/ 1.73  copy  3.84/ 3.90  transport   0.90  skew  11.62  r0 waits 0.0
+     #18 total r0   18.98 r1    6.53  stage  1.73/ 1.73  copy  3.90/ 3.87  transport   0.90  skew  12.48  r0 waits 1.0
+     #19 total r0    6.53 r1   21.76  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.93  skew  15.23  r0 waits 0.0
+     #20 total r0   13.15 r1    8.00  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   2.43  skew   5.63  r0 waits 1.0
+     #21 total r0    7.01 r1   14.08  stage  1.73/ 1.70  copy  3.90/ 3.90  transport   1.41  skew   7.04  r0 waits 0.0
+     #22 total r0    9.82 r1   11.52  stage  1.73/ 1.73  copy  3.87/ 3.87  transport   2.85  skew   4.13  r0 waits 0.0
+     #23 total r0    6.98 r1   14.34  stage  1.73/ 1.73  copy  3.84/ 3.90  transport   1.41  skew   7.20  r0 waits 0.0
+     #24 total r0   13.18 r1    8.00  stage  1.73/ 1.73  copy  3.90/ 3.87  transport   2.43  skew   5.25  r0 waits 1.0
+     #25 total r0   11.94 r1    9.73  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   2.85  skew   4.64  r0 waits 1.0
+     #26 total r0    8.86 r1   12.51  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   2.78  skew   4.19  r0 waits 0.0
+     #27 total r0   14.18 r1    7.01  stage  1.73/ 1.73  copy  3.90/ 3.90  transport   1.41  skew   7.14  r0 waits 1.0
+     #28 total r0   11.23 r1    9.70  stage  1.73/ 1.70  copy  3.90/ 3.90  transport   1.92  skew   7.04  r0 waits 1.0
+     #29 total r0   13.47 r1    8.13  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   2.43  skew   5.34  r0 waits 1.0
+     #30 total r0    6.43 r1   12.10  stage  1.44/ 1.44  copy  3.23/ 3.23  transport   1.76  skew   5.66  r0 waits 0.0
+     #31 total r0   15.94 r1    6.66  stage  1.73/ 1.73  copy  3.90/ 3.90  transport   0.93  skew  12.06  r0 waits 1.0
+     #32 total r0   10.85 r1   10.11  stage  1.70/ 1.73  copy  3.84/ 3.87  transport   3.30  skew   3.23  r0 waits 1.0
+     #33 total r0    6.94 r1   14.05  stage  1.70/ 1.70  copy  3.90/ 3.90  transport   1.44  skew   6.98  r0 waits 0.0
+     #34 total r0   13.22 r1    8.06  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   2.40  skew   5.73  r0 waits 1.0
+     #35 total r0    6.66 r1   17.31  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   0.93  skew  10.56  r0 waits 0.0
+     #36 total r0   18.02 r1    6.56  stage  1.73/ 1.73  copy  3.90/ 3.87  transport   0.90  skew  11.68  r0 waits 1.0
+     #37 total r0    8.35 r1   13.22  stage  1.70/ 1.70  copy  3.87/ 3.90  transport   2.85  skew   4.61  r0 waits 0.0
+     #38 total r0   18.40 r1    6.53  stage  1.70/ 1.73  copy  3.84/ 3.90  transport   0.90  skew  12.93  r0 waits 1.0
+     #39 total r0    6.56 r1   20.10  stage  1.73/ 1.70  copy  3.90/ 3.94  transport   0.90  skew  14.05  r0 waits 0.0
+     #40 total r0   16.93 r1    6.56  stage  1.73/ 1.73  copy  3.84/ 3.94  transport   0.90  skew  10.50  r0 waits 1.0
+     #41 total r0   15.81 r1    6.53  stage  1.73/ 1.70  copy  3.84/ 3.90  transport   0.90  skew   9.38  r0 waits 1.0
+     #42 total r0    7.87 r1   13.41  stage  1.73/ 1.70  copy  3.81/ 3.90  transport   1.86  skew   6.24  r0 waits 0.0
+     #43 total r0    6.50 r1   18.14  stage  1.73/ 1.73  copy  3.84/ 3.90  transport   0.93  skew  11.62  r0 waits 0.0
+     #44 total r0   14.27 r1    7.07  stage  1.73/ 1.70  copy  3.90/ 3.90  transport   0.90  skew   8.61  r0 waits 1.0
+     #45 total r0    6.91 r1   14.34  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.90  skew   9.54  r0 waits 0.0
+     #46 total r0   13.92 r1    7.74  stage  1.70/ 1.73  copy  3.94/ 3.87  transport   1.92  skew   6.62  r0 waits 1.0
+     #47 total r0    6.59 r1   16.70  stage  1.70/ 1.73  copy  3.90/ 3.97  transport   0.93  skew  10.11  r0 waits 0.0
+     #48 total r0   25.79 r1    6.59  stage  1.70/ 1.73  copy  3.84/ 3.84  transport   0.90  skew  19.46  r0 waits 1.0
+     #49 total r0    6.53 r1   16.03  stage  1.70/ 1.70  copy  3.84/ 3.90  transport   0.93  skew  10.02  r0 waits 0.0
+     #50 total r0   21.70 r1    6.50  stage  1.70/ 1.73  copy  3.90/ 3.90  transport   0.90  skew  15.26  r0 waits 1.0
+     #51 total r0    6.53 r1   19.30  stage  1.73/ 1.70  copy  3.84/ 3.90  transport   0.90  skew  15.78  r0 waits 0.0
+     #52 total r0   18.98 r1    6.53  stage  1.73/ 1.73  copy  3.84/ 3.90  transport   0.90  skew  12.86  r0 waits 1.0
+     #53 total r0    6.50 r1   16.48  stage  1.73/ 1.70  copy  3.84/ 3.90  transport   0.93  skew  11.55  r0 waits 0.0
+     #54 total r0   15.55 r1    6.53  stage  1.73/ 1.73  copy  3.87/ 3.84  transport   0.90  skew   9.09  r0 waits 1.0
+     #55 total r0   12.35 r1    8.61  stage  1.70/ 1.70  copy  3.84/ 3.90  transport   2.43  skew   4.83  r0 waits 1.0
+     #56 total r0   14.11 r1    7.46  stage  1.73/ 1.73  copy  3.87/ 3.87  transport   0.90  skew   8.90  r0 waits 1.0
+     #57 total r0    6.46 r1   21.54  stage  1.70/ 1.70  copy  3.84/ 3.90  transport   0.93  skew  15.07  r0 waits 0.0
+     #58 total r0   14.30 r1    7.55  stage  1.73/ 1.73  copy  3.84/ 3.87  transport   1.44  skew   7.23  r0 waits 1.0
+     #59 total r0   15.20 r1    6.94  stage  1.73/ 1.73  copy  3.87/ 3.87  transport   0.93  skew   8.77  r0 waits 1.0
+     #60 total r0    6.94 r1   14.24  stage  1.73/ 1.70  copy  3.90/ 3.87  transport   0.90  skew   8.80  r0 waits 0.0
+     #61 total r0   13.86 r1    7.10  stage  1.70/ 1.70  copy  3.87/ 3.90  transport   1.38  skew   7.33  r0 waits 1.0
+     #62 total r0   10.37 r1   10.75  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   3.30  skew   3.23  r0 waits 0.0
+     #63 total r0   12.35 r1    8.99  stage  1.70/ 1.70  copy  3.90/ 3.90  transport   3.33  skew   3.65  r0 waits 1.0
+     #64 total r0   16.54 r1    6.56  stage  1.73/ 1.73  copy  3.94/ 3.87  transport   0.90  skew  10.08  r0 waits 1.0
+     #65 total r0   15.36 r1    6.59  stage  1.73/ 1.73  copy  3.90/ 3.94  transport   0.90  skew   9.31  r0 waits 1.0
+     #66 total r0    6.53 r1   20.19  stage  1.70/ 1.70  copy  3.90/ 3.94  transport   0.90  skew  13.76  r0 waits 0.0
+     #67 total r0   10.53 r1   10.59  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   3.49  skew   3.14  r0 waits 0.0
+     #68 total r0   15.14 r1    6.62  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   0.90  skew   9.09  r0 waits 1.0
+     #69 total r0    6.53 r1   17.98  stage  1.73/ 1.70  copy  3.87/ 3.90  transport   0.90  skew  11.52  r0 waits 0.0
+     #70 total r0   12.83 r1    9.15  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   1.89  skew   6.59  r0 waits 1.0
+     #71 total r0    8.13 r1   13.50  stage  1.70/ 1.70  copy  3.87/ 3.90  transport   0.93  skew   9.57  r0 waits 0.0
+     #72 total r0   21.44 r1    6.59  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.90  skew  14.94  r0 waits 1.0
+     #73 total r0    8.06 r1   13.18  stage  1.70/ 1.70  copy  3.87/ 3.94  transport   2.40  skew   5.12  r0 waits 0.0
+     #74 total r0   15.10 r1    6.66  stage  1.73/ 1.73  copy  3.94/ 3.90  transport   0.90  skew   8.67  r0 waits 1.0
+     #75 total r0    6.59 r1   16.10  stage  1.73/ 1.73  copy  3.90/ 3.87  transport   0.93  skew   9.60  r0 waits 0.0
+     #76 total r0    6.50 r1   16.10  stage  1.73/ 1.73  copy  3.87/ 3.90  transport   0.90  skew   9.66  r0 waits 0.0
+     #77 total r0    7.97 r1   13.54  stage  1.70/ 1.70  copy  3.84/ 3.90  transport   2.40  skew   5.47  r0 waits 0.0
+     #78 total r0    8.45 r1   12.77  stage  1.70/ 1.70  copy  3.84/ 3.87  transport   2.82  skew   4.26  r0 waits 0.0
+     #79 total r0    9.41 r1   12.03  stage  1.73/ 1.73  copy  3.84/ 3.90  transport   3.36  skew   3.52  r0 waits 0.0
+     #80 total r0    6.56 r1   16.67  stage  1.73/ 1.70  copy  3.87/ 3.87  transport   0.90  skew  10.21  r0 waits 0.0
+     #81 total r0    9.57 r1   11.52  stage  1.73/ 1.70  copy  3.90/ 3.90  transport   3.42  skew   3.07  r0 waits 0.0
+     #82 total r0    6.46 r1   21.28  stage  1.73/ 1.70  copy  3.84/ 3.87  transport   0.90  skew  14.82  r0 waits 0.0
+     #83 total r0    5.54 r1   26.05  stage  1.50/ 1.47  copy  3.10/ 3.30  transport   0.90  skew  20.26  r0 waits 0.0
+-- calibration 2-row windows: 11 traced, 84 exchanges each; window ms r0 [30.7, 30.0, 29.97, 29.8, 29.74, 29.77, 29.77, 29.81, 29.8, 29.78, 29.77] r1 [30.7, 30.0, 29.98, 29.8, 29.74, 29.77, 29.77, 29.81, 29.79, 29.79, 29.77]
+   a window (sums, us): total r0 1007.648 / r1 1191.168; stage 154.336 / 152.704; wait 521.376 / 704.096; copy 332.672 / 333.824; transport (min wait) 181.152; skew 870.048; exchanges where r0 waited longer 40.0
+   critical path (the late rank's exchange kernels): 667.904 us = stage 153.568 + wait 181.152 + copy 332.768; the early rank's extra wait 1043.168; both ranks waited in 377 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 5.872 [5.632-6.064] us; late rank's poll 0.832 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.824/1.952; stage1 1.76/1.808/1.92; wait0 0.832/5.296/13.408; wait1 0.832/6.096/17.568; copy0 3.904/3.968/4.032; copy1 3.904/3.968/4.064; total0 6.592/11.072/19.168; total1 6.592/11.984/23.36; transport 0.8/0.992/4.736; skew 2.112/9.632/17.92; notice0 1790922598718810.5/1790922598718811.2/1790922598718812.0; notice1 1790922596883619.2/1790922596883620.8/1790922596883622.5; post0 0.24/0.256/0.272; post1 0.224/0.256/0.272; late_total 6.528/6.848/10.592; late_copy 3.872/3.968/4.064; early_wait 6.816/10.624/18.72
+-- calibration 4-row windows: 11 traced, 84 exchanges each; window ms r0 [40.24, 40.96, 39.65, 39.61, 39.61, 39.69, 39.48, 39.55, 39.9, 39.52, 39.52] r1 [40.24, 40.94, 39.64, 39.63, 39.6, 39.69, 39.47, 39.56, 39.91, 39.52, 39.53]
+   a window (sums, us): total r0 1136.64 / r1 1506.912; stage 160.192 / 165.472; wait 637.728 / 993.792; copy 338.816 / 342.304; transport (min wait) 228.352; skew 1129.312; exchanges where r0 waited longer 37.0
+   critical path (the late rank's exchange kernels): 746.752 us = stage 163.616 + wait 228.352 + copy 340.416; the early rank's extra wait 1394.304; both ranks waited in 413 of 924 exchanges: one-way transfer x = (wait0 + wait1) / 2 med 7.824 [7.328-8.192] us; late rank's poll 0.96 us
+   an exchange (p10 / med / p90 us): stage0 1.792/1.824/2.144; stage1 1.792/1.856/2.24; wait0 0.928/6.432/17.248; wait1 0.992/9.136/24.736; copy0 3.968/4.032/4.128; copy1 4.0/4.064/4.192; total0 6.784/12.352/23.52; total1 7.136/15.184/30.688; transport 0.896/1.184/6.624; skew 2.24/13.552/24.896; notice0 1790922598718814.5/1790922598718815.2/1790922598718816.2; notice1 1790922596883628.0/1790922596883630.0/1790922596883632.2; post0 0.224/0.256/0.272; post1 0.224/0.256/0.272; late_total 6.784/7.328/12.64; late_copy 3.968/4.064/4.16; early_wait 8.8/14.608/25.792
+-- serving (65536 / 65536 ops in the rings): globaltimer is not CLOCK_REALTIME here (offset 1790922598.719 s, taken as the 1st percentile of proxy seen - doorbell); the proxy's notice above that floor: med 130.486 us, p90 187.336 us
+   serving 1-row windows matched: 111 (first 84 exchanges after the host's replay call)
+   a window (sums, us): total r0 1305.568 / r1 1461.952; stage 153.984 / 154.336; wait 808.032 / 977.984; copy 327.744 / 330.048; transport 147.456; skew 1604.064; r0 waited longer in 37.0 of 84
+   critical path (the late rank's exchange kernels): 640.928 us = stage 154.624 + wait 147.456 + copy 326.208; the early rank's extra wait 1766.336; both waited in 2765 of 9324: x med 5.072 us; late poll 0.896 us
+   exchange #0 (the window's first: rank arrival): skew 173.952 us, transport 0.896 us, r0 waits longer 1.0
+   an exchange (p10 / med / p90 us): stage0 1.696/1.856/1.92; stage1 1.696/1.824/1.952; wait0 0.896/3.904/13.696; wait1 0.896/5.984/18.016; copy0 3.808/3.904/4.032; copy1 3.84/3.936/4.064; total0 6.56/9.952/19.744; total1 6.592/12.032/24.064; transport 0.896/0.928/3.968; skew 2.048/9.376/24.384; notice0 1790922598718913.2/1790922598718953.8/1790922598718991.2; notice1 1790922596883851.5/1790922596883943.0/1790922596884028.2; post0 0.24/0.272/0.288; post1 0.224/0.256/0.272; late_total 6.496/6.752/10.016; late_copy 3.808/3.904/4.0; early_wait 5.984/10.304/25.28
+   r0 serving window GPU ms: 1x1 26.943 n111; 2x1 31.216 n188; 4x1 39.786 n30
+   r0 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']
+   r1 serving window GPU ms: 1x1 26.926 n111; 2x1 31.184 n188; 4x1 39.604 n30
+   r1 notes: ['calib trace: 3696 ops kept (ring 65536, completed 25821)']

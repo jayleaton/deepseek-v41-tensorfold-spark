@@ -1,0 +1,4 @@
+  sources dsv41-060 @ 0bdd276ada19 on both nodes
+  staged sources have the timed memprobe and the idle trims
+  lease: 218; :8000 none
+check: OK

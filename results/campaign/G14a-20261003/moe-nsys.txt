@@ -1,0 +1,43 @@
+MoE chain a layer (target windows; floor: router 3.93 MB + 4.9 routed experts (3 bits, 2 on 18-22) + shared 10.32 MB at 232.0 GB/s, 1-row windows)
+== 1 row(s): off: 26 windows x 40.0 chains; on: 25 windows x 40.0 chains
+   span us (mean)                207.2      210.8   (+3.6)
+   span us (median)              210.1      212.1   (+2.0)
+   DRAM-idle us (mean)            11.4       15.0   (+3.6)
+   DRAM-idle us (median)          10.0       13.1   (+3.1)
+   launches a chain                 10          9   (-1.0)
+     x3ld / grouped             165.53     222.55
+     fused router+tail            0.00      37.47
+     router                      18.25       0.00
+     epilogue                     4.48      12.64
+     rot_in                       3.30       4.61
+     combine                      3.85       4.37
+     prune                        4.34       0.00
+     group                        3.30       0.00
+     casts                        2.26       0.00
+   a 40-layer window: +0.144 ms (span), DRAM-idle 11.4 -> 15.0 us a layer (target <= 35)
+== 2 row(s): off: 39 windows x 40.0 chains; on: 41 windows x 40.0 chains
+   span us (mean)                303.4      301.4   (-2.0)
+   span us (median)              304.3      300.4   (-3.9)
+   launches a chain                 10          9   (-1.0)
+     x3ld / grouped             257.40     312.34
+     fused router+tail            0.00      38.96
+     router                      18.98       0.00
+     epilogue                     5.05      13.19
+     group                        5.18       0.00
+     combine                      4.31       4.92
+     prune                        4.54       0.00
+     rot_in                       3.78       4.08
+     casts                        2.29       0.00
+== 4 row(s): off: 9 windows x 40.0 chains; on: 9 windows x 40.0 chains
+   span us (mean)                466.4      463.8   (-2.6)
+   span us (median)              462.1      458.0   (-4.1)
+   launches a chain                 10          9   (-1.0)
+     x3ld / grouped             408.76     463.29
+     fused router+tail            0.00      49.09
+     router                      25.52       0.00
+     epilogue                     5.66      12.71
+     group                        8.47       0.00
+     combine                      4.83       5.57
+     rot_in                       4.56       3.20
+     prune                        4.43       0.00
+     casts                        2.37       0.00

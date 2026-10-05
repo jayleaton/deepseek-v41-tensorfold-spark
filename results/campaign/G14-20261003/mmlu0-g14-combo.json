@@ -1,0 +1,1414 @@
+{
+ "label": "g14-combo",
+ "model": "DeepSeek-V4.1-Flash-TF",
+ "shots": 0,
+ "accuracy": 0.875,
+ "correct": 175,
+ "n": 200,
+ "errors": 0,
+ "over_replay_window": 43,
+ "prompt_tokens_median": 91,
+ "wall_s": 129.0,
+ "items": [
+  {
+   "i": 0,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 68,
+   "reply": "D"
+  },
+  {
+   "i": 1,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 99,
+   "reply": "B"
+  },
+  {
+   "i": 2,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 131,
+   "reply": "A"
+  },
+  {
+   "i": 3,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 65,
+   "reply": "C"
+  },
+  {
+   "i": 4,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 113,
+   "reply": "C"
+  },
+  {
+   "i": 5,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 118,
+   "reply": "D"
+  },
+  {
+   "i": 6,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 135,
+   "reply": "D"
+  },
+  {
+   "i": 7,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 169,
+   "reply": "D"
+  },
+  {
+   "i": 8,
+   "answer": 3,
+   "got": -1,
+   "prompt_tokens": 159,
+   "reply": "Let's go through each statement:\n\n**"
+  },
+  {
+   "i": 9,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 85,
+   "reply": "B"
+  },
+  {
+   "i": 10,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 109,
+   "reply": "A"
+  },
+  {
+   "i": 11,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 59,
+   "reply": "B"
+  },
+  {
+   "i": 12,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 62,
+   "reply": "A"
+  },
+  {
+   "i": 13,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 93,
+   "reply": "C"
+  },
+  {
+   "i": 14,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 56,
+   "reply": "B"
+  },
+  {
+   "i": 15,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 89,
+   "reply": "C"
+  },
+  {
+   "i": 16,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 134,
+   "reply": "A"
+  },
+  {
+   "i": 17,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 59,
+   "reply": "B"
+  },
+  {
+   "i": 18,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 79,
+   "reply": "D"
+  },
+  {
+   "i": 19,
+   "answer": 3,
+   "got": 1,
+   "prompt_tokens": 105,
+   "reply": "B"
+  },
+  {
+   "i": 20,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 173,
+   "reply": "C"
+  },
+  {
+   "i": 21,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 462,
+   "reply": "B"
+  },
+  {
+   "i": 22,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 63,
+   "reply": "D"
+  },
+  {
+   "i": 23,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 189,
+   "reply": "D"
+  },
+  {
+   "i": 24,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 73,
+   "reply": "A"
+  },
+  {
+   "i": 25,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 88,
+   "reply": "D"
+  },
+  {
+   "i": 26,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 93,
+   "reply": "B"
+  },
+  {
+   "i": 27,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 92,
+   "reply": "B"
+  },
+  {
+   "i": 28,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 73,
+   "reply": "D"
+  },
+  {
+   "i": 29,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 150,
+   "reply": "D"
+  },
+  {
+   "i": 30,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 274,
+   "reply": "D"
+  },
+  {
+   "i": 31,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 512,
+   "reply": "C"
+  },
+  {
+   "i": 32,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 74,
+   "reply": "B"
+  },
+  {
+   "i": 33,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 85,
+   "reply": "D"
+  },
+  {
+   "i": 34,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 115,
+   "reply": "A"
+  },
+  {
+   "i": 35,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 105,
+   "reply": "C"
+  },
+  {
+   "i": 36,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 59,
+   "reply": "B"
+  },
+  {
+   "i": 37,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 221,
+   "reply": "C"
+  },
+  {
+   "i": 38,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 70,
+   "reply": "D"
+  },
+  {
+   "i": 39,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 69,
+   "reply": "D"
+  },
+  {
+   "i": 40,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 54,
+   "reply": "B"
+  },
+  {
+   "i": 41,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 70,
+   "reply": "C"
+  },
+  {
+   "i": 42,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 135,
+   "reply": "D"
+  },
+  {
+   "i": 43,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 125,
+   "reply": "B"
+  },
+  {
+   "i": 44,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 120,
+   "reply": "C"
+  },
+  {
+   "i": 45,
+   "answer": 2,
+   "got": 1,
+   "prompt_tokens": 100,
+   "reply": "B"
+  },
+  {
+   "i": 46,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 71,
+   "reply": "B"
+  },
+  {
+   "i": 47,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 73,
+   "reply": "A"
+  },
+  {
+   "i": 48,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 325,
+   "reply": "B"
+  },
+  {
+   "i": 49,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 144,
+   "reply": "A"
+  },
+  {
+   "i": 50,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 120,
+   "reply": "B"
+  },
+  {
+   "i": 51,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 63,
+   "reply": "A"
+  },
+  {
+   "i": 52,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 247,
+   "reply": "A"
+  },
+  {
+   "i": 53,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 115,
+   "reply": "C"
+  },
+  {
+   "i": 54,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 75,
+   "reply": "B"
+  },
+  {
+   "i": 55,
+   "answer": 0,
+   "got": 1,
+   "prompt_tokens": 68,
+   "reply": "B"
+  },
+  {
+   "i": 56,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 80,
+   "reply": "B"
+  },
+  {
+   "i": 57,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 67,
+   "reply": "B"
+  },
+  {
+   "i": 58,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 96,
+   "reply": "C"
+  },
+  {
+   "i": 59,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 78,
+   "reply": "D"
+  },
+  {
+   "i": 60,
+   "answer": 2,
+   "got": 0,
+   "prompt_tokens": 116,
+   "reply": "A"
+  },
+  {
+   "i": 61,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 90,
+   "reply": "B"
+  },
+  {
+   "i": 62,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 76,
+   "reply": "B"
+  },
+  {
+   "i": 63,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 114,
+   "reply": "D"
+  },
+  {
+   "i": 64,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 96,
+   "reply": "D"
+  },
+  {
+   "i": 65,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 93,
+   "reply": "B"
+  },
+  {
+   "i": 66,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 71,
+   "reply": "B"
+  },
+  {
+   "i": 67,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 122,
+   "reply": "D"
+  },
+  {
+   "i": 68,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 63,
+   "reply": "A"
+  },
+  {
+   "i": 69,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 84,
+   "reply": "B"
+  },
+  {
+   "i": 70,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 157,
+   "reply": "C"
+  },
+  {
+   "i": 71,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 52,
+   "reply": "B"
+  },
+  {
+   "i": 72,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 56,
+   "reply": "A"
+  },
+  {
+   "i": 73,
+   "answer": 0,
+   "got": 1,
+   "prompt_tokens": 150,
+   "reply": "B"
+  },
+  {
+   "i": 74,
+   "answer": 2,
+   "got": 1,
+   "prompt_tokens": 72,
+   "reply": "B"
+  },
+  {
+   "i": 75,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 104,
+   "reply": "C"
+  },
+  {
+   "i": 76,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 76,
+   "reply": "C"
+  },
+  {
+   "i": 77,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 143,
+   "reply": "B"
+  },
+  {
+   "i": 78,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 362,
+   "reply": "C"
+  },
+  {
+   "i": 79,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 58,
+   "reply": "C"
+  },
+  {
+   "i": 80,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 104,
+   "reply": "C"
+  },
+  {
+   "i": 81,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 73,
+   "reply": "A"
+  },
+  {
+   "i": 82,
+   "answer": 0,
+   "got": -1,
+   "prompt_tokens": 98,
+   "reply": "Let's go step-by-step.\n\nWe"
+  },
+  {
+   "i": 83,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 153,
+   "reply": "D"
+  },
+  {
+   "i": 84,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 106,
+   "reply": "D"
+  },
+  {
+   "i": 85,
+   "answer": 3,
+   "got": 1,
+   "prompt_tokens": 108,
+   "reply": "B"
+  },
+  {
+   "i": 86,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 213,
+   "reply": "D"
+  },
+  {
+   "i": 87,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 319,
+   "reply": "A"
+  },
+  {
+   "i": 88,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 521,
+   "reply": "B"
+  },
+  {
+   "i": 89,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 63,
+   "reply": "D"
+  },
+  {
+   "i": 90,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 132,
+   "reply": "D"
+  },
+  {
+   "i": 91,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 118,
+   "reply": "A"
+  },
+  {
+   "i": 92,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 69,
+   "reply": "B"
+  },
+  {
+   "i": 93,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 79,
+   "reply": "C"
+  },
+  {
+   "i": 94,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 178,
+   "reply": "C"
+  },
+  {
+   "i": 95,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 70,
+   "reply": "D"
+  },
+  {
+   "i": 96,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 55,
+   "reply": "B"
+  },
+  {
+   "i": 97,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 62,
+   "reply": "D"
+  },
+  {
+   "i": 98,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 58,
+   "reply": "B"
+  },
+  {
+   "i": 99,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 108,
+   "reply": "B"
+  },
+  {
+   "i": 100,
+   "answer": 0,
+   "got": 3,
+   "prompt_tokens": 123,
+   "reply": "D"
+  },
+  {
+   "i": 101,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 77,
+   "reply": "C"
+  },
+  {
+   "i": 102,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 176,
+   "reply": "C"
+  },
+  {
+   "i": 103,
+   "answer": 0,
+   "got": 1,
+   "prompt_tokens": 94,
+   "reply": "B"
+  },
+  {
+   "i": 104,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 114,
+   "reply": "A"
+  },
+  {
+   "i": 105,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 215,
+   "reply": "C"
+  },
+  {
+   "i": 106,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 121,
+   "reply": "D"
+  },
+  {
+   "i": 107,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 69,
+   "reply": "D"
+  },
+  {
+   "i": 108,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 65,
+   "reply": "B"
+  },
+  {
+   "i": 109,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 121,
+   "reply": "A"
+  },
+  {
+   "i": 110,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 79,
+   "reply": "D"
+  },
+  {
+   "i": 111,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 58,
+   "reply": "C"
+  },
+  {
+   "i": 112,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 56,
+   "reply": "A"
+  },
+  {
+   "i": 113,
+   "answer": 3,
+   "got": 0,
+   "prompt_tokens": 65,
+   "reply": "A"
+  },
+  {
+   "i": 114,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 82,
+   "reply": "C"
+  },
+  {
+   "i": 115,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 56,
+   "reply": "A"
+  },
+  {
+   "i": 116,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 84,
+   "reply": "D"
+  },
+  {
+   "i": 117,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 122,
+   "reply": "A"
+  },
+  {
+   "i": 118,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 59,
+   "reply": "D"
+  },
+  {
+   "i": 119,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 79,
+   "reply": "C"
+  },
+  {
+   "i": 120,
+   "answer": 3,
+   "got": 2,
+   "prompt_tokens": 102,
+   "reply": "C"
+  },
+  {
+   "i": 121,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 80,
+   "reply": "D"
+  },
+  {
+   "i": 122,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 86,
+   "reply": "D"
+  },
+  {
+   "i": 123,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 112,
+   "reply": "C"
+  },
+  {
+   "i": 124,
+   "answer": 0,
+   "got": 2,
+   "prompt_tokens": 141,
+   "reply": "C"
+  },
+  {
+   "i": 125,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 56,
+   "reply": "D"
+  },
+  {
+   "i": 126,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 61,
+   "reply": "A"
+  },
+  {
+   "i": 127,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 203,
+   "reply": "B"
+  },
+  {
+   "i": 128,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 87,
+   "reply": "D"
+  },
+  {
+   "i": 129,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 121,
+   "reply": "C"
+  },
+  {
+   "i": 130,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 116,
+   "reply": "B"
+  },
+  {
+   "i": 131,
+   "answer": 2,
+   "got": 3,
+   "prompt_tokens": 82,
+   "reply": "D"
+  },
+  {
+   "i": 132,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 65,
+   "reply": "C"
+  },
+  {
+   "i": 133,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 83,
+   "reply": "B"
+  },
+  {
+   "i": 134,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 82,
+   "reply": "A"
+  },
+  {
+   "i": 135,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 552,
+   "reply": "B"
+  },
+  {
+   "i": 136,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 68,
+   "reply": "D"
+  },
+  {
+   "i": 137,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 67,
+   "reply": "A"
+  },
+  {
+   "i": 138,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 70,
+   "reply": "D"
+  },
+  {
+   "i": 139,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 79,
+   "reply": "D"
+  },
+  {
+   "i": 140,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 122,
+   "reply": "D"
+  },
+  {
+   "i": 141,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 155,
+   "reply": "D"
+  },
+  {
+   "i": 142,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 107,
+   "reply": "D"
+  },
+  {
+   "i": 143,
+   "answer": 3,
+   "got": 0,
+   "prompt_tokens": 122,
+   "reply": "A"
+  },
+  {
+   "i": 144,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 341,
+   "reply": "C"
+  },
+  {
+   "i": 145,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 395,
+   "reply": "C"
+  },
+  {
+   "i": 146,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 76,
+   "reply": "B"
+  },
+  {
+   "i": 147,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 61,
+   "reply": "A"
+  },
+  {
+   "i": 148,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 119,
+   "reply": "C"
+  },
+  {
+   "i": 149,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 93,
+   "reply": "C"
+  },
+  {
+   "i": 150,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 84,
+   "reply": "B"
+  },
+  {
+   "i": 151,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 95,
+   "reply": "C"
+  },
+  {
+   "i": 152,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 65,
+   "reply": "C"
+  },
+  {
+   "i": 153,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 54,
+   "reply": "C"
+  },
+  {
+   "i": 154,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 63,
+   "reply": "D"
+  },
+  {
+   "i": 155,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 55,
+   "reply": "C"
+  },
+  {
+   "i": 156,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 75,
+   "reply": "A"
+  },
+  {
+   "i": 157,
+   "answer": 1,
+   "got": 3,
+   "prompt_tokens": 133,
+   "reply": "D"
+  },
+  {
+   "i": 158,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 94,
+   "reply": "D"
+  },
+  {
+   "i": 159,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 76,
+   "reply": "D"
+  },
+  {
+   "i": 160,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 63,
+   "reply": "B"
+  },
+  {
+   "i": 161,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 91,
+   "reply": "D"
+  },
+  {
+   "i": 162,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 303,
+   "reply": "D"
+  },
+  {
+   "i": 163,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 261,
+   "reply": "C"
+  },
+  {
+   "i": 164,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 85,
+   "reply": "A"
+  },
+  {
+   "i": 165,
+   "answer": 3,
+   "got": 2,
+   "prompt_tokens": 58,
+   "reply": "C"
+  },
+  {
+   "i": 166,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 280,
+   "reply": "A"
+  },
+  {
+   "i": 167,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 107,
+   "reply": "C"
+  },
+  {
+   "i": 168,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 92,
+   "reply": "A"
+  },
+  {
+   "i": 169,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 59,
+   "reply": "B"
+  },
+  {
+   "i": 170,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 67,
+   "reply": "D"
+  },
+  {
+   "i": 171,
+   "answer": 3,
+   "got": 2,
+   "prompt_tokens": 82,
+   "reply": "C"
+  },
+  {
+   "i": 172,
+   "answer": 2,
+   "got": 3,
+   "prompt_tokens": 102,
+   "reply": "D"
+  },
+  {
+   "i": 173,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 68,
+   "reply": "C"
+  },
+  {
+   "i": 174,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 119,
+   "reply": "A"
+  },
+  {
+   "i": 175,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 104,
+   "reply": "B"
+  },
+  {
+   "i": 176,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 59,
+   "reply": "A"
+  },
+  {
+   "i": 177,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 73,
+   "reply": "A"
+  },
+  {
+   "i": 178,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 126,
+   "reply": "B"
+  },
+  {
+   "i": 179,
+   "answer": 3,
+   "got": -1,
+   "prompt_tokens": 135,
+   "reply": "Let's break it down.\n\nKate\u2019"
+  },
+  {
+   "i": 180,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 166,
+   "reply": "D"
+  },
+  {
+   "i": 181,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 121,
+   "reply": "D"
+  },
+  {
+   "i": 182,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 66,
+   "reply": "B"
+  },
+  {
+   "i": 183,
+   "answer": 0,
+   "got": 0,
+   "prompt_tokens": 75,
+   "reply": "A"
+  },
+  {
+   "i": 184,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 104,
+   "reply": "D"
+  },
+  {
+   "i": 185,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 49,
+   "reply": "B"
+  },
+  {
+   "i": 186,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 84,
+   "reply": "C"
+  },
+  {
+   "i": 187,
+   "answer": 3,
+   "got": 1,
+   "prompt_tokens": 148,
+   "reply": "B"
+  },
+  {
+   "i": 188,
+   "answer": 1,
+   "got": 2,
+   "prompt_tokens": 77,
+   "reply": "C"
+  },
+  {
+   "i": 189,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 77,
+   "reply": "C"
+  },
+  {
+   "i": 190,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 84,
+   "reply": "B"
+  },
+  {
+   "i": 191,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 140,
+   "reply": "C"
+  },
+  {
+   "i": 192,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 167,
+   "reply": "B"
+  },
+  {
+   "i": 193,
+   "answer": 0,
+   "got": 1,
+   "prompt_tokens": 52,
+   "reply": "B"
+  },
+  {
+   "i": 194,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 102,
+   "reply": "D"
+  },
+  {
+   "i": 195,
+   "answer": 2,
+   "got": 2,
+   "prompt_tokens": 52,
+   "reply": "C"
+  },
+  {
+   "i": 196,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 122,
+   "reply": "B"
+  },
+  {
+   "i": 197,
+   "answer": 1,
+   "got": 1,
+   "prompt_tokens": 81,
+   "reply": "B"
+  },
+  {
+   "i": 198,
+   "answer": 3,
+   "got": 2,
+   "prompt_tokens": 104,
+   "reply": "C"
+  },
+  {
+   "i": 199,
+   "answer": 3,
+   "got": 3,
+   "prompt_tokens": 54,
+   "reply": "D"
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+n0  MemAvailable           slope +0.318 GiB/h  warm 4.65 -> end 5.49  min 4.63
+n0  MemFree                slope -0.780 GiB/h  warm 4.45 -> end 4.91  min 4.06
+n0  Cached                 slope +1.052 GiB/h  warm 2.35 -> end 2.71  min 2.32
+n0  Shmem                  slope -0.017 GiB/h  warm 1.29 -> end 1.28  min 1.26
+n0  Mapped                 slope -0.014 GiB/h  warm 2.19 -> end 2.19  min 2.16
+n0  AnonPages              slope -0.375 GiB/h  warm 4.32 -> end 3.73  min 3.67
+n0  SUnreclaim             slope -0.000 GiB/h  warm 1.09 -> end 1.09  min 1.09
+n0  KReclaimable           slope +0.000 GiB/h  warm 0.08 -> end 0.08  min 0.08
+n0  PageTables             slope -0.000 GiB/h  warm 0.03 -> end 0.03  min 0.03
+n0  Mlocked                slope +0.000 GiB/h  warm 0.00 -> end 0.00  min 0.00
+n0  NonAnon                slope +0.000 GiB/h  warm 0.00 -> end 0.00  min 0.00
+r0  RssAnon                slope -0.390 GiB/h  warm 3.92 -> end 3.30  min 3.26
+r0  VmRSS                  slope -0.405 GiB/h  warm 5.75 -> end 5.14  min 5.07
+r0  MemAvail(probe)        slope +0.273 GiB/h  warm 4.64 -> end 5.54  min 4.64
+r0  cuda alloc             slope -0.080 GiB/h  warm 101.76 -> end 101.83  min 101.64
+r0  reserved               slope -0.328 GiB/h  warm 103.21 -> end 102.59  min 102.15
+r0  pinned                 slope -0.009 GiB/h  warm 0.03 -> end 0.03  min 0.00
+r0  glibc inuse            slope -0.138 GiB/h  warm 2.12 -> end 1.99  min 1.99
+r0  glibc free             slope +0.162 GiB/h  warm 0.40 -> end 0.50  min 0.37
+r0  glibc mmap             slope +0.013 GiB/h  warm 0.84 -> end 0.84  min 0.84
+r0  smaps heap             slope -0.076 GiB/h  warm 1.81 -> end 1.63  min 1.61
+r0  smaps arenas           slope +0.014 GiB/h  warm 0.31 -> end 0.19  min 0.13
+r0  smaps mimalloc         slope -0.357 GiB/h  warm 0.53 -> end 0.24  min 0.23
+r0  smaps other            slope +0.034 GiB/h  warm 1.23 -> end 1.22  min 1.21
+n1  MemAvailable           slope +0.140 GiB/h  warm 4.19 -> end 4.76  min 4.01
+n1  MemFree                slope -0.722 GiB/h  warm 4.26 -> end 4.46  min 3.71
+n1  Cached                 slope +0.824 GiB/h  warm 2.05 -> end 2.42  min 2.02
+n1  Shmem                  slope -0.013 GiB/h  warm 1.27 -> end 1.27  min 1.24
+n1  Mapped                 slope -0.009 GiB/h  warm 2.01 -> end 2.01  min 1.98
+n1  AnonPages              slope -0.425 GiB/h  warm 3.50 -> end 3.11  min 3.06
+n1  SUnreclaim             slope +0.001 GiB/h  warm 1.07 -> end 1.06  min 1.06
+n1  KReclaimable           slope +0.007 GiB/h  warm 0.07 -> end 0.07  min 0.07
+n1  PageTables             slope -0.001 GiB/h  warm 0.02 -> end 0.02  min 0.02
+n1  Mlocked                slope +0.000 GiB/h  warm 0.00 -> end 0.00  min 0.00
+n1  NonAnon                slope -0.013 GiB/h  warm 1.78 -> end 1.77  min 1.75
+r1  RssAnon                slope -0.411 GiB/h  warm 3.48 -> end 2.92  min 2.86
+r1  VmRSS                  slope -0.425 GiB/h  warm 5.25 -> end 4.69  min 4.62
+r1  MemAvail(probe)        slope +0.189 GiB/h  warm 4.10 -> end 4.76  min 3.96
+r1  cuda alloc             slope -0.081 GiB/h  warm 101.00 -> end 100.71  min 100.66
+r1  reserved               slope -0.225 GiB/h  warm 102.27 -> end 101.64  min 101.21
+r1  pinned                 slope -0.010 GiB/h  warm 0.03 -> end 0.03  min 0.00
+r1  glibc inuse            slope -0.152 GiB/h  warm 1.69 -> end 1.57  min 1.57
+r1  glibc free             slope +0.221 GiB/h  warm 0.18 -> end 0.33  min 0.15
+r1  glibc mmap             slope -0.014 GiB/h  warm 1.06 -> end 0.89  min 0.89
+r1  smaps heap             slope -0.082 GiB/h  warm 1.35 -> end 1.26  min 1.21
+r1  smaps arenas           slope +0.030 GiB/h  warm 0.11 -> end 0.12  min 0.06
+r1  smaps mimalloc         slope -0.369 GiB/h  warm 0.55 -> end 0.24  min 0.23
+r1  smaps other            slope +0.003 GiB/h  warm 1.44 -> end 1.27  min 1.23

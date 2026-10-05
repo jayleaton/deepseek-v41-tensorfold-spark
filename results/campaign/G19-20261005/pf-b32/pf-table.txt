@@ -1,0 +1,10 @@
+== full prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+final-2k                    1593      2134      2205      2159   (2 boots)
+final-2k / kit             1.48x     1.99x     2.08x     2.09x
+
+== replay prefill: tok/s, median over boots (boots in brackets); vs base; vs kit
+config                        8K       32K       64K      128K
+final-2k                    2025      2298      2239      1934   (2 boots)
+final-2k / kit             1.89x     2.14x     2.11x     1.88x
+

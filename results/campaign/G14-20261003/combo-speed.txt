@@ -1,0 +1,17 @@
+config boot   code T0  code T.7  prose T0 prose T.7 struct T0 struct T.7        C1        C2        C4   verify 1 / 2 / 4 / 16 ms (boot table)   exact  replies==off(same boot)
+off    b1       84.41     75.12     44.47     45.09    118.66    117.78     85.54     70.44     96.82   24.20 / 30.10 / 37.80 / 70.60   True  None
+off    b2       83.02     74.56     44.70     45.78    117.97    119.07     85.30     71.23     97.84   23.30 / 29.20 / 37.50 / 75.10   True  None
+off    b3       83.15     75.53     44.96     45.81    118.40    119.25     85.76     70.74     97.55   23.40 / 29.20 / 37.30 / 72.20   True  None
+off    mean     83.53     75.07     44.71     45.56    118.34    118.70     85.53     70.80     97.40   23.40 / 29.20 / 37.50 / 72.20   exact all True
+combo  b1       87.08     79.19     46.59     48.95    122.40    123.67     87.72     75.23    100.64   21.70 / 27.60 / 35.80 / 74.30   True  True
+combo  b2       86.06     78.56     46.05     48.57    121.59    123.38     87.62     74.16    100.74   21.80 / 27.70 / 36.20 / 71.70   True  True
+combo  b3       86.60     78.86     46.07     48.83    122.63    123.95     87.73     74.51    100.60   21.90 / 27.70 / 36.10 / 71.80   True  True
+combo  mean     86.58     78.87     46.24     48.78    122.21    123.67     87.69     74.63    100.66   21.80 / 27.70 / 36.10 / 71.80   exact all True
+combonp b1       85.80     77.08     45.92     47.16    120.53    121.86     86.75     73.30     99.38   21.70 / 27.80 / 36.10 / 71.10   True  True
+combonp b2       86.09     77.37     45.78     47.43    121.69    122.09     87.62     74.04    100.20   21.90 / 27.80 / 36.00 / 71.40   True  True
+combonp b3       86.50     77.22     46.64     48.15    121.41    122.34     88.09     73.95     99.75   21.70 / 27.60 / 35.90 / 72.30   True  True
+combonp mean     86.13     77.22     46.12     47.58    121.21    122.09     87.49     73.76     99.78   21.70 / 27.80 / 36.00 / 71.40   exact all True
+combo vs off (means over boots): code T0 +3.7%, code T.7 +5.1%, prose T0 +3.4%, prose T.7 +7.1%, struct T0 +3.3%, struct T.7 +4.2%, C1 +2.5%, C2 +5.4%, C4 +3.3%
+combo vs off (boot-table medians): 1 rows -1.60 ms, 2 rows -1.50 ms, 4 rows -1.40 ms, 16 rows -0.40 ms
+combonp vs off (means over boots): code T0 +3.1%, code T.7 +2.9%, prose T0 +3.1%, prose T.7 +4.4%, struct T0 +2.4%, struct T.7 +2.9%, C1 +2.3%, C2 +4.2%, C4 +2.4%
+combonp vs off (boot-table medians): 1 rows -1.70 ms, 2 rows -1.40 ms, 4 rows -1.50 ms, 16 rows -0.80 ms
