@@ -176,8 +176,12 @@ class Dsv41App(server.App):
         self._rl = threading.local()
         if getattr(engine, "batch", None) is not None:
             self.lock = contextlib.nullcontext()            # the batcher queues concurrent requests itself
+        greedy = float(self.sampling.get("temperature", 1.0)) <= 0
         print(f"[tensorfold] DeepSeek-V4.1 app: thinking {'on' if self.default_thinking else 'off'} by default, "
-              f"effort {self.default_effort}; context {self.context_limit()} tokens", flush=True)
+              f"effort {self.default_effort}; context {self.context_limit()} tokens"
+              + ("; WARNING: default sampling is greedy (temperature <= 0) - a client that omits `temperature` "
+                 "decodes greedily, which on a long agentic turn can loop in reasoning and return empty content"
+                 if greedy else ""), flush=True)
 
     @staticmethod
     def _vocab(model_dir: Path) -> int:
