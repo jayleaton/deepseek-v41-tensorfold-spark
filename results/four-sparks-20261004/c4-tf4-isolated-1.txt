@@ -1,0 +1,1 @@
+[tf4-isolated-1] single-stream median 62.6 tok/s (runs [62.6, 120.8, 113.5, 59.9, 59.7]) | 4-stream aggregate 119.2 tok/s (5200 tok / 44s)

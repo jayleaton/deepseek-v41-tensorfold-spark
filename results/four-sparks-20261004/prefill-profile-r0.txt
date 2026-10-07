@@ -1,0 +1,116 @@
+wall 2.233 s
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                                  Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+     <built-in method scatter_add_ of Tensor object at 0xe18be01decb0>        -3.88%  -327456.934us       351.61%       29.649s     741.218ms       0.000us         0.00%        1.510s      37.741ms            40  
+     ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)         0.00%       0.000us         0.00%       0.000us       0.000us     399.079ms        35.22%     399.079ms       9.281ms            43  
+void dsv41_x3gm::gm_kernel<2, 2, 6, 2, 8, 2, 4, 4>(dsv41_x3gm::Args...         0.00%       0.000us         0.00%       0.000us       0.000us     137.431ms        12.13%     137.431ms       3.818ms            36  
+               <built-in method topk of type object at 0xe1a0272529b8>        -1.55%  -130385.413us        29.48%        2.486s     828.527ms       0.000us         0.00%     135.229ms      45.076ms             3  
+                                                                 _site         0.00%       0.000us         0.00%       0.000us       0.000us     111.803ms         9.87%     111.803ms       2.600ms            43  
+                                                                 _gemm         0.00%       0.000us         0.00%       0.000us       0.000us      98.132ms         8.66%      98.132ms     481.040us           204  
+void dsv41_x3gm::gm_kernel<1, 1, 6, 2, 8, 4, 4, 8>(dsv41_x3gm::Args...         0.00%       0.000us         0.00%       0.000us       0.000us      78.290ms         6.91%      78.290ms       2.175ms            36  
+                                        threading.py(1030): _bootstrap         0.00%       4.720us       342.85%       28.910s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+                                  threading.py(1073): _bootstrap_inner         0.00%      24.880us       342.85%       28.910s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+                                               threading.py(1010): run         0.00%       7.840us       342.85%       28.909s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+           tensorfold/families/deepseek_v41/cuda/batch.py(240): _serve         0.00%       2.768us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+             tensorfold/families/deepseek_v41/cuda/batch.py(267): step         0.00%       1.456us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+             tensorfold/families/deepseek_v41/cuda/rounds.py(101): run         0.00%       1.008us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+         tensorfold/families/deepseek_v41/cuda/decode.py(221): prefill         0.00%       0.864us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+          tensorfold/families/deepseek_v41/cuda/slots.py(156): prefill         0.00%       1.056us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+         tensorfold/families/deepseek_v41/cuda/slots.py(82): _profiled        -8.51%  -717387.863us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+                                                                _fused         0.00%       0.000us         0.00%       0.000us       0.000us      61.066ms         5.39%      61.066ms       3.053ms            20  
+                                                           aten::copy_         0.08%       6.487ms         0.72%      60.929ms     108.414us      27.846ms         2.46%      34.702ms      61.747us           562  
+                  void dsv41_rg::gemv_kernel<16, 8, 2>(dsv41_rg::Args)         0.00%       0.000us         0.00%       0.000us       0.000us      33.335ms         2.94%      33.335ms       1.667ms            20  
+(anonymous namespace)::combine_kernel(float const*, float const*, f...         0.00%       0.000us         0.00%       0.000us       0.000us      27.200ms         2.40%      27.200ms     679.997us            40  
+void dsv41_x3gm::rot_kernel<__nv_bfloat16, 2>(__nv_bfloat16 const*,...         0.00%       0.000us         0.00%       0.000us       0.000us      25.955ms         2.29%      25.955ms     648.870us            40  
+(anonymous namespace)::rot_in_kernel(void const*, int, __half const...         0.00%       0.000us         0.00%       0.000us       0.000us      21.241ms         1.87%      21.241ms     104.121us           204  
+                                                   Command Buffer Full         6.74%     568.563ms         6.74%     568.563ms     668.111us      20.719ms         1.83%      20.719ms      24.346us           851  
+                                                              aten::to         0.00%     376.640us         0.50%      41.952ms      56.691us       0.000us         0.00%      18.424ms      24.897us           740  
+                                                        aten::_to_copy         0.01%     553.904us         0.49%      41.575ms     115.486us       0.000us         0.00%      18.424ms      51.177us           360  
+               <built-in method to of Tensor object at 0xe18be019fe80>         0.01%       1.263ms         0.51%      43.048ms      88.033us       0.000us         0.00%      18.311ms      37.445us           489  
+                                                            aten::add_         0.00%      88.976us         0.04%       2.990ms     129.986us      13.200ms         1.16%      17.277ms     751.187us            23  
+                                                             _finish_k         0.00%       0.000us         0.00%       0.000us       0.000us      17.049ms         1.50%      17.049ms     415.839us            41  
+                                                                _plain         0.00%       0.000us         0.00%       0.000us       0.000us      16.698ms         1.47%      16.698ms       5.566ms             3  
+tensorfold/families/deepseek_v41/cuda/forward.py(243): gather_parti...         0.00%     373.408us         0.42%      35.241ms     859.525us       0.000us         0.00%      16.505ms     402.571us            41  
+                                                      cudaLaunchKernel         0.17%      14.419ms         5.42%     456.784ms     153.592us     164.096us         0.01%      16.170ms       5.437us          2974  
+       tensorfold/families/deepseek_v41/cuda/blocks.py(181): attention         0.05%       4.025ms         2.29%     193.356ms       9.668ms       0.000us         0.00%      14.576ms     728.797us            20  
+void at::native::vectorized_elementwise_kernel<4, at::native::CUDAF...         0.00%       0.000us         0.00%       0.000us       0.000us      13.200ms         1.16%      13.200ms     573.905us            23  
+void dsv41_x3gm::gm_kernel<2, 2, 4, 2, 8, 2, 4, 4>(dsv41_x3gm::Args...         0.00%       0.000us         0.00%       0.000us       0.000us      12.631ms         1.11%      12.631ms       3.158ms             4  
+void at::native::vectorized_elementwise_kernel<4, at::native::bfloa...         0.00%       0.000us         0.00%       0.000us       0.000us      11.842ms         1.05%      11.842ms     257.439us            46  
+                                                            aten::sort         0.12%       9.709ms         0.71%      60.054ms       1.397ms       3.145ms         0.28%      11.537ms     268.313us            43  
+              tensorfold/families/deepseek_v41/cuda/x3gm.py(142): plan         1.14%      96.049ms         1.92%     161.593ms       4.040ms       0.000us         0.00%      10.644ms     266.095us            40  
+void dsv41_dense3::lanes_unpack_kernel<10, 2>(unsigned int const*, ...         0.00%       0.000us         0.00%       0.000us       0.000us      10.538ms         0.93%      10.538ms      82.330us           128  
+            <built-in method argsort of type object at 0xe1a0272529b8>         0.00%     218.608us         0.62%      52.542ms       1.314ms       0.000us         0.00%      10.063ms     251.579us            40  
+                                                         aten::argsort         0.00%      59.088us         0.62%      52.323ms       1.308ms       0.000us         0.00%      10.063ms     251.579us            40  
+            tensorfold/families/deepseek_v41/cuda/blocks.py(236): _out         0.00%     278.256us         0.52%      43.885ms       2.194ms       0.000us         0.00%       9.242ms     462.125us            20  
+                                                           aten::clone         0.00%     164.560us         0.26%      21.921ms     173.976us       0.000us         0.00%       8.719ms      69.197us           126  
+void dsv41_x3gm::gm_kernel<1, 1, 4, 2, 8, 4, 4, 8>(dsv41_x3gm::Args...         0.00%       0.000us         0.00%       0.000us       0.000us       7.915ms         0.70%       7.915ms       1.979ms             4  
+       <built-in method contiguous of Tensor object at 0xe18be01c87d0>         0.12%      10.081ms         0.36%      30.126ms      41.268us       0.000us         0.00%       7.879ms      10.793us           730  
+                                                      aten::contiguous         0.00%      37.072us         0.24%      20.045ms     250.561us       0.000us         0.00%       7.879ms      98.483us            80  
+         tensorfold/families/deepseek_v41/cuda/slots.py(156): <lambda>         0.00%      34.016us        10.73%     904.460ms     904.460ms       0.000us         0.00%       7.756ms       7.756ms             1  
+          tensorfold/families/deepseek_v41/cuda/replay.py(116): encode         0.01%     732.848us        10.73%     904.426ms     904.426ms       0.000us         0.00%       7.756ms       7.756ms             1  
+            tensorfold/families/deepseek_v41/cuda/forward.py(351): run         0.05%       4.389ms        10.72%     903.657ms     903.657ms       0.000us         0.00%       7.756ms       7.756ms             1  
+           tensorfold/families/deepseek_v41/cuda/forward.py(363): _run         0.00%     131.536us        10.66%     899.234ms     899.234ms       0.000us         0.00%       7.756ms       7.756ms             1  
+void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_...         0.00%       0.000us         0.00%       0.000us       0.000us       6.467ms         0.57%       6.467ms     150.389us            43  
+                                        Memcpy DtoD (Device -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us       6.411ms         0.57%       6.411ms      58.283us           110  
+     tensorfold/families/deepseek_v41/cuda/forward.py(312): embed_rows         0.01%     558.192us         0.17%      14.674ms      14.674ms       0.000us         0.00%       5.048ms       5.048ms             1  
+                                                                 _rms2         0.00%       0.000us         0.00%       0.000us       0.000us       4.937ms         0.44%       4.937ms     246.826us            20  
+                                                       cudaMemsetAsync         0.01%       1.169ms         0.19%      16.068ms      39.576us       0.000us         0.00%       4.618ms      11.375us           406  
+                                                             _fuse_dec         0.00%       0.000us         0.00%       0.000us       0.000us       4.529ms         0.40%       4.529ms       2.265ms             2  
+           tensorfold/families/deepseek_v41/cuda/moe.py(192): __call__         0.00%     154.160us         4.72%     398.131ms      19.907ms       0.000us         0.00%       4.311ms     215.542us            20  
+     tensorfold/families/deepseek_v41/cuda/prefill_moe.py(64): forward         0.62%      52.454ms         4.72%     397.860ms      19.893ms       0.000us         0.00%       4.311ms     215.542us            20  
+            tensorfold/families/deepseek_v41/cuda/x3gm.py(209): routed         0.00%     368.160us         3.91%     329.427ms      16.471ms       0.000us         0.00%       4.014ms     200.715us            20  
+               tensorfold/families/deepseek_v41/cuda/x3gm.py(219): run         2.95%     249.088ms         3.90%     328.824ms      16.441ms       0.000us         0.00%       4.014ms     200.715us            20  
+         tensorfold/families/deepseek_v41/cuda/forward.py(220): allsum         0.00%     368.608us         0.12%       9.959ms       9.959ms       0.000us         0.00%       3.792ms       3.792ms             1  
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 8.432s
+Self CUDA time total: 1.133s
+
+
+-- by CPU time --
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                                  Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+     <built-in method scatter_add_ of Tensor object at 0xe18be01decb0>        -3.88%  -327456.934us       351.61%       29.649s     741.218ms       0.000us         0.00%        1.510s      37.741ms            40  
+                                        threading.py(1030): _bootstrap         0.00%       4.720us       342.85%       28.910s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+                                  threading.py(1073): _bootstrap_inner         0.00%      24.880us       342.85%       28.910s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+                                               threading.py(1010): run         0.00%       7.840us       342.85%       28.909s        1.205s       0.000us         0.00%      77.371ms       3.224ms            24  
+                             concurrent/futures/thread.py(89): _worker         0.00%      32.880us       228.56%       19.273s        1.205s       0.000us         0.00%       0.000us       0.000us            16  
+                          socketserver.py(692): process_request_thread         0.00%       7.072us        71.43%        6.023s        1.205s       0.000us         0.00%       0.000us       0.000us             5  
+                                  socketserver.py(362): finish_request         0.00%       0.800us        71.43%        6.023s        1.205s       0.000us         0.00%       0.000us       0.000us             5  
+                                        socketserver.py(761): __init__         0.00%       0.992us        71.43%        6.023s        1.205s       0.000us         0.00%       0.000us       0.000us             5  
+                                           http/server.py(438): handle         0.00%      14.240us        57.14%        4.818s        1.205s       0.000us         0.00%       0.000us       0.000us             4  
+                   tensorfold/server/stacks.py(35): handle_one_request         0.00%      13.664us        48.64%        4.101s     820.197ms       0.000us         0.00%       0.000us       0.000us             5  
+                               http/server.py(404): handle_one_request         0.00%     168.432us        34.35%        2.896s     724.046ms       0.000us         0.00%       0.000us       0.000us             4  
+                                              socket.py(707): readinto         5.75%     485.260ms        34.33%        2.894s     723.609ms       0.000us         0.00%       0.000us       0.000us             4  
+               <built-in method topk of type object at 0xe1a0272529b8>        -1.55%  -130385.413us        29.48%        2.486s     828.527ms       0.000us         0.00%     135.229ms      45.076ms             3  
+                   tensorfold/server/stacks.py(34): handle_one_request         0.00%      10.016us        22.79%        1.922s     961.010ms       0.000us         0.00%       0.000us       0.000us             2  
+                               http/server.py(395): handle_one_request         0.00%       1.072us        22.79%        1.922s     961.005ms       0.000us         0.00%       0.000us       0.000us             2  
+                                              socket.py(693): readinto         0.00%      18.816us        22.79%        1.922s     960.999ms       0.000us         0.00%       0.000us       0.000us             2  
+            tensorfold/families/deepseek_v41/cuda/stall.py(100): _loop         0.00%      24.304us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                           http/server.py(436): handle         0.00%       0.416us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                               http/server.py(424): handle_one_request         0.00%       2.704us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+          tensorfold/families/glm5_next/spark/server.py(1043): do_POST         0.00%       1.840us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                tensorfold/families/deepseek_v41/cuda/app.py(264): run         0.00%       1.984us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+               tensorfold/families/deepseek_v41/cuda/app.py(358): _run         0.00%       1.424us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+          tensorfold/families/glm5_next/spark/health.py(292): generate         0.00%       0.864us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+        tensorfold/families/deepseek_v41/cuda/engine.py(362): generate         0.00%       0.640us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+tensorfold/families/deepseek_v41/cuda/batch.py(202): generate_reque...         0.00%       0.432us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+         tensorfold/families/deepseek_v41/cuda/batch.py(193): generate         0.00%       3.600us        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+          tensorfold/families/deepseek_v41/cuda/batch.py(212): collect         0.08%       6.702ms        14.29%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+           tensorfold/families/deepseek_v41/cuda/batch.py(240): _serve         0.00%       2.768us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+             tensorfold/families/deepseek_v41/cuda/batch.py(267): step         0.00%       1.456us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+             tensorfold/families/deepseek_v41/cuda/rounds.py(101): run         0.00%       1.008us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+         tensorfold/families/deepseek_v41/cuda/decode.py(221): prefill         0.00%       0.864us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+          tensorfold/families/deepseek_v41/cuda/slots.py(156): prefill         0.00%       1.056us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+         tensorfold/families/deepseek_v41/cuda/slots.py(82): _profiled        -8.51%  -717387.863us        14.29%        1.205s        1.205s       0.000us         0.00%      77.371ms      77.371ms             1  
+      tensorfold/families/deepseek_v41/cuda/engram_gate.py(364): _loop         0.00%       0.976us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                                    queue.py(171): get         0.00%       0.336us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                               threading.py(355): wait        14.28%        1.205s        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                              <frozen runpy>(198): _run_module_as_main         0.00%       0.560us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                         <frozen runpy>(88): _run_code         0.00%       0.656us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                   tensorfold/__main__.py(3): <module>         0.00%       0.656us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+                                           tensorfold/cli.py(41): main         0.00%       3.456us        14.28%        1.205s        1.205s       0.000us         0.00%       0.000us       0.000us             1  
+----------------------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 8.432s
+Self CUDA time total: 1.133s

@@ -2,13 +2,14 @@
 
 # The engine
 
-`vendor/TensorFold` is upstream TensorFold v0.6.0, unmodified. `patches/` holds two patches, applied in order by the
+`vendor/TensorFold` is upstream TensorFold v0.6.0, unmodified. `patches/` holds the patches, applied in order by the
 Dockerfile:
 
 | patch | what | licence |
 | --- | --- | --- |
 | [`0001-spark-stack-060.patch`](../patches/0001-spark-stack-060.patch) | the GLM-5.3-Flash two-Spark engine (`families/glm5_next/spark/`) rebased onto 0.6.0, the CUDA communicator interface (`cuda/comm.py`), the family `CUDA_SERVE` hook (`cli.py`, `families/glm5_next/__init__.py`), the server's descriptor fix (`server/cancellation.py`), packaging (`pyproject.toml`), recipes and tests |
 | [`0002-deepseek-v41-family.patch`](../patches/0002-deepseek-v41-family.patch) | `families/deepseek_v41/` and its tests, the EXL3 linear's device-side skip (`cuda/exl3/linear.*`), fp64 in `cuda/comm.py`, `--kv-dtype fp8` (`cli_args.py`), model aliases in the GLM server, G14's RoCE changes to the GLM stack (the faster all-gather kernel, the host mailbox the round plan uses, the exchange benchmark and split tools, `families/glm5_next/spark/roce*`), packaging (the CUDA sources and headers as package data), NOTICE entries |
+| [`0003-four-sparks.patch`](../patches/0003-four-sparks.patch) | four DGX Sparks (TP=4, opt in with `--tp 4`): whole-128-block uneven splits of the vocabulary, experts and DSpark delta, N-way rank agreement, plan link, fail-fast and memory floor, `tests/test_dsv41_tp4.py` and `tests/test_dsv41_four_sparks.py`; TP=2 unchanged ([`docs/FOUR_SPARKS.md`](FOUR_SPARKS.md)) | MIT |
 
 Together they are every engine change production runs (development commit `7bd2d67`, plus `66d0dcd`, a packaging-only
 fix: 455 files over v0.6.0): applying them to v0.6.0 reproduces that tree except for reworded comments, two
@@ -27,6 +28,7 @@ TP=2 split.
 | `patches/` | the engine changes ([`docs/ENGINE.md`](ENGINE.md)) |
 | `docker/Dockerfile` | the image: NVIDIA PyTorch 26.07 + xgrammar + TensorFold with the patches |
 | `config/prod.env.example` | the measured configuration, with placeholders for your hosts and paths |
+| `scripts/serve4.sh`, `scripts/keeper4.sh`, `config/tp4.env.example` | four Sparks: the launcher (ship / prebuild / start / stop / status / logs), an optional cron keeper, the TP=4 overrides ([`docs/FOUR_SPARKS.md`](FOUR_SPARKS.md)) |
 | `config/pfdense-table.json` | the measured tile table of the dense prefill GEMM (`TF_DSV41_PF_DENSE_TABLE`; `scripts/serve.sh prebuild` copies it into the cache volume) |
 | `scripts/serve.sh` | build / prebuild / cache / preflight / start / stop / status / watchdog / `run` (engine benchmarks on both ranks) |
 | `scripts/prebuild_ext.py` | builds every CUDA extension a rank loads (`scripts/serve.sh prebuild` runs it in the image on both nodes) |

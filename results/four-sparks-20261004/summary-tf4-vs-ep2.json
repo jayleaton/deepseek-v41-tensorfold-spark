@@ -1,0 +1,122 @@
+[
+ {
+  "depth": 1000,
+  "kind": "code",
+  "tf_tps": 104.9,
+  "sg_tps": 62.2,
+  "tf_cold_ttft": 0.8,
+  "sg_cold_ttft": 0.5,
+  "tf_warm_ttft": 0.26,
+  "sg_warm_ttft": 0.3,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 1000,
+  "kind": "prose",
+  "tf_tps": 63.6,
+  "sg_tps": 37.7,
+  "tf_cold_ttft": 0.3,
+  "sg_cold_ttft": 0.5,
+  "tf_warm_ttft": 0.26,
+  "sg_warm_ttft": 0.29,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 20000,
+  "kind": "code",
+  "tf_tps": 97.0,
+  "sg_tps": 56.9,
+  "tf_cold_ttft": 12.9,
+  "sg_cold_ttft": 5.3,
+  "tf_warm_ttft": 0.3,
+  "sg_warm_ttft": 0.21,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 20000,
+  "kind": "prose",
+  "tf_tps": 65.7,
+  "sg_tps": 38.0,
+  "tf_cold_ttft": 14.2,
+  "sg_cold_ttft": 5.5,
+  "tf_warm_ttft": 0.32,
+  "sg_warm_ttft": 0.2,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 40000,
+  "kind": "code",
+  "tf_tps": 96.4,
+  "sg_tps": 53.8,
+  "tf_cold_ttft": 24.7,
+  "sg_cold_ttft": 10.8,
+  "tf_warm_ttft": 0.35,
+  "sg_warm_ttft": 0.28,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 40000,
+  "kind": "prose",
+  "tf_tps": 64.0,
+  "sg_tps": 38.1,
+  "tf_cold_ttft": 24.5,
+  "sg_cold_ttft": 10.7,
+  "tf_warm_ttft": 0.27,
+  "sg_warm_ttft": 0.3,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 80000,
+  "kind": "code",
+  "tf_tps": 103.1,
+  "sg_tps": 59.9,
+  "tf_cold_ttft": 46.8,
+  "sg_cold_ttft": 22.0,
+  "tf_warm_ttft": 0.44,
+  "sg_warm_ttft": 0.47,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 80000,
+  "kind": "prose",
+  "tf_tps": 62.8,
+  "sg_tps": 37.1,
+  "tf_cold_ttft": 45.9,
+  "sg_cold_ttft": 22.0,
+  "tf_warm_ttft": 0.44,
+  "sg_warm_ttft": 0.47,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 160000,
+  "kind": "code",
+  "tf_tps": 99.8,
+  "sg_tps": 54.6,
+  "tf_cold_ttft": 97.4,
+  "sg_cold_ttft": 52.1,
+  "tf_warm_ttft": 0.64,
+  "sg_warm_ttft": 0.68,
+  "n_tf": 3,
+  "n_sg": 3
+ },
+ {
+  "depth": 160000,
+  "kind": "prose",
+  "tf_tps": 61.0,
+  "sg_tps": 38.3,
+  "tf_cold_ttft": 99.8,
+  "sg_cold_ttft": 48.1,
+  "tf_warm_ttft": 0.63,
+  "sg_warm_ttft": 0.72,
+  "n_tf": 3,
+  "n_sg": 3
+ }
+]

@@ -12,6 +12,10 @@ for this model: exact DSpark speculative decoding, CED bounded-replay and exact 
 shared FP8 KV pool, NVMe sessions, native image input, structured output and tool calls, and both ranks failing fast
 together instead of hanging.
 
+> **Four Sparks:** `patches/0003` runs the same engine TP=4 on four DGX Sparks behind a switch (opt in with
+> `--tp 4`, `scripts/serve4.sh`); two-Spark serving is unchanged. Setup, numbers and limits:
+> [docs/FOUR_SPARKS.md](docs/FOUR_SPARKS.md).
+
 > **Work in progress.** Measured on one pair of Sparks, against one baseline. Read
 > [what is not solved](docs/KNOWN-ISSUES.md) before relying on it.
 
