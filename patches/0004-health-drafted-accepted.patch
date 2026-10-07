@@ -1,0 +1,83 @@
+From 1eea7741b6b53f103583be21828e0f3477c1ae1d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 6 Oct 2026 22:09:38 -0700
+Subject: [PATCH] deepseek_v41: /health drafted_total and accepted_total count
+ DSpark and lookup drafts
+
+A finished request's stats now carry drafted (DSpark + lookup drafts) and accepted (the drafts kept), from the
+planner's report, so the server's existing /health totals and Prometheus counters (cuda/health.STATS) report the
+draft acceptance instead of staying at 0. Bytes unchanged: stats only.
+
+tests/test_dsv41_health_drafts.py: the totals from a report, a report without drafts, a non-dict report.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../families/deepseek_v41/cuda/batch.py       |  5 ++-
+ tests/test_dsv41_health_drafts.py             | 42 +++++++++++++++++++
+ 2 files changed, 46 insertions(+), 1 deletion(-)
+ create mode 100644 tests/test_dsv41_health_drafts.py
+
+diff --git a/src/tensorfold/families/deepseek_v41/cuda/batch.py b/src/tensorfold/families/deepseek_v41/cuda/batch.py
+index 9325c1a..04dffa0 100644
+--- a/src/tensorfold/families/deepseek_v41/cuda/batch.py
++++ b/src/tensorfold/families/deepseek_v41/cuda/batch.py
+@@ -629,7 +629,10 @@ class Batcher:
+         s.job.stats.update(finish="cancelled" if cancelled else "done", completion=len(s.out),
+                            decode_s=round(dt, 4), rounds=self.rounds)
+         if s.plan is not None:
+-            s.job.stats["drafting"] = self.planner.report(s.plan)
++            d = s.job.stats["drafting"] = self.planner.report(s.plan)
++            if isinstance(d, dict):     # /health and /metrics totals (health.STATS): DSpark + lookup drafts, kept
++                s.job.stats["drafted"] = int(d.get("dspark_drafts") or 0) + int(d.get("lookup_drafts") or 0)
++                s.job.stats["accepted"] = int(d.get("dspark_kept") or 0) + int(d.get("lookup_kept") or 0)
+         s.job.out.put(None)
+ 
+     def _fail_all(self, exc: BaseException) -> None:
+diff --git a/tests/test_dsv41_health_drafts.py b/tests/test_dsv41_health_drafts.py
+new file mode 100644
+index 0000000..55d6409
+--- /dev/null
++++ b/tests/test_dsv41_health_drafts.py
+@@ -0,0 +1,42 @@
++# SPDX-License-Identifier: MIT
++"""A finished request's ``drafted`` / ``accepted`` stats (``/health`` drafted_total / accepted_total and the
++Prometheus counters, ``health.STATS``): DSpark plus lookup drafts from the planner's report."""
++
++from __future__ import annotations
++
++import queue
++import time
++from types import SimpleNamespace as NS
++
++import pytest
++
++pytest.importorskip("torch")
++
++
++def _ended(report):
++    from tensorfold.families.deepseek_v41.cuda.batch import Batcher
++
++    me = NS(store=None, finishes=[], seqs=[object()], rounds=7, planner=NS(report=lambda plan: report))
++    job = NS(stats={}, out=queue.Queue())
++    s = NS(slot=0, t0=time.monotonic(), out=[1, 2, 3], job=job, plan=object())
++    Batcher._end(me, s, None, cancelled=False)
++    assert job.out.get_nowait() is None
++    return job.stats
++
++
++def test_drafts_and_kept_reach_the_health_totals():
++    st = _ended({"dspark_drafts": 40, "dspark_kept": 29, "lookup_drafts": 6, "lookup_kept": 2})
++    assert st["drafted"] == 46 and st["accepted"] == 31
++    from tensorfold.cuda.health import STATS
++
++    assert STATS["drafted"] == "drafted_total" and STATS["accepted"] == "accepted_total"
++
++
++def test_a_report_without_drafts_counts_zero():
++    st = _ended({})
++    assert st["drafted"] == 0 and st["accepted"] == 0
++
++
++def test_a_non_dict_report_adds_nothing():
++    st = _ended(None)
++    assert "drafted" not in st and "accepted" not in st
