@@ -1,0 +1,97 @@
+From 64bb585b5e8e33a84239d6b862cc725afa2ec45e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 6 Oct 2026 22:09:38 -0700
+Subject: [PATCH] deepseek_v41: count routed pairs per expert without
+ bincount's host sync (x3gm / x3tc plans)
+
+torch.bincount on CUDA reads the maximum back to the host to size its output, so every prefill layer's x3gm / x3tc
+plan synchronized the launch queue once. x3gm._counts gives the same counts (bincount(minlength=E)[:E], ids >= E
+dropped) with a scatter_add into E + 1 bins, no host read. Same counts, so the same plans and bytes.
+
+tests/test_dsv41_expert_counts.py: equal to bincount for several E, ids past E dropped; the empty case.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../families/deepseek_v41/cuda/x3gm.py        | 11 +++++++-
+ .../families/deepseek_v41/cuda/x3tc.py        |  4 ++-
+ tests/test_dsv41_expert_counts.py             | 27 +++++++++++++++++++
+ 3 files changed, 40 insertions(+), 2 deletions(-)
+ create mode 100644 tests/test_dsv41_expert_counts.py
+
+diff --git a/src/tensorfold/families/deepseek_v41/cuda/x3gm.py b/src/tensorfold/families/deepseek_v41/cuda/x3gm.py
+index 7e097a6..ab5d162 100644
+--- a/src/tensorfold/families/deepseek_v41/cuda/x3gm.py
++++ b/src/tensorfold/families/deepseek_v41/cuda/x3gm.py
+@@ -235,6 +235,15 @@ def supported(gate, up, down) -> str | None:
+     return None
+ 
+ 
++def _counts(flat: torch.Tensor, E: int) -> torch.Tensor:
++    """``torch.bincount(flat, minlength=E)[:E]`` without its host sync (CUDA bincount reads the max back to size
++    its output, stalling the launch queue once a layer): ids >= E go to a spare bin that is dropped. Same counts."""
++
++    spare = torch.where(flat < E, flat, torch.full_like(flat, E))
++    return torch.zeros(E + 1, dtype=torch.int64, device=flat.device).scatter_add_(
++        0, spare, torch.ones_like(spare))[:E]
++
++
+ def plan(pick: torch.Tensor, E: int, bm: int = BM):
+     """Passes of a block's routed pairs, on the device, no host sync: (order, pe, poff, pcnt, npass). ``order`` is
+     the pair indices (row * slots + slot) by expert, rows ascending; pass t is ``pcnt[t]`` members of expert
+@@ -243,7 +252,7 @@ def plan(pick: torch.Tensor, E: int, bm: int = BM):
+     flat = pick.reshape(-1).to(torch.int64)
+     P = flat.numel()
+     order = torch.argsort(flat, stable=True).to(torch.int32)
+-    cnt = torch.bincount(flat, minlength=E)[:E]
++    cnt = _counts(flat, E)
+     off = torch.cumsum(cnt, 0) - cnt
+     npe = (cnt + bm - 1) // bm
+     pend = torch.cumsum(npe, 0)
+diff --git a/src/tensorfold/families/deepseek_v41/cuda/x3tc.py b/src/tensorfold/families/deepseek_v41/cuda/x3tc.py
+index 8869c42..4252cb9 100644
+--- a/src/tensorfold/families/deepseek_v41/cuda/x3tc.py
++++ b/src/tensorfold/families/deepseek_v41/cuda/x3tc.py
+@@ -231,7 +231,9 @@ def items(pick: torch.Tensor, E: int):
+     flat = pick.reshape(-1).to(torch.int64)
+     P = flat.numel()
+     order = torch.argsort(flat, stable=True).to(torch.int32)
+-    cnt = torch.bincount(flat, minlength=E)[:E]
++    from .x3gm import _counts
++
++    cnt = _counts(flat, E)
+     off = torch.cumsum(cnt, 0) - cnt
+     blk = (cnt + BM - 1) // BM
+     iend = torch.cumsum(blk, 0)
+diff --git a/tests/test_dsv41_expert_counts.py b/tests/test_dsv41_expert_counts.py
+new file mode 100644
+index 0000000..823e652
+--- /dev/null
++++ b/tests/test_dsv41_expert_counts.py
+@@ -0,0 +1,27 @@
++# SPDX-License-Identifier: MIT
++"""``x3gm._counts``: the routed pairs' per-expert counts without ``torch.bincount``'s host sync (CUDA bincount reads
++the max back to size its output, which stalls the launch queue once a prefill layer). Same counts as
++``bincount(minlength=E)[:E]``, ids >= E dropped."""
++
++from __future__ import annotations
++
++import pytest
++
++torch = pytest.importorskip("torch")
++pytestmark = pytest.mark.torch
++
++
++def test_expert_counts_equal_bincount_without_a_sync():
++    from tensorfold.families.deepseek_v41.cuda.x3gm import _counts
++
++    g = torch.Generator().manual_seed(3)
++    for E in (1, 8, 256, 384):
++        flat = torch.randint(0, E + 3, (5000,), generator=g)        # ids >= E are dropped like bincount[:E]
++        assert torch.equal(_counts(flat, E), torch.bincount(flat, minlength=E)[:E])
++
++
++def test_expert_counts_empty_and_dtype():
++    from tensorfold.families.deepseek_v41.cuda.x3gm import _counts
++
++    out = _counts(torch.empty((0,), dtype=torch.int64), 8)
++    assert out.dtype == torch.int64 and torch.equal(out, torch.zeros(8, dtype=torch.int64))
