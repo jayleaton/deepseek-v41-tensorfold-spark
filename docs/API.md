@@ -19,4 +19,23 @@ Thinking follows DeepSeek-V4.1's encoding (`Reasoning Effort: N (range 1-100)`),
 `chat_template_kwargs.enable_thinking` (or `thinking`) true / false sets the mode directly. Note: the kit's vLLM
 path renders `low` as 25; we keep DeepSeek's 50.
 
+## Sampling
+
+Requests take the usual OpenAI sampling fields — `temperature`, `top_p`, `top_k`, `min_p`, `seed` — and
+a request's value always wins. Anything a request omits falls back to the **server's default sampling**;
+when a deployment sets none, the engine's fallback is `temperature 1.0, top_p 0.95, top_k 20, min_p 0`,
+so an unconfigured server *samples* rather than decoding greedily. The `serve` command's `--temperature`,
+`--top-p`, `--top-k` and `--min-p` set that server-side default.
+
+Decoding is **greedy** when the effective `temperature` is `<= 0` — either the request asks for it or the
+server default is greedy. Sampling is *keyed*: without an explicit `seed`, the seed is derived from the
+prompt, so a sampled reply is reproducible for the same request — do not read "identical twice" as greedy.
+
+One caution, because nothing in this project's own testing would surface it (the canary, the README cells
+and the MMLU runs are all greedy): greedy is not free on long agentic contexts. A client that omits
+`temperature` — most do — and inherits a greedy server default (`--temperature 0`) can spend its whole
+reply budget looping inside `reasoning_content` and return an empty `content` with
+`finish_reason: "length"`. The model card asks for `temperature 1.0, top_p 0.95` for agentic work; on a
+shared server, prefer a non-greedy default and let clients that want greedy ask for it.
+
 Images: see [Images](IMAGES.md).
