@@ -1,6 +1,6 @@
 #!/bin/bash
 # Compiles DeepSeek-V4.1 kernel copies to fatbins in the NGC PyTorch image with -Xptxas -v and reports spills / stack.
-# usage: OUT=<dir under ~/Documents> SM=121,120 bash ptxas.sh name[:flags] ...   (flags comma separated, as in cuda.zig)
+# usage: OUT=<output-directory> SM=121,120 bash ptxas.sh name[:flags] ...   (flags comma separated, as in cuda.zig)
 # e.g.   bash ptxas.sh "x3ld:-O3" "mhc_cuda:-O3,--fmad=false"
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

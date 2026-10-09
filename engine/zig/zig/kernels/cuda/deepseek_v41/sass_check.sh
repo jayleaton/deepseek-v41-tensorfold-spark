@@ -2,7 +2,7 @@
 # Offline bit-identity evidence (no GPU): builds each Python extension source the way torch's cpp_extension does
 # (torch headers, the extension's extra_cuda_cflags, -gencode for one SM) and our copy the way zig/build/cuda.zig
 # does, then compares the SASS of every kernel of ours with sass_check.py.
-# usage: OUT=<dir under ~/Documents> SM=121 TF_DSV41_PY_SRC=<tensorfold-dsquant> bash sass_check.sh [name ...]
+# usage: OUT=<output-directory> SM=121 TF_DSV41_PY_SRC=<public-python-source> bash sass_check.sh [name ...]
 # FATBINS=<zig-out/fatbin>: also compares the built fatbins (what a kit ships) against the Python build, kernel by
 # kernel, besides the fresh compile (which gives the ptxas spill report).
 set -euo pipefail

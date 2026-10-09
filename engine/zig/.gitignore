@@ -15,3 +15,5 @@ venv/
 .zig-toolchain
 .zig-cache/
 zig-out/
+
+.zig-tmp-golden*/

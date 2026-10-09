@@ -10,8 +10,8 @@ The recommended pack is **q28-v2 EXL3 2.8 bpw**:
 link, behind an OpenAI-compatible API.
 
 The new [CUDA Zig serving path](docs/ZIG-SERVE.md) is based on TensorFold 1.0.2 plus the DeepSeek CUDA port.
-Its recommended all-on settings and optional 4K prefill are documented there. **The port's source export and generated
-AOT assets are not bundled in this repository yet**; the build recipe needs those inputs. The existing Python
+Its source is included in [`engine/zig`](engine/zig), with the Apache-2.0 upstream license and provenance.
+The recommended all-on settings, optional 4K prefill and generated AOT asset preparation are documented there. The existing Python
 recipe remains TensorFold 0.6.0 plus the two published patches, with exact DSpark speculative decoding, CED replay,
 four request slots, NVMe sessions, native image input, structured output and tool calls. The shipped Python patches
 predate the q28-v2 ragged-expert loader; keep their original 2.9 bpw pack until that engine update is exported.
@@ -95,7 +95,7 @@ each cell was measured, what is exact and what is approximate, and strict mode: 
 
 ## Quick start: Zig
 
-See [the Zig quick start](docs/ZIG-SERVE.md#quick-start), including the required source export, build context,
+See [the Zig quick start](docs/ZIG-SERVE.md#quick-start), including the bundled source, build context,
 per-rank assets, and `scripts/run-zig.sh`.
 
 ## Quick start: published Python recipe
