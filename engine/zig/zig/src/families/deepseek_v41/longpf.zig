@@ -1,0 +1,179 @@
+//! Long prompts on the Zig prefill (tensorfold-decode1 8474f31: csa2/stream_topk.py, backend._stream_select; the
+//! split-KV prefill of dsv41-kvsplit / midprofile: kvsplit.plan, blocks._attend_blocks), up to the 1M limit:
+//!
+//! - **Stream top-k.** From TF_DSV41_INDEX_STREAM_MIN visible keys (prod: 4,096) a full-mode layer without the
+//!   candidates' scores selects with stream_topk.select: block_prefill emits, per row block (`plan`: the scratch under
+//!   stream_topk.BUDGET), one `_stream` launch (program = row x key split of `split_keys`; each split leaves its best K
+//!   keys, unordered, in its buffer's first K slots, KEY_NONE padded) and the glue "stream_merge": the splits' first K
+//!   keys of a row side by side (`kvGather` over every other K-slot row), then index.top_positions over them. The keys
+//!   are unique, so the merged set is the row's top K whatever the splits' order: Python's positions exactly.
+//! - **Split KV past the union cap.** kv_state keeps the union's row blocks when it takes several; `window` runs the
+//!   segment's calls and gives every `_fused` attention that reads the exchange's rows ("w.kx.recv") in row blocks:
+//!   block j's rows exchanged, then the same launch over rows [a, b) (Q / TOK / CNT / LO and the output rows moved by
+//!   a, POS = start + a, the grid's rows). Each attention program computes its row from its own lists alone, so the
+//!   rows equal the one-launch rows (and Python's `_attend_blocks`), for the index layer and its reuse layers.
+
+const std = @import("std");
+const cuda = @import("cuda");
+const calls = @import("calls.zig");
+const run = @import("run.zig");
+
+/// stream_topk.SPLIT: keys a program scans (positions mode)
+pub const split_keys: i64 = 16384;
+/// stream_topk.BUDGET: bytes of selection scratch a launch (ENGINE-PLAN 5), not the index budget
+pub const budget: i64 = 256 << 20;
+/// the runtime's own role for a row block's first position (Runner.external)
+pub const pos_role = "s.longpf.pos";
+
+/// stream_topk.splits: programs a row over `keys` positions.
+pub fn splits(keys: i64) i64 {
+    return @max(1, @divFloor(keys + split_keys - 1, split_keys));
+}
+
+/// stream_topk.plan: rows a launch so its scratch (rows x splits x 2 K int64) fits the budget.
+pub fn plan(rows: i64, keys: i64, k: i64) i64 {
+    const per = splits(keys) * 2 * k * 8;
+    return @max(1, @min(rows, @divFloor(budget, per)));
+}
+
+/// The runtime's buffers (forward_prefill.State.long).
+pub const State = struct {
+    /// uint32 0, 2, 4, ...: the merge's gather rows (a split's first K slots are every other K-slot row)
+    even: ?cuda.DeviceBuffer = null,
+    even_host: std.ArrayList(u32) = .empty,
+    /// int32 [1]: a row block's first position (the attention's POS)
+    pos: ?cuda.DeviceBuffer = null,
+
+    pub fn deinit(s: *State, gpa: std.mem.Allocator) void {
+        if (s.even) |*b| b.free();
+        if (s.pos) |*b| b.free();
+        s.even_host.deinit(gpa);
+    }
+
+    /// The gather rows for `n` (row, split) pairs, grown on the compute stream (the host copy stays alive).
+    fn evenRows(s: *State, gpa: std.mem.Allocator, r: *run.Runner, n: usize) !u64 {
+        if (s.even_host.items.len < n) {
+            const want = std.math.ceilPowerOfTwo(usize, n) catch n;
+            const old = s.even_host.items.len;
+            try s.even_host.resize(gpa, want);
+            for (s.even_host.items[old..], old..) |*v, i| v.* = @intCast(2 * i);
+            if (s.even) |*b| b.free();
+            s.even = null;
+        }
+        if (s.even == null) {
+            s.even = try cuda.DeviceBuffer.alloc(r.d, 4 * s.even_host.items.len);
+            try r.d.check(r.d.api.cuMemcpyHtoDAsync_v2(s.even.?.ptr, s.even_host.items.ptr, 4 * s.even_host.items.len, r.stream.handle), "cuMemcpyHtoDAsync");
+        }
+        return s.even.?.ptr;
+    }
+};
+
+fn addr(r: *run.Runner, x: calls.Arg) !u64 {
+    return r.tensorAddr(x.t);
+}
+
+/// glue.stream_merge(buf int64 [R, ns, 2 K], out int32 [R, K], K, keys int64 [R, ns K]): stream_topk.merge.
+pub fn merge(s: *State, gpa: std.mem.Allocator, r: *run.Runner, c: *const calls.Call) !void {
+    const x = c.args;
+    if (x.len != 4) return error.BadGlue;
+    const buf = x[0].arg.t;
+    const R: usize = @intCast(buf.shape[0]);
+    const ns: usize = @intCast(buf.shape[1]);
+    const cap: usize = @intCast(buf.shape[2]);
+    const k: usize = @intCast(x[2].arg.i);
+    if (cap != 2 * k or x[1].arg.t.shape[1] != k) return error.BadGlue;
+    const ops = r.kernels.others(r.stream);
+    if (ns == 1) return ops.topPositions(try addr(r, x[0].arg), cap, R, k, k, try addr(r, x[1].arg));
+    const keys = try addr(r, x[3].arg);
+    try ops.kvGather(try addr(r, x[0].arg), @intCast(8 * k), try s.evenRows(gpa, r, R * ns), @intCast(R * ns), keys);
+    return ops.topPositions(keys, ns * k, R, ns * k, k, try addr(r, x[1].arg));
+}
+
+fn named(c: *const calls.Call, name: []const u8) ?calls.Tensor {
+    for (c.args) |x| if (std.mem.eql(u8, x.name, name)) return switch (x.arg) {
+        .t => |t| t,
+        else => null,
+    };
+    return null;
+}
+
+/// A `_fused` attention reading split KV's exchanged rows.
+pub fn readsExchange(c: *const calls.Call) bool {
+    if (!c.triton or !std.mem.eql(u8, c.name, "_fused")) return false;
+    const cv = named(c, "CV") orelse return false;
+    return cv.role == .buf and std.mem.eql(u8, cv.role.buf, "w.kx.recv");
+}
+
+/// `c` (a `_fused` launch over the segment) over its rows [a, b): the row-indexed tensors moved by a rows, POS the
+/// block's own position (`pos_role`), the grid's rows b - a. Everything else (constexprs, OR, the rings) stays, so the
+/// AOT variant is the whole launch's.
+pub fn blockCall(al: std.mem.Allocator, c: *const calls.Call, a: i64, b: i64) !calls.Call {
+    const args = try al.dupe(calls.Named, c.args);
+    for (args) |*x| {
+        const t = switch (x.arg) {
+            .t => |t| t,
+            else => continue,
+        };
+        const nm = x.name;
+        const rowed = std.mem.eql(u8, nm, "Q") or std.mem.eql(u8, nm, "TOK") or std.mem.eql(u8, nm, "CNT") or std.mem.eql(u8, nm, "LO");
+        if (rowed) {
+            const shape = try al.dupe(i64, t.shape);
+            shape[0] = b - a;
+            x.arg = .{ .t = .{ .role = t.role, .dt = t.dt, .shape = shape, .stride = t.stride, .offset = t.offset + a * t.stride[0] * dtSize(t.dt) } };
+        } else if (std.mem.eql(u8, nm, "OUT")) {
+            // group-major [groups, OR, HG x 512]: row r of every group at (g OR + r) rows; the base moves by a rows
+            x.arg = .{ .t = .{ .role = t.role, .dt = t.dt, .shape = t.shape, .stride = t.stride, .offset = t.offset + a * t.stride[1] * dtSize(t.dt) } };
+        } else if (std.mem.eql(u8, nm, "POS")) {
+            x.arg = .{ .t = .{ .role = .{ .buf = pos_role }, .dt = .i32, .shape = &.{1}, .stride = &.{1} } };
+        }
+    }
+    var out = c.*;
+    out.args = args;
+    out.grid[0] = b - a;
+    return out;
+}
+
+fn dtSize(dt: calls.Dt) i64 {
+    return switch (dt) {
+        .bool, .i8, .u8 => 1,
+        .bf16, .f16, .i16 => 2,
+        .f32, .i32 => 4,
+        .f64, .i64 => 8,
+    };
+}
+
+/// A prefill segment's calls (forward_prefill.segment): as Runner.window, but an attention over a union kept in
+/// several row blocks runs block by block (each block's exchange first).
+/// `k`: the forward's ?*kv_state.Kv (its `blocks` and `fetchBlock`).
+/// TF_DSV41_PROFILE (profile.zig): each call timed on the GPU, the segment into the profile's prefill totals.
+pub fn window(s: *State, gpa: std.mem.Allocator, r: *run.Runner, k: anytype, start: u64, cs: []const calls.Call) !void {
+    const p = r.prof;
+    if (p) |x| x.beginPrefill();
+    for (cs) |*c| {
+        if (p) |x| try x.before(r.stream, c);
+        if (k) |kx| if (kx.blocks.items.len > 0 and readsExchange(c)) {
+            try attendBlocks(s, gpa, r, kx, start, c);
+            if (p) |x| try x.after(r.stream);
+            continue;
+        };
+        try r.issue(c);
+        if (p) |x| try x.after(r.stream);
+    }
+    if (p) |x| try x.end(r.stream);
+}
+
+fn attendBlocks(s: *State, gpa: std.mem.Allocator, r: *run.Runner, k: anytype, start: u64, c: *const calls.Call) !void {
+    if (s.pos == null) {
+        s.pos = try cuda.DeviceBuffer.alloc(r.d, 256);
+        try r.external(pos_role, s.pos.?.ptr);
+    }
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    for (k.blocks.items, 0..) |b, j| {
+        try k.fetchBlock(r, j);
+        const p: i32 = @intCast(start + b.a);
+        try r.d.check(r.d.api.cuMemsetD32Async(s.pos.?.ptr, @bitCast(p), 1, r.stream.handle), "cuMemsetD32Async");
+        const sub = try blockCall(arena.allocator(), c, b.a, b.b);
+        try r.issue(&sub);
+    }
+}

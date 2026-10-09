@@ -1,0 +1,158 @@
+//! x3gm v2 on the prefill emitter (TF_DSV41_GM_V2, prod: 1): a prefill segment's routed experts through gm2_kernel,
+//! as x3gm._run_v2 (tensorfold-decode1 8474f31, the prod twin) runs a ragged block:
+//! - "1" (`one`): the rotation, then ONE x3gm.plan over the block's picks (no width mask: every pair, bm 64), one
+//!   `gateup2` launch over every width (ticket[0]) and one `down2` over the same plan (ticket[MAX_WIDTHS]; gate/up's
+//!   bm == down's, so Python passes the same tensors), each reading every expert's width from its table;
+//! - "split": the v1 loop's shape (a masked plan and a launch a width present, gate/up then down, tickets j and
+//!   MAX_WIDTHS + j), on gm2_kernel;
+//! - unset / "0" (`off`, the default): the v1 launches block_prefill.zig emits.
+//! The widths tables are x3gm.Ragged.k2g / k2d: int32 [E + 1], each routed expert's gate (= up) / down width, then a
+//! 0 sentinel ("s.L<i>.gm.k2g" / "k2d", filled once by forward_prefill.ready from forms' "s.L<i>.ex.k2_*"). Configs are
+//! x3gm.tuned2 without TF_DSV41_GM_CFG (gate/up 1: two rotated inputs, down 0). gm2_kernel gives every pair the bits
+//! gm_kernel gives it, so off and on leave the same state; only the launch count (2 a layer instead of 2 a width) and
+//! the issue work differ.
+
+const std = @import("std");
+const calls = @import("calls.zig");
+const block = @import("block.zig");
+const E = block.Emitter;
+const Arg = calls.Arg;
+
+pub const Mode = enum { off, one, split };
+
+/// x3gm.MAX_WIDTHS: the ticket's down half starts there
+pub const max_widths: i64 = 7;
+/// x3gm.BM: members a pass of gm2_kernel's tiles (V2_GU 0 / 1, V2_DN 0)
+pub const bm: i64 = 64;
+/// x3gm.tuned2(shx False) without TF_DSV41_GM_CFG
+pub const cfg_gu: i64 = 1;
+pub const cfg_dn: i64 = 0;
+/// x3gm.K2S: the widths gm2_kernel dispatches (x3gm.supported refuses a block with any other)
+pub const k2s: u32 = (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 10);
+
+pub const Get = *const fn ([]const u8) ?[]const u8;
+
+/// TF_DSV41_GM_V2 by x3gm.config's rule: `(env or "0").strip()` one of "0", "1", "split", else refused.
+pub fn mode(get: Get) !Mode {
+    const raw = std.mem.trim(u8, get("TF_DSV41_GM_V2") orelse "", " \t");
+    if (raw.len == 0 or std.mem.eql(u8, raw, "0")) return .off;
+    if (std.mem.eql(u8, raw, "1")) return .one;
+    if (std.mem.eql(u8, raw, "split")) return .split;
+    std.log.warn("TF_DSV41_GM_V2={s}: expected 0, 1 or split", .{raw});
+    return error.BadKnob;
+}
+
+/// The mode a capture's prefill ran (its launches, not meta.json's env: the pre-v2 twins ignored TF_DSV41_GM_V2=1):
+/// no `gateup2` is off, one a rotation is `one`, more is `split`. `names` yields each launch's name.
+pub fn ofLaunches(names: anytype) Mode {
+    var rot: usize = 0;
+    var gu2: usize = 0;
+    while (names.next()) |n| {
+        if (std.mem.eql(u8, n, "tf_dsv41_x3gm_v1.rot")) rot += 1;
+        if (std.mem.eql(u8, n, "tf_dsv41_x3gm_v1.gateup2")) gu2 += 1;
+    }
+    if (gu2 == 0) return .off;
+    return if (gu2 > rot) .split else .one;
+}
+
+/// One MoE call's routed experts after the rotation and the ticket's zeroing (block_prefill.zig's moeRows).
+pub const Routed = struct {
+    L: u32,
+    /// "L<i>.moe": the routed stacks' weight prefix
+    pre: []const u8,
+    /// routed pairs (rows x topk), routed experts, hidden, this rank's expert width
+    P: i64,
+    Et: i64,
+    D: i64,
+    I: i64,
+    /// the routed picks [rows, topk] (gm_picks), the rotated inputs, Xd, Y, the ticket [2 x max_widths]
+    pk: Arg,
+    xg: Arg,
+    xu: Arg,
+    xd: Arg,
+    y: Arg,
+    ticket: Arg,
+    limit: f64,
+    /// gate/up and down widths present (Widths.gm; bit k2): split's launches; `one` checks them when known
+    widths: ?[2]u32,
+};
+
+/// The calls of x3gm._run_v2's block for `m` (not off).
+pub fn emit(e: *E, m: Mode, r: Routed) !void {
+    std.debug.assert(m != .off);
+    if (r.widths) |w| if ((w[0] | w[1]) & ~k2s != 0 or w[0] == 0 or w[1] == 0) return error.Unsupported; // x3gm.supported: "width"
+    const L = r.L;
+    const tmax = @divFloor(r.P, bm) + r.Et + 1;
+    const tab = [3]Arg{
+        try e.buf("s.L{d}.gm.tg", .{L}, .i64, &.{r.Et}),
+        try e.buf("s.L{d}.gm.tu", .{L}, .i64, &.{r.Et}),
+        try e.buf("s.L{d}.gm.td", .{L}, .i64, &.{r.Et}),
+    };
+    const k2g = try e.buf("s.L{d}.gm.k2g", .{L}, .i32, &.{r.Et + 1});
+    const k2d = try e.buf("s.L{d}.gm.k2d", .{L}, .i32, &.{r.Et + 1});
+    if (m == .one) {
+        const p = try planOf(e, r, "g", 0, 0, false, tmax);
+        try gateup(e, r, tab, k2g, p, 0);
+        return down(e, r, tab[2], k2d, p, 0);
+    }
+    const w = r.widths orelse return error.NoWidth;
+    for (0..2) |dn| {
+        var j: i64 = 0;
+        for (0..32) |kk| {
+            if (w[dn] >> @intCast(kk) & 1 == 0) continue;
+            const p = try planOf(e, r, if (dn == 1) "d" else "g", j, @intCast(kk), dn == 1, tmax);
+            if (dn == 0) try gateup(e, r, tab, k2g, p, j) else try down(e, r, tab[2], k2d, p, j);
+            j += 1;
+        }
+    }
+}
+
+/// x3gm.plan's five tensors of one launch (glue gm_plan; k2 0: every pick, x3gm._run_v2's one plan; else
+/// Ragged.picks' mask of that width first).
+fn planOf(e: *E, r: Routed, tag: []const u8, j: i64, k2: i64, dn: bool, tmax: i64) ![5]Arg {
+    const p = [5]Arg{
+        try e.buf("L.gm.{s}{d}.order", .{ tag, j }, .i32, &.{r.P}),
+        try e.buf("L.gm.{s}{d}.pe", .{ tag, j }, .i32, &.{tmax}),
+        try e.buf("L.gm.{s}{d}.poff", .{ tag, j }, .i32, &.{tmax}),
+        try e.buf("L.gm.{s}{d}.pcnt", .{ tag, j }, .i32, &.{tmax}),
+        try e.buf("L.gm.{s}{d}.npass", .{ tag, j }, .i32, &.{1}),
+    };
+    try e.glue("gm_plan", &.{ r.pk, p[0], p[1], p[2], p[3], p[4], .{ .i = k2 }, .{ .b = dn }, .{ .i = bm }, .{ .i = r.Et } });
+    return p;
+}
+
+fn ticketAt(e: *E, r: Routed, i: i64) !Arg {
+    return e.view(r.ticket.t.role, .i32, &.{1}, &.{1}, i * 4);
+}
+
+/// x3gm.cpp gateup2(xg, xu, tg, tu, k2e, order, pe, poff, pcnt, npass, ticket, svh_g, svh_u, suh_d, xd, K, N, shx,
+/// cfg, use_ticket, limit, tables)
+fn gateup(e: *E, r: Routed, tab: [3]Arg, k2g: Arg, p: [5]Arg, j: i64) !void {
+    try e.ext("tf_dsv41_x3gm_v1.gateup2", &.{
+        r.xg,                                                         r.xu,
+        tab[0],                                                       tab[1],
+        k2g,                                                          p[0],
+        p[1],                                                         p[2],
+        p[3],                                                         p[4],
+        try ticketAt(e, r, j),                                        try e.weight("{s}.w1.svh", .{r.pre}, .f16, &.{ r.Et, r.I }),
+        try e.weight("{s}.w3.svh", .{r.pre}, .f16, &.{ r.Et, r.I }), try e.weight("{s}.w2.suh", .{r.pre}, .f16, &.{ r.Et, r.I }),
+        r.xd,                                                         .{ .i = r.D },
+        .{ .i = r.I },                                                .{ .b = false },
+        .{ .i = cfg_gu },                                             .{ .b = true },
+        .{ .f = r.limit },                                            .{ .b = true },
+    });
+}
+
+/// x3gm.cpp down2(xd, td, k2e, order, pe, poff, pcnt, npass, ticket, svh_d, y, K, N, cfg, use_ticket, tables)
+fn down(e: *E, r: Routed, td: Arg, k2d: Arg, p: [5]Arg, j: i64) !void {
+    try e.ext("tf_dsv41_x3gm_v1.down2", &.{
+        r.xd,                                 td,
+        k2d,                                  p[0],
+        p[1],                                 p[2],
+        p[3],                                 p[4],
+        try ticketAt(e, r, max_widths + j),   try e.weight("{s}.w2.svh", .{r.pre}, .f16, &.{ r.Et, r.D }),
+        r.y,                                  .{ .i = r.I },
+        .{ .i = r.D },                        .{ .i = cfg_dn },
+        .{ .b = true },                       .{ .b = true },
+    });
+}

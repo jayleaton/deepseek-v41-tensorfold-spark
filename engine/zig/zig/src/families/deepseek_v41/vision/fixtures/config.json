@@ -1,0 +1,16 @@
+{
+ "image_token_id": 129264,
+ "vision_config": {
+  "model_type": "deepseek_v41_vision",
+  "num_hidden_layers": 32,
+  "hidden_size": 1024,
+  "num_attention_heads": 16,
+  "intermediate_size": 2816,
+  "patch_size": 14,
+  "rope_theta": 10000,
+  "downsample_ratio": 3,
+  "max_image_tokens": 1024,
+  "min_pixels": 295936,
+  "max_wh_ratio": null
+ }
+}
