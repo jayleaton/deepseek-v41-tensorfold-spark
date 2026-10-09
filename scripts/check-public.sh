@@ -24,6 +24,17 @@ ALLOWED_AUTHOR="${ALLOWED_AUTHOR:-contact@buildthings.co}"
 # its docstring lists the cloud metadata address 100.100.100.200, not ours.
 SSRF_FIXTURES="patches/0001-spark-stack-060.patch"
 
+# Recorded Flash Next kernel role keys are identifiers, not addresses; keep the path and tokens exact.
+FLASHNEXT_ROLE_EMAILS='^engine/zig/zig/(src/families/flashnext/(replay|roles_gen)|tests/flashnext_bench)\.zig:[0-9]+:'
+FLASHNEXT_ROLE_EMAILS+='(lane_qmm_bytes_grouped@(gdn\.(in|out)|att\.(proj|o)|ple\.kv|mtp\.(att(\.proj)?|draft|fc[eh]))'
+FLASHNEXT_ROLE_EMAILS+='|q4_attn_prep@mtp\.att|q4_rms_rows@mtp\.(enorm|hnorm)|q4_router_float@mtp\.moe'
+FLASHNEXT_ROLE_EMAILS+='|qa_expert_down_y@(mtp\.)?moe\.down|qa_expert_gateup@(mtp\.)?moe\.gate|qa_hc_(down|up)@mtp\.(ahc|mhc|mix))$'
+# Homebrew's version substitution marker inside the fixed archive name is not an address.
+TEMPLATE_EMAILS='^engine/zig/packaging/homebrew/tensorfold\.rb\.in:[0-9]+:VERSION@-macos-arm64\.tar\.gz$'
+
+# Fixed upstream auth-test values; other values in these files still go through both credential patterns.
+AUTH_FIXTURE_PATHS='^engine/zig/zig/(src/server/auth\.zig|tests/server/(freeze_cases\.py|freeze_golden\.py|parity\.py|golden/cases\.json))$'
+
 # name|regex (grep -E, case-insensitive)|path globs excluded for this pattern (space-separated, may be empty)
 PATTERNS=(
     "private IPv4 192.168/16|\\b192\\.168\\.[0-9]{1,3}\\.[0-9]{1,3}\\b|$SSRF_FIXTURES"
@@ -81,7 +92,14 @@ for entry in "${PATTERNS[@]}"; do
                read -ra globs <<< "$skip"
                for g in "${globs[@]}"; do [[ "$f" == $g ]] && { skipped=1; break; }; done
                [[ $skipped -eq 1 ]] && continue
-               grep -HnIiE -- "$re" "$f" 2>/dev/null
+               if [[ ( "$name" == "literal bearer token" || "$name" == "literal secret assignment" ) &&
+                     "$f" =~ $AUTH_FIXTURE_PATHS ]]; then
+                   # Mask only complete fixture literals before matching; an unrelated key on the same line remains visible.
+                   sed -E 's/"sk-(cli|env|file|next)"/"<fixture>"/g; s/Bearer sk-(one|cli|nope)"/Bearer <fixture>"/g' "$f" |
+                       grep -HnIiE --label="$f" -- "$re" 2>/dev/null
+               else
+                   grep -HnIiE -- "$re" "$f" 2>/dev/null
+               fi
            done)
     [[ "$name" == "home directories" && -n "$hits" ]] && hits=$(grep -viE "$HOME_OK" <<< "$hits")
     if [[ -n "$hits" ]]; then
@@ -94,7 +112,7 @@ done
 # e-mail addresses other than placeholder / example domains (model outputs in results/ invent a few)
 emails=$(for f in "${FILES[@]}"; do grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "$f" 2>/dev/null; done |
          grep -viE '@(([a-z0-9-]+\.)*example(\.(com|org|net))?|company\.com|novatech\.io)$|:noreply@anthropic\.com$' |
-         grep -vF ":$ALLOWED_AUTHOR" | cut -c1-200)
+         grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
 
 # files that should never be published

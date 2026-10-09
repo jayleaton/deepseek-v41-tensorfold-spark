@@ -15,7 +15,7 @@ RANK=${1:?rank}; OUT=${2:?outdir}
 RT_KNOBS=${RT_KNOBS-TF_DSV41_L2PF=1 TF_DSV41_ENGRAM_GATE=1 TF_DSV41_BRANCHES=1 TF_DSV41_BRANCHES_PRIO=side TF_DSV41_MHC_DEFER=1 GLM53_TF_ROCE_FAST=1 TF_DSV41_GREEDY_GPU=1}
 KIT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # rank 0 host's test-window lease (Spark-tool-kit's campaign.sh windows): held = the Sparks are not ours, nothing starts
-LEASE=${LEASE_FILE:-$KIT/.test-window-lease}
+LEASE=${LEASE_FILE:-$KIT/.tensorfold-lease}
 if [[ "$RANK" == 0 && -f "$LEASE" ]]; then echo "the test-window lease is held ($LEASE): another window owns the Sparks"; exit 3; fi
 MASTER=${MASTER:?set MASTER to rank 0 rendezvous address}
 IMAGE=${IMAGE:?set IMAGE to the CUDA Python reference image}

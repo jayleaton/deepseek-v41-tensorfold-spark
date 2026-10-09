@@ -13,7 +13,7 @@
 set -u
 RANK=${1:?rank}; OUT=${2:?outdir}; PHASE=${3:?ref|vit|prefill|generate|follow}; VARIANT=${4:-}
 KIT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-LEASE=${LEASE_FILE:-$KIT/.test-window-lease}
+LEASE=${LEASE_FILE:-$KIT/.tensorfold-lease}
 if [[ "$RANK" == 0 && -f "$LEASE" ]]; then echo "the test-window lease is held ($LEASE): another window owns the Sparks"; exit 3; fi
 MASTER=${MASTER:?set MASTER to rank 0 rendezvous address}
 IMAGE=${IMAGE:?set IMAGE to the CUDA Python reference image}
