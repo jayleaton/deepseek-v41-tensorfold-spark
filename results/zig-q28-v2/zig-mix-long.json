@@ -1,0 +1,29 @@
+{
+  "label": "zig",
+  "cells": [
+    {
+      "work": "long-131072",
+      "temp": 0.0,
+      "streams": 1,
+      "prompt_tokens": 154183,
+      "ttft_s": 0.327,
+      "prompt_tok_s": 471507.6,
+      "mean_tok_s": 67.2,
+      "aggregate_tok_s": null,
+      "per_stream": [
+        67.2
+      ],
+      "tokens": [
+        128
+      ],
+      "sha": [
+        "c5c36138ceaea475"
+      ],
+      "tpr": [
+        2.667
+      ],
+      "mean_tpr": 2.667,
+      "failed_streams": 0
+    }
+  ]
+}

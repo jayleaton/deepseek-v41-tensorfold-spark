@@ -1,0 +1,53 @@
+{
+  "label": "zig",
+  "cells": [
+    {
+      "work": "long-32768",
+      "temp": 0.0,
+      "streams": 1,
+      "prompt_tokens": 37974,
+      "ttft_s": 15.145,
+      "prompt_tok_s": 2507.4,
+      "mean_tok_s": 61.14,
+      "aggregate_tok_s": null,
+      "per_stream": [
+        61.14
+      ],
+      "tokens": [
+        122
+      ],
+      "sha": [
+        "30710c1d388d4cd7"
+      ],
+      "tpr": [
+        2.321
+      ],
+      "mean_tpr": 2.321,
+      "failed_streams": 0
+    },
+    {
+      "work": "long-131072",
+      "temp": 0.0,
+      "streams": 1,
+      "prompt_tokens": 154183,
+      "ttft_s": 66.503,
+      "prompt_tok_s": 2318.4,
+      "mean_tok_s": 64.06,
+      "aggregate_tok_s": null,
+      "per_stream": [
+        64.06
+      ],
+      "tokens": [
+        128
+      ],
+      "sha": [
+        "c5c36138ceaea475"
+      ],
+      "tpr": [
+        2.667
+      ],
+      "mean_tpr": 2.667,
+      "failed_streams": 0
+    }
+  ]
+}

@@ -4,18 +4,54 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 # DeepSeek-V4.1-Flash on TensorFold, 2x NVIDIA DGX Spark
 
-Serve DeepSeek-V4.1-Flash (the 2.9 bpw EXL3 pack) across two NVIDIA DGX Sparks, tensor-parallel over the 200 Gb/s
-CX7 link, behind an OpenAI-compatible API. The engine is [TensorFold](https://github.com/ashhart/TensorFold) 0.6.0
-(pinned, unmodified submodule) plus two patches applied at image build: the two-Spark engine stack from the
-[GLM-5.3-Flash recipe](https://github.com/jayleaton/glm53-tensorfold-spark) and a DeepSeek-V4.1-Flash family written
-for this model: exact DSpark speculative decoding, CED bounded-replay and exact full prefill, 4 request slots over a
-shared FP8 KV pool, NVMe sessions, native image input, structured output and tool calls, and both ranks failing fast
-together instead of hanging.
+The recommended pack is **q28-v2 EXL3 2.8 bpw**:
+[`jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw)
+(publication pending; repository name provisional). Serve across two NVIDIA DGX Sparks, TP=2 over the 200 Gb/s CX7
+link, behind an OpenAI-compatible API.
+
+The new [CUDA Zig serving path](docs/ZIG-SERVE.md) is based on TensorFold 1.0.2 plus the DeepSeek CUDA port.
+Its recommended all-on settings and optional 4K prefill are documented there. **The port's source export and generated
+AOT assets are not bundled in this repository yet**; the build recipe needs those inputs. The existing Python
+recipe remains TensorFold 0.6.0 plus the two published patches, with exact DSpark speculative decoding, CED replay,
+four request slots, NVMe sessions, native image input, structured output and tool calls. The shipped Python patches
+predate the q28-v2 ragged-expert loader; keep their original 2.9 bpw pack until that engine update is exported.
 
 > **Work in progress.** Measured on one pair of Sparks, against one baseline. Read
 > [what is not solved](docs/KNOWN-ISSUES.md) before relying on it.
 
-## Results
+## Current q28-v2 results: Zig vs Python
+
+Two DGX Sparks, TP=2, q28-v2. **Zig numbers are single-run measurements**, without confidence intervals.
+The recorded Python short-decode reference selects the best of three repetitions; long and mixed-load cells have
+one measurement per engine. A short warm-up precedes the suite, rather than a separate warm-up of every cell.
+All compared reply hashes match the Python reference, including T0.7. [Evidence and method](docs/ZIG-RESULTS.md).
+
+| Cell | Python reference | Zig (all-on) |
+| --- | ---: | ---: |
+| code ×1 | 86.6 | 87.6 |
+| code ×4 | 145.4 | 147.4 |
+| code T0.7 ×1 | 92.2 | 90.0 |
+| code T0.7 ×4 | 147.0 | 144.8 |
+| prose ×1 | 54.2 | 54.4 |
+| prose ×4 | 99.0 | 98.3 |
+| prose T0.7 ×1 | 50.4 | 49.2 |
+| prose T0.7 ×4 | 98.2 | 99.0 |
+| mix: 4 streams | 140.0 | 141.8 |
+| mix: 131K decode | 69.0 | 67.2 |
+| 32K decode | 51.1 | 61.1 |
+| 131K decode | 53.4 | 64.1 |
+| 32K prompt (tok/s) | 2,436 | 2,507 (2,663 with PF_4K) |
+| 131K prompt (tok/s) | 2,266 | 2,318 (2,486 with PF_4K) |
+
+Zig is about **20% ahead on long-context decode**, and 4K prefill is about **9–10% ahead on prompts**.
+Short decode is roughly at parity. It is still slightly behind on sampled T0.7 cells overall (prose ×4 is ahead)
+and mixed long decode; it does not beat Python everywhere. PF_4K is optional and falls back to 2K when either rank
+lacks workspace headroom. PIECE_RUNS stays gated and off.
+
+## Historical 2.9 bpw results: Python vs vLLM
+
+The following tables retain the original measurements and pack. They are **not a q28-v2 vLLM comparison**;
+there are no new vLLM measurements for the Zig path here.
 
 Two DGX Sparks (GB10, 128 GB each, one QSFP cable, RoCE), weights
 [`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw).
@@ -57,7 +93,12 @@ Decode: mean of 2 boots of the shipped build. Prefill: 8K / 32K on the shipped `
 Every run checks **drafted == serial**, **batched == alone**, and bit-identical outputs across prefill row sizes. How
 each cell was measured, what is exact and what is approximate, and strict mode: [`docs/METHOD.md`](docs/METHOD.md).
 
-## Quick start
+## Quick start: Zig
+
+See [the Zig quick start](docs/ZIG-SERVE.md#quick-start), including the required source export, build context,
+per-rank assets, and `scripts/run-zig.sh`.
+
+## Quick start: published Python recipe
 
 ```bash
 git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
@@ -72,6 +113,7 @@ Weights, Engram shards, requirements and unattended operation: [`docs/INSTALL.md
 
 | | |
 | --- | --- |
+| [ZIG-SERVE](docs/ZIG-SERVE.md) / [ZIG-RESULTS](docs/ZIG-RESULTS.md) | Zig build, TP=2 launch, exact settings, q28-v2 comparisons |
 | [INSTALL](docs/INSTALL.md) | requirements, weights, Engram shards, build, start, watchdog |
 | [API](docs/API.md) / [IMAGES](docs/IMAGES.md) | endpoints, thinking and effort, image input |
 | [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, turning each lever off |

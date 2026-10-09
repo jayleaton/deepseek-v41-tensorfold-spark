@@ -1,5 +1,7 @@
 # Install and run
 
+For the recommended q28-v2 pack and CUDA Zig path, see [ZIG-SERVE](ZIG-SERVE.md). The instructions below retain the published Python 0.6.0 recipe and its compatible 2.9 bpw pack.
+
 Requirements:
 
 - two DGX Sparks with their CX7 ports cabled and addressed (one link subnet), Docker with the NVIDIA runtime on both,

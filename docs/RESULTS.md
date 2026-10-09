@@ -1,5 +1,7 @@
 # Results
 
+Current q28-v2 Zig vs Python measurements are in [ZIG-RESULTS](ZIG-RESULTS.md). The tables below are the historical 2.9 bpw campaign; they are not a new q28-v2 vLLM comparison.
+
 Everything measured on one pair of DGX Sparks (GB10, 128 GB each, CX7 link, RoCE), 2026-10-01 to 10-05, on
 `dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`. Development ran in numbered test windows (G1-G19); the window
 names are kept so the raw files in [`../results/`](../results/README.md) can be matched to a row. How each cell is

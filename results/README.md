@@ -6,6 +6,7 @@ data are not included.
 
 | directory | what | produced by |
 | --- | --- | --- |
+| [`zig-q28-v2/`](zig-q28-v2/README.md) | q28-v2 Python reference, single-run Zig all-on and optional 4K prompts; sanitized numeric fields and reply hashes (2026-10-09) | recorded HTTP benchmark suites |
 | `kit-baseline/` | MiaAI-Lab's vLLM kit on the same pair and weights (2026-10-01): `summary.txt` (DSpark acceptance per phase, memory per phase), `glmbench.json` (single-stream cells), `multiturn.json` (C1 / C2 / C4), `long-*.json` (cold prefill 8K-256K), `quality.json` (MMLU-200), `oracle-kit.json` (the kit's top-5 prompt logprobs for 8 prompts x 2,048 tokens: the top-1 gate's reference) | the GLM recipe's HTTP clients |
 | `best-config/` | the final configuration: `m2-ab-best.json`, `m2-g10s-l2pf-mb12.json`, `m2-ab-dk64.json` (decode speed, three runs), `g5-gate-best.json` (top-1 vs the kit), `mmlu0-best.json` (MMLU-200), `chains-best.json`, `best-knobs.txt` (every knob) | `m2bench`, `gate`, `bench/` |
 | `best-config/ship/` | the ship gates on a test server started from the production config: `summary-ship.txt`, `structured.json`, `chains-off.json` / `chains-high.json`, `soak.json`, `stress.json` (the 4 x 300K stress whose worker memory failed the 5 GiB target) | `bench/` |

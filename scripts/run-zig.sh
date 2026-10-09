@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Run one local rank. Invoke separately on each node with the same serving env.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+rank=${1:?usage: run-zig.sh 0|1 [--dry-run]}
+[[ "$rank" == 0 || "$rank" == 1 ]] || { echo 'rank must be 0 or 1' >&2; exit 2; }
+config=${CONFIG:-config/prod-zig.env}
+[[ -f "$config" ]] || { echo "missing $config; copy config/prod-zig.env.example first" >&2; exit 2; }
+set -a
+source "$config"
+set +a
+for key in IMAGE TF_TP_MASTER NCCL_SOCKET_IFNAME NCCL_IB_HCA MODEL_DIR ENGRAM_DIR ASSETS_DIR PREPARED_DIR STATE_DIR CACHE_DIR; do
+    [[ -n "${!key:-}" && "${!key}" != *'<'* ]] || { echo "set $key in $config" >&2; exit 2; }
+done
+args=(docker run --rm --init --name "tensorfold-zig-r$rank" --gpus all --ipc=host --network host
+      --device /dev/infiniband --ulimit memlock=-1 --cap-add IPC_LOCK
+      -v "$MODEL_DIR:/model:ro" -v "$ENGRAM_DIR:/engram:ro" -v "$ASSETS_DIR:/assets:ro"
+      -v "$PREPARED_DIR:/prepared" -v "$STATE_DIR:/state" -v "$STATE_DIR/sessions:/sessions"
+      -v "$CACHE_DIR:/cache")
+# Pass values by environment name, preserving spaces in values.
+while IFS='=' read -r key value; do
+    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*) args+=(-e "$key");; esac
+done < <(env)
+args+=(-e TF_TP_WORLD=2 -e "TF_TP_RANK=$rank" -e TF_TP_DEVICE=0
+       -e "TF_TP_MASTER=$TF_TP_MASTER" -e "TF_TP_PORT=${TF_TP_PORT:-29571}"
+       -e "TF_COMM_BACKEND=${TF_COMM_BACKEND:-roce}"
+       -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin "$IMAGE")
+if [[ "$rank" == 0 ]]; then
+    args+=(tensorfold-dsv41 serve /model --host "${HOST:-localhost}" --port "${PORT:-8000}"
+           --parallel "$TF_DSV41_SLOTS" --context "$TF_DSV41_CONTEXT"
+           --name DeepSeek-V4.1-Flash-TF --max-tokens 32768)
+else
+    args+=(tf-dsv41-m1 follow /model /assets)
+fi
+if [[ "${2:-}" == --dry-run ]]; then printf '%q ' "${args[@]}"; printf '\n'; exit; fi
+for dir in "$MODEL_DIR" "$ENGRAM_DIR" "$ASSETS_DIR" "$CACHE_DIR"; do
+    [[ -d "$dir" ]] || { echo "missing directory $dir" >&2; exit 2; }
+done
+for asset in rope.bin engram-host.bin aot; do
+    [[ -e "$ASSETS_DIR/$asset" ]] || { echo "missing asset $asset" >&2; exit 2; }
+done
+mkdir -p "$PREPARED_DIR" "$STATE_DIR/sessions"
+exec "${args[@]}"

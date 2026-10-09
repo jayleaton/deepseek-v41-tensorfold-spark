@@ -1,0 +1,53 @@
+{
+  "label": "python",
+  "cells": [
+    {
+      "work": "long-32768",
+      "temp": 0.0,
+      "streams": 1,
+      "prompt_tokens": 37974,
+      "ttft_s": 15.588,
+      "prompt_tok_s": 2436.1,
+      "mean_tok_s": 51.11,
+      "aggregate_tok_s": null,
+      "per_stream": [
+        51.11
+      ],
+      "tokens": [
+        122
+      ],
+      "sha": [
+        "30710c1d388d4cd7"
+      ],
+      "tpr": [
+        2.236
+      ],
+      "mean_tpr": 2.236,
+      "failed_streams": 0
+    },
+    {
+      "work": "long-131072",
+      "temp": 0.0,
+      "streams": 1,
+      "prompt_tokens": 154183,
+      "ttft_s": 68.05,
+      "prompt_tok_s": 2265.7,
+      "mean_tok_s": 53.39,
+      "aggregate_tok_s": null,
+      "per_stream": [
+        53.39
+      ],
+      "tokens": [
+        128
+      ],
+      "sha": [
+        "c5c36138ceaea475"
+      ],
+      "tpr": [
+        2.612
+      ],
+      "mean_tpr": 2.612,
+      "failed_streams": 0
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "label": "python",
+  "cells": [
+    {
+      "work": "code",
+      "temp": 0.0,
+      "streams": 4,
+      "per_stream": [
+        34.3,
+        35.9,
+        35.0,
+        34.83
+      ],
+      "mean_tok_s": 35.01,
+      "aggregate_tok_s": 140.03,
+      "ttft_s": [
+        0.859,
+        0.258,
+        0.858,
+        0.857
+      ],
+      "tokens": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "sha": [
+        "6fbe71fe7f8373e5",
+        "6f36c39c97012c6d",
+        "55b86db3f828ec7a",
+        "891846427b3ccc27"
+      ],
+      "tpr": [
+        3.491,
+        4.0,
+        3.657,
+        3.623
+      ],
+      "mean_tpr": 3.693,
+      "failed_streams": 0,
+      "rep": 0
+    }
+  ]
+}
