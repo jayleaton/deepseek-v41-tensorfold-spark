@@ -3,11 +3,28 @@
 This is a sanitized source snapshot based on TensorFold 1.0.2, upstream revision
 `f8fe17d24629aedabf90bbf78279dd776e6d62e7`, from
 [ashhart/TensorFold](https://github.com/ashhart/TensorFold). The DeepSeek-V4.1 source snapshot revision is
-`55c96c65bf97b8c30455f171e01aec8c59544aeb`, the engine source the measured serving profile runs: base
-`12b1b2c338ea6120d39a75a27a250decb49926d8` with the serving fixes `e0d8e38e5165b26c3ec27ea8b43ac66158565c77`,
-`0105528a6e5675976e01b3f2b6bdabc38f595496`, `bc71f0676f05a19f9d2f6fb574886d8b5a808c5d`,
-`59fd85d1a15508f3f065513ce720d5d2d49f375a` and `2d01752107c4422d7081de5ed6373faa00147ad8`, plus the bench metric
-fix `00c5b882`. The previous snapshot was `0d723a8275f5b7879a083e8042a7048242ee624c`.
+`8e96f99cc27743bb80f4827ea78b30481e3b4bcc`, the engine source of the current serving kit: the previous snapshot's
+engine plus the serving fixes `71fbcd316f840f353bd0898edf0cf8424ec52a02`, `3d88039d9105eabf12677d3c82e00a5f6ec6e366`,
+`4bb2c952c7ab5e4038a2c58041c4d457ef6bf9b8` with its test `5dbd1a0bbfaa8ab5045f60e9701e0b3d222dd38b`,
+`db7a5559dad5def07291ed2229bd1f75117f329d` and `8e96f99cc27743bb80f4827ea78b30481e3b4bcc`. The previous snapshot was
+`55c96c65bf97b8c30455f171e01aec8c59544aeb`; the one before it `0d723a8275f5b7879a083e8042a7048242ee624c`.
+
+## Changes since 55c96c65
+
+- **Serving:** SIGTERM / SIGINT drains: new requests get 503 with `Retry-After` and `/health` reports `draining`,
+  requests in progress get `TF_DSV41_DRAIN_S` seconds (default 20), then both ranks halt at a round boundary; a second
+  signal cuts the drain short. A stream that has not sent its first token gets a keepalive every
+  `TF_DSV41_SSE_KEEPALIVE_S` seconds (default 15): `: keepalive` comments on OpenAI streams, `ping` events on
+  Anthropic streams. The API key store and per-key reply counts are freed when the server stops.
+- **CUDA:** a failed kernel launch names its kernel and launch configuration; the server logs the signal that stopped it.
+- **Engram:** the row cache's record map is rehashed in place once removal markers reach a quarter of its capacity.
+  Before, the markers were never cleaned up, so after a long uncached prefill every lookup scanned the whole map.
+- **TP runtime:** `TF_DSV41_KEEP_BATCH`, `TF_DSV41_PT_PINNED` and `TF_DSV41_PIN_ISOLATE` are removed (default off,
+  measured no gain); `TF_DSV41_WIN_PROF` times the Engram gate's arm in parts.
+- **Bench tools:** per-stream content-chunk arrival times (`bench_http.py --times`), a side-by-side comparison of two
+  such cells (`timescmp.py`), and a per-round kernel comparison of two profiler exports (`kcmp.py`).
+- New host tests for the drain (including a stop between a request's count and its drain check), the keepalive and
+  the rehash.
 
 ## Changes since 0d723a82
 
@@ -23,9 +40,8 @@ profile uses.
   deferred to just before their exchange (`TF_DSV41_MHC_DEFER_AT=exchange`, `TF_DSV41_COEF_LATE`); draft graph capture
   with the round (`TF_DSV41_DRAFT_CAPTURE`); graphs kept under the memory floor (`TF_DSV41_GRAPH_FLOOR=hold`); the
   engine's own boot calibration of draft costs (`TF_DSV41_CALIB=zig` / `measure`, `TF_DSV41_CALIB_FILE`).
-- **TP runtime:** a round's keeps and window in one plan frame (`TF_DSV41_KEEP_BATCH`), pinned page-table uploads
-  (`TF_DSV41_PT_PINNED`), Engram worker placement off the plan thread's CPU (`TF_DSV41_PIN_ISOLATE`), host step
-  profiling (`TF_DSV41_WIN_PROF`).
+- **TP runtime:** host step profiling (`TF_DSV41_WIN_PROF`). (This snapshot also added `TF_DSV41_KEEP_BATCH`,
+  `TF_DSV41_PT_PINNED` and `TF_DSV41_PIN_ISOLATE`; they are removed since 55c96c65.)
 - **Serving:** tool-call keys, invoke names and argument values, and queued Anthropic text, are copied instead of
   borrowed from a growing buffer; the JSON writer is bounds-safe on a UTF-8 sequence cut off at a string's end; nested
   completion prompt ids are range-checked; calls to tools the request did not offer are surfaced as `tool_calls`
