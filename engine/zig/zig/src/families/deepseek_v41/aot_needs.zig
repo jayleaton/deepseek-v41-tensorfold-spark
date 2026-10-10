@@ -16,7 +16,8 @@
 //!   at every context bucket's end;
 //! - row mode (slots > 1): every row bucket up to the cap at every context bucket (row programs are keyed by both);
 //! - prefill segments of 1 .. TF_DSV41_PREFILL_ROWS rows at each start (a multiple of the rows, as a prompt's
-//!   segments start) whose full segment's variant set is new: every row count there;
+//!   segments start) whose full segment's variant set is new: every row count there; with TF_DSV41_IMAGES=native each
+//!   again holding image positions (`prefillFrom`);
 //! - DSpark: the pass, the slots' passes (1 .. group slots), ingests of 1 .. 128 rows (a prompt's tail in one call);
 //! - CED replay (TF_DSV41_PREFILL=replay, ced.zig): the decoder pass over a prompt's tail, 127 rows from any R0 (the
 //!   scan) and every shorter tail from 0 (a prompt of at most 128 tokens); its encoder segments are the prefill
@@ -205,9 +206,13 @@ pub const Served = struct {
     /// TF_DSV41_PIECE_RUNS / TF_DSV41_REPLAY_RUNS (several slots, replay): the multi-segment runs' programs too
     runs: bool = false,
     replay_runs: bool = false,
+    /// TF_DSV41_IMAGES=native: prefill segments with image positions (Engram's keep); `image_bias` (TF_DSV41_BIAS_VL
+    /// set): their image rows in their own MoE call
+    images: bool = false,
+    image_bias: bool = false,
 
-    /// The engine's knobs as model.zig / prod_knobs.zig read them (the dense prefill's table and image paths aside:
-    /// PF_DENSE's fused kernel is CUDA, so the `_gemm` variants it replaces are listed too).
+    /// The engine's knobs as model.zig / prod_knobs.zig read them (the dense prefill's table aside: PF_DENSE's fused
+    /// kernel is CUDA, so the `_gemm` variants it replaces are listed too).
     pub fn fromEnv() !Served {
         const knobs = @import("prod_knobs.zig");
         var o: block.Options = .{ .world = @intCast(try envInt("TF_TP_WORLD", 2)), .r1 = knobs.r1(&knobs.env) };
@@ -236,6 +241,8 @@ pub const Served = struct {
         o.pool = .{ .comp_pages = if (split) @divExact(pages, 2) + 2 else pages + 1, .ik_pages = pages + 1, .pts = pages, .split = split };
         const slots: u32 = @intCast(try envInt("TF_DSV41_SLOTS", 1));
         const rows_mod = @import("dspark_rows.zig");
+        const images = (@import("dsv41_serve").vision.mode.parse(if (std.c.getenv("TF_DSV41_IMAGES")) |v| std.mem.span(v) else null) orelse return error.BadImagesMode) == .native;
+        const bias_vl = std.mem.trim(u8, if (std.c.getenv("TF_DSV41_BIAS_VL")) |v| std.mem.span(v) else "", " ");
         return .{
             .o = o,
             .slots = slots,
@@ -247,6 +254,8 @@ pub const Served = struct {
             .replay = try knobs.prefillMode(&knobs.env) == .replay,
             .runs = slots > 1 and envOn("TF_DSV41_PIECE_RUNS", false) and try knobs.prefillMode(&knobs.env) == .replay,
             .replay_runs = slots > 1 and envOn("TF_DSV41_REPLAY_RUNS", false) and try knobs.prefillMode(&knobs.env) == .replay,
+            .images = images,
+            .image_bias = images and bias_vl.len > 0,
         };
     }
 };
@@ -364,6 +373,25 @@ fn bucketEnds(a: std.mem.Allocator, s: graphs.Settings, limit: u64) ![]u64 {
     return out.items;
 }
 
+/// Every prefill segment from `s0` (1 .. the prefill rows; CED's encoder segments launch the same). With
+/// TF_DSV41_IMAGES=native each row count again holding image positions, as vision_rows.segmentOptions emits it:
+/// Engram's keep (`_fuse_dec` with KEEP), and with the image bias every row in the image MoE call. A segment's split
+/// is two plain MoE calls at its image and text rows (vision-emit's check), so all-image segments at every row count
+/// hold every split's launches; the decoder pass and the runs have no Engram layer or refuse image rows.
+pub fn prefillFrom(gpa: std.mem.Allocator, n: *Needs, cfg: *const Config, w: *const block.Widths, sv: Served, layers: []const u32, s0: i64) !void {
+    var rows: i64 = 1;
+    while (rows <= sv.o.prefill_rows and s0 + rows <= sv.o.limit) : (rows += 1) {
+        var pa = std.heap.ArenaAllocator.init(gpa);
+        defer pa.deinit();
+        _ = try n.program(try block_prefill.emitPrefill(pa.allocator(), cfg, w, sv.o, layers, rows, s0, true));
+        if (!sv.images) continue;
+        var o = sv.o;
+        o.image_keep = true;
+        o.image_rows = if (sv.image_bias) rows else 0;
+        _ = try n.program(try block_prefill.emitPrefill(pa.allocator(), cfg, w, o, layers, rows, s0, true));
+    }
+}
+
 pub const Report = struct { programs: u64, variants: usize };
 
 /// Every program of the served config into `n` (progress on `log`).
@@ -424,12 +452,7 @@ pub fn enumerate(gpa: std.mem.Allocator, n: *Needs, cfg: *const Config, w: *cons
             if (!(try seen.getOrPut(a, f)).found_existing) try starts.append(a, s);
         }
         for (starts.items) |s0| {
-            var rows: i64 = 1;
-            while (rows <= P and s0 + rows <= limit) : (rows += 1) {
-                var pa = std.heap.ArenaAllocator.init(gpa);
-                defer pa.deinit();
-                _ = try n.program(try block_prefill.emitPrefill(pa.allocator(), cfg, w, sv.o, layers, rows, s0, true));
-            }
+            try prefillFrom(gpa, n, cfg, w, sv, layers, s0);
             try log.print("aot-needs: prefill from {d}, {d} programs, {d} variants\n", .{ s0, n.programs, n.keys.count() });
             try log.flush();
         }
@@ -541,7 +564,7 @@ pub fn main(gpa: std.mem.Allocator, io: std.Io, sigs_path: []const u8, out_path:
     // DSpark's ingest main_proj (a DSpark block's width; its EXL3 linear is CUDA, as mdraft_test.zig sets it)
     try w.dense.put(a, "dspark.main_proj", try w.k2("L40.attn.wkv"));
     const sv = try Served.fromEnv();
-    try log.print("aot-needs: limit {d}, {d} slot(s), rows cap {d}, prefill rows {d}, index budget {d} MiB, R1 {}, drafts {}, slot drafts {} (group {d}), world {d}\n", .{ sv.o.limit, sv.slots, sv.cap, sv.o.prefill_rows, sv.o.index_budget >> 20, sv.o.r1, sv.drafts, sv.slot_drafts, sv.group, sv.o.world });
+    try log.print("aot-needs: limit {d}, {d} slot(s), rows cap {d}, prefill rows {d}, index budget {d} MiB, R1 {}, drafts {}, slot drafts {} (group {d}), world {d}, images {s}\n", .{ sv.o.limit, sv.slots, sv.cap, sv.o.prefill_rows, sv.o.index_budget >> 20, sv.o.r1, sv.drafts, sv.slot_drafts, sv.group, sv.o.world, if (sv.image_bias) "native (bias_vl)" else if (sv.images) "native" else "off" });
     var n: Needs = .{ .gpa = gpa, .sigs = &parsed.value.kernels };
     defer n.deinit();
     try enumerate(gpa, &n, &cfg, &w, sv, log);
@@ -601,4 +624,102 @@ test "aot-needs: a launch reduces to Triton's specialization (constexprs, == 1, 
     // a call naming a parameter no kernel of that name has is refused
     const bad: calls.Call = .{ .triton = true, .name = "_k", .args = &.{.{ .name = "Z", .arg = .{ .i = 3 } }} };
     try testing.expectError(error.NoKernel, n.reduce(a, &bad));
+}
+
+/// Signatures for the host tests: each Triton launch's arguments in `programs` as its parameters, the scalars named
+/// without a lowercase letter constexprs (Python's convention; keys at least as fine as Triton's own).
+fn testSigs(a: std.mem.Allocator, sigs: *Sigs, programs: []const []const calls.Call) !void {
+    for (programs) |cs| for (cs) |c| if (c.triton) {
+        const got = try sigs.map.getOrPut(a, c.name);
+        if (!got.found_existing) {
+            const f = try a.alloc(Fn, 1);
+            f[0] = .{ .function = c.name, .params = &.{} };
+            got.value_ptr.* = f;
+        }
+        const f = &got.value_ptr.*[0];
+        for (c.args) |x| {
+            const scalar = switch (x.arg) {
+                .i, .f, .b => true,
+                else => false,
+            };
+            const seen = for (f.params) |*p| {
+                if (!std.mem.eql(u8, p.name, x.name)) continue;
+                p.constexpr = p.constexpr and scalar; // a tensor (or None) somewhere: a runtime parameter
+                break true;
+            } else false;
+            if (!seen) {
+                var ps = try a.alloc(Param, f.params.len + 1);
+                @memcpy(ps[0..f.params.len], f.params);
+                const upper = for (x.name) |ch| {
+                    if (std.ascii.isLower(ch)) break false;
+                } else true;
+                ps[f.params.len] = .{ .name = x.name, .constexpr = upper and scalar, .nospec = false, .noalign = false };
+                f.params = ps;
+            }
+        }
+    };
+}
+
+test "aot-needs: TF_DSV41_IMAGES=native lists the image segments' variants (Engram's keep); off, the text list" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cfg: Config = .{};
+    var w: block.Widths = .{};
+    try check.parseDense(a, &w, @embedFile("fixtures/q28v2-dense-k2.txt"));
+    try check.parseExperts(a, &w, @embedFile("fixtures/q28v2-expert-k2.txt"));
+    for (0..cfg.layers) |L| try w.gm.put(a, @intCast(L), .{ (1 << 4) | (1 << 6) | (1 << 8), (1 << 4) | (1 << 10) });
+    var layers: [25]u32 = undefined; // the gates' prefix: both Engram layers (1, 14)
+    for (&layers, 0..) |*x, i| x.* = @intCast(i);
+    const limit: i64 = 8192;
+    const pages = @divExact(limit, block.Pool.page);
+    var o: block.Options = .{ .limit = limit, .rope_rows = limit + 2048, .prefill_rows = 256 };
+    o.pool = .{ .comp_pages = pages + 1, .ik_pages = pages + 1, .pts = pages, .split = false };
+    const text: Served = .{ .o = o, .slots = 4, .cap = 16, .drafts = false, .slot_drafts = false, .group = 1, .graphs = .{} };
+    var img = text;
+    img.images = true;
+    img.image_bias = true;
+    // the served image prompt's two pieces as forward_prefill emits them: 184 image rows of [0, 208), then a 15-row
+    // short segment holding the span's last 6
+    var so = o;
+    so.image_keep = true;
+    so.image_rows = 184;
+    const seg = try block_prefill.emitPrefill(a, &cfg, &w, so, &layers, 208, 0, true);
+    so.image_rows = 6;
+    const short = try block_prefill.emitPrefill(a, &cfg, &w, so, &layers, 15, 208, true);
+    var probes: std.ArrayList([]const calls.Call) = .empty;
+    try probes.appendSlice(a, &.{ seg, short });
+    for ([_]i64{ 1, 16, 17, 256 }) |r| {
+        try probes.append(a, try block_prefill.emitPrefill(a, &cfg, &w, o, &layers, r, 0, true));
+        so.image_rows = r;
+        try probes.append(a, try block_prefill.emitPrefill(a, &cfg, &w, so, &layers, r, 0, true));
+    }
+    var sigs: Sigs = .{};
+    try testSigs(a, &sigs, probes.items);
+    var off: Needs = .{ .gpa = testing.allocator, .sigs = &sigs };
+    defer off.deinit();
+    try prefillFrom(testing.allocator, &off, &cfg, &w, text, &layers, 0);
+    var on: Needs = .{ .gpa = testing.allocator, .sigs = &sigs };
+    defer on.deinit();
+    try prefillFrom(testing.allocator, &on, &cfg, &w, img, &layers, 0);
+    // off: no keep; on: the text list and the keep's `_fuse_dec`, nothing else
+    var added: usize = 0;
+    for (off.keys.keys()) |k| {
+        try testing.expect(std.mem.indexOf(u8, k, "\"HAS_KEEP\":true") == null);
+        try testing.expect(on.keys.contains(k));
+    }
+    for (on.keys.keys()) |k| if (!off.keys.contains(k)) {
+        try testing.expect(std.mem.startsWith(u8, k, "{\"fn\":\"_fuse_dec\"") and std.mem.indexOf(u8, k, "\"HAS_KEEP\":true") != null);
+        added += 1;
+    };
+    try testing.expect(added > 0);
+    // every launch of the image prompt's pieces is listed with images on; the text list lacks one (MissingTritonVariant)
+    var missing: usize = 0;
+    for ([_][]const calls.Call{ seg, short }) |cs| for (cs) |*c| if (c.triton) {
+        const k = try on.reduce(a, c);
+        try testing.expect(on.keys.contains(k));
+        missing += @intFromBool(!off.keys.contains(k));
+    };
+    try testing.expect(missing > 0);
+    std.debug.print("aot-needs images: {d} text variants, {d} more with images native\n", .{ off.keys.count(), added });
 }
