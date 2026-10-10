@@ -278,23 +278,36 @@ const load = @import("load.zig");
 const pack_mod = @import("pack.zig");
 const mode_mod = @import("dsv41_serve").vision.mode;
 
+/// The forward's image flags, every rank: `native` (TF_DSV41_IMAGES=native) sets `f.images`, a TF_DSV41_BIAS_VL
+/// folder `f.image_bias` (`boot` loads it); the folder ("" without one), null when images are not native. They must be
+/// set before the buffer plan: planOptions names Engram's keep and the image MoE call's roles by them, and a role no
+/// planned program named is unbound when an image segment runs (error.Unbound).
+pub fn flags(f: *fwd.Forward, native: bool, bias_vl: ?[]const u8) ?[]const u8 {
+    if (!native) return null;
+    f.images = true;
+    const dir = std.mem.trim(u8, bias_vl orelse "", " ");
+    f.image_bias = dir.len > 0;
+    return dir;
+}
+
+/// `flags` from TF_DSV41_IMAGES and TF_DSV41_BIAS_VL.
+pub fn flagsFromEnv(f: *fwd.Forward) !?[]const u8 {
+    const mode = mode_mod.parse(envOf("TF_DSV41_IMAGES")) orelse return error.BadImagesMode;
+    return flags(f, mode == .native, envOf("TF_DSV41_BIAS_VL"));
+}
+
+fn envOf(name: [:0]const u8) ?[]const u8 {
+    return if (std.c.getenv(name)) |v| std.mem.span(v) else null;
+}
+
 /// TF_DSV41_IMAGES at boot, every rank: native sets `f.images` (Engram's keep at image positions, the same program on
 /// every rank) and, on rank 0, loads the tower and the rows (`f.vision`). TF_DSV41_BIAS_VL (a folder holding the
 /// release's `layers.<i>.ffn.gate.bias_vl`, as bias_vl_fetch.py writes it) is loaded on every rank as
 /// "L<i>.moe.bias_vl" (the router is replicated): image rows then take their own MoE call routed with it
-/// (vision.moe, block_prefill's moeSplit).
+/// (vision.moe, block_prefill's moeSplit). The flags are `flags`' (model.zig sets them before its buffer plan).
 pub fn boot(gpa: Allocator, io: std.Io, f: *fwd.Forward, pack: *const pack_mod.Pack, d: *const cuda.Driver, rank: u32, w: *load.Weights) !void {
-    const raw: ?[]const u8 = if (std.c.getenv("TF_DSV41_IMAGES")) |v| std.mem.span(v) else null;
-    const mode = mode_mod.parse(raw) orelse return error.BadImagesMode;
-    if (mode != .native) return;
-    f.images = true;
-    if (std.c.getenv("TF_DSV41_BIAS_VL")) |v| {
-        const dir = std.mem.trim(u8, std.mem.span(v), " ");
-        if (dir.len > 0) {
-            try loadBiasVl(gpa, io, f, d, dir, w);
-            f.image_bias = true;
-        }
-    }
+    const bias_dir = (try flagsFromEnv(f)) orelse return;
+    if (f.image_bias) try loadBiasVl(gpa, io, f, d, bias_dir, w);
     if (rank != 0) return;
     const t = try tower_mod.Tower.load(gpa, io, d, pack, .{});
     errdefer t.deinit();
@@ -376,6 +389,14 @@ pub fn planOptions(f: *const fwd.Forward) block.Options {
     var o = f.opts;
     o.image_keep = f.images;
     if (f.image_bias) o.image_rows = -1;
+    return o;
+}
+
+/// The options a multi-segment run's or a TF_DSV41_PF_TBO pair's plan program emits with: planOptions' without the
+/// image rows (their emitters refuse image rows, which run one segment at a time on planOptions' roles).
+pub fn runOptions(f: *const fwd.Forward) block.Options {
+    var o = planOptions(f);
+    o.image_rows = 0;
     return o;
 }
 

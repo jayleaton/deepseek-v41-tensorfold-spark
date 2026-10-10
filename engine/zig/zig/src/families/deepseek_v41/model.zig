@@ -257,6 +257,9 @@ pub const Model = struct {
             m.f.opts.rope_rows = c + 2048;
         }
         try @import("prod_knobs.zig").apply(&m.f, a, io, m.tcfg.rank);
+        // TF_DSV41_IMAGES=native: the image flags before the workspace's price and the buffer plan (planOptions names
+        // Engram's keep and the image MoE call's roles by them); vision_rows.boot loads the bias and the tower below
+        _ = try vision_rows.flagsFromEnv(&m.f);
         m.slots = try slots_mod.countFromEnv();
         if (try kvs.optionsFromEnv(@intCast(m.f.opts.limit), world)) |ko_| {
             var ko = ko_;
