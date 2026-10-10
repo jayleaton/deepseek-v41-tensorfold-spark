@@ -43,6 +43,7 @@ const ced = @import("ced.zig");
 const rowmode = @import("rowmode.zig");
 const slots_mod = @import("slots.zig");
 const graphs = @import("graphs.zig");
+const lockstep = @import("lockstep.zig");
 const dspark_emit = @import("dspark_emit.zig");
 
 const sessions = kv.sessions;
@@ -553,50 +554,49 @@ pub const Sessions = struct {
         s.kx.slot.reserve(need);
     }
 
-    /// Entry `id` into the empty slot (every rank: the leader found it): from RAM (pages shared, the partial last page
-    /// copied) or NVMe (streamed into fresh pages), its bounded state and committed ids. False: its file did not read
-    /// back on some rank (a damaged NVMe entry: rounds.py `_admit`'s `except (ValueError, KeyError)`): every rank's slot
-    /// is empty again with its reservation, the entry is forgotten (prod's sessdisk deletes the file), and the caller
-    /// prefills the prompt from 0.
+    /// Entry `id` into the empty slot, agreed (lockstep.zig); false: not back on some rank, so a miss everywhere.
     pub fn restore(s: *Sessions, id: u32, ids: ?[]const u32) !bool {
         if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
         try s.active();
-        const e = s.store.entry(id);
-        const pos = e.pos;
-        var ok = true;
-        if (e.ram) {
-            const b = try s.store.restoreRam(id, s.kx.slot);
-            try s.uploadSnap(@ptrCast(@alignCast(b.ptr)));
-        } else s.restoreDisk(id) catch |err| {
-            if (err == error.OutOfMemory) return err;
-            std.log.scoped(.dsv41).warn("sessions: slot {d}: the NVMe entry of {d} tokens did not read back ({t}); its prompt prefills from 0", .{ s.cur(), pos, err });
-            ok = false;
-        };
-        if (ok and s.f.slot.pos != pos) ok = false;
-        if (s.agreement) |*a| {
-            const g = a.agree();
-            ok = try g.all(g.ctx, ok);
-        }
-        if (!ok) {
+        const pos = s.store.entry(id).pos;
+        const g: ?lockstep.Agree = if (s.agreement) |*a| blk: {
+            const x = a.agree();
+            break :blk .{ .ctx = x.ctx, .all = x.all };
+        } else null;
+        if (!try lockstep.agreed(g, s.restoreOn(id, ids), "a session restore", s.f.comm.rank())) {
             try s.kx.truncate(0);
             s.f.slot = .{};
             s.hist[s.cur()].clearRetainingCapacity();
             s.ds_valid[s.cur()] = 0;
-            try s.store.forget(id);
+            // a cache miss from here: the entry out of RAM and its file deleted, on every rank alike
+            if (s.store.entry(id).ram) try s.store.drop(id);
+            if (s.store.entry(id).live) try s.store.forget(id); // drop removed an entry no file holds
             s.stats.damaged += 1;
+            std.log.scoped(.dsv41).warn("sessions: slot {d}: the entry of {d} tokens did not come back; its prompt prefills from 0", .{ s.cur(), pos });
             return false;
         }
         try s.kx.dev.syncTables();
+        return true;
+    }
+
+    /// This rank's restore of `id`: pages and bounded state (RAM or NVMe), the position, the slot's history.
+    fn restoreOn(s: *Sessions, id: u32, ids: ?[]const u32) !void {
+        const e = s.store.entry(id);
+        const pos = e.pos;
+        if (e.ram) {
+            const b = try s.store.restoreRam(id, s.kx.slot);
+            try s.uploadSnap(@ptrCast(@alignCast(b.ptr)));
+        } else try s.restoreDisk(id);
+        if (s.f.slot.pos != pos) return error.RestoredPosition;
         const h = &s.hist[s.cur()];
         try h.resize(s.gpa, pos);
         // RAM: the path's indexed tokens; NVMe: the ids the leader sent (its prompt's prefix), as Python's history
         const given: ?[]i32 = if (ids) |x| try s.gpa.alloc(i32, x.len) else null;
-        defer if (given) |g| s.gpa.free(g);
-        if (given) |g| for (ids.?, g) |t, *y| {
+        defer if (given) |gv| s.gpa.free(gv);
+        if (given) |gv| for (ids.?, gv) |t, *y| {
             y.* = @intCast(t);
         };
         try s.store.historyOf(id, given, h.items);
-        return true;
     }
 
     fn restoreDisk(s: *Sessions, id: u32) !void {
