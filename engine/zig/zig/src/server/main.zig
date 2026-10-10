@@ -76,8 +76,10 @@ pub fn main(init: std.process.Init) !u8 {
     defer if (hf) |t| t.deinit();
     defer if (ds) |d| d.deinit(true);
     const opened = try engines.open(a, gpa, io, dir, model_type, args, &problem) orelse return fail(problem);
-    defer opened.close(opened.ctx);
+    var closer: Closer = .{ .opened = opened };
+    defer closer.closeOnce();
     return serve.run(gpa, io, args, .{
+        .stop = .{ .ctx = &closer, .halt = if (opened.halt != null) Closer.halt else null, .close = Closer.close },
         .engine = opened.engine,
         .text = text,
         .family = fam,
@@ -89,6 +91,27 @@ pub fn main(init: std.process.Init) !u8 {
         .started = started,
     });
 }
+
+/// Closes once: serve.run closes the engine before freeing the server, main's defer covers paths that end before it.
+const Closer = struct {
+    opened: engines.Opened,
+    closed: bool = false,
+
+    fn closeOnce(c: *Closer) void {
+        if (c.closed) return;
+        c.closed = true;
+        c.opened.close(c.opened.ctx);
+    }
+
+    fn close(ctx: *anyopaque) void {
+        closeOnce(@ptrCast(@alignCast(ctx)));
+    }
+
+    fn halt(ctx: *anyopaque, reason: []const u8) void {
+        const c: *Closer = @ptrCast(@alignCast(ctx));
+        if (c.opened.halt) |h| h(c.opened.ctx, reason);
+    }
+};
 
 fn wire(env: ?*const std.process.Environ.Map, family_default: bool) ?@import("spark.zig").Wire {
     const raw = if (env) |m| m.get("TENSORFOLD_WIRE") else null;

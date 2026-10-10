@@ -152,7 +152,13 @@ pub const Open = struct {
 };
 
 /// An opened engine; ``close`` stops its thread and frees its backend.
-pub const Opened = struct { engine: Engine, close: *const fn (ctx: *anyopaque) void, ctx: *anyopaque };
+pub const Opened = struct {
+    engine: Engine,
+    close: *const fn (ctx: *anyopaque) void,
+    ctx: *anyopaque,
+    /// A drain's deadline: rounds end at the next boundary, what is left fails with `reason`; null: `close` alone.
+    halt: ?*const fn (ctx: *anyopaque, reason: []const u8) void = null,
+};
 
 pub const Memory = struct { active: u64 = 0, cache: u64 = 0, peak: u64 = 0 };
 

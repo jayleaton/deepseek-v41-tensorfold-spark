@@ -71,6 +71,8 @@ pub const LaneHost = struct {
     admitted: std.ArrayList(*Job) = .empty,
     cancels: std.ArrayList(Id) = .empty,
     closing: bool = false,
+    /// `halt`'s reason: what is left finishes failed with it (null: a stop cancels what is left)
+    halt_reason: ?[]const u8 = null,
     thread: ?std.Thread = null,
     decoded: std.ArrayList(Mark) = .empty, // tokens a round landed, for the 2 s decode rate
     prefill_rate: f64 = 0,
@@ -143,7 +145,7 @@ pub const LaneHost = struct {
         h.thread = try std.Thread.spawn(.{ .stack_size = 16 << 20 }, run, .{h});
     }
 
-    /// Stops admitting, cancels what is left and joins the engine thread.
+    /// Stops admitting, cancels what is left and joins the engine thread (after `halt`: the thread is gone already).
     pub fn stop(h: *LaneHost) void {
         h.mutex.lockUncancelable(h.io);
         h.closing = true;
@@ -158,6 +160,17 @@ pub const LaneHost = struct {
         h.live_tokens.deinit(h.gpa);
         h.pieces.deinit(h.gpa);
         h.finals.deinit(h.gpa);
+    }
+
+    /// A drain's deadline: the round in flight completes on every rank, so the ranks stop at the same boundary.
+    pub fn halt(h: *LaneHost, reason: []const u8) void {
+        h.mutex.lockUncancelable(h.io);
+        h.closing = true;
+        h.halt_reason = reason;
+        h.wake.broadcast(h.io);
+        h.mutex.unlock(h.io);
+        if (h.thread) |t| t.join();
+        h.thread = null;
     }
 
     pub fn engine(h: *LaneHost) Engine {
@@ -777,6 +790,24 @@ pub const LaneHost = struct {
         }
     }
 
+    /// `halt`: between rounds, every request queued or admitted finishes failed with `reason` (its stream discarded).
+    fn haltAll(h: *LaneHost, reason: []const u8) void {
+        h.lock();
+        const queued = h.gpa.dupe(*Job, h.queued.items) catch &.{};
+        h.queued.clearRetainingCapacity();
+        const jobs = h.gpa.dupe(*Job, h.admitted.items) catch &.{};
+        h.admitted.clearRetainingCapacity();
+        h.unlock();
+        if (queued.len + jobs.len > 0) std.log.warn("lane host: stopping at a round boundary: {d} running and {d} queued request(s) end ({s})", .{ jobs.len, queued.len, reason });
+        for (jobs) |job| {
+            if (job.started and !job.stream.finished) h.core.discard(&job.stream);
+            h.finish(job, .failed, reason);
+        }
+        for (queued) |job| h.finish(job, .failed, reason);
+        h.gpa.free(queued);
+        h.gpa.free(jobs);
+    }
+
     /// A failed round ends every stream it held, with the backend's error.
     fn failAll(h: *LaneHost, message: []const u8) void {
         std.log.err("lane host: a round failed ({s}): every admitted stream fails", .{message});
@@ -792,6 +823,7 @@ pub const LaneHost = struct {
     }
 
     fn closeAll(h: *LaneHost) void {
+        if (h.halt_reason) |reason| return h.haltAll(reason);
         h.lock();
         for (h.queued.items) |job| h.cancels.append(h.gpa, job.id) catch {};
         for (h.admitted.items) |job| h.cancels.append(h.gpa, job.id) catch {};

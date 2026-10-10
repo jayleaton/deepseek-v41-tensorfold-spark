@@ -48,7 +48,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
         problem.* = try std.fmt.allocPrint(a, "the DeepSeek-V4.1 CUDA engine cannot load {s} ({s})", .{ o.dir, @errorName(e) });
         return null;
     };
-    return .{ .engine = s.engine(), .close = Served.close, .ctx = s };
+    return .{ .engine = s.engine(), .close = Served.close, .ctx = s, .halt = Served.halt };
 }
 
 pub const Served = struct {
@@ -233,6 +233,12 @@ pub const Served = struct {
         const gpa = x.req.index.gpa;
         x.deinit();
         gpa.destroy(x);
+    }
+
+    /// A drain's deadline: rounds end at a boundary first, so `close` can stop the followers cleanly (exit 0, not 70).
+    pub fn halt(ctx: *anyopaque, reason: []const u8) void {
+        const s: *Served = @ptrCast(@alignCast(ctx));
+        s.host.halt(reason);
     }
 
     pub fn close(ctx: *anyopaque) void {
