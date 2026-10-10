@@ -6,17 +6,9 @@ const config = @import("config.zig");
 const linux = std.os.linux;
 
 pub const max_ranks = 64;
-
 const more: u32 = 0x8000; // MSG_MORE: the length and the ints leave as one segment
 
 pub const Error = error{ PeerClosed, TooLarge, NotRankZero, NotFollower };
-
-/// A batch frame's first word (every plan's first word, its op, is >= 0): [batch, n, len 1, plan 1, ..., len n, plan n].
-/// Rank 0's held plans (`hold`) leave in one frame with the next plan; the follower hands them out one by one, in order.
-pub const batch: i64 = std.math.minInt(i64);
-/// Words rank 0 holds at most (more flushes the held plans first), and the most a batch frame carries.
-pub const hold_words: usize = 1024;
-pub const batch_words: usize = 2 * hold_words + 2;
 
 /// Largest plan either side accepts: 64M words (512 MiB). An admission carries its prompt ids (~1M words for a 1M-token
 /// prompt); the cap keeps a garbled length from becoming a 4 GiB allocation.
@@ -41,75 +33,15 @@ pub const PlanLink = struct {
     pin: ?config.PlanPin = null,
     avoid: ?u32 = null,
     pinned: bool = false,
-    /// rank 0: plans held for the next send (`hold`), each as [len, plan...]; `held_n` of them
-    held: [hold_words]i64 = undefined,
-    held_len: usize = 0,
-    held_n: usize = 0,
-    /// the follower: a batch frame's plans not handed out yet, as [len, plan...] from `inbox_at`
-    inbox: [batch_words]i64 = undefined,
-    inbox_len: usize = 0,
-    inbox_at: usize = 0,
-    batches: u64 = 0,
 
     pub fn init(rank: u32, world: u32, fds: [max_ranks]sock.Fd) PlanLink {
         return .{ .rank = rank, .world = world, .fds = fds };
     }
 
-    /// Rank 0: one plan to every other rank. Host only: nothing waits on a GPU. Plans held before it (`hold`) go first,
-    /// in the same frame when it fits a batch, else as a batch frame of their own just before it.
+    /// Rank 0: one plan to every other rank. Host only: nothing waits on a GPU.
     pub fn send(p: *PlanLink, ints: []const i64) Error!void {
         if (p.rank != 0) return error.NotRankZero;
         if (ints.len > max_frame_words) return error.TooLarge;
-        if (p.held_n > 0) {
-            if (2 + p.held_len + 1 + ints.len <= batch_words) {
-                var frame: [batch_words]i64 = undefined;
-                frame[0] = batch;
-                frame[1] = @intCast(p.held_n + 1);
-                @memcpy(frame[2..][0..p.held_len], p.held[0..p.held_len]);
-                frame[2 + p.held_len] = @intCast(ints.len);
-                @memcpy(frame[3 + p.held_len ..][0..ints.len], ints);
-                const n = 3 + p.held_len + ints.len;
-                p.held_len = 0;
-                p.held_n = 0;
-                p.batches += 1;
-                return p.sendFrame(frame[0..n]);
-            }
-            try p.flush();
-        }
-        return p.sendFrame(ints);
-    }
-
-    /// Rank 0: a plan the followers run in order before the next sent one, carried in that plan's frame (TF_DSV41's
-    /// keep batching: a round's keeps and its window in one frame, one socket write and one wake-up on the follower).
-    /// Nothing leaves until the next `send` or `flush`.
-    pub fn hold(p: *PlanLink, ints: []const i64) Error!void {
-        if (p.rank != 0) return error.NotRankZero;
-        if (1 + ints.len > hold_words) {
-            try p.flush();
-            return p.sendFrame(ints);
-        }
-        if (p.held_len + 1 + ints.len > hold_words) try p.flush();
-        p.held[p.held_len] = @intCast(ints.len);
-        @memcpy(p.held[p.held_len + 1 ..][0..ints.len], ints);
-        p.held_len += 1 + ints.len;
-        p.held_n += 1;
-    }
-
-    /// Rank 0: the held plans now, as one batch frame (nothing held: nothing sent).
-    pub fn flush(p: *PlanLink) Error!void {
-        if (p.held_n == 0) return;
-        var frame: [batch_words]i64 = undefined;
-        frame[0] = batch;
-        frame[1] = @intCast(p.held_n);
-        @memcpy(frame[2..][0..p.held_len], p.held[0..p.held_len]);
-        const n = 2 + p.held_len;
-        p.held_len = 0;
-        p.held_n = 0;
-        p.batches += 1;
-        return p.sendFrame(frame[0..n]);
-    }
-
-    fn sendFrame(p: *PlanLink, ints: []const i64) Error!void {
         p.pinOnce();
         const bytes = std.mem.sliceAsBytes(ints);
         const len: u32 = @intCast(bytes.len);
@@ -125,71 +57,24 @@ pub const PlanLink = struct {
     /// than `out` is read and dropped (`error.TooLarge`), so the link stays on frame boundaries; `recvGrow` instead
     /// takes any plan up to `max_frame_words`.
     pub fn recv(p: *PlanLink, out: []i64) Error![]i64 {
-        if (p.inboxNext()) |m| {
-            if (m.len > out.len) return error.TooLarge;
-            @memcpy(out[0..m.len], m);
-            return out[0..m.len];
-        }
         const n = try p.header();
         if (n > out.len) {
             try p.drop(n);
             return error.TooLarge;
         }
-        const got = try p.body(out[0..n]);
-        if (got.len > 0 and got[0] == batch) {
-            try p.unpack(got);
-            return p.recv(out);
-        }
-        return got;
+        return p.body(out[0..n]);
     }
 
     /// The next plan into `buf`, grown to the frame (admissions with long prompts); the buffer is kept for the next
     /// call, so a steady stream of window plans allocates nothing.
     pub fn recvGrow(p: *PlanLink, gpa: std.mem.Allocator, buf: *std.ArrayList(i64)) (Error || std.mem.Allocator.Error)![]i64 {
-        if (p.inboxNext()) |m| {
-            try buf.resize(gpa, m.len);
-            @memcpy(buf.items, m);
-            return buf.items;
-        }
         const n = try p.header();
         if (n > max_frame_words) {
             try p.drop(n);
             return error.TooLarge;
         }
         try buf.resize(gpa, n);
-        const got = try p.body(buf.items);
-        if (got.len > 0 and got[0] == batch) {
-            try p.unpack(got);
-            return p.recvGrow(gpa, buf);
-        }
-        return got;
-    }
-
-    /// The follower: a batch frame's plans into the inbox (checked whole first: a garbled batch ends the link).
-    fn unpack(p: *PlanLink, frame: []const i64) Error!void {
-        if (frame.len < 2 or frame.len > batch_words or frame[1] < 1) return error.PeerClosed;
-        var at: usize = 2;
-        var k: i64 = 0;
-        while (k < frame[1]) : (k += 1) {
-            if (at >= frame.len or frame[at] < 0) return error.PeerClosed;
-            at += 1 + @as(usize, @intCast(frame[at]));
-            if (at > frame.len) return error.PeerClosed;
-        }
-        if (at != frame.len) return error.PeerClosed;
-        @memcpy(p.inbox[0 .. frame.len - 2], frame[2..]);
-        p.inbox_len = frame.len - 2;
-        p.inbox_at = 0;
-        p.batches += 1;
-    }
-
-    /// The follower: the next plan of the last batch frame, if any is left (a slice of the inbox, valid until the
-    /// next receive).
-    fn inboxNext(p: *PlanLink) ?[]const i64 {
-        if (p.inbox_at >= p.inbox_len) return null;
-        const n: usize = @intCast(p.inbox[p.inbox_at]);
-        const m = p.inbox[p.inbox_at + 1 ..][0..n];
-        p.inbox_at += 1 + n;
-        return m;
+        return p.body(buf.items);
     }
 
     /// The next frame's length in words.
@@ -420,57 +305,4 @@ test "TF_DSV41_PLAN_LINK=rdma: a spinning follower gets every plan, late or earl
     try std.testing.expectEqual([3]i64{ 11, 22, 1 }, out);
     try std.testing.expect(ok);
     if (bestCpu(null)) |c| try std.testing.expect((set[c / @bitSizeOf(usize)] >> @intCast(c % @bitSizeOf(usize))) & 1 == 1);
-}
-
-test "held plans leave with the next plan, in order, as one frame; a large plan after them flushes them first" {
-    const bootstrap = @import("bootstrap.zig");
-    const l = try bootstrap.testListener();
-    defer sock.close(l.fd);
-    const deadline = sock.nowNs() + 5 * std.time.ns_per_s;
-    const a = try sock.connect("127.0.0.1", l.port, deadline);
-    const b = try sock.accept(l.fd, deadline);
-    var f0: [max_ranks]sock.Fd = @splat(-1);
-    var f1: [max_ranks]sock.Fd = @splat(-1);
-    f0[1] = b;
-    f1[0] = a;
-    const lead = try std.testing.allocator.create(PlanLink);
-    defer std.testing.allocator.destroy(lead);
-    lead.* = PlanLink.init(0, 2, f0);
-    const follow = try std.testing.allocator.create(PlanLink);
-    defer std.testing.allocator.destroy(follow);
-    follow.* = PlanLink.init(1, 2, f1);
-    defer follow.close();
-    // a round: three keeps held, the window sent: one frame
-    try lead.hold(&.{ 22, 0, 3 });
-    try lead.hold(&.{ 22, 1, 0 });
-    try lead.hold(&.{ 22, 2, 5 });
-    try lead.send(&.{ 21, 4, 9, 9, 9 });
-    try std.testing.expectEqual(@as(u64, 1), lead.sent);
-    // a held plan, then one too large for a batch: two frames, the held one first
-    var big: [5000]i64 = undefined;
-    for (&big, 0..) |*v, i| v.* = @intCast(i);
-    try lead.hold(&.{ 22, 3, 1 });
-    try lead.send(&big);
-    try std.testing.expectEqual(@as(u64, 3), lead.sent);
-    // flush alone, an empty plan held, a plain send after
-    try lead.hold(&.{});
-    try lead.flush();
-    try lead.flush(); // nothing held: nothing sent
-    try lead.send(&.{7});
-    try std.testing.expectEqual(@as(u64, 5), lead.sent);
-    var buf: std.ArrayList(i64) = .empty;
-    defer buf.deinit(std.testing.allocator);
-    const gpa = std.testing.allocator;
-    try std.testing.expectEqualSlices(i64, &.{ 22, 0, 3 }, try follow.recvGrow(gpa, &buf));
-    try std.testing.expectEqualSlices(i64, &.{ 22, 1, 0 }, try follow.recvGrow(gpa, &buf));
-    try std.testing.expectEqualSlices(i64, &.{ 22, 2, 5 }, try follow.recvGrow(gpa, &buf));
-    try std.testing.expectEqualSlices(i64, &.{ 21, 4, 9, 9, 9 }, try follow.recvGrow(gpa, &buf));
-    var out: [8192]i64 = undefined;
-    try std.testing.expectEqualSlices(i64, &.{ 22, 3, 1 }, try follow.recv(&out));
-    try std.testing.expectEqualSlices(i64, &big, try follow.recvGrow(gpa, &buf));
-    try std.testing.expectEqual(@as(usize, 0), (try follow.recv(&out)).len);
-    try std.testing.expectEqualSlices(i64, &.{7}, try follow.recv(&out));
-    try std.testing.expectEqual(@as(u64, 3), follow.batches);
-    try std.testing.expectError(error.NotRankZero, follow.hold(&.{1}));
-    lead.close();
 }

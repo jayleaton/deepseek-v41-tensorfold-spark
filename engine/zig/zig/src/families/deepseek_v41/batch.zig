@@ -106,10 +106,6 @@ pub const Batch = struct {
     /// TF_DSV41_WIN_PROF=1: host ns a row window spends in each step of runRows (and in keeps), every rank, logged at
     /// deinit; null when off (no clock reads)
     prof: ?*WinProf = null,
-    /// TF_DSV41_KEEP_BATCH=1: the leader's keeps are held on the plan link (PlanLink.hold) and leave with the next plan
-    /// (the round's window, a draft op...) in one frame: the follower gets a round's keeps and its window in one
-    /// read instead of one wake-up a keep. The same plans in the same order on every rank.
-    keep_batch: bool = false,
     /// the session store (model.zig): each slot's kept rows are its committed ids
     sess: ?*sessions_gpu.Sessions = null,
 
@@ -121,8 +117,6 @@ pub const Batch = struct {
         // graphs as the one-slot forward's default (M4: on unless TF_DSV41_GRAPHS=0; the gates' drivers: off)
         const s = try graphs.Settings.fromEnvOr(f.graphs_default);
         b.* = .{ .gpa = gpa, .f = f, .ss = ss, .cap = cap, .settings = s, .tab = try Table.init(r.d, cap), .pend = try gpa.alloc(?Pend, ss.n), .rg = try round_graph.current() };
-        b.keep_batch = keepBatchFromEnv();
-        if (b.keep_batch and f.comm.rank() == 0) std.log.scoped(.dsv41).info("keep batch: a round's keeps leave with its next plan in one frame", .{});
         if (WinProf.fromEnv()) b.prof = try gpa.create(WinProf);
         if (b.prof) |p| p.* = .{};
         @memset(b.pend, null);
@@ -355,10 +349,7 @@ pub const Batch = struct {
         const f = b.f;
         var pt = WinProf.start(b.prof);
         defer pt.endAs(.keep);
-        if (b.ss.leads()) {
-            const msg = [_]i64{ slots_mod.op_rows_keep, slot, accepted };
-            if (b.keep_batch) try f.link.?.hold(&msg) else try f.link.?.send(&msg);
-        }
+        if (b.ss.leads()) try f.link.?.send(&.{ slots_mod.op_rows_keep, slot, accepted });
         const r = f.runner;
         var nb: [64]u8 = undefined;
         var la = std.heap.ArenaAllocator.init(b.gpa);
@@ -962,11 +953,4 @@ test "TF_DSV41_WIN_PROF: marks book each step's time once, the rest at the end, 
     off.mark(.send);
     off.end();
     try std.testing.expectEqual(@as(u64, 0), off.last);
-}
-
-/// TF_DSV41_KEEP_BATCH: 1 = the leader's row keeps held for the next plan's frame (Batch.keep_batch), unset / 0 = one
-/// frame a keep (today).
-pub fn keepBatchFromEnv() bool {
-    const v = std.c.getenv("TF_DSV41_KEEP_BATCH") orelse return false;
-    return std.mem.eql(u8, std.mem.span(v), "1");
 }
