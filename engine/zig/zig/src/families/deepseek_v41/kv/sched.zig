@@ -521,7 +521,9 @@ pub const Planner = struct {
             const end = pieceEnd(x.done, target, budget, grid);
             const save = x.save_at != null and end == x.save_at.?;
             try out.append(p.gpa, .{ .key = x.key, .start = x.done, .end = end, .save = save, .run = !x.damaged });
-            budget -= end - x.done;
+            // a piece is at least one grid step, so it can cost more than the budget left: batch.py's budget goes
+            // negative and the next `budget <= 0` ends the round; saturating to 0 does the same
+            budget -|= end - x.done;
             x.done = end;
             if (save) x.save_at = null;
         }
@@ -600,6 +602,27 @@ test "piece_end, snapshot_point and the fair share as plan.py / sessions.py / ba
     try std.testing.expectEqualSlices(u64, &.{ 2048, 1024, 512 }, (Adapt{}).steps(2048, &buf));
 }
 
+test "a round whose last piece rounds up past the budget left ends the round (batch.py: budget <= 0)" {
+    // Prod 2026-10-10: a prompt mid-prefill and two arrivals in one round. The first piece left 4 rows; the next,
+    // at row 3, rounds up to the grid (13 rows): batch.py's budget goes negative and the round takes no more
+    // pieces, where an unsigned budget overflowed and the planner panicked.
+    var p = Planner.init(std.testing.allocator, .{});
+    defer p.deinit();
+    try p.seqs.append(p.gpa, .{ .key = 1, .n = 2045, .submitted = 1, .done = 0, .save_at = null });
+    try p.seqs.append(p.gpa, .{ .key = 2, .n = 9000, .submitted = 2, .done = 3, .save_at = null });
+    try p.seqs.append(p.gpa, .{ .key = 3, .n = 9500, .submitted = 3, .done = 0, .save_at = null });
+    var out: std.ArrayList(Piece) = .empty;
+    defer out.deinit(p.gpa);
+    var finals: std.ArrayList(usize) = .empty;
+    defer finals.deinit(p.gpa);
+    try p.plan(null, &out, &finals);
+    try std.testing.expectEqual(@as(usize, 2), out.items.len);
+    try std.testing.expectEqual(Piece{ .key = 1, .start = 0, .end = 2044, .save = false }, out.items[0]);
+    try std.testing.expectEqual(Piece{ .key = 2, .start = 3, .end = 16, .save = false }, out.items[1]);
+    try std.testing.expectEqualSlices(usize, &.{1}, finals.items);
+}
+
 test {
     _ = @import("sched_test.zig");
+    _ = @import("sched_crash_test.zig");
 }
