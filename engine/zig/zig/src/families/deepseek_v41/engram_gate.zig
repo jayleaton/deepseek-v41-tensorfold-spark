@@ -324,6 +324,7 @@ pub const Gate = struct {
     // -- the worker ------------------------------------------------------------------------------------------------
 
     fn loop(g: *Gate) void {
+        var iso = @import("cpu_isolate.zig").Isolate.init(); // TF_DSV41_PIN_ISOLATE: off the pinned plan thread's CPU
         while (true) {
             _ = std.c.pthread_mutex_lock(&g.mu);
             while (g.jobs.items.len == 0 and !g.stop) _ = std.c.pthread_cond_wait(&g.work, &g.mu);
@@ -333,6 +334,7 @@ pub const Gate = struct {
             }
             const j = g.jobs.orderedRemove(0);
             _ = std.c.pthread_mutex_unlock(&g.mu);
+            iso.apply();
             g.run(j) catch |e| {
                 j.failed = e;
                 g.stats.failed += 1;

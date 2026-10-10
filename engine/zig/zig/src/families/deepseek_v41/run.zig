@@ -57,7 +57,12 @@ pub const Runner = struct {
         open: bool = false,
         launches: u64 = 0,
         skipped_rows: u64 = 0,
+        /// TF_DSV41_PF_OVERLAP_SITE (the branches' side only): a call's `mark` m records marks[m - 1] on this stream,
+        /// a call's `wait` m makes the main stream wait for it
+        marks: [max_marks]?cuda.Event = @splat(null),
     };
+
+    pub const max_marks = 8;
 
     pub const Glue = struct {
         ctx: *anyopaque,
@@ -173,6 +178,11 @@ pub const Runner = struct {
     pub fn issue(r: *Runner, c: *const calls.Call) !void {
         if (r.br) |b| {
             if (c.join) try r.joinBranch();
+            if (c.wait > 0) {
+                // the main stream after the side's work up to mark `wait` only (the fork stays open)
+                if (!b.open) return error.BranchNotForked;
+                try r.stream.wait(b.marks[c.wait - 1] orelse return error.NoBranchMark);
+            }
             if (c.fork) {
                 try b.fork.record(r.stream);
                 try b.stream.wait(b.fork);
@@ -185,7 +195,9 @@ pub const Runner = struct {
                 const main = r.stream;
                 r.stream = b.stream;
                 defer r.stream = main;
-                return r.issueOn(b.stream, c, r.scratch);
+                try r.issueOn(b.stream, c, r.scratch);
+                if (c.mark > 0) try (b.marks[c.mark - 1] orelse return error.NoBranchMark).record(b.stream);
+                return;
             }
         }
         if (r.dfr) |d| {
