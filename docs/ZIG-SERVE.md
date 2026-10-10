@@ -281,6 +281,10 @@ upstream TensorFold settings.
 | `NCCL_SOCKET_IFNAME` | library auto-selection | your link interface | NCCL network interface |
 | `NCCL_IB_HCA` | library auto-selection | your cabled RDMA devices | NCCL/RoCE HCA selection |
 
+Sessions park from RAM to the NVMe tier (`TF_DSV41_SESSION_DISK`) when admission needs their memory; a parked chat's
+next prompt resumes it from disk. A restore that fails on any rank is a cache miss on every rank: the prompt is
+prefilled from 0 and serving continues.
+
 `IMAGE`, `MODEL_DIR`, `ENGRAM_DIR`, `ASSETS_DIR`, `PREPARED_DIR`, `STATE_DIR`, and `CACHE_DIR` are required
 launcher inputs, not engine knobs. `HOST=localhost` and `PORT=8000` are launcher defaults for the HTTP listener.
 The maximum reply is 32768 tokens and the served model ID is `DeepSeek-V4.1-Flash-TF` in this small launcher.

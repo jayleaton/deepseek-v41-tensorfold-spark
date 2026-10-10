@@ -6,8 +6,17 @@ This is a sanitized source snapshot based on TensorFold 1.0.2, upstream revision
 `8e96f99cc27743bb80f4827ea78b30481e3b4bcc`, the engine source of the current serving kit: the previous snapshot's
 engine plus the serving fixes `71fbcd316f840f353bd0898edf0cf8424ec52a02`, `3d88039d9105eabf12677d3c82e00a5f6ec6e366`,
 `4bb2c952c7ab5e4038a2c58041c4d457ef6bf9b8` with its test `5dbd1a0bbfaa8ab5045f60e9701e0b3d222dd38b`,
-`db7a5559dad5def07291ed2229bd1f75117f329d` and `8e96f99cc27743bb80f4827ea78b30481e3b4bcc`. The previous snapshot was
+`db7a5559dad5def07291ed2229bd1f75117f329d` and `8e96f99cc27743bb80f4827ea78b30481e3b4bcc`, plus the session fixes
+`14a18037` and `74ace4be` (below). The previous snapshot was
 `55c96c65bf97b8c30455f171e01aec8c59544aeb`; the one before it `0d723a8275f5b7879a083e8042a7048242ee624c`.
+
+## Session fixes on 8e96f99c
+
+- **Sessions:** a session resumed from the NVMe tier takes its token history from the prompt instead of the RAM index,
+  which no longer holds a parked entry's tokens; before, every NVMe resume failed (`NotInRam`) and stopped the server.
+  A restore that fails on any rank is now an agreed cache miss on every rank (the entry dropped, the prompt prefilled
+  from 0) instead of an error that stops the server; transport, device and memory errors still stop it.
+- New host tests for the NVMe resume and the agreed restore miss.
 
 ## Changes since 55c96c65
 
