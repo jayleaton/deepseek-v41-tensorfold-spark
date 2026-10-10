@@ -53,6 +53,7 @@ SALT = ""  # --salt
 
 
 NO_DRAFT = False     # --no-draft: every request with "draft": false (both servers: the reply without DSpark)
+TIMES = False        # --times: each stream's content-chunk arrival times (ms from its first token) in the cell
 
 
 def one(url: str, model: str, msg: str, temp: float, max_tokens: int, out: dict) -> None:
@@ -97,6 +98,8 @@ def stream_one(url: str, model: str, msg: str, temp: float, max_tokens: int, out
                sha=hashlib.sha256("".join(text).encode()).hexdigest()[:16],
                decode_tok_s=round((n - 1) / (times[-1] - times[0]), 2) if len(times) > 1 and times[-1] > times[0] else None,
                ttft_s=round(times[0] - t0, 3) if times else None, tpr=tokens_per_round(tf), times=times)
+    if TIMES and times:
+        out["times_ms"] = [round((t - times[0]) * 1e3, 2) for t in times]
 
 
 def tokens_per_round(tf: dict | None) -> float | None:
@@ -138,7 +141,8 @@ def cell(url: str, model: str, work: str, temp: float, streams: int, max_tokens:
             "mean_tok_s": round(sum(rates) / len(rates), 2) if rates else None, "aggregate_tok_s": agg,
             "ttft_s": [r.get("ttft_s") for r in res], "tokens": [r.get("tokens") for r in res],
             "sha": [r.get("sha") for r in res], "tpr": [r.get("tpr") for r in res],
-            "mean_tpr": mean([r.get("tpr") for r in res]), "failed_streams": len(errors), "errors": errors[:4]}
+            "mean_tpr": mean([r.get("tpr") for r in res]), "failed_streams": len(errors), "errors": errors[:4],
+            **({"times_ms": [r.get("times_ms") for r in res]} if TIMES else {})}
 
 
 def document(n: int) -> str:
@@ -287,9 +291,11 @@ def main() -> int:
     ap.add_argument("--long", default="", help="long-context lengths (tokens, comma separated): one stream each, T0")
     ap.add_argument("--mixwin", type=int, default=0, help="a long stream of this many tokens decoding beside 3 code streams (mixwin_cell)")
     ap.add_argument("--no-draft", action="store_true", help='every request with "draft": false (drafts-off replies)')
+    ap.add_argument("--times", action="store_true", help="each stream's content-chunk arrival times in the cell (ms)")
     a = ap.parse_args()
-    global NO_DRAFT, SALT
+    global NO_DRAFT, SALT, TIMES
     NO_DRAFT = a.no_draft
+    TIMES = a.times
     SALT = a.salt + "\n\n" if a.salt else ""
     if a.compare:
         compare(*a.compare)
