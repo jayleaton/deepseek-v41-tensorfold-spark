@@ -21,9 +21,11 @@ Required on both nodes:
   writes `engram-l{1,14}-r{rank}of2.bin`. The weights download alone is not sufficient.
 - Rank-specific `/assets/rope.bin`, `engram-host.bin`, and `aot/`: RoPE tables covering the configured context plus
   prefill rows, native host lookup data, and Triton programs for all emitted shapes. At four slots, include DSpark,
-  row-mode up to 64 rows, CED replay, and the device chain variants. PF_4K requires the matching 4K fill.
-- `/cache/dsv41-calib` holding Python's measured cost tables and `/cache/pfdense-table.json` (the published
-  `config/pfdense-table.json`). `CALIB=real` reads a stored table in Zig; it does not measure one itself.
+  row-mode up to 64 rows, CED replay, the device chain variants, 4K prefill pieces and replay runs, and the
+  `INDEX_BOUND` twins. `aot-needs` enumerates them from the serving env (see below).
+- `/cache/pfdense-table.json` (the published `config/pfdense-table.json`). Draft costs come from the engine's own
+  boot measurement (`CALIB=zig`): the first boot times its windows on both ranks and stores the table under
+  `/state/calib-zig`; later boots read it.
 - Writable prepared and session directories on local NVMe. Plan roughly 100 GB weights, 95 GB Engram shards,
   another rank's weight-sized prepared cache and up to 128 GiB session files per node, plus image/build space.
   Keep other workloads off the GPUs and preserve the 5 GiB target / 4 GiB hard MemAvailable floor on both ranks.
@@ -51,8 +53,9 @@ was not repeated for this publication; the exported host build and host tests ar
    ```
 
    Set the image, rank 0's link address, NIC/HCA settings and each node's own absolute directories. The engine
-   settings must match on both ranks. `config/prod-zig.env` is ignored by git. The template uses the conservative
-   2K prefill profile; the pack URL remains provisional until publication completes.
+   settings must match on both ranks. `config/prod-zig.env` is ignored by git. The template is the measured
+   serving profile, with 4K prefill (it falls back to 2K per piece when memory is short); the pack URL remains
+   provisional until publication completes.
 
 2. Build the included source on an ARM64 build host:
 
@@ -61,12 +64,12 @@ was not repeated for this publication; the exported host build and host tests ar
    git archive HEAD engine/zig | tar -x --strip-components=2 -C build/zig/src/
    # Optionally copy its validated sm_121 *.fatbin files, including tp_mailbox.fatbin, into build/zig/fatbins/.
    touch build/zig/fatbins/.keep
-   docker build -f docker/zig/Dockerfile --build-arg ZIG_COMMIT=0d723a8275f5b7879a083e8042a7048242ee624c \
+   docker build -f docker/zig/Dockerfile --build-arg ZIG_COMMIT="$(git rev-parse HEAD)" \
      -t tensorfold-dsv41-zig:local build/zig
    docker save tensorfold-dsv41-zig:local -o build/zig-image.tar
    ```
 
-   The image label identifies the kit source; the public export includes privacy and opt-in-default edits. Transfer the tar to rank 1 and run
+   The image label records the recipe commit you built (set `ZIG_COMMIT` in the config to the same value); the engine source revision is in `engine/zig/SOURCE-EXPORT.md`. Transfer the tar to rank 1 and run
    `docker load -i build/zig-image.tar` there. Compare the label and root filesystem layers on both nodes with
    `docker image inspect tensorfold-dsv41-zig:local`. Set `IMAGE=tensorfold-dsv41-zig:local` in both configs.
 
@@ -141,7 +144,7 @@ For the asset environment, build the builder stage with `docker build --target b
 -t tensorfold-dsv41-zig:builder build/zig` from the recipe root. Install the matching Torch/Triton toolchain in that
 environment. The Docker build's builder stage contains the Zig binaries under `/out/bin`; add them to `PATH` or copy them
 into `zig-out/bin` in the asset-generation environment. Mount the public reference, model and asset directories
-there. Repeat/check the manifest for each rank and any 4K profile. Engram host tables do not replace packed
+there. Repeat/check the manifest for each rank. Engram host tables do not replace packed
 model Engram shards. The existing public reference supports the recommended `R1=1` fill; the optional R1-off
 binding against newer Python pruning variants is outside this recipe's qualification.
 
@@ -173,8 +176,8 @@ upstream TensorFold settings.
 | `TF_DSV41_SAMPLING` | 0 | `1` | Keyed sampling for nonzero temperature |
 | `TF_DSV41_EXPERT_TOPP` | unset: no pruning | `0.85` | Decode routed-expert top-p pruning |
 | `TF_DSV41_INDEX_BUDGET_MIB` | 256 | `64` | Index selection scratch budget |
-| `TF_DSV41_PREFILL_CHUNK` | 2048 | `2048` | Segment row limit |
-| `TF_DSV41_PREFILL_ROWS` | 2048 | `2048` | Second row limit; smaller of CHUNK and ROWS wins |
+| `TF_DSV41_PREFILL_CHUNK` | 2048 | `4096` | Segment row limit |
+| `TF_DSV41_PREFILL_ROWS` | 2048 | `4096` | Second row limit; smaller of CHUNK and ROWS wins |
 | `TF_DSV41_PREFETCH_AHEAD` | 0 | `1` | Read next segment's Engram rows ahead |
 | `TF_DSV41_PF_DENSE` | off | `fused` | Fused dense EXL3 prefill GEMM |
 | `TF_DSV41_PF_DENSE_TABLE` | unset: heuristic | `/cache/pfdense-table.json` | Shape-specific GEMM tuning table |
@@ -199,10 +202,20 @@ upstream TensorFold settings.
 | `TF_DSV41_LOOKUP` | 0 | `1` | Copy drafts from repeated token spans |
 | `TF_DSV41_ENGRAM_PREFETCH` | 0 | `1` | Prepare decode Engram reads ahead of the forward |
 | `TF_DSV41_LOOKUP_PLAN` | 0 | `1` | Cost-priced copy-draft lookup planning |
-| `TF_DSV41_PF_4K` | 0 | `0 (optional 1)` | 4096-row prefill workspace; may fall back to 2K |
-| `TF_DSV41_PF_4K_MEMORY_OK` | unset | `unset (optional 1)` | Required acknowledgment for 4K memory cost |
-| `TF_DSV41_PF_WS_FLOOR_GIB` | FLOOR_HARD_GIB (4) | `unset (optional 3.5)` | Memory remaining after workspace allocation on every rank |
-| `TF_DSV41_PIECE_RUNS` | 0 | `0` | Combine several slots' prompt pieces; gated, off |
+| `TF_DSV41_PF_4K` | 0 | `1` | 4096-row prefill workspace; may fall back to 2K |
+| `TF_DSV41_PF_4K_MEMORY_OK` | unset | `1` | Required acknowledgment for 4K memory cost |
+| `TF_DSV41_PF_WS_FLOOR_GIB` | FLOOR_HARD_GIB (4) | `3.5` | Memory remaining after workspace allocation on every rank |
+| `TF_DSV41_PIECE_RUNS` | 0 | `1` | Combine several slots' prompt pieces in one run; needs PREFILL_PIECES and replay |
+| `TF_DSV41_REPLAY_RUNS` | 0 | `1` | Several slots' CED decoder replays in one run |
+| `TF_DSV41_JOIN_DRAFTS` | 0 | `1` | Prompts finishing in one round draft their first tokens in one pass |
+| `TF_DSV41_PF_WS_SHARE` | 0 | `1` | 4K workspace shares the index-stream scratch instead of a second copy |
+| `TF_DSV41_LIN2` | 0 | `1` | Dense linears of 17-64-row decode windows in one pass |
+| `TF_DSV41_INDEX_BOUND` | 0 | `1` | Row-bounded index scores and decode top-k; needs the twins in the AOT fill |
+| `TF_DSV41_MHC_DEFER_AT` | unset | `exchange` | Issue deferred mHC coefficient launches just before their exchange |
+| `TF_DSV41_DRAFT_CAPTURE` | 0 | `1` | Capture draft graphs with the round |
+| `TF_DSV41_GRAPH_FLOOR` | shed | `hold` | Under the memory floor, run a missing graph eagerly and keep the held ones |
+| `TF_DSV41_ENGRAM_AIO` | 0 | `1` | Native async reads for Engram rows |
+| `TF_DSV41_CODE_ACCEPT` | 0 | `0` | Expand high-acceptance short-context draft chains; off |
 
 ### Data, serving and transport settings
 
@@ -212,8 +225,9 @@ upstream TensorFold settings.
 | `TF_DSV41_ASSETS` | unset | `/assets` | Per-rank rope, host Engram lookup and AOT programs |
 | `TF_DSV41_INDEX_KV` | FP8 fixed in this port | `fp8` | Compatibility setting; does not select a different Zig index type |
 | `TF_DSV41_ENGRAM_DIR` | unset | `/engram` | Packed per-rank Engram shards |
-| `TF_DSV41_CALIB` | cached | `real` | Read Python's stored costs; Zig does not perform Python's boot measurement |
-| `TF_DSV41_CALIB_DIR` | user cache directory | `/cache/dsv41-calib` | Directory of matching Python cost tables; missing table uses built-in costs |
+| `TF_DSV41_CALIB` | cached | `zig` | Engine's own boot measurement, stored and reused; `real` / `cached` read Python's stored tables |
+| `TF_DSV41_CALIB_DIR` | user cache directory | `/state/calib-zig` | Directory of stored cost tables |
+| `TF_DSV41_CALIB_FILE` | unset | `unset (optional)` | Pin one stored table after the first boot measured it |
 | `TF_DSV41_PREPARED` | unset | `/prepared` | Zig prepared layer images (different from Python prepared folders) |
 | `TF_DSV41_PREPARED_WRITE` | 0 | `1` | Write missing prepared files |
 | `TF_DSV41_PLAN_TIMEOUT` | 300 | `1800` | Seconds allowed for TP rendezvous connection |
@@ -254,19 +268,21 @@ upstream TensorFold settings.
 launcher inputs, not engine knobs. `HOST=localhost` and `PORT=8000` are launcher defaults for the HTTP listener.
 The maximum reply is 32768 tokens and the served model ID is `DeepSeek-V4.1-Flash-TF` in this small launcher.
 
-### Optional 4K prefill and gated piece runs
+### 4K prefill and its fallback
 
-To try PF_4K, use a matching 4K AOT fill and set **all** of `TF_DSV41_PF_4K=1`,
-`TF_DSV41_PF_4K_MEMORY_OK=1`, `TF_DSV41_PREFILL_CHUNK=4096`, and `TF_DSV41_PREFILL_ROWS=4096`.
-It requires `GM_V2=1` and `PREFILL=replay`. The 4K workspace is transient and released after the CED finish.
-Each prompt piece checks headroom across both ranks; if either cannot leave the workspace floor, both use 2K
-segments with the same bits. The boot budget can also refuse a profile that cannot fit.
+The profile sets **all** of `TF_DSV41_PF_4K=1`, `TF_DSV41_PF_4K_MEMORY_OK=1`, `TF_DSV41_PREFILL_CHUNK=4096`, and
+`TF_DSV41_PREFILL_ROWS=4096`, with `PF_WS_SHARE=1`. It requires `GM_V2=1`, `PREFILL=replay`, and an AOT fill made from
+the same env. The 4K workspace is transient and released after the CED finish. Each prompt piece checks headroom
+across both ranks; if either cannot leave `TF_DSV41_PF_WS_FLOOR_GIB` free, both use 2K segments with the same bits.
+The boot budget can also refuse a profile that cannot fit.
 
-`TF_DSV41_PF_WS_FLOOR_GIB` defaults to the hard floor (4 GiB). The recorded 4K campaign used 3.5 GiB to avoid
-persistent fallback on the more constrained rank; this reduces its workspace margin and is an optional tuning
-choice, not the recommended all-on default. Do not enable two-batch prefill overlap (PF_TBO) alongside 4K without
-a separate memory gate: the tested combination exhausted memory. The reported 4K numbers are from the c8 run.
+`TF_DSV41_PF_WS_FLOOR_GIB` defaults to the hard floor (4 GiB); the profile uses 3.5 GiB so the more constrained rank
+does not fall back persistently. That trades workspace margin for speed. For a conservative 2K profile set
+`PF_4K=0`, drop `PF_4K_MEMORY_OK` and `PF_WS_FLOOR_GIB`, and use 2048 for `PREFILL_CHUNK` / `PREFILL_ROWS`. Do not
+enable two-batch prefill overlap (PF_TBO) alongside 4K without a separate memory gate: the tested combination
+exhausted memory.
 
-`TF_DSV41_PIECE_RUNS=0` remains explicit: multi-slot prompt batching is still gated for this setup. It needs
-`PREFILL_PIECES=1`, replay mode, matching multi-piece AOT shapes and a passing hardware gate before adoption.
-Do not equate all-on with enabling every experimental knob.
+`PIECE_RUNS`, `REPLAY_RUNS` and `JOIN_DRAFTS` batch several slots' prompt work into one run. They need
+`PREFILL_PIECES=1`, replay mode and the multi-segment AOT programs `aot-needs` lists under them.
+Do not equate the serving profile with enabling every experimental knob: the engine has more default-off paths
+than the profile uses.

@@ -23,8 +23,8 @@ The host suite includes family configuration, drafting, sampling, serving, TP, K
 HTTP corpus checks. Focused steps include `test-dsv41`, `test-dsv41-draft`, `test-dsv41-serve`,
 `test-dsv41-sampling`, `test-server`, `test-tp`, `test-kv`, and `test-golden`.
 
-The actual recipe export passed `zig build -j4` (29/29 steps) and `zig build test -j4` (89/89 steps).
-The unit suites passed 494 checks, with 11 hardware/checkpoint-dependent skips. The frozen HTTP corpus
+This export passed `zig build -j4` (30/30 steps) and `zig build test -j4` (96/96 steps).
+The unit suites passed 534 checks, with 11 hardware/checkpoint-dependent skips. The frozen HTTP corpus
 matched 312/319 answers, with seven known differences and zero unexpected differences. These checks
 ran with Zig 0.17.0 on a Linux development host using a resource-limited wrapper, one job at a time.
 Publication build and host-test outcomes are also recorded in the pull request. This guide does not assert
@@ -58,28 +58,25 @@ not describe the default configuration.
 
 ## Passed performance measurements
 
-The recorded runs used two DGX Spark systems, TP=2, and q28-v2 EXL3 2.8 bpw. The proposed public pack is
+The recorded runs used two DGX Spark nodes, TP=2 over RoCE, and q28-v2 EXL3 2.8 bpw. The proposed public pack is
 [DeepSeek-V4.1-Flash-EXL3-2.8bpw](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw);
 that repository name remains provisional until its publication is confirmed.
 
-Zig measurements are single runs per cell, after one short suite warm-up. Python short-decode reference cells select the best
-of three runs. This asymmetric methodology and small sample size limit comparisons. Recorded replies
-match the Python reference at the same measured settings. These are historical passed runs, not new
-hardware qualification of this sanitized export.
+Zig ran the serving profile on this engine source; Python is a fresh run of the Python serving path the same night.
+Both engines report the best of three warm repetitions. Replies match the Python reference (16/16 short replies,
+and the long reply hashes). These are recorded runs, not new hardware qualification of this sanitized export.
 
-| Workload | Python | Zig all-on |
-| --- | ---: | ---: |
-| Code, one stream, greedy decode (tok/s) | 86.6 | 87.6 |
-| Code, four streams, greedy decode (tok/s) | 145.4 | 147.4 |
-| Code, one stream, T=0.7 decode (tok/s) | 92.2 | 90.0 |
-| 32K decode (tok/s) | 51.1 | 61.1 |
-| 131K decode (tok/s) | 53.4 | 64.1 |
-| Mixed long decode, 131K (tok/s) | 69.0 | 67.2 |
-| 32K prompt (tok/s) | 2,436 | 2,507; 2,663 with PF_4K |
-| 131K prompt (tok/s) | 2,266 | 2,318; 2,486 with PF_4K |
+| Workload | Python | Zig | Δ |
+| --- | ---: | ---: | ---: |
+| Code, one stream, greedy decode (tok/s) | 88.0 | 90.3 | +2.6 % |
+| Code, four streams, greedy decode (tok/s) | 144.1 | 156.4 | +8.6 % |
+| Code, one stream, T=0.7 decode (tok/s) | 91.3 | 92.2 | +1.0 % |
+| Code, four streams, T=0.7 decode (tok/s) | 145.0 | 153.0 | +5.6 % |
+| 131K decode (tok/s) | 67.0 | 69.3 | +3.3 % |
+| Mixed load, four-stream code aggregate (tok/s) | 145.1 | 155.9 | +7.5 % |
+| 32K prompt (tok/s) | 2,440 | 2,686 | +10.1 % |
+| 131K prompt (tok/s) | 2,264 | 2,496 | +10.3 % |
 
-Zig is about 20% ahead on the measured long-context decode cells, roughly at parity on short decode,
-and slightly behind on sampled cells and mixed long decode. `PF_4K` improves measured prompt throughput
-but needs memory headroom and may fall back to 2K. It does not beat Python in every cell. The public
+Zig is ahead in every measured cell; long decode is near parity at 32K (+0.2 %) and +3.3 % at 131K. The public
 [benchmark receipt](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/blob/docs/zig-serving-q28-v2/docs/ZIG-RESULTS.md)
-contains the complete comparison and its methodology.
+contains every cell, medians, first and cold repetitions, and the method.

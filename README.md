@@ -11,7 +11,7 @@ link, behind an OpenAI-compatible API.
 
 The new [CUDA Zig serving path](docs/ZIG-SERVE.md) is based on TensorFold 1.0.2 plus the DeepSeek CUDA port.
 Its source is included in [`engine/zig`](engine/zig), with the Apache-2.0 upstream license and provenance.
-The recommended all-on settings, optional 4K prefill and generated AOT asset preparation are documented there. The existing Python
+The serving profile (4K prefill, the engine's own boot calibration) and generated AOT asset preparation are documented there. The existing Python
 recipe remains TensorFold 0.6.0 plus the two published patches, with exact DSpark speculative decoding, CED replay,
 four request slots, NVMe sessions, native image input, structured output and tool calls. The shipped Python patches
 predate the q28-v2 ragged-expert loader; keep their original 2.9 bpw pack until that engine update is exported.
@@ -21,32 +21,30 @@ predate the q28-v2 ragged-expert loader; keep their original 2.9 bpw pack until 
 
 ## Current q28-v2 results: Zig vs Python
 
-Two DGX Sparks, TP=2, q28-v2. **Zig numbers are single-run measurements**, without confidence intervals.
-The recorded Python short-decode reference selects the best of three repetitions; long and mixed-load cells have
-one measurement per engine. A short warm-up precedes the suite, rather than a separate warm-up of every cell.
-All compared reply hashes match the Python reference, including T0.7. [Evidence and method](docs/ZIG-RESULTS.md).
+Two DGX Spark nodes, TP=2 over RoCE, q28-v2. Zig with the [serving profile](config/prod-zig.env.example) against a
+fresh same-night run of the Python serving path; **best of 3** warm repetitions for both engines (medians, first
+repetitions and cold runs in [the full results](docs/ZIG-RESULTS.md)). Decode tok/s; ×4 is the four-stream aggregate.
 
-| Cell | Python reference | Zig (all-on) |
-| --- | ---: | ---: |
-| code ×1 | 86.6 | 87.6 |
-| code ×4 | 145.4 | 147.4 |
-| code T0.7 ×1 | 92.2 | 90.0 |
-| code T0.7 ×4 | 147.0 | 144.8 |
-| prose ×1 | 54.2 | 54.4 |
-| prose ×4 | 99.0 | 98.3 |
-| prose T0.7 ×1 | 50.4 | 49.2 |
-| prose T0.7 ×4 | 98.2 | 99.0 |
-| mix: 4 streams | 140.0 | 141.8 |
-| mix: 131K decode | 69.0 | 67.2 |
-| 32K decode | 51.1 | 61.1 |
-| 131K decode | 53.4 | 64.1 |
-| 32K prompt (tok/s) | 2,436 | 2,507 (2,663 with PF_4K) |
-| 131K prompt (tok/s) | 2,266 | 2,318 (2,486 with PF_4K) |
+| Cell | Python | Zig | Δ |
+| --- | ---: | ---: | ---: |
+| code T0 ×1 | 88.0 | 90.3 | +2.6 % |
+| code T0 ×4 | 144.1 | 156.4 | +8.6 % |
+| code T0.7 ×1 | 91.3 | 92.2 | +1.0 % |
+| code T0.7 ×4 | 145.0 | 153.0 | +5.6 % |
+| prose T0 ×1 | 53.8 | 54.7 | +1.7 % |
+| prose T0 ×4 | 98.2 | 104.7 | +6.6 % |
+| prose T0.7 ×1 | 49.6 | 50.6 | +2.1 % |
+| prose T0.7 ×4 | 97.9 | 103.3 | +5.6 % |
+| 32K prompt (tok/s, 3 cold prefills) | 2,440 | 2,686 | +10.1 % |
+| 131K prompt (tok/s, 3 cold prefills) | 2,264 | 2,496 | +10.3 % |
+| 32K decode | 63.5 | 63.6 | +0.2 % |
+| 131K decode | 67.0 | 69.3 | +3.3 % |
+| mix: code ×4 aggregate beside a 131K stream | 145.1 | 155.9 | +7.5 % |
+| mixed windows: aggregate | 143.4 | 155.1 | +8.2 % |
 
-Zig is about **20% ahead on long-context decode**, and 4K prefill is about **9–10% ahead on prompts**.
-Short decode is roughly at parity. It is still slightly behind on sampled T0.7 cells overall (prose ×4 is ahead)
-and mixed long decode; it does not beat Python everywhere. PF_4K is optional and falls back to 2K when either rank
-lacks workspace headroom. PIECE_RUNS stays gated and off.
+Zig is ahead in every cell: +5.6 to +8.6 % on four-stream code, +1.0 to +2.6 % on one-stream code, +10 % on long
+prompts, +3.3 % on 131K decode. Replies are identical (16/16 short replies, and the long reply hashes). One pair of
+nodes, one night: treat differences of a few percent as indicative.
 
 ## Historical 2.9 bpw results: Python vs vLLM
 
