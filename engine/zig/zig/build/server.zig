@@ -50,6 +50,7 @@ fn server(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
         n.addImport("engine_api", api);
         n.addImport("lanes", lanes); // an engine on the lane core shares the server's (engine_api's) lanes types
         n.addImport("dsv41_serve", serve); // and its serving module (DeepSeek-V4.1's exact sampler)
+        n.addImport("tokenizer", tokenizer); // TF_DSV41_CALIB=measure's calibration text (calib_gpu.zig)
         m.addImport("native_engines", n);
         // models / info / pull: the checkpoint commands over the same engines
         m.addImport("checkpoint_cli", b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "native_engines", .module = n }} }));

@@ -232,7 +232,8 @@ fn checkDsml(lines: []const u8) !void {
         cases += 1;
         const text = c.get("text").?.string;
         const thinking = c.get("thinking").?.bool;
-        const offered = try tools.Tools.init(a, if (c.get("tools").? == .array) c.get("tools").?.array else &.{});
+        var offered = try tools.Tools.init(a, if (c.get("tools").? == .array) c.get("tools").?.array else &.{});
+        offered.unknown_calls = false; // dsml.py keeps a call to a tool not offered in the content
         var why: ?[]const u8 = null;
         const p = try tools.parse(a, text, thinking, offered, .{});
         const wp = c.get("parse").?;

@@ -16,6 +16,7 @@ const drive = @import("draft/drive.zig");
 const costs_mod = @import("draft/costs.zig");
 const tree = @import("draft/tree.zig");
 const calib_env = @import("draft/calib_env.zig");
+const calib_gpu = @import("calib_gpu.zig");
 const spec = @import("draft/spec.zig");
 const lookup = @import("draft/lookup.zig");
 const m3 = @import("m3.zig");
@@ -87,9 +88,22 @@ pub const Served = struct {
         s.m = m;
         s.nd = .{};
         // draft pricing: prod's cached calibration (TF_DSV41_CALIB / _CALIB_DIR / _CALIB_FILE: Python's calib-*.json,
-        // shared as rank 0 shares it) and Python's depth knobs; without an entry for this engine, today's defaults
-        const cal = try calib_env.load(gpa, io, calib_env.Knobs.fromEnv(), .{ .slots = m.slots, .world = m.f.comm.world(), .dspark = m.pass != null, .context = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit)) }, 64);
+        // shared as rank 0 shares it) and Python's depth knobs; without an entry for this engine, today's defaults.
+        // TF_DSV41_CALIB=measure (or zig without a stored Zig table): this engine's own windows timed now, on every
+        // rank (calib_gpu.zig), and stored as calib-zig-<shape>.json
+        const knobs = calib_env.Knobs.fromEnv();
+        const want: calib_env.Shape = .{ .slots = m.slots, .world = m.f.comm.world(), .dspark = m.pass != null, .context = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit)) };
+        var cal = try calib_env.load(gpa, io, knobs, want, 64);
         defer if (cal.path) |p| gpa.free(p);
+        if (cal.source == .measure) {
+            errdefer cal.costs.deinit(gpa);
+            const got = try calib_gpu.boot(gpa, io, m, dir, knobs, want);
+            cal.costs.deinit(gpa);
+            cal.costs = got.costs;
+            cal.source = .measured;
+            if (cal.path) |p| gpa.free(p);
+            cal.path = got.path;
+        }
         s.costs = cal.costs;
         std.log.info("dsv41 draft costs: {t}{s}{s}, verify 1 / 16 rows {d:.3} / {d:.3} ms, pass {d:.3} ms", .{ cal.source, if (cal.path != null) " " else "", cal.path orelse "", s.costs.windowMs(1), s.costs.windowMs(16), s.costs.draft });
         var pass = m.draftPass() orelse s.nd.pass();
@@ -202,7 +216,7 @@ pub const Served = struct {
         // the row windows' first uses (batch.zig): programs emitted and graphs captured, their host ms
         if (m.gt.rows) |b| {
             const st = b.stats;
-            try w.print(", \"rowgraphs\": {{\"windows\": {d}, \"rows\": {d}, \"padded\": {d}, \"builds\": {d}, \"build_ms\": {d:.2}, \"captures\": {d}, \"capture_ms\": {d:.2}, \"eager\": {d}}}", .{ st.windows, st.rows, st.padded, st.builds, @as(f64, @floatFromInt(st.build_ns)) / 1e6, st.captures, @as(f64, @floatFromInt(st.capture_ns)) / 1e6, st.eager });
+            try w.print(", \"rowgraphs\": {{\"windows\": {d}, \"rows\": {d}, \"padded\": {d}, \"builds\": {d}, \"build_ms\": {d:.2}, \"captures\": {d}, \"capture_ms\": {d:.2}, \"eager\": {d}, \"prep_ms\": {d:.2}, \"stage_ms\": {d:.2}, \"launch_ms\": {d:.2}, \"keep_ms\": {d:.2}}}", .{ st.windows, st.rows, st.padded, st.builds, @as(f64, @floatFromInt(st.build_ns)) / 1e6, st.captures, @as(f64, @floatFromInt(st.capture_ns)) / 1e6, st.eager, @as(f64, @floatFromInt(st.prep_ns)) / 1e6, @as(f64, @floatFromInt(st.stage_ns)) / 1e6, @as(f64, @floatFromInt(st.launch_ns)) / 1e6, @as(f64, @floatFromInt(st.keep_ns)) / 1e6 });
         }
     }
 

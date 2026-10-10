@@ -13,7 +13,9 @@
 //! ``tool_calls`` / ``function_calls`` block names, missing blank lines, an unclosed last invoke or block are read;
 //! ``string="true"`` keeps the text unless the tool's schema does not allow a string; ``string="false"`` is JSON,
 //! closed when it stops a bracket short, else read by the schema, else kept as text; an invoke of a tool the request
-//! did not offer stays in the content. Arguments are compact JSON; streamed, each completed parameter is one fragment
+//! did not offer is still a call, under the name the model gave (``dsml.py`` keeps it in the content: the client then
+//! sees a finished reply and an agent stops, where a call it cannot run is answered and the model tries another way);
+//! an invoke without a name stays in the content. Arguments are compact JSON; streamed, each completed parameter is one fragment
 //! (``{`` + key + value, ``,`` + key + value ..., ``}``), so the fragments concatenate to the final arguments.
 //!
 //! ``Stream`` reads the reply incrementally: every search resumes where the last one stopped and a finished call is
@@ -473,6 +475,8 @@ pub const IdSource = struct {
 pub const Tools = struct {
     names: []const []const u8 = &.{},
     props: []const ?Value = &.{},
+    /// Calls to tools not offered go out as calls; false keeps them in the content as ``dsml.py`` does.
+    unknown_calls: bool = true,
 
     pub fn init(a: Allocator, tools: []const Value) Allocator.Error!Tools {
         var names: std.ArrayList([]const u8) = .empty;
@@ -520,6 +524,12 @@ pub const Tools = struct {
             found = i;
         };
         return found;
+    }
+
+    /// The name a call goes out under: the offered name it means, else its own (null for an empty one).
+    pub fn resolve(t: Tools, name: []const u8) ?[]const u8 {
+        if (t.known(name)) |i| return t.names[i];
+        return if (t.unknown_calls and name.len > 0) name else null;
     }
 
     fn prop(t: Tools, call_name: []const u8, key: []const u8) ?Value {
@@ -590,9 +600,9 @@ pub fn parse(a: Allocator, text: []const u8, thinking: bool, tools: Tools, ids: 
     var calls: std.ArrayList(Call) = .empty;
     try readCalls(a, rest, b.end, if (close) |c| c.start else rest.len, tools, ids, 0, &calls);
     var usable: std.ArrayList(Call) = .empty;
-    for (calls.items) |c| if (tools.known(c.name)) |i| {
+    for (calls.items) |c| if (tools.resolve(c.name)) |n| {
         var k = c;
-        k.name = tools.names[i];
+        k.name = n;
         try usable.append(a, k);
     };
     if (usable.items.len == 0) return .{ .reasoning = sp.reasoning, .content = rest, .calls = &.{} };
@@ -740,17 +750,16 @@ pub const Stream = struct {
         // skipped, so a token costs the calls still open, not every call of the reply
         while (s.settled < s.done.items.len) : (s.settled += 1) {
             const c = &s.done.items[s.settled];
-            const i = s.tools.known(c.name) orelse continue;
+            const name = s.tools.resolve(c.name) orelse continue;
             if (s.settled_known == s.calls.items.len or !s.sent_close.items[s.settled_known]) break;
-            c.name = s.tools.names[i];
+            c.name = name;
             s.settled_known += 1;
         }
         var k: usize = s.settled_known;
         const total = s.done.items.len + @intFromBool(s.open != null);
         for (s.settled..total) |j| {
             const c: *Call = if (j < s.done.items.len) &s.done.items[j] else &s.open.?.call;
-            const i = s.tools.known(c.name) orelse continue;
-            c.name = s.tools.names[i];
+            c.name = s.tools.resolve(c.name) orelse continue;
             if (k == s.calls.items.len) {
                 try s.calls.append(a, .{ .id = c.id, .name = c.name });
                 try s.sent_args.append(a, 0);
@@ -782,7 +791,8 @@ pub const Stream = struct {
                     s.resume_at = @max(s.resume_at, found.again); // a header still arriving is read again
                     return;
                 };
-                var o: Open = .{ .m = m, .end = .{}, .nxt = .{}, .param_pos = m.m.end, .call = .{ .id = try s.ids.make(s.ids.ctx, a, s.done.items.len), .name = m.name } };
+                // names are copied: ``text`` is the caller's growing buffer, gone by a later feed
+                var o: Open = .{ .m = m, .end = .{}, .nxt = .{}, .param_pos = m.m.end, .call = .{ .id = try s.ids.make(s.ids.ctx, a, s.done.items.len), .name = try a.dupe(u8, m.name) } };
                 o.end.reset(m.m.end);
                 o.nxt.reset(m.m.end);
                 s.open = o;
@@ -825,6 +835,8 @@ pub const Stream = struct {
                     o.param_pos = @max(o.param_pos, found.again);
                     return;
                 };
+                // its closing tag may come in a later feed, from a reallocated ``text``: the key is copied now
+                o.pending.?.name = try a.dupe(u8, o.pending.?.name);
                 o.close_scan = o.pending.?.end;
             }
             const h = o.pending.?;
@@ -885,4 +897,88 @@ test "a thinking reply with two calls, streamed in pieces and parsed whole, give
     try std.testing.expectEqualStrings("Sure.", content.items);
     try std.testing.expectEqualStrings("{\"city\":\"Paris\",\"days\":3}", args[0].items);
     try std.testing.expectEqualStrings("{\"tags\":[\"a\",[1]]}", args[1].items);
+}
+
+test "streamed keys and call names outlive the text they were read from (each feed a new buffer, the old one freed)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tools_json = (try json.parseText(a,
+        \\[{"type":"function","function":{"name":"bash","parameters":{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"}}}}}]
+    )).ok;
+    const tools = try Tools.init(a, tools_json.array);
+    // a long value: its parameter's closing tag arrives many feeds after the head that named it
+    const text = "ok</think><｜DSML｜ calls>\n<｜DSML｜ invoke name=\"bash\">\n<｜DSML｜ parameter name=\"command\" string=\"true\">grep -n 'pub fn stdout' /opt/zig/lib/std/Io/File.zig | head -40</｜DSML｜ parameter>\n" ++
+        "<｜DSML｜ parameter name=\"timeout\" string=\"false\">30</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+    var s = Stream.init(a, true, tools, .{});
+    var out: std.ArrayList(Delta) = .empty;
+    var prev: ?[]u8 = null;
+    var i: usize = 0;
+    while (i < text.len) {
+        i = @min(text.len, i + 3);
+        while (i < text.len and text[i] & 0xC0 == 0x80) i += 1;
+        // the server's text grows by reallocation: the bytes a feed saw are freed (and poisoned) before the next
+        const buf = try std.testing.allocator.dupe(u8, text[0..i]);
+        if (prev) |p| {
+            @memset(p, 0xAA);
+            std.testing.allocator.free(p);
+        }
+        prev = buf;
+        try s.feed(buf, false, &out);
+    }
+    try s.finish(prev.?, &out);
+    std.testing.allocator.free(prev.?);
+    var args: std.ArrayList(u8) = .empty;
+    var name: []const u8 = "";
+    for (out.items) |d| switch (d) {
+        .call => |c| name = c.name,
+        .arguments => |g| try args.appendSlice(a, g.text),
+        else => {},
+    };
+    try std.testing.expectEqualStrings("bash", name);
+    try std.testing.expectEqualStrings("{\"command\":\"grep -n 'pub fn stdout' /opt/zig/lib/std/Io/File.zig | head -40\",\"timeout\":30}", args.items);
+}
+
+test "a call to a tool the request did not offer goes out as a call, whole and streamed; a nameless one stays text" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tools = try Tools.init(a, (try json.parseText(a,
+        \\[{"type":"function","function":{"name":"bash","parameters":{"type":"object","properties":{"command":{"type":"string"}}}}}]
+    )).ok.array);
+    const text = "look</think>Here it is.\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"take_screenshot\">\n<｜DSML｜ parameter name=\"full\" string=\"false\">true</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+    const whole = try parse(a, text, true, tools, .{});
+    try std.testing.expectEqualStrings("Here it is.", whole.content);
+    try std.testing.expectEqual(@as(usize, 1), whole.calls.len);
+    try std.testing.expectEqualStrings("take_screenshot", whole.calls[0].name);
+    try std.testing.expectEqualStrings("{\"full\":true}", try whole.calls[0].arguments(a));
+    var s = Stream.init(a, true, tools, .{});
+    var out: std.ArrayList(Delta) = .empty;
+    var i: usize = 0;
+    while (i < text.len) {
+        i = @min(text.len, i + 5);
+        while (i < text.len and text[i] & 0xC0 == 0x80) i += 1;
+        try s.feed(text[0..i], false, &out);
+    }
+    try s.finish(text, &out);
+    var name: []const u8 = "";
+    var args: std.ArrayList(u8) = .empty;
+    var content: std.ArrayList(u8) = .empty;
+    for (out.items) |d| switch (d) {
+        .call => |c| name = c.name,
+        .arguments => |g| try args.appendSlice(a, g.text),
+        .content => |c| try content.appendSlice(a, c),
+        .reasoning => {},
+    };
+    try std.testing.expectEqualStrings("take_screenshot", name);
+    try std.testing.expectEqualStrings("{\"full\":true}", args.items);
+    try std.testing.expectEqualStrings("Here it is.", content.items);
+    // a known tool still goes out under its offered spelling
+    const cased = try parse(a, "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"BASH\">\n</｜DSML｜ invoke>\n</｜DSML｜ calls>", false, tools, .{});
+    try std.testing.expectEqualStrings("bash", cased.calls[0].name);
+    // an invoke without a name is not a call: the reply stays text
+    const nameless = "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"\">\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+    const n = try parse(a, nameless, false, tools, .{});
+    try std.testing.expectEqual(@as(usize, 0), n.calls.len);
+    try std.testing.expectEqualStrings(nameless, n.content);
 }
