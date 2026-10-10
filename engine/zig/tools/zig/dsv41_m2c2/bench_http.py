@@ -10,6 +10,11 @@ N are live (m2bench ``steady``). Standard library only (runs on the Spark hosts 
     python3 bench_http.py --url ... --out long.json --long 32768,131072,524288   # long context, one stream a length:
         an N-token document (about N tokens: the reply's usage.prompt_tokens is the exact count) and a question; the
         prompt's tok/s (prompt tokens / time to the first token) and the decode tok/s of a 128-token answer
+    python3 bench_http.py --url ... --out mixwin.json --mixwin 131072   # one long stream decoding WITH short ones:
+        the N-token document is sent once to fill the prompt cache (8 tokens, not timed), then again with a 512-token
+        answer; at its first token 3 code streams (T0, 384 tokens) start, so the long row and the short rows share
+        the server's decode windows. The cell (work mixwin-N, 4 streams): each stream's decode tok/s, the aggregate
+        over the span all 4 are live, and the long stream's tok/s inside that span (long_live_tok_s)
 
 Every cell also keeps each reply's tokens a decode round (``tpr``: drafting's acceptance, from the ``tensorfold`` block
 of the stream's last chunk): Python's ``drafting.tokens_per_round`` ((windows + drafts kept) / windows), the Zig
@@ -84,13 +89,14 @@ def stream_one(url: str, model: str, msg: str, temp: float, max_tokens: int, out
                 delta = c.get("delta") or {}
                 if delta.get("content") or delta.get("reasoning_content"):
                     times.append(time.perf_counter())
+                    out["_first_seen"] = True
                     text.append(delta.get("content") or delta.get("reasoning_content") or "")
     n = (usage or {}).get("completion_tokens") or len(times)
     out.update(t0=t0, first=times[0] if times else None, last=times[-1] if times else None, tokens=n,
                prompt_tokens=(usage or {}).get("prompt_tokens"),
                sha=hashlib.sha256("".join(text).encode()).hexdigest()[:16],
                decode_tok_s=round((n - 1) / (times[-1] - times[0]), 2) if len(times) > 1 and times[-1] > times[0] else None,
-               ttft_s=round(times[0] - t0, 3) if times else None, tpr=tokens_per_round(tf))
+               ttft_s=round(times[0] - t0, 3) if times else None, tpr=tokens_per_round(tf), times=times)
 
 
 def tokens_per_round(tf: dict | None) -> float | None:
@@ -156,6 +162,51 @@ def long_cell(url: str, model: str, n: int, max_tokens: int) -> dict:
             "mean_tok_s": r.get("decode_tok_s"), "aggregate_tok_s": None, "per_stream": [r.get("decode_tok_s")],
             "tokens": [r.get("tokens")], "sha": [r.get("sha")], "tpr": [r.get("tpr")], "mean_tpr": r.get("tpr"),
             "failed_streams": int(bool(r.get("error") or not r.get("first"))), "errors": [r["error"]] if r.get("error") else []}
+
+
+def mixwin_cell(url: str, model: str, n: int) -> dict:
+    """A long stream (the N-token document, prompt-cached first) decoding beside 3 code streams started at its first
+    token: the windows mix a ~N-position row with short rows (the bench's other cells never do)."""
+    doc = document(n)
+    warm: dict = {}
+    one(url, model, doc, 0.0, 8, warm)                                      # fills the prompt cache; not timed
+    res = [dict() for _ in range(4)]
+    th = threading.Thread(target=one, args=(url, model, doc, 0.0, 512, res[0]))
+    th.start()
+    t_wait = time.perf_counter()
+    while not res[0].get("first") and th.is_alive() and time.perf_counter() - t_wait < 900:
+        # stream_one fills `times` only at the end: watch the request's first chunk through a side flag instead
+        if res[0].get("_first_seen"):
+            break
+        time.sleep(0.01)
+    shorts = [threading.Thread(target=one, args=(url, model, SALT + PROMPTS["code"][i], 0.0, 384, res[i + 1]))
+              for i in range(3)]
+    for t in shorts:
+        t.start()
+    for t in [th, *shorts]:
+        t.join()
+    errors = [r.get("error") or "no tokens" for r in res if r.get("error") or not r.get("first")]
+    rates = [r.get("decode_tok_s") for r in res]
+    lo = max((r["first"] for r in res if r.get("first")), default=0.0)
+    hi = min((r["last"] for r in res if r.get("last")), default=0.0)
+    agg = live = live_chunks = None
+    if hi > lo and not errors:
+        agg = round(sum(r["decode_tok_s"] * (hi - lo) for r in res if r.get("decode_tok_s")) / (hi - lo), 2)
+        # the long stream's TOKENS inside the all-live span: `times` holds one entry a content chunk (a chunk is one
+        # decode round's accepted tokens, ~3-4 with drafts), so chunks inside x the reply's tokens a chunk; counting
+        # the chunks alone gave rounds a second (~9.8 at x4), read as a near-stalled long stream
+        times0 = res[0].get("times") or []
+        inside = [t for t in times0 if lo <= t <= hi]
+        per_chunk = (res[0]["tokens"] - 1) / (len(times0) - 1) if len(times0) > 1 and res[0].get("tokens") else 1.0
+        ok = len(inside) > 1 and inside[-1] > inside[0]
+        live = round((len(inside) - 1) * per_chunk / (inside[-1] - inside[0]), 2) if ok else None
+        live_chunks = round((len(inside) - 1) / (inside[-1] - inside[0]), 2) if ok else None
+    return {"work": f"mixwin-{n}", "temp": 0.0, "streams": 4, "per_stream": rates,
+            "mean_tok_s": round(sum(x for x in rates if x) / max(1, len([x for x in rates if x])), 2),
+            "aggregate_tok_s": agg, "long_live_tok_s": live, "long_live_chunks_s": live_chunks, "live_span_s": round(hi - lo, 3) if hi > lo else None,
+            "prompt_tokens": res[0].get("prompt_tokens"), "ttft_s": [r.get("ttft_s") for r in res],
+            "tokens": [r.get("tokens") for r in res], "sha": [r.get("sha") for r in res], "tpr": [r.get("tpr") for r in res],
+            "mean_tpr": mean([r.get("tpr") for r in res]), "failed_streams": len(errors), "errors": errors[:4], "rep": 0}
 
 
 def compare(a_path: str, b_path: str) -> None:
@@ -234,6 +285,7 @@ def main() -> int:
     ap.add_argument("--out", default="")
     ap.add_argument("--compare", nargs=2, metavar=("A", "B"))
     ap.add_argument("--long", default="", help="long-context lengths (tokens, comma separated): one stream each, T0")
+    ap.add_argument("--mixwin", type=int, default=0, help="a long stream of this many tokens decoding beside 3 code streams (mixwin_cell)")
     ap.add_argument("--no-draft", action="store_true", help='every request with "draft": false (drafts-off replies)')
     a = ap.parse_args()
     global NO_DRAFT, SALT
@@ -244,6 +296,13 @@ def main() -> int:
         return 0
     cell(a.url, a.model, "code", 0.0, 1, 32)                                 # warm-up, not recorded
     cells = []
+    if a.mixwin:
+        c = mixwin_cell(a.url, a.model, a.mixwin)
+        c.pop("times", None)
+        print(json.dumps(c), flush=True)
+        if a.out:
+            json.dump({"label": a.label or a.url, "cells": [c]}, open(a.out, "w"), indent=1)
+        return 0 if not c["failed_streams"] else 1
     if a.long:
         for n in [int(x) for x in a.long.split(",")]:
             c = long_cell(a.url, a.model, n, 128)

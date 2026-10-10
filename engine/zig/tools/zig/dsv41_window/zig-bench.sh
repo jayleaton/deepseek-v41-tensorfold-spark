@@ -14,7 +14,10 @@
 # Run on rank 0 host from the kit dir:
 #   ./zig-bench.sh prod      before the window, Python prod up (the reference replies and cells)
 #   ./zig-bench.sh zig       in the window, the Zig server up with TF_DSV41_PHASES=1 TF_DSV41_PHASES_OUT=/state/phases.json
-# WARM (1: an untimed warm-up a speed cell), REPS (2), LONG (32768,131072), MIX_LONG (131072), PARTS (replies speed long mix: a subset, e.g. the window's
+# Env: URL (http://localhost:8000), PHASES (the host path of the server's /state/phases.json; default $KIT/phases.json),
+#   6. (PARTS with mixwin, not in the default set) one long stream decoding in the same windows as 3 code streams:
+#      bench_http.py --mixwin MIX_LONG -> mixwin.json; the verdict compares its aggregate and the long stream's live tok/s
+# WARM (1: an untimed warm-up a speed cell), REPS (2), LONG (32768,131072), MIX_LONG (131072), PARTS (replies speed long mix [mixwin]: a subset, e.g. the window's
 # crash repro `PARTS=speed CELLS=code-t0-s4 REPS=1`), CELLS (speed cells by name; default all 8).
 # Exit: 0 verdict PASS (or the prod label), 1 verdict FAIL, 2 no server at the start, 3 the server died during the bench.
 set -u
@@ -96,6 +99,14 @@ if part mix; then
     after mix; phases mix
 fi
 
+if part mixwin; then
+    log "4b. mixed windows ($MIX_LONG-token stream decoding beside 3 code streams)"
+    rm -f "$OUT/mixwin.json"
+    $B --mixwin "$MIX_LONG" --out "$OUT/mixwin.json" > /dev/null 2>> "$OUT/bench.log" || failed mixwin
+    log "  mixwin: $(python3 -c "import json,sys;c=json.load(open(sys.argv[1]))['cells'][0];print('aggregate', c['aggregate_tok_s'], 'long live', c['long_live_tok_s'], 'span', c['live_span_s'], 's, per stream', c['per_stream'])" "$OUT/mixwin.json" 2>/dev/null)"
+    after mixwin; phases mixwin
+fi
+
 rc=0
 if [[ "$LABEL" != prod ]]; then
     log "5. against prod"
@@ -143,6 +154,10 @@ if "mix" in parts:
     expect += [("mix-short.json", ("code", 0.0, 4), rate, "decode"),
                ("mix-long.json", (f"long-{mix_long}", 0.0, 1), lambda c: c["mean_tok_s"], "decode"),
                ("mix-long.json", (f"long-{mix_long}", 0.0, 1), lambda c: c.get("prompt_tok_s"), "prompt")]
+if "mixwin" in parts:
+    k = (f"mixwin-{mix_long}", 0.0, 4)
+    expect += [("mixwin.json", k, lambda c: c.get("aggregate_tok_s"), "decode (all live)"),
+               ("mixwin.json", k, lambda c: c.get("long_live_tok_s"), "long stream decode (live)")]
 rows, worse, missing = [], [], []
 for f, k, val, what in expect:
     a, b = best(load(p, f), val).get(k), best(load(z, f), val).get(k)
@@ -161,6 +176,10 @@ if "speed" in parts:
         return {(c["work"], c["temp"], c["streams"], c.get("rep")): c.get("sha") for c in cells or [] if c["temp"] == 0}
     sa, sb = shas(load(p, "cells.json")), shas(load(z, "cells.json"))
     diff = [k for k in sa if k in sb and sa[k] != sb[k]]
+if "mixwin" in parts:
+    ma, mb = load(p, "mixwin.json") or [], load(z, "mixwin.json") or []
+    if ma and mb and ma[0].get("sha") != mb[0].get("sha"):
+        diff.append(("mixwin", mix_long))
 cmp = "not run"
 if "replies" in parts:
     cmp = open(f"{z}/compare.txt").read().strip().splitlines()[-1] if os.path.exists(f"{z}/compare.txt") else "no compare"
