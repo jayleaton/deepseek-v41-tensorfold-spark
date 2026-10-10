@@ -351,12 +351,12 @@ pub const GpuPass = struct {
         return self(p).doIngest(start, row0, n, avail);
     }
 
-    /// An ingest of rows on the device (row0 + n <= the taps' rows) without draining the stream first: the position from
-    /// pageable memory (copied out before the call returns), then the launches in stream order.
+    /// An ingest of rows on the device (row0 + n <= the taps' rows) without draining the stream first: the position as a
+    /// memset (setPos), then the launches in stream order.
     fn ingestAsync(x: *GpuPass, start: u64, row0: u32, n: u32) !void {
         const r = x.f.runner;
         const pos: i32 = @intCast(start);
-        try cuda.DeviceBuffer.uploadAsync(.{ .d = r.d, .ptr = r.addressOf("w.ds.pos") orelse return error.Unbound, .len = 4 }, 0, std.mem.asBytes(&pos), r.stream.handle);
+        try setPos(r.d, r.addressOf("w.ds.pos") orelse return error.Unbound, pos, r.stream);
         var la = std.heap.ArenaAllocator.init(x.gpa);
         defer la.deinit();
         const cs = try emit.emitIngest(la.allocator(), x.f.cfg, x.f.widths, x.f.opts, n, row0);
@@ -374,7 +374,7 @@ pub const GpuPass = struct {
         const r = x.f.runner;
         try r.stream.synchronize();
         const pos: i32 = @intCast(start);
-        try cuda.DeviceBuffer.uploadAsync(.{ .d = r.d, .ptr = r.addressOf("w.ds.pos") orelse return error.Unbound, .len = 4 }, 0, std.mem.asBytes(&pos), r.stream.handle);
+        try setPos(r.d, r.addressOf("w.ds.pos") orelse return error.Unbound, pos, r.stream);
         var la = std.heap.ArenaAllocator.init(x.gpa);
         defer la.deinit();
         const cs = try emit.emitIngest(la.allocator(), x.f.cfg, x.f.widths, x.f.opts, n, row0);
@@ -663,4 +663,11 @@ pub fn checkCandidates(cand: []const i32, vocab: usize) error{BadCandidates}!voi
         std.log.err("dspark: gathered candidate {d} at {d} is not a token id", .{ id, i });
         return error.BadCandidates;
     };
+}
+
+/// The drafter's int32 position word ("w.ds.pos", or a side stream's copy) set on `stream` as a 32-bit memset of the
+/// value's bits: the same 4 bytes the pageable 4-byte upload wrote, with no host buffer (a pageable HtoD stages through
+/// the driver; a Spark nsys capture: ~3.5 of them a 4-stream round) and legal inside a stream capture.
+pub fn setPos(d: *const cuda.Driver, ptr: u64, pos: i32, stream: cuda.Stream) !void {
+    try d.check(d.api.cuMemsetD32Async(ptr, @bitCast(pos), 1, stream.handle), "cuMemsetD32Async");
 }

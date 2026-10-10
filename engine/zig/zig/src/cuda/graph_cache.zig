@@ -55,6 +55,10 @@ pub const Settings = struct {
     max: u32 = 48,
     /// under the memory floor the cache evicts down to this many, then stops capturing
     min_keep: u32 = 8,
+    /// under the memory floor a miss runs eagerly and nothing else changes: no eviction, the cap kept (the held
+    /// graphs are kernel parameters, not activations; evicting them frees next to nothing and turns their later
+    /// steps into eager ones while the dip lasts)
+    hold: bool = false,
 };
 
 pub const Outcome = enum { replayed, captured, eager };
@@ -140,6 +144,11 @@ pub fn Cache(comptime Key: type) type {
             // a miss: room on every rank, else shed the least recent quarter and lower the cap (once below it, eager)
             const room_here = if (c.room) |f| f() else true;
             if (!try c.agreed(room_here and c.cap > 0)) {
+                if (c.settings.hold) {
+                    if (c.stats.floor_hits == 0) std.log.warn("graph cache: under the memory floor on {s} rank: this key eager, {d} graphs held (TF_DSV41_GRAPH_FLOOR=hold)", .{ if (room_here) "another" else "this", c.entries.count() });
+                    c.stats.floor_hits += 1;
+                    return c.eager(stream, body);
+                }
                 if (c.entries.count() > c.settings.min_keep) {
                     const drop = @max(1, c.entries.count() / 4);
                     for (0..drop) |_| if (c.entries.count() > c.settings.min_keep) c.evictOldest();
@@ -379,6 +388,27 @@ test "graph cache: a dip under the floor does not leave later keys churning once
     try std.testing.expectEqual(@as(u32, 16), c.cap);
     // only what the cap of 16 forces: 9 left after the dip + 12 new = 21 -> 5 evictions, none during the replays
     try std.testing.expectEqual(before + 5, c.stats.evicted);
+}
+
+test "graph cache: hold - below the floor a miss runs eagerly, nothing is evicted, the held keys replay" {
+    var f: Fake = .{};
+    var r: Ran = .{};
+    var c = Cache(u32).init(std.testing.allocator, f.engine(), .{ .max = 48, .min_keep = 2, .hold = true });
+    c.room = roomFn;
+    defer c.deinit();
+    room_flag = true;
+    for (0..8) |k| _ = try c.run(@intCast(k), no_stream, 7, r.body());
+    room_flag = false;
+    try std.testing.expectEqual(Outcome.eager, try c.run(100, no_stream, 7, r.body()));
+    try std.testing.expectEqual(Outcome.eager, try c.run(101, no_stream, 7, r.body()));
+    try std.testing.expectEqual(@as(usize, 8), c.count());
+    try std.testing.expectEqual(@as(u32, 48), c.cap);
+    for (0..8) |k| try std.testing.expectEqual(Outcome.replayed, try c.run(@intCast(k), no_stream, 7, r.body()));
+    try std.testing.expectEqual(@as(u64, 0), c.stats.evicted);
+    try std.testing.expectEqual(@as(u64, 2), c.stats.floor_hits);
+    room_flag = true;
+    try std.testing.expectEqual(Outcome.captured, try c.run(100, no_stream, 7, r.body()));
+    try std.testing.expectEqual(@as(usize, 9), c.count());
 }
 
 test "graph cache: off runs every step eagerly" {

@@ -3,7 +3,7 @@
 //! (mHC, projections, experts, exchanges, head) is per row already.
 //! - Every row's position, read slot, write slot and ratio-2 previous row come from the row table (rowtab.zig), bound as
 //!   the persistent role "s.rows.tab": POS is the table's `pos` column (int64 [R]) in `_rope`, `_kv_store`,
-//!   `_pool_norm`, `_index_k`, `_scores` and the CUDA top-k / attention; SL is `wslot` where a kernel writes
+//!   `_pool_norm`, `_index_k`, `_scores` and the CUDA top-k (its twin) / attention; SL is `wslot` where a kernel writes
 //!   (`_kv_store`, `_pool_norm`, `_index_k`) and `rslot` where it reads (`_scores`, attention); ROWS on.
 //! - The slots' state is stacked (slots.zig): each layer's SWA ring "s.L<i>.swa.v / .s" is [S x ring] rows (slot s's
 //!   ring at s x ring), the ratio-2 carries "s.L<i>.carry" [S, 2D] (slot s's row s), the page tables "s.kv.pt" /
@@ -13,7 +13,7 @@
 //! - Split KV's dense exchange (glue "kx_dense") reads the stacked split table with the int32 rslot copy (the glue's
 //!   own args); a union (rows > 16) is refused: row windows stay within the dense exchange.
 //! - Long-context selections (backend.select past attn_cuda.plan, or past the index budget, with a RowWin): dtopk's
-//!   `_dtopk` and `_block_keys` take the table's `pos` with ROWS on (dtopk.select / blocks, index.candidate_blocks:
+//!   `_dtopk` (`_dtopk_b`) and `_block_keys` take the table's `pos` with ROWS on (dtopk.select / blocks, index.candidate_blocks:
 //!   `rows=win.rows`); `_keys` has no row knobs. A row block of backend._blocked (block.zig's glue "block_pos" with its
 //!   first row and rows) is RowWin.sub: its `_scores` / `_block_keys` read rows [a, a + rows) of `pos` and `rslot`.
 //!   The visible counts (glue "counts", backend.visible_counts) read `pos`.
@@ -149,7 +149,7 @@ pub const Rewriter = struct {
             args[21].arg = .{ .i = if (pt_on) w.s.pts else 0 };
             return out;
         }
-        if (eq(c.name, "tf_dsv41_attn_cuda_v1.topk")) {
+        if (eq(c.name, "tf_dsv41_attn_cuda_v1.topk") or eq(c.name, "tf_dsv41_topk_b_v1.topk")) {
             if (args.len < 22) return error.BadCall;
             args[17].arg = w.col(.pos);
             return out;
@@ -160,14 +160,14 @@ pub const Rewriter = struct {
     fn triton(w: *const Rewriter, c: calls.Call) !calls.Call {
         const args = @constCast(c.args);
         const writes = eq(c.name, "_kv_store") or eq(c.name, "_pool_norm") or eq(c.name, "_index_k");
-        const reads = eq(c.name, "_scores");
+        const reads = eq(c.name, "_scores") or eq(c.name, "_scores_b");
         if (eq(c.name, "_rope")) {
             const p = find(args, "POS") orelse return error.BadCall;
             args[p].arg = w.col(.pos);
             return c;
         }
         const b = w.rowsOf(args);
-        if (eq(c.name, "_dtopk") or eq(c.name, "_block_keys")) {
+        if (eq(c.name, "_dtopk") or eq(c.name, "_dtopk_b") or eq(c.name, "_block_keys")) {
             // dtopk.select / blocks and index.candidate_blocks with rows=True: q = POS[r] (no slot: the scores are
             // the row's already)
             const p = find(args, "POS") orelse return error.BadCall;

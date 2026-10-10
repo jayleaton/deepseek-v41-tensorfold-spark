@@ -47,6 +47,15 @@ pub fn ldSymbol(comptime nt: u32, comptime pd: u32, comptime lo: u32, comptime h
     return std.fmt.comptimePrint("_ZN10dsv41_x3ld9ld_kernelILi2ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}EEEv" ++ tail16, .{ nt, pd, lo, hi, probe });
 }
 
+/// TF_DSV41_X3LD_EPI (x3ld_epi.cu, ours): x3ld (nt 8) with the gate/up epilogue (`gu`) or down_combine (`dn`: fp32
+/// out, `dnb`: bf16 out) in its tail; pd 1 / 2 and the (lo, hi) ranges as x3ld's.
+pub const EpiKind = enum { gu, dn, dnb };
+pub const epi_pds = [_]u32{ 1, 2 };
+
+pub fn epiSymbol(comptime kind: EpiKind, comptime pd: u32, comptime lo: u32, comptime hi: u32) [:0]const u8 {
+    return std.fmt.comptimePrint("dsv41_x3ld_epi_{s}_{d}_{d}_{d}", .{ @tagName(kind), pd, lo, hi });
+}
+
 pub fn pfSymbol(comptime nt: u32, comptime mtl: u32, comptime lo: u32, comptime hi: u32) [:0]const u8 {
     return std.fmt.comptimePrint("_ZN10dsv41_x3pf9pf_kernelILi2ELi{d}ELi{d}ELi{d}ELi{d}EEEv" ++ tail16, .{ nt, mtl, lo, hi });
 }
@@ -101,6 +110,8 @@ pub const GmShape = struct {
 
 /// x3gm v2 (gm2_kernel): the tiles it is built at (x3gm.py V2_GU / V2_DN).
 pub const v2_gu = [_]usize{ 0, 1 };
+/// gate / up's 128-member tile (gu_tiles[2], NG 16) that x3gm3.cu builds gm2_kernel at, two inputs only
+pub const gu2_cfg: usize = 2;
 pub const v2_dn = [_]usize{0};
 
 /// x3gm.cu Smem2<MATS, XM, tile>: one launch over every width of gm_k2s, so the widest width's dynamic shared memory;
@@ -319,10 +330,13 @@ pub const Functions = struct {
     gm_plan: cuda.Function,
     gm2_gu: [2][v2_gu.len]Gm, // [xm - 1][cfg]
     gm2_dn: Gm,
+    /// gm2_kernel at GU2 (128-member gate / up, two inputs): x3gm3.cu's instance (TF_DSV41_GM_GU2)
+    gm2_gu2: Gm,
     gm3: [v3_variants.len]Gm,
+    epi: [3][epi_pds.len][ranges.len]cuda.Function, // [EpiKind][pd - 1][range]
 
     /// Resolves every instance (a wrong name fails here, not on a rare path) and opts x3gm into its shared memory.
-    pub fn resolve(experts: cuda.Module, x3ld: cuda.Module, x3pf: cuda.Module, x3gm: cuda.Module, x3gm_plan: cuda.Module, x3gm3: cuda.Module, router_glue: cuda.Module, optin: u32) !Functions {
+    pub fn resolve(experts: cuda.Module, x3ld: cuda.Module, x3pf: cuda.Module, x3gm: cuda.Module, x3gm_plan: cuda.Module, x3gm3: cuda.Module, router_glue: cuda.Module, x3ld_epi: cuda.Module, optin: u32) !Functions {
         var f: Functions = undefined;
         inline for (ld_cfgs, 0..) |c, ci| inline for (ranges, 0..) |r, ri| {
             f.ld[0][ci][ri] = try x3ld.function(ldSymbol(c[0], c[1], r[0], r[1], 0));
@@ -330,6 +344,9 @@ pub const Functions = struct {
         };
         inline for (pf_cfgs, 0..) |c, ci| inline for (ranges, 0..) |r, ri| {
             f.pf[ci][ri] = try x3pf.function(pfSymbol(c[0], c[1], r[0], r[1]));
+        };
+        inline for (.{ EpiKind.gu, EpiKind.dn, EpiKind.dnb }, 0..) |kind, ki| inline for (epi_pds, 0..) |pd, pi| inline for (ranges, 0..) |r, ri| {
+            f.epi[ki][pi][ri] = try x3ld_epi.function(epiSymbol(kind, pd, r[0], r[1]));
         };
         inline for (grouped_cfgs, 0..) |c, ci| inline for (upstream_ranges, 0..) |r, ri| {
             f.grouped[ci][ri] = try experts.function(groupedSymbol(c[0], c[1], c[2], r[0], r[1]));
@@ -353,6 +370,7 @@ pub const Functions = struct {
             f.gm2_gu[xm - 1][ci] = try gmResolve(x3gm, gm2GuSymbol(xm, c), gm2Shape(2, xm, gu_tiles[c]), optin);
         };
         f.gm2_dn = try gmResolve(x3gm, gm2DnSymbol(0), gm2Shape(1, 1, dn_tiles[0]), optin);
+        f.gm2_gu2 = try gmResolve(x3gm3, gm2GuSymbol(2, gu2_cfg), gm2Shape(2, 2, gu_tiles[gu2_cfg]), optin);
         inline for (v3_variants, 0..) |v, i| f.gm3[i] = try gmResolve(x3gm3, gm3Symbol(v), gm2Shape(v.mats, v.xm, v.t), optin);
         f.gm_plan = try x3gm_plan.function("_ZN15dsv41_x3gm_plan11plan_kernelEPKiiiiPiS2_S2_S2_S2_");
         f.gm_rot = .{ .{ try x3gm.function(gm_sym.rot_bf16_1), try x3gm.function(gm_sym.rot_bf16_2) }, .{ try x3gm.function(gm_sym.rot_f16_1), try x3gm.function(gm_sym.rot_f16_2) } };
@@ -453,6 +471,45 @@ pub fn gmCheck(kind: GmKind, cfg: usize, K: usize, N: usize) Error!void {
     if ((K / 16) % ks != 0 or N % 128 != 0) return error.Shape;
 }
 
+/// x3ld_epi.cu's Epi (by value): the epilogue's operands, 0 where a kind does not use one.
+pub const Epi = extern struct {
+    pick: u64 = 0,
+    sv0: u64 = 0, // gate/up: svh_g; down: svh_d
+    sv1: u64 = 0, // gate/up: svh_u
+    sd: u64 = 0, // gate/up: suh_d
+    xd: u64 = 0, // gate/up: Xd
+    y: u64 = 0, // down: y
+    wts: u64 = 0, // down: the combine's weights
+    out: u64 = 0, // down: L.moe (fp32 or bf16)
+    ticket: u64 = 0, // int32, zero between launches
+    E: c_int = 0,
+    limit: f32 = 0,
+    act_mode: c_int = 0,
+};
+
+comptime {
+    std.debug.assert(@sizeOf(Epi) == 88 and @offsetOf(Epi, "E") == 72);
+}
+
+/// The ticket words a fused launch counts on: gate/up one an (expert, member tile, 128-column block), down one a
+/// (row, 128-column block); the role holds the larger.
+pub fn epiTicketWords(g: Grouped, kind: EpiKind) usize {
+    return if (kind == .gu) g.nexp * ((g.maxm + 15) / 16) * (g.N / 128) else (g.P / g.slots) * (g.N / 128);
+}
+
+/// TF_DSV41_X3LD_EPI's checks: x3ld's at nt 8 and pd 1 / 2, plus the fused tails' shapes (gate/up: two matrices;
+/// down: one matrix, one split, so a CTA holds the whole Z of its block).
+pub fn x3ldEpiCheck(g: Grouped, kind: EpiKind, pd: u32) Error!struct { pd: usize, range: usize } {
+    const c = try x3ldCheck(g, 8, pd, 0);
+    const pi = std.mem.indexOfScalar(u32, &epi_pds, pd) orelse return error.Unsupported;
+    if (g.N % 128 != 0 or g.slots == 0 or g.slots > 32 or g.P % g.slots != 0) return error.Shape;
+    switch (kind) {
+        .gu => if (g.mats != 2) return error.Shape,
+        .dn, .dnb => if (g.mats != 1 or g.SK != 1) return error.Shape,
+    }
+    return .{ .pd = pi, .range = c.range };
+}
+
 pub const Ops = struct {
     f: *const Functions,
     s: cuda.Stream,
@@ -465,6 +522,18 @@ pub const Ops = struct {
         var a: cuda.Args = .{};
         g.add(&a);
         try go(o.f.ld[if (probe == 3) 1 else 0][c.cfg][c.range].?, o.s, .{ g.nexp, g.N / (16 * nt), g.mats * g.SK * mt }, 128, 0, pdl, &a);
+    }
+
+    /// TF_DSV41_X3LD_EPI: x3ld (nt 8) with the epilogue in its tail: `gu` Z and Xd (x3ld + gateup_epilogue), `dn` /
+    /// `dnb` y and out (x3ld + down_combine; Z not stored). x3ld's grid; the ticket words zero before and after.
+    pub fn x3ldEpi(o: Ops, g: Grouped, kind: EpiKind, pd: u32, epi: Epi) !void {
+        const c = try x3ldEpiCheck(g, kind, pd);
+        if (epi.ticket == 0 or epi.pick == 0) return error.Shape;
+        const mt = (g.maxm + 15) / 16;
+        var a: cuda.Args = .{};
+        g.add(&a);
+        a.add(epi);
+        try go(o.f.epi[@intFromEnum(kind)][c.pd][c.range], o.s, .{ g.nexp, g.N / 128, g.mats * g.SK * mt }, 128, 0, false, &a);
     }
 
     /// x3pf (expert_prefill.grouped): the same Z, MTL member tiles a program.
@@ -625,7 +694,8 @@ pub const Ops = struct {
     /// dsv41_x3gm_gateup2_cuda (x3gm v2): Xd of every pass of every width in one launch; `k2e` int32 [E] the experts'
     /// gate widths (each in gm_k2s: gm2WidthsOk), `tables`: tg / tu are int64 pointer tables (ragged), else the stacks.
     pub fn gm2Gateup(o: Ops, xg: u64, xu: u64, tg: u64, tu: u64, k2e: u64, order: u64, pe: u64, poff: u64, pcnt: u64, npass: u64, ticket: u64, svh_g: u64, svh_u: u64, suh_d: u64, xd: u64, K: usize, N: usize, shx: bool, cfg: usize, use_ticket: bool, limit: f32, tables: bool) !void {
-        const ci = std.mem.indexOfScalar(usize, &v2_gu, cfg) orelse return error.Unsupported;
+        const gu2 = cfg == gu2_cfg and !shx;
+        const ci = std.mem.indexOfScalar(usize, &v2_gu, cfg) orelse if (gu2) 0 else return error.Unsupported;
         try gmCheck(.gu, cfg, K, N);
         var a: GmArgs = .{ .x0 = xg, .x1 = xu, .k2e = k2e, .order = order, .pe = pe, .poff = poff, .pcnt = pcnt, .npass = npass, .ticket = ticket, .sv0 = svh_g, .sv1 = svh_u, .sd = suh_d, .xd = xd, .K = int(K), .N = int(N), .limit = limit };
         if (tables) {
@@ -635,7 +705,7 @@ pub const Ops = struct {
             a.t0 = tg;
             a.t1 = tu;
         }
-        try o.gmLaunch(o.f.gm2_gu[if (shx) 0 else 1][ci], a, use_ticket);
+        try o.gmLaunch(if (gu2) o.f.gm2_gu2 else o.f.gm2_gu[if (shx) 0 else 1][ci], a, use_ticket);
     }
 
     /// dsv41_x3gm_down2_cuda (x3gm v2): Y of every pass of every width in one launch; `k2e` the experts' down widths.
@@ -743,6 +813,13 @@ test "x3gm v2 shapes and tuning" {
     try std.testing.expect(!gm2WidthsOk(&.{ 2, 6 }));
 }
 
+test "x3gm v2 at GU2 (TF_DSV41_GM_GU2, x3gm3.cu's instance): 512 threads, every width's ring in sm_121's opt-in memory" {
+    const s = gm2Shape(2, 2, gu_tiles[gu2_cfg]);
+    try std.testing.expectEqual(@as(u32, 512), s.threads);
+    try std.testing.expect(s.smem > 0 and s.smem + 4 * 8 * gu_tiles[gu2_cfg][1] + 4 <= gm_smem_max);
+    try std.testing.expectEqualStrings("_ZN10dsv41_x3gm10gm2_kernelILi2ELi2ELi1ELi16ELi2ELi4ELi4EEEvNS_4ArgsE", gm2GuSymbol(2, gu2_cfg));
+}
+
 test "x3gm shapes, fits and tuning as x3gm.py" {
     // G6 gate/up cfg 0 at K2 6, one rotated input: 3 x (64 x 64 x 2 + 2 x 4 x 8 x 24 x 4) = 49,152 + 4,608 ... per x3gm.smem_bytes
     const s = GmShape.of(2, 1, 6, gu_tiles[0]);
@@ -758,4 +835,19 @@ test "x3gm shapes, fits and tuning as x3gm.py" {
     try std.testing.expectEqual([2]usize{ 3, 2 }, gmTuned(&tune_default, null, null, 4096, 6, 384, true, 6, 6));
     try std.testing.expectEqual([2]usize{ 2, 2 }, gmTuned(&tune_default, null, null, 4096, 6, 384, false, 6, 6));
     try std.testing.expectEqual([2]usize{ 5, 4 }, gmTuned(&tune_default, 5, 4, 4096, 6, 384, false, 6, 6));
+}
+
+test "x3ld_epi checks" {
+    const g: Grouped = .{ .x0 = 0, .x1 = 0, .tp0 = 0, .tp1 = 0, .k2_0 = 0, .k2_1 = 0, .uids = 0, .ucount = 0, .members = 0, .z = 0, .mats = 2, .K = 5120, .N = 1152, .P = 28, .SK = 4, .slots = 7, .maxm = 4, .nexp = 28, .lo = 4, .hi = 10 };
+    _ = try x3ldEpiCheck(g, .gu, 1);
+    try std.testing.expectError(error.Shape, x3ldEpiCheck(g, .dn, 1));
+    var d = g;
+    d.mats = 1;
+    d.K = 1152;
+    d.N = 5120;
+    d.SK = 1;
+    _ = try x3ldEpiCheck(d, .dnb, 1);
+    try std.testing.expectEqual(@as(usize, 4 * 40), epiTicketWords(d, .dn));
+    try std.testing.expectEqual(@as(usize, 28 * 1 * 9), epiTicketWords(g, .gu));
+    try std.testing.expectEqualStrings("dsv41_x3ld_epi_dnb_2_2_10", epiSymbol(.dnb, 2, 2, 10));
 }

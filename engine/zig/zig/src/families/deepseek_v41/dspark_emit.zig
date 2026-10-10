@@ -603,6 +603,7 @@ pub fn emitPass(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths
     var e: E = .{ .a = a, .cfg = cfg, .w = w, .o = o, .n = n, .start = 0 };
     var d: Ds = .{ .e = &e, .st = .{ .n = n, .window = cfg.window } };
     try d.pass();
+    if (o.holdsDeferred(e.n)) calls.holdDeferred(e.out.items);
     return e.out.items;
 }
 
@@ -612,6 +613,7 @@ pub fn emitPassSlots(a: std.mem.Allocator, cfg: *const Config, w: *const block.W
     var e: E = .{ .a = a, .cfg = cfg, .w = w, .o = o, .n = slots * n, .start = 0 };
     var d: Ds = .{ .e = &e, .st = .{ .n = n, .window = cfg.window, .lay = Layout.of(slots, n, cfg.window) }, .sl = .{ .ring_slots = ring_slots } };
     try d.pass();
+    if (o.holdsDeferred(e.n)) calls.holdDeferred(e.out.items);
     return e.out.items;
 }
 

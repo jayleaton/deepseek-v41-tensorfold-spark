@@ -220,6 +220,10 @@ pub const Served = struct {
         o.gm_v2 = try @import("gm2pf.zig").mode(&knobs.env);
         // TF_DSV41_PF_OVERLAP: its pieces' projections (their own row counts) where the side stream is on
         o.pf_overlap = try knobs.pfOverlap(&knobs.env);
+        o.pf_overlap_site = o.pf_overlap > 0 and try knobs.pfOverlapSite(&knobs.env); // the site pieces' `_finish_k`
+        o.stream_rb = try knobs.streamRb(&knobs.env); // TF_DSV41_STREAM_RB: the twin's variants
+        o.index_bound = try knobs.indexBound(&knobs.env); // TF_DSV41_INDEX_BOUND: `_scores_b`'s and `_dtopk_b`'s variants
+        o.mhc_site_rows = try knobs.mhcSiteRows(&knobs.env); // the site pieces' `_finish_k` rows
         if (o.pf_overlap > 0) o.branches = (try @import("branches.zig").settings()).on;
         if (try knobs.indexBudget(&knobs.env)) |b| o.index_budget = b;
         // TF_DSV41_MHC_PFDEC: its norm is `_finish_k` without COEF at the windows it covers

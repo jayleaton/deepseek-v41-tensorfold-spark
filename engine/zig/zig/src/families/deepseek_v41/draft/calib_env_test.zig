@@ -5,6 +5,7 @@ const std = @import("std");
 const Value = std.json.Value;
 const calib_env = @import("calib_env.zig");
 const depth = @import("depth.zig");
+const costs_mod = @import("costs.zig");
 
 const gpa = std.testing.allocator;
 const io = std.testing.io;
@@ -125,4 +126,57 @@ test "the depth's knobs read as Python's" {
     try std.testing.expectError(error.DraftDepth, calib_env.depthSettings(&Env.get));
     Env.pairs = &.{.{ "TF_DSV41_DEPTH_JOINT", "3" }};
     try std.testing.expectError(error.DepthJoint, calib_env.depthSettings(&Env.get));
+}
+
+test "TF_DSV41_CALIB=measure / zig: the engine measures; a stored Zig table is read back by zig only" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [256]u8 = undefined;
+    const root = try std.fmt.bufPrint(&buf, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const want: calib_env.Shape = .{ .slots = 4, .world = 2, .dspark = true, .context = 1048576 };
+    var m = try calib_env.load(gpa, io, .{ .mode = "Measure", .dir = root }, want, 64);
+    defer m.deinit(gpa);
+    try std.testing.expectEqual(calib_env.Source.measure, m.source);
+    try std.testing.expectEqual(@as(usize, 64), m.costs.verify.len); // the defaults until measured
+    var none = try calib_env.load(gpa, io, .{ .mode = "zig", .dir = root }, want, 64);
+    defer none.deinit(gpa);
+    try std.testing.expectEqual(calib_env.Source.measure, none.source);
+    // a Python entry for the shape: cached reads it, zig does not
+    try tmp.dir.writeFile(io, .{ .sub_path = "calib-py.json", .data = "{\"verify\": [21.0, 26.0], \"draft\": 3.6, \"meta\": {\"shape\": {\"slots\": 4, \"world\": 2, \"dspark\": true}, \"time\": \"2026-10-07T12:00:00\"}}" });
+    var verify = [_]f64{ 20.0004999, 24.5, 24.25, 30.0 };
+    const c: costs_mod.Costs = .{ .verify = &verify, .draft = 3.5005, .slot = 0.611 };
+    const kept = [_]f64{ 20.0, 24.4 };
+    const path = try calib_env.store(gpa, io, root, want, c, .{ .method = .{}, .seconds = 7.25, .kept = &kept, .tokens = 201 }, 1_791_504_000);
+    defer gpa.free(path);
+    var nb: [64]u8 = undefined;
+    const name = try calib_env.zigName(&nb, want);
+    try std.testing.expect(std.mem.startsWith(u8, name, "calib-zig-") and name.len == "calib-zig-.json".len + 16);
+    try std.testing.expectEqualStrings(name, std.fs.path.basename(path));
+    var z = try calib_env.load(gpa, io, .{ .mode = "zig", .dir = root }, want, 64);
+    defer z.deinit(gpa);
+    try std.testing.expectEqual(calib_env.Source.cached, z.source);
+    try std.testing.expectEqualStrings(name, std.fs.path.basename(z.path.?));
+    try std.testing.expectEqualSlices(f64, &.{ 20.0, 24.5, 24.25, 30.0 }, z.costs.verify); // shared: microseconds
+    try std.testing.expectEqual(@as(f64, 3.5), z.costs.draft); // 3500.5 us: half to even
+    try std.testing.expectEqual(@as(f64, 0.611), z.costs.slot);
+    var py = try calib_env.load(gpa, io, .{ .mode = "cached", .dir = root }, want, 64);
+    defer py.deinit(gpa);
+    try std.testing.expectEqualStrings("calib-py.json", std.fs.path.basename(py.path.?)); // never the Zig entry
+    var real = try calib_env.load(gpa, io, .{ .mode = "real", .dir = root }, .{ .slots = 1, .world = 2, .dspark = true }, 64);
+    defer real.deinit(gpa);
+    try std.testing.expectEqualStrings("calib-py.json", std.fs.path.basename(real.path.?));
+    // the stored file: Python's keys, the engine, a UTC time
+    const bytes = try tmp.dir.readFileAlloc(io, name, gpa, .limited(1 << 20));
+    defer gpa.free(bytes);
+    const F = struct { engine: []const u8, meta: struct { time: []const u8, seconds: f64, prompt_tokens: u64, shape: struct { slots: u32, context: ?u64 }, method: struct { stat: []const u8, shape: []const u8, reps: u32 } } };
+    const f = try std.json.parseFromSlice(F, gpa, bytes, .{ .ignore_unknown_fields = true });
+    defer f.deinit();
+    try std.testing.expectEqualStrings("zig", f.value.engine);
+    try std.testing.expectEqualStrings("2026-10-09T00:00:00", f.value.meta.time);
+    try std.testing.expectEqual(@as(u64, 1048576), f.value.meta.shape.context.?);
+    try std.testing.expectEqualStrings("median", f.value.meta.method.stat);
+    // another shape's Zig entry is not ours
+    var other = try calib_env.load(gpa, io, .{ .mode = "zig", .dir = root }, .{ .slots = 4, .world = 1, .dspark = true }, 64);
+    defer other.deinit(gpa);
+    try std.testing.expectEqual(calib_env.Source.measure, other.source);
 }

@@ -37,6 +37,7 @@ const dsv41_kernels = [_]Kernel{
     .{ .name = "dsv41_x3pf", .src = "deepseek_v41/x3pf", .flags = &.{ "-O3", "-lineinfo" } }, // tf_dsv41_x3pf_v1
     .{ .name = "dsv41_x3gm", .src = "deepseek_v41/x3gm", .flags = &.{ "-O3", "-lineinfo" } }, // tf_dsv41_x3gm_v1
     .{ .name = "dsv41_x3gm3", .src = "deepseek_v41/x3gm3", .flags = &.{ "-O3", "-lineinfo" } }, // ours: x3gm v3 (x3gm.cu's device code)
+    .{ .name = "dsv41_x3ld_epi", .src = "deepseek_v41/x3ld_epi", .flags = &.{ "-O3", "-lineinfo" } }, // ours: x3ld + the expert epilogues (TF_DSV41_X3LD_EPI)
     .{ .name = "dsv41_x3gm_plan", .src = "deepseek_v41/x3gm_plan", .flags = &.{"-O3"} }, // ours: x3gm.plan's torch ops
     .{ .name = "dsv41_topk_keys", .src = "deepseek_v41/topk_keys", .flags = &.{"-O3"} }, // ours: pick.top's torch.topk
     .{ .name = "dsv41_kvsplit", .src = "deepseek_v41/kvsplit", .flags = &.{"-O3"} }, // ours: split KV's exchange copies
@@ -48,6 +49,7 @@ const dsv41_kernels = [_]Kernel{
     .{ .name = "dsv41_dense3", .src = "deepseek_v41/dense3", .flags = &.{ "-O3", "--expt-relaxed-constexpr" } }, // tf_dsv41_dense3_v1
     .{ .name = "dsv41_attn", .src = "deepseek_v41/attn_cuda", .flags = &.{ "-O3", "-lineinfo", "--fmad=false" } }, // tf_dsv41_attn_cuda_v1
     .{ .name = "dsv41_topk", .src = "deepseek_v41/topk_cuda", .flags = &.{ "-O3", "-lineinfo", "--fmad=false" } }, // tf_dsv41_attn_cuda_v1
+    .{ .name = "dsv41_topk_b", .src = "deepseek_v41/topk_b", .flags = &.{ "-O3", "-lineinfo", "--fmad=false" } }, // ours: topk_cuda.cu row-bounded (TF_DSV41_INDEX_BOUND)
     .{ .name = "dsv41_mhc", .src = "deepseek_v41/mhc_cuda", .flags = &.{ "-O3", "-lineinfo", "--fmad=false" } }, // tf_dsv41_mhc_cuda_v1
     .{ .name = "dsv41_mhc_pf", .src = "deepseek_v41/mhc_pf", .flags = &.{ "-O3", "-lineinfo", "--fmad=false" } }, // tf_dsv41_mhc_pf_v1
     .{ .name = "dsv41_router_gemv", .src = "deepseek_v41/router_gemv", .flags = &.{ "-O3", "-lineinfo" } }, // tf_dsv41_router_gemv_v2
@@ -72,6 +74,11 @@ var dsv41_sampling_image: ?std.Build.LazyPath = null;
 const dsv41_vision: Kernel = .{ .name = "dsv41_vision", .src = "deepseek_v41_vision/vision", .flags = &.{"-O3"} }; // nvcc defaults as torch: fmad on
 var dsv41_vision_image: ?std.Build.LazyPath = null;
 
+/// The two-tile dense linears (lin2.cu, ours: TF_DSV41_LIN2), optional the same way (dsv41_lin2.fatbin): an empty
+/// image, and the knob refuses at boot.
+const dsv41_lin2: Kernel = .{ .name = "dsv41_lin2", .src = "deepseek_v41/lin2", .flags = &.{ "-O3", "--expt-relaxed-constexpr" } };
+var dsv41_lin2_image: ?std.Build.LazyPath = null;
+
 /// The DeepSeek-V4.1 kernel module (zig/src/families/deepseek_v41/kernels.zig) over `cuda`; empty `images`: host-only.
 pub fn dsv41Kernels(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, cuda: *std.Build.Module, images: []const ?std.Build.LazyPath) *std.Build.Module {
     const options = b.addOptions();
@@ -87,6 +94,8 @@ pub fn dsv41Kernels(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     m.addAnonymousImport("dsv41_fatbin_dsv41_sampling", .{ .root_source_file = sampling orelse b.addWriteFiles().add("empty.fatbin", "") });
     const vision = if (with) dsv41_vision_image else null;
     m.addAnonymousImport("dsv41_fatbin_dsv41_vision", .{ .root_source_file = vision orelse b.addWriteFiles().add("empty.fatbin", "") });
+    const lin2 = if (with) dsv41_lin2_image else null;
+    m.addAnonymousImport("dsv41_fatbin_dsv41_lin2", .{ .root_source_file = lin2 orelse b.addWriteFiles().add("empty.fatbin", "") });
     return m;
 }
 
@@ -176,6 +185,13 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         } else |_| {}
     } else if (nvcc) |tool| dsv41_vision_image = fatbin(b, tool, version.?, dsv41_vision, sms);
     if (dsv41_vision_image) |file| fatbin_step.dependOn(&b.addInstallFile(file, "fatbin/dsv41_vision.fatbin").step);
+    if (prebuilt) |dir| {
+        const file = b.pathJoin(&.{ dir, "dsv41_lin2.fatbin" });
+        if (std.Io.Dir.cwd().access(b.graph.io, file, .{})) |_| {
+            dsv41_lin2_image = b.graph.cwdRelativePath(file);
+        } else |_| {}
+    } else if (nvcc) |tool| dsv41_lin2_image = fatbin(b, tool, version.?, dsv41_lin2, sms);
+    if (dsv41_lin2_image) |file| fatbin_step.dependOn(&b.addInstallFile(file, "fatbin/dsv41_lin2.fatbin").step);
     const dsv41 = dsv41Kernels(b, target, optimize, cuda, if (nvcc != null or prebuilt != null) &dsv41_images else &.{});
     const mods = family(b, target, optimize, cuda, draft_ids);
     const cli = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cuda_main.zig"), .target = target, .optimize = optimize, .link_libc = true });
@@ -206,7 +222,10 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const dsv41_api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true });
     dsv41_api.addImport("lanes", dsv41_lanes);
     dsv41_m1.addImport("engine_api", dsv41_api);
-    dsv41_m1.addImport("dsv41_serve", @import("sampling.zig").serve(b, target, optimize, dsv41_lanes).serve); // the keyed sampler's Picker
+    const m1_serve = @import("sampling.zig").serve(b, target, optimize, dsv41_lanes).serve;
+    dsv41_m1.addImport("dsv41_serve", m1_serve); // the keyed sampler's Picker
+    // TF_DSV41_CALIB=measure's calibration text (calib_gpu.zig, via serve_engine.zig): the serving module's tokenizer
+    dsv41_m1.addImport("tokenizer", m1_serve.import_table.get("tokenizer").?);
     @import("grammar.zig").addTo(b, dsv41_m1, target, optimize); // structured output (grammar_gpu.zig): xgrammar's core, the mask PTX
     @import("sampling.zig").gpu(b, target, optimize, cuda, dsv41); // tf-dsv41-samp: the keyed sampler's device steps
     b.installArtifact(b.addExecutable(.{ .name = "tf-dsv41-m1", .root_module = dsv41_m1 }));

@@ -55,6 +55,14 @@ pub const Options = struct {
     branch_rows: i64 = 64,
     /// TF_DSV41_MHC_DEFER (with R1): R1's coefficient launch tagged for the deferred stream, the next mHC call joins it
     mhc_defer: bool = false,
+    /// TF_DSV41_MHC_DEFER_AT=exchange (ours, with mhc_defer): each deferred launch issued at the next exchange
+    /// (calls.holdDeferred); TF_DSV41_MHC_DEFER_AT_ROWS: only in programs of at most this many rows (0: every one)
+    mhc_defer_hold: bool = false,
+    /// TF_DSV41_COEF_LATE (ours, with MHC_DEFER; branches.zig): a deferred coefficient launch moves to just before the
+    /// sublayer's exchange (still before its join), so `coef_kernel` runs beside the exchange's wait instead of on top
+    /// of the one-wave router GEMV / first projection that follows its site; the same calls, arguments and data
+    coef_late: bool = false,
+    mhc_defer_hold_rows: i64 = 0,
     /// TF_DSV41_MHC_PFDEC (ours, 0 = off): mixing mHC sites of windows of at least this many rows (1-64) as mhc_pf's site
     /// + the normed input + mhc_cuda's coef_kernel (block_wide.zig); the same bits as the path they replace
     mhc_pf_rows: i64 = 0,
@@ -83,10 +91,29 @@ pub const Options = struct {
     /// pieces, each sent on the branches' side stream while the main stream computes the next piece's producer (wo_a /
     /// wo_b, the shared expert); 0 / 1: one exchange after its producer (Python's order). Needs `branches` and TP=2
     pf_overlap: i64 = 0,
+    /// TF_DSV41_PF_OVERLAP_SITE (with pf_overlap): every exchange piece goes on the side stream (the last too), and the
+    /// next mixing site (a boundary's mhc_pf.run + `_finish_k`, row-wise) runs in the same row pieces, piece p after
+    /// exchange piece p only, so the site's early pieces hide the later pieces' exchanges
+    pf_overlap_site: bool = false,
+    /// TF_DSV41_MHC_SITE_ROWS (0 off; 256-4,096, a multiple of 16): a prefill boundary site (mhc_pf.run + `_finish_k`,
+    /// row-wise) in pieces of about this many rows on the main stream, so `_finish_k` reads a piece's partials from
+    /// L2; a site the exchange pieces already cut (pf_overlap_site) keeps theirs
+    mhc_site_rows: i64 = 0,
     /// TF_DSV41_PF_TBO (block_prefill.emitTbo): a prompt's CED encoder segments two at a time, the second half a layer
     /// behind the first on the branches' side stream, so one's routed experts (DRAM-bound) run beside the other's
     /// attention and dense GEMMs (compute-bound). Needs `branches`; the exchange pieces (pf_overlap) are off under it
     pf_tbo: bool = false,
+    /// TF_DSV41_STREAM_RB (1: `_stream_pf`, the next tile's key loads ahead; 2 / 4; 0 off): the long-context indexer's stream top-k (`_stream`, positions mode) as the
+    /// Zig-own row-blocked twin `_stream_rb<N>` (tools/zig/dsv41_triton: N rows a program, each row `score_tile`'s
+    /// arithmetic: the same split buffers, the same selection)
+    stream_rb: i64 = 0,
+    /// TF_DSV41_INDEX_BOUND (ours, prod_knobs.indexBound): a decode window's dense index scores as the Zig-own twin
+    /// `_scores_b` (tools/zig/dsv41_triton/dsv41_zig_triton/scores_b.py): a (row, key tile) past the row's own visible
+    /// keys stores `_scores`' -inf without its key loads and dot (a row window scores every row over the mix's bucket);
+    /// and the decode window's top-k as the Zig-own twins `_dtopk_b` (tools/zig/dsv41_triton/dsv41_zig_triton/
+    /// dtopk_b.py) and `tf_dsv41_topk_b_v1.topk` (zig/kernels/cuda/deepseek_v41/topk_b.cu): each row's selection
+    /// stops at its own visible end (dense select: max(nvis, K); candidate blocks: the visible blocks), the same bytes
+    index_bound: bool = false,
     /// R1 (prod-perf1's decode knobs, docs DSV41-DECODE-R1.md; the same bits): attention split 4 with q's RoPE in the
     /// kernel (ATTN_SPLIT, ATTN_ROPE), mHC's parallel tail + deferred coefficients (MHC_TAIL, MHC_DEFER), the router's
     /// prune + kit rounding (RG_PRUNE, PRUNE_KIT), a bf16 MoE partial (MOE_BF16), q_norm folded into its consumers'
@@ -94,6 +121,11 @@ pub const Options = struct {
     r1: bool = false,
     /// TF_DSV41_ROUTER_GROUP_ROT: wide grouping and expert input rotation in one launch (default off).
     router_group_rot: bool = false,
+    /// TF_DSV41_X3LD_EPI (ours, prod_knobs.zig; default off): the decode MoE's x3ld + gateup_epilogue and x3ld +
+    /// down_combine as two fused launches (x3ld_epi.cu: the epilogue in the streamer's tail behind a last-arrival
+    /// ticket, the same arithmetic in the same order, so the same Xd / y / L.moe bits); ticket words "s.ex.epi" /
+    /// "s.dx.epi" (zero between launches)
+    x3ld_epi: bool = false,
     /// KV-only RMS feeding SWA store; separately gated, default off.
     kv_norm_store: bool = false,
     /// R1 off, but the bindings of a twin that always takes R1's trailing arguments (the midprofile twin, dba6a1f+):
@@ -111,12 +143,20 @@ pub const Options = struct {
     /// TF_DSV41_GM_V2 (gm2pf.zig): prefill's routed experts on x3gm v2 (gm2_kernel); off: v1 (the captures' path). The
     /// same bits either way.
     gm_v2: @import("gm2pf.zig").Mode = .off,
+    /// TF_DSV41_GM_GU2 (gm2pf.zig, with gm_v2 `one`): a 4,096-row segment's gate / up at the 128-member tile GU2 over
+    /// its own 128-member plan; down keeps DN0 and the 64-member plan
+    gm_gu2: bool = false,
     /// TF_DSV41_INDEX_BUDGET_MIB (bytes): the indexer's materialised scores + sort keys a launch (backend.index_budget:
     /// prefill segments and decode windows past it select in row blocks through `_keys`; the same bits)
     index_budget: i64 = 256 << 20,
     /// a row-mode program (batch.zig, rowmode.zig: Python's RowWin): every row block scores the context bucket's keys
     /// (RowWin.sub keeps `cap`) and no window streams its top-k (backend.select: `not win.rows`)
     rows: bool = false,
+
+    /// TF_DSV41_MHC_DEFER_AT(_ROWS): a program of `rows` rows issues its deferred launches at the next exchange.
+    pub fn holdsDeferred(o: Options, rows: i64) bool {
+        return o.mhc_defer_hold and (o.mhc_defer_hold_rows == 0 or rows <= o.mhc_defer_hold_rows);
+    }
 };
 
 /// The paged pool as a window's calls see it (pool.py, slots.py: one slot's 1-D table, PT / PSH a family).
@@ -166,10 +206,14 @@ pub const Emitter = struct {
     br_side: bool = false,
     br_fork: bool = false,
     br_join: bool = false,
+    br_mark: u8 = 0,
+    br_wait: u8 = 0,
     /// TF_DSV41_MHC_DEFER: the next call is the coefficient launch / joins it; a coefficient launch not joined yet
     df_side: bool = false,
     df_join: bool = false,
     df_pending: bool = false,
+    /// TF_DSV41_COEF_LATE: the index of a deferred coefficient launch not joined yet (moved to the next exchange)
+    df_at: ?usize = null,
     /// a multi-segment prefill (block_prefill.emitMulti): the current segment's first row in the run's per-row roles
     /// (the selection's rows); 0 elsewhere
     row0: i64 = 0,
@@ -219,13 +263,37 @@ pub const Emitter = struct {
         x.side = e.br_side;
         x.fork = e.br_fork;
         x.join = e.br_join;
+        x.mark = e.br_mark;
+        x.wait = e.br_wait;
         e.br_fork = false;
         e.br_join = false;
+        e.br_mark = 0;
+        e.br_wait = 0;
         x.defer_side = e.df_side;
         x.defer_join = e.df_join;
         e.df_side = false;
         e.df_join = false;
+        if (e.o.coef_late and e.marks == null) try e.lateCoef(&x);
         try e.out.append(e.a, x);
+    }
+
+    /// TF_DSV41_COEF_LATE: a deferred coefficient launch (`coef_kernel`, read only by the next mHC call, which joins
+    /// it) leaves its place after the site and goes just before the next exchange of the same fork region: the main
+    /// calls between them touch none of its roles (L.mhc.part, the weights, the next coefficient set), so every launch
+    /// sees the same data. A join before any exchange leaves it where it was. The exchange's spin leaves the SMs the
+    /// one-wave router GEMV (or the first projection) would otherwise share with it.
+    fn lateCoef(e: *Emitter, x: *const calls.Call) !void {
+        if (x.defer_join) e.df_at = null;
+        if (x.defer_side) {
+            e.df_at = e.out.items.len;
+            return;
+        }
+        const at = e.df_at orelse return;
+        if (!(x.glue and std.mem.startsWith(u8, x.name, "glue.exchange"))) return;
+        e.df_at = null;
+        const c = e.out.orderedRemove(at);
+        std.debug.assert(c.defer_side and c.begin == .none);
+        try e.out.append(e.a, c);
     }
 
     /// Appends positional arguments to the last emitted call (R1's trailing arguments).
@@ -928,7 +996,7 @@ pub const Emitter = struct {
         }
         const sc = try e.buf("L.scores", .{}, .f32, &.{ n, nk });
         try e.scoreRows(qi, iw, src, ratio, 0, n, try e.pos(), nk, sc, if (reindex) cand else null);
-        try e.topk(L, sc, cand, nk, ratio);
+        try e.topkOf(L, sc, cand, nk, ratio, e.o.index_bound);
     }
 
     /// index.scores over rows [a, a + rows) of the window into `out` [rows, nk]: dense (key i = position i), or over
@@ -938,7 +1006,7 @@ pub const Emitter = struct {
         const ID: i64 = e.cfg.index_dim;
         const cbs: i64 = e.cfg.candidate_block_size;
         const spg = try e.paging(ratio, false);
-        try e.triton("_scores", .{ rows, std.math.divCeil(i64, nk, 64) catch unreachable, 1 }, &.{
+        try e.triton(if (e.o.index_bound and cand == null) "_scores_b" else "_scores", .{ rows, std.math.divCeil(i64, nk, 64) catch unreachable, 1 }, &.{
             .{ .name = "QI", .arg = try e.view(qi.t.role, .bf16, &.{ rows, IH, ID }, &.{ IH * ID, ID, 1 }, a * IH * ID * 2) },
             .{ .name = "W", .arg = try e.view(iw.t.role, .bf16, &.{ rows, IH }, &.{ IH, 1 }, a * IH * 2) },
             .{ .name = "w_stride", .arg = .{ .i = IH } },               .{ .name = "IK", .arg = try e.indexKeys(src) },
@@ -1018,7 +1086,16 @@ pub const Emitter = struct {
     /// single job). A candidate source also picks the candidate blocks into `cand`; a Reindex layer's scores are over
     /// `cand`'s blocks. Python's short prefill segments take it too (block_prefill.zig).
     pub fn topk(e: *Emitter, L: u32, scores: Arg, cand: Arg, nk: i64, ratio: i64) !void {
+        return e.topkOf(L, scores, cand, nk, ratio, false);
+    }
+
+    /// `topk`; `bound` (TF_DSV41_INDEX_BOUND, decode windows): the dense select and candidate-block launches as the
+    /// row-bounded twins `_dtopk_b` / `tf_dsv41_topk_b_v1.topk` (the same grids, arguments and bytes); a Reindex
+    /// layer's selection over its candidates (mode 3: not in position order) keeps attn_cuda's.
+    fn topkOf(e: *Emitter, L: u32, scores: Arg, cand: Arg, nk: i64, ratio: i64, bound: bool) !void {
         const n = e.n;
+        const dtopk = if (bound) "_dtopk_b" else "_dtopk";
+        const topk_ext = if (bound and e.cfg.mode(L) != .reindex) "tf_dsv41_topk_b_v1.topk" else "tf_dsv41_attn_cuda_v1.topk";
         const reindex = e.cfg.mode(L) == .reindex;
         const cbs: i64 = e.cfg.candidate_block_size;
         const sel = try e.selection(L);
@@ -1029,7 +1106,7 @@ pub const Emitter = struct {
             // the counts in the same launch), then a candidate source's blocks alone (attn_cuda.blocks: one job over
             // the cdiv(nk, 8) blocks). A Reindex layer's scores are over the candidate blocks (16,384 keys): never here.
             if (reindex) return error.Unsupported;
-            try e.triton("_dtopk", .{ n, 1, 1 }, &.{
+            try e.triton(dtopk, .{ n, 1, 1 }, &.{
                 .{ .name = "S", .arg = scores },                 .{ .name = "s_stride", .arg = .{ .i = scores.t.stride[0] } },
                 .{ .name = "P", .arg = scores },                 .{ .name = "p_stride", .arg = .{ .i = 0 } },
                 .{ .name = "POS", .arg = try e.pos() },          .{ .name = "NK", .arg = .{ .i = nk } },
@@ -1047,7 +1124,7 @@ pub const Emitter = struct {
             if (bp[1] > topk_max_ept) {
                 // past 8 x 512 x 31 blocks too (positions past ~1,015,808): dtopk.blocks (_dtopk mode 2, no counts)
                 const cb: i64 = e.cfg.candidate_blocks;
-                return e.triton("_dtopk", .{ n, 1, 1 }, &.{
+                return e.triton(dtopk, .{ n, 1, 1 }, &.{
                     .{ .name = "S", .arg = scores },             .{ .name = "s_stride", .arg = .{ .i = scores.t.stride[0] } },
                     .{ .name = "P", .arg = scores },             .{ .name = "p_stride", .arg = .{ .i = 0 } },
                     .{ .name = "POS", .arg = try e.pos() },      .{ .name = "NK", .arg = .{ .i = nb } },
@@ -1065,7 +1142,7 @@ pub const Emitter = struct {
             try one.appendSlice(e.a, &job);
             try one.appendSlice(e.a, &job);
             try one.appendSlice(e.a, &.{ .{ .i = 1 }, try e.pos(), .{ .i = ratio }, .{ .i = cbs }, .{ .i = n }, .{ .i = bp[0] } });
-            return e.ext("tf_dsv41_attn_cuda_v1.topk", one.items);
+            return e.ext(topk_ext, one.items);
         }
         var jobs: [2][8]Arg = undefined;
         jobs[0] = .{ scores, if (reindex) cand else try e.empty(.i32), sel[0], sel[1], .{ .i = nk }, .{ .i = k }, .{ .i = if (reindex) 3 else 0 }, .{ .i = pl[1] } };
@@ -1079,7 +1156,7 @@ pub const Emitter = struct {
         try args.appendSlice(e.a, &jobs[0]);
         try args.appendSlice(e.a, &jobs[1]);
         try args.appendSlice(e.a, &.{ .{ .i = if (blocks) 2 else 1 }, try e.pos(), .{ .i = ratio }, .{ .i = if (blocks or reindex) cbs else 1 }, .{ .i = n }, .{ .i = pl[0] } });
-        try e.ext("tf_dsv41_attn_cuda_v1.topk", args.items);
+        try e.ext(topk_ext, args.items);
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -1127,6 +1204,7 @@ pub const Emitter = struct {
 pub fn emit(a: std.mem.Allocator, cfg: *const Config, w: *const Widths, o: Options, layers: []const u32, n: i64, start: i64, head: bool) ![]calls.Call {
     var e: Emitter = .{ .a = a, .cfg = cfg, .w = w, .o = o, .n = n, .start = start };
     try e.window(layers, head);
+    if (o.holdsDeferred(n)) calls.holdDeferred(e.out.items);
     return e.out.items;
 }
 

@@ -83,7 +83,7 @@ fn checkCalls(x: *Ctx, cfg: *const Config, cs: []const calls.Call, layers: []con
             if (int(named(c, "PSH")) != block.Pool.shift(ratio)) try x.fail("_kv_store PSH {d}", .{int(named(c, "PSH"))});
             if (int(named(c, "v_stride")) != 584 or int(named(c, "s_stride")) != 584) try x.fail("_kv_store strides", .{});
             if (!std.mem.startsWith(u8, roleOf(named(c, "V").?), "s.kv.comp.L")) try x.fail("_kv_store into {s}", .{roleOf(named(c, "V").?)});
-        } else if (std.mem.eql(u8, c.name, "_index_k") or std.mem.eql(u8, c.name, "_scores")) {
+        } else if (std.mem.eql(u8, c.name, "_index_k") or std.mem.eql(u8, c.name, "_scores") or std.mem.eql(u8, c.name, "_scores_b")) {
             if (!std.mem.startsWith(u8, roleOf(named(c, "IK").?), "s.kv.ik.L")) try x.fail("{s} keys {s}", .{ c.name, roleOf(named(c, "IK").?) });
             if (!std.mem.eql(u8, roleOf(named(c, "PT").?), "s.kv.pt")) try x.fail("{s} through {s}", .{ c.name, roleOf(named(c, "PT").?) });
         } else if (std.mem.eql(u8, c.name, "tf_dsv41_attn_cuda_v1.attn")) {

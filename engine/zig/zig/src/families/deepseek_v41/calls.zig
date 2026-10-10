@@ -54,11 +54,43 @@ pub const Call = struct {
     side: bool = false,
     fork: bool = false,
     join: bool = false,
+    /// TF_DSV41_PF_OVERLAP_SITE: `mark` m > 0 on a side call: after it, the side stream records its mark m (the side
+    /// work issued so far); `wait` m > 0 on a main call: the main stream first waits for mark m only, so it can run
+    /// beside the side calls issued after the mark (a `join` still waits for all of them)
+    mark: u8 = 0,
+    wait: u8 = 0,
     /// TF_DSV41_MHC_DEFER: an mHC coefficient launch on the deferred stream (forked from main first); `defer_join`:
     /// the main stream waits for it first (the next mHC call, the coefficients' reader)
     defer_side: bool = false,
     defer_join: bool = false,
 };
+
+/// TF_DSV41_MHC_DEFER_AT=exchange (ours, branches.zig): each deferred coefficient launch (`defer_side`) moved later in
+/// `cs`, to just before the next exchange step (the main stream then waits on the peer, `tp_roce` holding 16 of the
+/// GPU's SMs, and the coefficients' few CTAs run beside it) or before the call that joins it, whichever comes first.
+/// Issued where it was, the launch ran beside the main stream's next kernel and slowed it (Spark nsys 2026-10-09, code
+/// x4: the router gemv 73 -> 92 us at every FFN site, the attention's first projection 41 -> 49 us).
+/// Exact: the launch moves only within its own fork region (never past its join or another deferred launch), where
+/// the main stream's calls share no role with it (branches.sharedDeferred), so it reads and writes what it did; it now
+/// starts after those calls instead of beside them. A launch carrying other marks stays where it is.
+pub fn holdDeferred(cs: []Call) void {
+    var i: usize = 0;
+    while (i < cs.len) : (i += 1) {
+        const c = cs[i];
+        if (!c.defer_side or c.defer_join or c.side or c.fork or c.join or c.begin != .none) continue;
+        var j = i + 1;
+        while (j < cs.len and !cs[j].defer_join and !cs[j].defer_side and !isExchange(cs[j])) : (j += 1) {}
+        if (j == cs.len or cs[j].defer_side) continue; // no exchange or join after it: left where it was
+        std.mem.copyForwards(Call, cs[i .. j - 1], cs[i + 1 .. j]);
+        cs[j - 1] = c;
+        i = j - 1;
+    }
+}
+
+/// A collective exchange step of the forward (glue.exchange / glue.exchange_f32).
+pub fn isExchange(c: Call) bool {
+    return c.glue and std.mem.startsWith(u8, c.name, "glue.exchange");
+}
 
 /// The calls a capture records (the glue steps left out), in order; a dropped step's scope start moves to the next.
 pub fn launches(a: std.mem.Allocator, cs: []const Call) ![]const Call {

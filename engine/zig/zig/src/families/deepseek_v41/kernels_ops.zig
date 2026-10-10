@@ -105,6 +105,8 @@ pub const topk = struct {
     }
 
     pub const symbol = "_ZN10dsv41_topk11topk_kernelENS_4ArgsE";
+    /// topk_b.cu (ours, TF_DSV41_INDEX_BOUND): topk_kernel with each row stopped at its own visible end, the same Args
+    pub const symbol_b = "_ZN10dsv41_topk13topk_b_kernelENS_4ArgsE";
 
     pub fn smem(ept: usize) u32 {
         return @intCast(NT * ept * 4);
@@ -425,6 +427,8 @@ pub const Functions = struct {
     attn: [8]cuda.Function,
     attn_split: [2][8]cuda.Function, // [P 1, P 4][instance]
     topk: cuda.Function,
+    /// topk_b.cu's row-bounded twin (tf_dsv41_topk_b_v1.topk)
+    topk_b: cuda.Function,
     mhc: [2][mhc.instances.len]cuda.Function, // [tail][instance]
     mhc_coef: cuda.Function,
     mhc_pf: [mhc_pf.instances.len]cuda.Function,
@@ -459,7 +463,7 @@ pub const Functions = struct {
     pfglue: [pfglue.syms.len]cuda.Function, // pfglue.syms order
 
     /// `pf`: the four pfdense modules (K2 8, 10, 12, 16).
-    pub fn resolve(m_attn: cuda.Module, m_topk: cuda.Module, m_mhc: cuda.Module, m_mhc_pf: cuda.Module, m_rg: cuda.Module, pf: [4]cuda.Module, m_gate: cuda.Module, m_pace: cuda.Module, m_l2pf: cuda.Module, m_keys: cuda.Module, m_pw: cuda.Module, m_kv: cuda.Module, m_glue: cuda.Module, m_pfglue: cuda.Module, optin: u32) !Functions {
+    pub fn resolve(m_attn: cuda.Module, m_topk: cuda.Module, m_mhc: cuda.Module, m_mhc_pf: cuda.Module, m_rg: cuda.Module, pf: [4]cuda.Module, m_gate: cuda.Module, m_pace: cuda.Module, m_l2pf: cuda.Module, m_keys: cuda.Module, m_pw: cuda.Module, m_kv: cuda.Module, m_glue: cuda.Module, m_pfglue: cuda.Module, m_topk_b: cuda.Module, optin: u32) !Functions {
         var f: Functions = undefined;
         inline for (0..8) |i| f.attn[i] = try m_attn.function(attn.symbol(if (i >= 4) 4 else 2, (i & 2) != 0, (i & 1) != 0));
         inline for (f.attn, 0..) |fun, i| {
@@ -472,6 +476,8 @@ pub const Functions = struct {
         };
         f.topk = try m_topk.function(topk.symbol);
         if (!try fitShared(f.topk, topk.symbol, topk.smem(topk.MAXEPT), optin)) return error.SharedMemoryTooSmall;
+        f.topk_b = try m_topk_b.function(topk.symbol_b);
+        if (!try fitShared(f.topk_b, topk.symbol_b, topk.smem(topk.MAXEPT), optin)) return error.SharedMemoryTooSmall;
         inline for (.{ false, true }, 0..) |tail, ti| inline for (0..mhc.instances.len) |i| {
             f.mhc[ti][i] = try m_mhc.function(mhc.symbol(i, tail));
         };
@@ -652,10 +658,19 @@ pub const Ops = struct {
 
     /// dsv41_topk_run_cuda: `jobs` 1-2 selections, R rows, CL CTAs a cluster, ept entries a thread.
     pub fn topK(o: Ops, a: topk.Args, jobs: usize, R: usize, CL: usize, ept: usize) !void {
+        return o.topKOf(o.f.topk, a, jobs, R, CL, ept);
+    }
+
+    /// topk_b.cu (TF_DSV41_INDEX_BOUND): topK's launch of the row-bounded twin (the same args and bytes).
+    pub fn topKB(o: Ops, a: topk.Args, jobs: usize, R: usize, CL: usize, ept: usize) !void {
+        return o.topKOf(o.f.topk_b, a, jobs, R, CL, ept);
+    }
+
+    fn topKOf(o: Ops, f: cuda.Function, a: topk.Args, jobs: usize, R: usize, CL: usize, ept: usize) !void {
         if (R < 1 or jobs < 1 or jobs > 2 or CL < 1 or CL > topk.MAXCL or ept < 1 or ept > topk.MAXEPT) return error.Shape;
         var args: cuda.Args = .{};
         args.add(a);
-        try o.go(o.f.topk, .{ CL, R, jobs }, topk.NT, topk.smem(ept), .{ .x = dim(CL) }, &args);
+        try o.go(f, .{ CL, R, jobs }, topk.NT, topk.smem(ept), .{ .x = dim(CL) }, &args);
     }
 
     /// dsv41_mhc_run_cuda: `fn32` = fn is fp32.

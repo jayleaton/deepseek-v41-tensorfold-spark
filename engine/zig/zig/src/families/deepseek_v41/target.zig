@@ -322,6 +322,21 @@ pub const GpuTarget = struct {
         try t.f.greedy(choices[0][0..s.tokens.len]);
     }
 
+    /// The slot's pending window (a chain window never kept), if any.
+    pub fn hasPending(t: *const GpuTarget, slot: u32) bool {
+        if (t.rows) |b| return slot < b.ss.n and b.pending(slot) != null;
+        return slot == 0 and t.f.slot.pending != null;
+    }
+
+    /// The slot's pending window dropped on every rank, nothing committed (TF_DSV41_CALIB=measure, calib_gpu.zig:
+    /// Python times `fw.window` without a commit). Row mode: op_rows_drop; one slot: op 20 (Forward.drop).
+    pub fn dropWindow(t: *GpuTarget, slot: u32) !void {
+        if (t.rows) |b| return b.drop(slot);
+        if (slot != 0) return error.Slots;
+        t.tree.clear();
+        if (t.f.slot.pending != null) try t.f.drop();
+    }
+
     /// The prompt's prefilled tail's taps into the DSpark pass (ced.handoff): its last `ingest_window` rows, one ingest.
     fn handTaps(t: *GpuTarget, slot: u32) !void {
         const st = &t.f.prefill_state;

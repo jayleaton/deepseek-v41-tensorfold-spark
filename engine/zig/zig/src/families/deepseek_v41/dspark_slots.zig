@@ -100,6 +100,13 @@ pub const SlotPass = struct {
     /// TF_DSV41_DRAFT_BATCH_PROJ: one main_proj over a device-started round's slots (`projRound`)
     bproj: BatchProj = .off,
     bstats: struct { rounds: u64 = 0, slots: u64 = 0, checked: u64 = 0, check_rows: u64 = 0, differ: u64 = 0 } = .{},
+    /// TF_DSV41_DRAFT_CAPTURE=1: the pass keys (size << 16 | row) a regular round has issued since the graphs mode
+    /// (each one's graph captured there, under the cache's agreement); a device-started round over a key not in it
+    /// runs the regular path once (its speculation replays only, never captures). Every rank sees the same rounds.
+    capture_first: bool = false,
+    seen: [32]u32 = undefined,
+    nseen: usize = 0,
+    declined: u64 = 0,
 
     const Side = struct { stream: cuda.Stream, done: cuda.Event, mark: cuda.Event, rounds: u64 = 0, slots: u64 = 0, serial: u64 = 0 };
 
@@ -215,6 +222,14 @@ pub const SlotPass = struct {
                         r.taps_mark = .{ .ev = x.side.?.mark };
                     }
                 }
+                if (try captureFromEnv()) {
+                    if (x.bat == null) {
+                        std.log.scoped(.dsv41).warn("draft capture: TF_DSV41_DRAFT_CAPTURE=1 needs the device-started round: off", .{});
+                    } else {
+                        x.capture_first = true;
+                        std.log.scoped(.dsv41).info("draft capture: a device-started round over a pass size not yet graphed runs the regular path once (its graph captured there)", .{});
+                    }
+                }
                 const bp = try batchProjFromEnv();
                 if (bp != .off) {
                     if (x.bat == null) {
@@ -244,6 +259,7 @@ pub const SlotPass = struct {
             x.f.after_pick = x.prev_pick;
             x.f.after_sample = x.prev_sample;
         }
+        if (x.capture_first) std.log.scoped(.dsv41).info("draft capture: {d} device-started rounds ran the regular path to capture {d} pass key(s)", .{ x.declined, x.nseen });
         if (x.dscr) |*b| b.free();
         if (x.hscr) |*b| b.free();
         if (x.staged) |*e| e.deinit();
@@ -359,11 +375,20 @@ pub const SlotPass = struct {
             k += 1;
         };
         if (k == 0) return;
-        x.armed = @splat(null);
         const d = x.dev.?;
         const f = x.f;
         const r = f.runner;
         const n: u32 = f.cfg.dspark_block;
+        if (x.capture_first and d.active == .graphs) {
+            // TF_DSV41_DRAFT_CAPTURE: a group whose pass no regular round has issued yet: the regular path this round
+            var gs0: [16][2]usize = undefined;
+            for (gs0[0..rows.groups(k, x.group, &gs0)]) |g| if (!x.wasSeen(passKey(g[1] - g[0], g[0] * n))) {
+                x.armed = @splat(null);
+                x.declined += 1;
+                return;
+            };
+        }
+        x.armed = @splat(null);
         // the accept's inputs: the armed slots' window ids at their rows, their (first row, rows, start)
         const h: []i64 = @alignCast(std.mem.bytesAsSlice(i64, x.hscr.?.bytes[0 .. 8 * scr_len]));
         for (slots[0..k], 0..) |sl, j| {
@@ -423,7 +448,7 @@ pub const SlotPass = struct {
             x.cur_k = gk;
             r.glue = .{ .ctx = x, .run = glueFn };
             const extra = [_]u64{ if (x.send) |sb| sb.ptr else 0, if (x.send) |sb| sb.len else 0 };
-            try d.issueReplay(@intCast(gk << 16 | at), dsd.fingerprint(r, d, &extra), .{ .ctx = x, .run = groupBody });
+            try d.issueReplay(passKey(gk, at), dsd.fingerprint(r, d, &extra), .{ .ctx = x, .run = groupBody });
             try d.settle(); // counted here on every rank (rank 0's collect does not count it again)
         }
         try d.mark();
@@ -453,7 +478,7 @@ pub const SlotPass = struct {
         for (slots) |sl| {
             const pd = b.pend[sl].?;
             const pos: i32 = @intCast(pd.start);
-            try cuda.DeviceBuffer.uploadAsync(.{ .d = r.d, .ptr = pos_at, .len = 4 }, 0, std.mem.asBytes(&pos), st.handle);
+            try gpu.setPos(r.d, pos_at, pos, st);
             const sl_: emit.Slots = .{ .ring_slots = x.nslots, .slot = sl, .taps_role = "w.taps" };
             var cs = if (proj) |a0|
                 try emit.emitIngestBlocks(a, x.f.cfg, x.f.widths, x.f.opts, pd.n, pd.a - a0, sl_)
@@ -538,7 +563,7 @@ pub const SlotPass = struct {
     fn ingestAsync(x: *SlotPass, slot: u32, start: u64, at: rows.TapsAt, n: u32) !void {
         const r = x.f.runner;
         const pos: i32 = @intCast(start);
-        try cuda.DeviceBuffer.uploadAsync(.{ .d = r.d, .ptr = r.addressOf("w.ds.pos") orelse return error.Unbound, .len = 4 }, 0, std.mem.asBytes(&pos), r.stream.handle);
+        try gpu.setPos(r.d, r.addressOf("w.ds.pos") orelse return error.Unbound, pos, r.stream);
         var la = std.heap.ArenaAllocator.init(x.gpa);
         defer la.deinit();
         const sl: emit.Slots = .{ .ring_slots = x.nslots, .slot = slot, .taps_role = if (at.src == 1) batch.taps_stash_role else "w.taps" };
@@ -596,7 +621,7 @@ pub const SlotPass = struct {
         const r = x.f.runner;
         try r.stream.synchronize();
         const pos: i32 = @intCast(start);
-        try cuda.DeviceBuffer.uploadAsync(.{ .d = r.d, .ptr = r.addressOf("w.ds.pos") orelse return error.Unbound, .len = 4 }, 0, std.mem.asBytes(&pos), r.stream.handle);
+        try gpu.setPos(r.d, r.addressOf("w.ds.pos") orelse return error.Unbound, pos, r.stream);
         var la = std.heap.ArenaAllocator.init(x.gpa);
         defer la.deinit();
         const sl: emit.Slots = .{ .ring_slots = x.nslots, .slot = slot, .taps_role = if (at.src == 1) batch.taps_stash_role else "w.taps" };
@@ -886,7 +911,24 @@ pub const SlotPass = struct {
         r.glue = .{ .ctx = x, .run = glueFn };
         const extra = [_]u64{ if (x.send) |b| b.ptr else 0, if (x.send) |b| b.len else 0 };
         x.cur_k = ms.len;
-        try d.issue(@intCast(ms.len << 16 | at), dsd.fingerprint(r, d, &extra), .{ .ctx = x, .run = groupBody });
+        const key = passKey(ms.len, at);
+        if (x.capture_first and d.active == .graphs) x.markSeen(key);
+        try d.issue(key, dsd.fingerprint(r, d, &extra), .{ .ctx = x, .run = groupBody });
+    }
+
+    /// A pass's graph key: its slot count and its first row in the round.
+    fn passKey(k: usize, at: usize) u32 {
+        return @intCast(k << 16 | at);
+    }
+
+    fn wasSeen(x: *const SlotPass, key: u32) bool {
+        return std.mem.indexOfScalar(u32, x.seen[0..x.nseen], key) != null;
+    }
+
+    fn markSeen(x: *SlotPass, key: u32) void {
+        if (x.wasSeen(key) or x.nseen == x.seen.len) return;
+        x.seen[x.nseen] = key;
+        x.nseen += 1;
     }
 
     fn groupBody(ctx: *anyopaque, stream: cuda.Stream) anyerror!void {
@@ -1063,6 +1105,15 @@ pub fn overlapFromEnv() !bool {
     if (v.len == 0 or std.mem.eql(u8, v, "0")) return false;
     if (std.mem.eql(u8, v, "1")) return true;
     return error.BadDraftOverlap;
+}
+
+/// TF_DSV41_DRAFT_CAPTURE: 1 = a device-started round over a pass key no regular round issued yet runs the regular
+/// path once (its graph captured), unset / 0 = the speculation replays or runs eagerly, never captures (today).
+pub fn captureFromEnv() !bool {
+    const v = std.mem.span(std.c.getenv("TF_DSV41_DRAFT_CAPTURE") orelse return false);
+    if (v.len == 0 or std.mem.eql(u8, v, "0")) return false;
+    if (std.mem.eql(u8, v, "1")) return true;
+    return error.BadDraftCapture;
 }
 
 /// The engine's AOT set has some variant of Triton function `name`.

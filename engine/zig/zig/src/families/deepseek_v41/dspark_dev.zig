@@ -110,7 +110,8 @@ pub const Dev = struct {
             .region_bytes = region_bytes,
             .regions = regions,
         };
-        x.cache = graphs.gc.Cache(u32).init(gpa, x.engine.engine(), .{ .on = true, .max = max, .min_keep = 2 });
+        const hold = if (std.c.getenv("TF_DSV41_GRAPH_FLOOR")) |v| std.mem.eql(u8, std.mem.span(v), "hold") else false;
+        x.cache = graphs.gc.Cache(u32).init(gpa, x.engine.engine(), .{ .on = true, .max = max, .min_keep = 2, .hold = hold });
         x.cache.agree = x.agreement.agree();
         x.cache.room = roomFn;
         if (std.c.getenv("TF_DSV41_GRAPH_FLOOR_GIB")) |v| floor_gib = std.fmt.parseFloat(f64, std.mem.span(v)) catch 5.0;

@@ -133,6 +133,9 @@ pub const Forward = struct {
     /// several live slots (slots.zig): a multi-segment prefill run's slot switch, on this rank only (every rank runs the
     /// same run); null: one slot, no runs
     pf_switch: ?PfSwitch = null,
+    /// with `pf_switch`: the CED stash ring made the current slot's before a stash step reads or writes it (slots.zig
+    /// swaps it lazily: a run's slot switches leave it where it is)
+    pf_stash: ?PfStash = null,
     /// the multi-segment prefill run in flight (forward_prefill.promptMulti; its glue reads it), null outside one
     multi: ?*pf.Multi = null,
     /// the keyed sampler (sampling_gpu.zig): a follower runs rank 0's sampled choices too (their gathers pair up)
@@ -140,6 +143,9 @@ pub const Forward = struct {
     /// structured output (grammar_gpu.zig, TF_DSV41_GRAMMAR=1): staged grammar masks applied to "w.logits" before a
     /// pick reads them; a follower runs rank 0's op_grammar messages
     grammar: ?Grammar = null,
+    /// TF_DSV41_CALIB=measure (calib_gpu.zig): a follower's clock at each op_calib_mark (after a device sync), until the
+    /// leader's op_calib_gather pairs them up into this rank's samples
+    calib_marks: std.ArrayList(u64) = .empty,
 
     pub fn init(gpa: std.mem.Allocator, cfg: *const Config, widths: *const block.Widths, opts: block.Options, runner: *run.Runner, comm: tp.collective.Collective) Forward {
         return .{ .gpa = gpa, .cfg = cfg, .widths = widths, .opts = opts, .runner = runner, .comm = comm, .arena = std.heap.ArenaAllocator.init(gpa) };
@@ -156,6 +162,7 @@ pub const Forward = struct {
         if (f.gathered) |*b| b.free();
         for (&f.rows_stage) |*x| x.deinit();
         f.prefill_state.deinit(f.gpa);
+        f.calib_marks.deinit(f.gpa);
         if (f.gate) |x| x.close();
         if (f.engram_rows) |x| x.close();
         if (f.branches) |b| {
@@ -511,6 +518,7 @@ pub const Forward = struct {
 
     /// A slot's views made current on this rank (slots.zig SlotSet.view), for a multi-segment run's segments.
     pub const PfSwitch = struct { ctx: *anyopaque, run: *const fn (ctx: *anyopaque, slot: u32) anyerror!void };
+    pub const PfStash = struct { ctx: *anyopaque, run: *const fn (ctx: *anyopaque) anyerror!void };
 
     /// Several slots' prompt segments in one run (forward_prefill.promptMulti, TF_DSV41_PIECE_RUNS): each segment's ids
     /// from its slot's position, every slot's state then moved past its segment. The leader sends the run first.
@@ -565,6 +573,61 @@ pub const Forward = struct {
         /// a request's pool admission (op_sess_admit's message): the leader's spills evicted, its pages reserved
         admit: ?*const fn (ptr: *anyopaque, msg: []const i64) anyerror!void = null,
     };
+
+    /// 64-67: dsq-zig-calib (TF_DSV41_CALIB=measure, calib_gpu.zig). 64: [op] every rank synchronizes its device and
+    /// reads its clock (a timed run's start or end); 65: [op, n] every rank's n samples (the marks paired up, ns)
+    /// all-gathered, so rank 0 takes the slower rank's statistic an entry (Python calib's gather_max)
+    pub const op_calib_mark: i64 = 64;
+    pub const op_calib_gather: i64 = 65;
+
+    /// A timed run's start or end on every rank (Python's sync(); perf_counter()): the leader sends the mark, then
+    /// this rank's device (every stream) is synchronized and its monotonic clock read.
+    pub fn calibMark(f: *Forward) !u64 {
+        if (f.leads()) try f.link.?.send(&.{op_calib_mark});
+        const d = f.runner.d;
+        try d.check(d.api.cuCtxSynchronize(), "cuCtxSynchronize");
+        return ph.nowNs();
+    }
+
+    /// Every rank's samples (`mine`, ns, one a timed run) into `all` [world][mine.len], rank-major; the leader sends
+    /// the count first. A follower whose marks do not pair up into as many samples sends -1s (the leader refuses).
+    pub fn calibGather(f: *Forward, mine: []const i64, all: []i64) !void {
+        const w: usize = f.comm.world();
+        if (all.len != w * mine.len) return error.BadWindow;
+        if (f.leads()) try f.link.?.send(&.{ op_calib_gather, @intCast(mine.len) });
+        if (w == 1 or mine.len == 0) return @memcpy(all[0..mine.len], mine);
+        const d = f.runner.d;
+        const bytes = 8 * mine.len;
+        var dev = try cuda.DeviceBuffer.alloc(d, bytes * (w + 1));
+        defer dev.free();
+        var host = try cuda.HostBuffer.alloc(d, bytes * (w + 1));
+        defer host.free();
+        const h = host.slice(i64);
+        @memcpy(h[0..mine.len], mine);
+        const st = f.runner.stream;
+        try dev.uploadAsync(0, std.mem.sliceAsBytes(h[0..mine.len]), st.handle);
+        try f.comm.allGather(dev.ptr, dev.ptr + bytes, mine.len, .i64, st.handle);
+        try dev.downloadAsync(bytes, std.mem.sliceAsBytes(h[mine.len .. mine.len * (w + 1)]), st.handle);
+        try st.synchronize();
+        @memcpy(all, h[mine.len .. mine.len * (w + 1)]);
+    }
+
+    /// A follower's op_calib_gather: its marks paired up (end - start) as its samples, gathered with the leader's.
+    fn followCalib(f: *Forward, n: usize) !void {
+        defer f.calib_marks.clearRetainingCapacity();
+        const mine = try f.gpa.alloc(i64, n);
+        defer f.gpa.free(mine);
+        const marks = f.calib_marks.items;
+        if (marks.len == 2 * n) {
+            for (mine, 0..) |*x, k| x.* = @intCast(marks[2 * k + 1] - marks[2 * k]);
+        } else {
+            std.log.scoped(.dsv41).err("calibration: {d} marks on this rank for {d} timed runs; sending none", .{ marks.len, n });
+            @memset(mine, -1);
+        }
+        const all = try f.gpa.alloc(i64, n * f.comm.world());
+        defer f.gpa.free(all);
+        try f.calibGather(mine, all);
+    }
 
     /// Drops the pending window on every rank without committing a row (draft/branches.zig: a tree's chain whose branch
     /// lost; the next chain rewrites its positions before any read, as a rejected draft's).
@@ -686,6 +749,15 @@ pub const Forward = struct {
                 op_keep => try f.keep(@intCast(msg[1])),
                 op_release => try f.release(),
                 op_tree_drop => try f.drop(),
+                op_calib_mark => {
+                    const d = f.runner.d;
+                    try d.check(d.api.cuCtxSynchronize(), "cuCtxSynchronize");
+                    try f.calib_marks.append(f.gpa, ph.nowNs());
+                },
+                op_calib_gather => {
+                    if (msg.len != 2 or msg[1] < 0) return error.BadPlan;
+                    try f.followCalib(@intCast(msg[1]));
+                },
                 op_stop => return,
                 op_sess_save => {
                     const x = f.sess orelse return error.BadPlan;
@@ -870,20 +942,19 @@ pub const Forward = struct {
         }
         if (std.mem.eql(u8, step, "exchange_rows")) {
             // TF_DSV41_PF_OVERLAP: rows [r0, r0 + m) of a bf16 partial into the gathered [world, n, D], where the
-            // whole exchange's all-gather puts them: this rank's copied, the peer's received (TP=2: one peer)
+            // whole exchange's all-gather puts them: an all-gather of the piece into "L.xrows" [world, m, D] (the
+            // collective's channels: no NCCL p2p connection, whose buffers no plan or price holds), then each rank's
+            // m rows copied to their place. The same bytes as the whole exchange's
             const send = c.args[0].arg.t;
             const into = c.args[1].arg.t;
             const r0: usize = @intCast(c.args[2].arg.i);
             const n: usize = @intCast(into.shape[1]);
             const m = numel(send) / D;
-            if (W != 2 or r0 + m > n) return error.BadGlue;
-            const me = f.comm.rank();
-            const src = try r.tensorAddr(send);
+            if (r0 + m > n or c.args.len < 4) return error.BadGlue;
+            const tmp = try r.tensorAddr(c.args[3].arg.t);
+            try f.comm.allGather(try r.tensorAddr(send), tmp, m * D, .bf16, s);
             const base = try r.tensorAddr(into);
-            for (0..W) |q| {
-                const dst = base + ((q * n + r0) * D) * 2;
-                if (q == me) try r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(dst, src, m * D * 2, s), "cuMemcpyDtoDAsync") else try f.comm.exchange(src, dst, m * D, .bf16, @intCast(q), s);
-            }
+            for (0..W) |q| try r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(base + ((q * n + r0) * D) * 2, tmp + q * m * D * 2, m * D * 2, s), "cuMemcpyDtoDAsync");
             return;
         }
         if (std.mem.eql(u8, step, "exchange_f32")) {
@@ -1003,6 +1074,17 @@ pub const Forward = struct {
 
     /// TF_DSV41_ENGRAM_GATE: arms the gate for a window over `items` (`fill`: its rows with a bucket's padding); false
     /// when the gate is off or the window is too wide (the old path stages its rows).
+    /// TF_DSV41_PIN_ISOLATE: the plan thread's pinned CPU (TF_DSV41_PLAN_PIN, once pinned) for the worker threads to
+    /// keep off (cpu_isolate.zig); an atomic load and store, before each window's Engram arm.
+    pub fn publishPin(_: *Forward) void {
+        const iso = @import("cpu_isolate.zig");
+        const c = tp.planlink.pinned_cpu.load(.acquire);
+        if (c >= 0 and iso.reserved.load(.monotonic) != c) {
+            iso.reserved.store(c, .release);
+            if (iso.fromEnv()) std.log.scoped(.dsv41).info("pin isolate: the Engram reader and gate threads keep off CPU {d} (the pinned plan thread's)", .{c});
+        }
+    }
+
     pub fn armEngram(f: *Forward, items: []const egate.Item, fill: u32) !bool {
         const h = f.engram orelse return false;
         _ = try f.engramSource(h); // the table and the gate open on the first Engram window
@@ -1223,7 +1305,7 @@ pub const Graphed = struct {
         const rg = try round_graph.current();
         if (rg.split) g.split = rg;
         // `split`: a window's head and tail graphs in one cache of twice the cap (a head is ~1/43 of a window)
-        g.cache = graphs.Cache.init(f.gpa, g.engine.engine(), .{ .on = true, .max = if (rg.split) 2 * s.max else s.max });
+        g.cache = graphs.Cache.init(f.gpa, g.engine.engine(), .{ .on = true, .max = if (rg.split) 2 * s.max else s.max, .hold = s.floor_hold });
         g.cache.agree = g.agreement.agree();
         g.cache.room = roomFn;
         room_floor = s.floor_gib;

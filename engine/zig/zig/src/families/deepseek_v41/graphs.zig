@@ -38,6 +38,9 @@ pub const Settings = struct {
     grow: f64 = 1.25,
     rows_max: u32 = 64,
     floor_gib: f64 = 5.0,
+    /// TF_DSV41_GRAPH_FLOOR=hold (default `shed`): under the floor a miss runs eagerly, the held graphs stay
+    /// (graph_cache.Settings.hold)
+    floor_hold: bool = false,
 
     pub fn fromEnv() !Settings {
         return fromEnvOr(false);
@@ -53,6 +56,10 @@ pub const Settings = struct {
         if (std.c.getenv("TF_DSV41_GRAPH_BUCKET_GROW")) |v| s.grow = try std.fmt.parseFloat(f64, std.mem.span(v));
         if (std.c.getenv("TF_DSV41_GRAPH_ROWS_MAX")) |v| s.rows_max = try std.fmt.parseInt(u32, std.mem.span(v), 10);
         if (std.c.getenv("TF_DSV41_GRAPH_FLOOR_GIB")) |v| s.floor_gib = try std.fmt.parseFloat(f64, std.mem.span(v));
+        if (std.c.getenv("TF_DSV41_GRAPH_FLOOR")) |v| {
+            const m = std.mem.span(v);
+            if (std.mem.eql(u8, m, "hold")) s.floor_hold = true else if (!(m.len == 0 or std.mem.eql(u8, m, "shed"))) return error.BadGraphFloor;
+        }
         if (s.bucket == 0) return error.BadGraphBucket;
         return s;
     }

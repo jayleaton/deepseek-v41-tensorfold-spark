@@ -56,10 +56,23 @@ pub const images = struct {
     pub const pfglue: []const u8 = if (available) &Blob("dsv41_fatbin_dsv41_pfglue").bytes else &.{};
     pub const kv_glue: []const u8 = if (available) &Blob("dsv41_fatbin_dsv41_kv_glue").bytes else &.{};
     pub const router_glue: []const u8 = if (available) &Blob("dsv41_fatbin_dsv41_router_glue").bytes else &.{};
+    pub const x3ld_epi: []const u8 = if (available) &Blob("dsv41_fatbin_dsv41_x3ld_epi").bytes else &.{};
+    pub const topk_b: []const u8 = if (available) &Blob("dsv41_fatbin_dsv41_topk_b").bytes else &.{};
 };
 
+/// lin2.cu (ours, TF_DSV41_LIN2): optional (zig/build/cuda.zig), an empty image when the build has none.
+const Lin2Blob = struct {
+    pub const bytes align(16) = @embedFile("dsv41_fatbin_dsv41_lin2").*;
+};
+pub const lin2_image: []const u8 = &Lin2Blob.bytes;
+
+fn env(name: [:0]const u8) ?[]const u8 {
+    const v = std.c.getenv(name) orelse return null;
+    return std.mem.span(v);
+}
+
 pub const Kernels = struct {
-    mods: [28]cuda.Module,
+    mods: [30]cuda.Module,
     kv_glue: kv_glue.Functions,
     exl3: exl3.Functions,
     dense: dense.Functions,
@@ -71,7 +84,7 @@ pub const Kernels = struct {
         if (!available) return error.BuiltWithoutKernels;
         const d = ctx.d;
         var k: Kernels = undefined;
-        const list = [_][]const u8{ images.exl3_experts, images.x3ld, images.x3pf, images.x3gm, images.linear, images.x3seg, images.dense3, images.attn, images.topk, images.mhc, images.mhc_pf, images.router_gemv, images.pfdense_k8, images.pfdense_k10, images.pfdense_k12, images.pfdense_k16, images.engram_gate, images.l2pace, images.l2pf, images.x3gm_plan, images.topk_keys, images.pointwise, images.kvsplit, images.glue, images.x3gm3, images.pfglue, images.router_glue, images.kv_glue };
+        const list = [_][]const u8{ images.exl3_experts, images.x3ld, images.x3pf, images.x3gm, images.linear, images.x3seg, images.dense3, images.attn, images.topk, images.mhc, images.mhc_pf, images.router_gemv, images.pfdense_k8, images.pfdense_k10, images.pfdense_k12, images.pfdense_k16, images.engram_gate, images.l2pace, images.l2pf, images.x3gm_plan, images.topk_keys, images.pointwise, images.kvsplit, images.glue, images.x3gm3, images.pfglue, images.router_glue, images.kv_glue, images.x3ld_epi, images.topk_b };
         comptime std.debug.assert(list.len == @typeInfo(@FieldType(Kernels, "mods")).array.len);
         var loaded: usize = 0;
         errdefer for (k.mods[0..loaded]) |*m| m.unload();
@@ -82,15 +95,33 @@ pub const Kernels = struct {
         // the per-block shared memory opt-in (sm_120 / sm_121: 101,376 B): instances above it are refused one by one
         const optin: u32 = @intCast(try ctx.attribute(.max_shared_memory_per_block_optin));
         k.kv_glue = try kv_glue.Functions.resolve(k.mods[27]);
-        k.exl3 = try exl3.Functions.resolve(k.mods[0], k.mods[1], k.mods[2], k.mods[3], k.mods[19], k.mods[24], k.mods[26], optin);
+        k.exl3 = try exl3.Functions.resolve(k.mods[0], k.mods[1], k.mods[2], k.mods[3], k.mods[19], k.mods[24], k.mods[26], k.mods[28], optin);
         k.dense = try dense.Functions.resolve(k.mods[4], k.mods[5], k.mods[6]);
         const m = k.mods;
-        k.ops = try ops.Functions.resolve(m[7], m[8], m[9], m[10], m[11], .{ m[12], m[13], m[14], m[15] }, m[16], m[17], m[18], m[20], m[21], m[22], m[23], m[25], optin);
+        k.ops = try ops.Functions.resolve(m[7], m[8], m[9], m[10], m[11], .{ m[12], m[13], m[14], m[15] }, m[16], m[17], m[18], m[20], m[21], m[22], m[23], m[25], m[29], optin);
         k.sms = @intCast(try ctx.attribute(.multiprocessor_count));
+        try k.loadLin2(d, blk: {
+            var lm = try dense.lin2ModeWk(env("TF_DSV41_LIN2"), env("TF_DSV41_LIN2_PF"), env("TF_DSV41_LIN2_WK"));
+            lm.cluster = try dense.lin2Cluster(env("TF_DSV41_LIN2_CLUSTER"));
+            break :blk lm;
+        });
         return k;
     }
 
+    /// TF_DSV41_LIN2: lin2.cu's module and instances behind the dense launches (dense.Ops); refused when the build
+    /// has no lin2 fatbin (-Dnvcc, or -Dfatbins with dsv41_lin2.fatbin).
+    pub fn loadLin2(k: *Kernels, d: *const cuda.Driver, mode: dense.Lin2Mode) !void {
+        if (!mode.lanes and !mode.linear and !mode.cluster) return;
+        if (lin2_image.len == 0) return error.Lin2KernelNotBuilt;
+        var m = try cuda.Module.load(d, lin2_image);
+        errdefer m.unload();
+        k.dense.lin2 = try dense.Lin2.resolve(m, mode);
+        std.log.scoped(.dsv41).info("lin2: 17-32-row {s} launches as two-tile variants (one pass over the weights){s}{s}", .{ if (mode.lanes and mode.linear) "dense3 and linear.cu" else if (mode.lanes) "dense3" else "linear.cu", if (mode.linear and !mode.pf) ", linear2 without the k-step prefetch" else "", if (mode.lanes and !mode.wk8) ", lanes2 at 4-warp CTAs only" else if (mode.lanes and !mode.wk4) ", lanes2 at 8-warp CTAs only" else "" });
+        if (mode.cluster) std.log.scoped(.dsv41).info("lin2: dense3's split-K launches of up to 32 rows reduce their partials in a cluster's shared memory (TF_DSV41_LIN2_CLUSTER)", .{});
+    }
+
     pub fn deinit(k: *Kernels) void {
+        if (k.dense.lin2) |*l| l.module.unload();
         for (&k.mods) |*m| m.unload();
     }
 

@@ -64,6 +64,7 @@ pub const SlotSet = struct {
         @memset(states, .{});
         ss.* = .{ .gpa = gpa, .f = f, .n = n, .states = states };
         f.pf_switch = .{ .ctx = ss, .run = viewFn };
+        f.pf_stash = .{ .ctx = ss, .run = stashFn };
         return ss;
     }
 
@@ -142,10 +143,12 @@ pub const SlotSet = struct {
     }
 
     /// Slot s's views and state current on this rank alone (no op_select: a multi-segment prefill run's segments,
-    /// which every rank runs in the same order; forward_prefill.promptMulti).
+    /// which every rank runs in the same order; forward_prefill.promptMulti). The swapped roles (CED's stash ring)
+    /// stay with their owner: a run switches slots at every segment's CSA2 steps of every layer, and only its stash
+    /// steps touch the ring, which make it the current slot's first (`stashFn`). Swapped here, a 3-segment run moved
+    /// 2 x 6.6 MB a switch: 715 MB and 7 ms of copies in one 20-layer encoder pass (a Spark nsys capture, 2026-10-09).
     pub fn view(ss: *SlotSet, s: u32) !void {
         if (s >= ss.n) return error.SlotRange;
-        try ss.swapIn(s);
         if (ss.active == s) return;
         ss.store();
         ss.f.slot = ss.states[s];
@@ -156,6 +159,12 @@ pub const SlotSet = struct {
     fn viewFn(ctx: *anyopaque, s: u32) anyerror!void {
         const ss: *SlotSet = @ptrCast(@alignCast(ctx));
         return ss.view(s);
+    }
+
+    /// Forward.pf_stash: the swapped roles hold the active slot's bytes (the owner's set aside first).
+    fn stashFn(ctx: *anyopaque) anyerror!void {
+        const ss: *SlotSet = @ptrCast(@alignCast(ctx));
+        if (ss.active) |s| try ss.swapIn(s);
     }
 
     /// The stacked bases again (row mode), the active slot's state kept.
