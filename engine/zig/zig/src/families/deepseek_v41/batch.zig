@@ -257,7 +257,6 @@ pub const Batch = struct {
         b.lap(&tp, &b.stats.prep_ns);
         try b.tab.stage(r.stream, mix, ids, R, b.ss.n);
         pt.mark(.rowtab);
-        f.publishPin(); // TF_DSV41_PIN_ISOLATE's CPU for the Engram workers (an atomic copy; read only with the knob)
         try b.stageEngram(mix, ids, R);
         b.lap(&tp, &b.stats.stage_ns);
         defer b.lap(&tp, &b.stats.launch_ns);

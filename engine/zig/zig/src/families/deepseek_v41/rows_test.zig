@@ -20,7 +20,6 @@ test {
     _ = rowmode;
     _ = @import("aot_needs.zig");
     _ = @import("batch.zig"); // TF_DSV41_WIN_PROF's timer
-    _ = @import("cpu_isolate.zig"); // TF_DSV41_PIN_ISOLATE
 }
 
 const S: u32 = 4;

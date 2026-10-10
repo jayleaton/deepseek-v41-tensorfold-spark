@@ -1074,17 +1074,6 @@ pub const Forward = struct {
 
     /// TF_DSV41_ENGRAM_GATE: arms the gate for a window over `items` (`fill`: its rows with a bucket's padding); false
     /// when the gate is off or the window is too wide (the old path stages its rows).
-    /// TF_DSV41_PIN_ISOLATE: the plan thread's pinned CPU (TF_DSV41_PLAN_PIN, once pinned) for the worker threads to
-    /// keep off (cpu_isolate.zig); an atomic load and store, before each window's Engram arm.
-    pub fn publishPin(_: *Forward) void {
-        const iso = @import("cpu_isolate.zig");
-        const c = tp.planlink.pinned_cpu.load(.acquire);
-        if (c >= 0 and iso.reserved.load(.monotonic) != c) {
-            iso.reserved.store(c, .release);
-            if (iso.fromEnv()) std.log.scoped(.dsv41).info("pin isolate: the Engram reader and gate threads keep off CPU {d} (the pinned plan thread's)", .{c});
-        }
-    }
-
     pub fn armEngram(f: *Forward, items: []const egate.Item, fill: u32) !bool {
         const h = f.engram orelse return false;
         _ = try f.engramSource(h); // the table and the gate open on the first Engram window

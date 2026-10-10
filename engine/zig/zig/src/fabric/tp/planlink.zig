@@ -7,9 +7,6 @@ const linux = std.os.linux;
 
 pub const max_ranks = 64;
 
-/// The CPU a plan thread pinned itself to (TF_DSV41_PLAN_PIN), -1 until one did: the process's other busy threads can
-/// keep off it (the engine's TF_DSV41_PIN_ISOLATE), so a pinned plan thread never waits behind a thread it woke.
-pub var pinned_cpu: std.atomic.Value(i32) = .init(-1);
 const more: u32 = 0x8000; // MSG_MORE: the length and the ints leave as one segment
 
 pub const Error = error{ PeerClosed, TooLarge, NotRankZero, NotFollower };
@@ -249,7 +246,6 @@ pub const PlanLink = struct {
             std.log.warn("[tensorfold] tp: TF_DSV41_PLAN_PIN: CPU {d} refused ({t}); the plan thread stays unpinned", .{ cpu, e });
             return;
         };
-        pinned_cpu.store(@intCast(cpu), .release);
         std.log.info("[tensorfold] tp: plan link rank {d} pinned to CPU {d}", .{ p.rank, cpu });
     }
 

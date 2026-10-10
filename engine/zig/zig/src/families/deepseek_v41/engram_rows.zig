@@ -352,7 +352,6 @@ pub const Rows = struct {
     /// A reader thread: extents off the queue until `stop` (the queue drained first).
     fn worker(r: *Rows) void {
         const p = r.pool.?;
-        var iso = @import("cpu_isolate.zig").Isolate.init(); // TF_DSV41_PIN_ISOLATE: off the pinned plan thread's CPU
         while (true) {
             p.lock();
             while (p.head == p.jobs.items.len and !p.stop) _ = std.c.pthread_cond_wait(&p.work, &p.mu);
@@ -367,7 +366,6 @@ pub const Rows = struct {
                 p.head = 0;
             }
             p.unlock();
-            iso.apply();
             const ok = if (readAt(j.fd, j.size, j.direct, j.buf, j.off)) true else |_| false;
             p.lock();
             const b = &r.batches.items[j.bi];
