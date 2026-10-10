@@ -90,8 +90,23 @@ was not repeated for this publication; the exported host build and host tests ar
    The launcher passes the serving settings to both processes, sets TP world/rank/device explicitly, and uses
    Docker `--init` because the follower exits when orphaned. It validates local directories and basic assets;
    it does not replace the engine's memory checks, fill validation, or a production watchdog. Keep the same env
-   across restarts. Stop both ranks together with `docker stop tensorfold-zig-r0` / `tensorfold-zig-r1` on their
-   respective nodes. A failure on either rank should end both via fail-fast (exit 70).
+   across restarts. A failure on either rank should end both via fail-fast (exit 70).
+
+   To stop, signal rank 0 only and let it drain: on SIGTERM it answers new requests with 503 (`/health` reports
+   `draining`), gives requests in progress `TF_DSV41_DRAIN_S` seconds to finish, then halts both ranks at a round
+   boundary. Give Docker more time than the drain before it kills, then wait for rank 1 to exit on its node:
+
+   ```bash
+   docker stop -t $((DRAIN_S + 60)) tensorfold-zig-r0   # rank 0 node; DRAIN_S = TF_DSV41_DRAIN_S (20)
+   docker wait tensorfold-zig-r1                        # rank 1 node
+   ```
+
+   The launcher's `--rm` removes both containers once they exit (otherwise `docker rm` them). A second signal
+   cuts the drain short.
+
+   Streams that have not sent their first token yet get a keepalive every `TF_DSV41_SSE_KEEPALIVE_S` seconds
+   (`: keepalive` comments on OpenAI streams, `ping` events on Anthropic streams), so client or proxy idle
+   timeouts do not end long prefills.
 
 4. Wait for the model to load and inspect the boot log: four slots, CED replay, row graphs, successful device-draft
    self-check and RoCE probe. First preparation can take several minutes. Then query rank 0:
@@ -243,6 +258,8 @@ upstream TensorFold settings.
 | `TF_DSV41_FLOOR_HARD_GIB` | 4 | `4` | Hard admission floor in GiB |
 | `TF_DSV41_REQUEST_LOG` | unset: off | `/state/requests.jsonl` | Request metadata log |
 | `TF_DSV41_DISCONNECT` | 1 | `1` | Cancel generation when client disconnects |
+| `TF_DSV41_DRAIN_S` | 20 | `20` | Seconds requests in progress may finish after SIGTERM before both ranks halt |
+| `TF_DSV41_SSE_KEEPALIVE_S` | 15 | `15` | Seconds between keepalives on a stream before its first token (0: none) |
 | `TF_DSV41_THINKING` | 1 | `1` | Default thinking mode; requests can override |
 | `TF_DSV41_DEFAULT_EFFORT` | high | `high` | Default effort (high = 75) |
 | `TF_DSV41_SCHEMA_PROMPT` | 1 | `1` | Include response-format schema in the prompt |
