@@ -513,7 +513,7 @@ pub const DeepSeek = struct {
         const d = self(ctx);
         const r = try a.create(Reply);
         r.* = .{ .a = a, .d = d, .detok = .{ .tok = d.tok }, .stream = tools_mod.Stream.init(a, thinking, try tools_mod.Tools.init(a, offered), .{ .make = callId }), .thinking = thinking, .offered = try tools_mod.Tools.init(a, offered), .single = single };
-        return .{ .ctx = r, .vt = &.{ .push = Reply.push, .pending = Reply.pending, .feed = Reply.feed, .parse = Reply.parse, .calls = Reply.calls } };
+        return .{ .ctx = r, .vt = &.{ .push = Reply.push, .pending = Reply.pending, .feed = Reply.feed, .parse = Reply.parse, .calls = Reply.calls, .markup = Reply.markup } };
     }
 
     fn callId(_: ?*anyopaque, a: Allocator, _: usize) Allocator.Error![]const u8 {
@@ -601,6 +601,12 @@ const Reply = struct {
         try o.put(a, "type", .{ .string = "function" });
         try o.put(a, "function", .{ .object = f });
         return .{ .object = o };
+    }
+
+    fn markup(ctx: *anyopaque) Allocator.Error!?family.Markup {
+        const r = self(ctx);
+        const n = try tools_mod.note(r.a, r.text.items, r.thinking, r.offered) orelse return null;
+        return .{ .at = n.at, .reason = n.reason, .window = n.window };
     }
 
     fn parse(ctx: *anyopaque) Allocator.Error!family.Parsed {

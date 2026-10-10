@@ -58,6 +58,9 @@ pub const Reader = struct {
         parse: *const fn (ctx: *anyopaque) Allocator.Error!Parsed,
         /// The calls the stream sent, in order, as OpenAI tool-call objects.
         calls: *const fn (ctx: *anyopaque) Allocator.Error![]Value,
+        /// The finished reply's tool markup that yielded no call (a reason and at most 300 bytes around it), for
+        /// the server's log; null: none, or the family does not tell
+        markup: ?*const fn (ctx: *anyopaque) Allocator.Error!?Markup = null,
     };
 
     pub fn push(r: Reader, ids: []const u32) Allocator.Error!void {
@@ -75,9 +78,16 @@ pub const Reader = struct {
     pub fn calls(r: Reader) Allocator.Error![]Value {
         return r.vt.calls(r.ctx);
     }
+    pub fn markup(r: Reader) Allocator.Error!?Markup {
+        const f = r.vt.markup orelse return null;
+        return f(r.ctx);
+    }
 };
 
 /// Where a reply's reasoning goes: ``reasoning_content`` (OpenAI's), ``reasoning`` (vLLM's), or both.
+/// A reply's tool markup that the parser turned into no call (``Reader.markup``).
+pub const Markup = struct { at: usize, reason: []const u8, window: []const u8 };
+
 pub const ReasoningFields = enum { both, reasoning_content, reasoning };
 
 pub const Family = struct {

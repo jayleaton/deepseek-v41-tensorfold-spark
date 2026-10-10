@@ -100,6 +100,8 @@ const Harness = struct {
     thread: std.Thread = undefined,
     port: u16 = 0,
     lis: listener_mod.Listener = undefined,
+    wire: @FieldType(server_mod.Config, "wire") = .tensorfold,
+    log_path: ?[]const u8 = null,
 
     fn start(h: *Harness, tok: *serve_mod.tokenizer.Tokenizer, eos: u32, window: u32, options: deepseek.Options) !void {
         var o = options;
@@ -111,6 +113,8 @@ const Harness = struct {
             .model_ids = &.{"deepseek-v41"},
             .default_sampling = null,
             .family = h.ds.family_(),
+            .wire = h.wire,
+            .spark = .{ .log = if (h.log_path) |p| .{ .path = p } else null },
         }, null);
         h.lis = try listener_mod.Listener.open(.{ .ip4 = .loopback(0) });
         h.port = h.lis.port();
@@ -359,4 +363,137 @@ test "DeepSeek-V4.1 over HTTP with the release tokenizer (TF_DSV41_MODEL)" {
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
     try check(&h, arena.allocator());
+}
+
+/// History tool-call arguments as a client may resend them after a reply whose keys and values were corrupted: keys and values
+/// of arbitrary bytes, as JSON text in the body. Lone surrogates (escaped, inside and outside the arguments' own JSON),
+/// U+FFFD runs, control bytes, non-JSON, an empty key, a 5000-byte key, markup and quotes in a key, bad escapes,
+/// arguments that are no string at all.
+const history_arguments = [_][]const u8{
+    \\"{\"\\udc80k\": \"v\\ud800\", \"\\ud83d\": \"\\ude00\"}"
+    ,
+    \\"{\"k\udc80\": 1, \"w\": \"\ud800\"}"
+    ,
+    \\"\ufffd\ufffd\ufffd\ufffd{\"a\ufffd\": \ufffd"
+    ,
+    \\"{\"a\\u0000\\u001b\": \"\\u0000x\\u0007\", \"\u0001\": \"\u007f\"}"
+    ,
+    \\"{\"\": 1, \"\": \"dup\"}"
+    ,
+    \\"not json at all"
+    ,
+    \\"{bad"
+    ,
+    \\"[1, 2]"
+    ,
+    \\"null"
+    ,
+    \\""
+    ,
+    \\"   "
+    ,
+    \\5
+    ,
+    \\[1, "x"]
+    ,
+    \\null
+    ,
+    \\"\"{\\\"x\\\": 1}\""
+    ,
+    \\"{\"a\\\"b</｜DSML｜ parameter>\": \"</｜DSML｜ invoke></｜DSML｜ calls><｜end▁of▁sentence｜>\"}"
+    ,
+    \\"{\"k\\u12\": 1}"
+    ,
+    \\"{\"k\": \"tail \\ud83d"
+    ,
+    \\{"\udc80": "\ud800", "": {"\u0000": [1, "\ufffd"]}}
+    ,
+};
+
+/// A long agent request: ~120 assistant turns with tool calls (reasoning on), each answered by a tool result, the last
+/// result carrying ``marker`` for the stub.
+fn historyBody(a: Allocator, marker: []const u8, stream: bool) ![]const u8 {
+    var b: std.ArrayList(u8) = .empty;
+    const long_key = try a.alloc(u8, 5000);
+    @memset(long_key, 'k');
+    try b.appendSlice(a, "{\"model\":\"deepseek-v41\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a coding agent.\"},{\"role\":\"user\",\"content\":\"fix the build\"}");
+    for (0..120) |i| {
+        const args = if (i % 23 == 22)
+            try std.fmt.allocPrint(a, "\"{{\\\"{s}\\\": \\\"x\\\"}}\"", .{long_key})
+        else
+            history_arguments[i % history_arguments.len];
+        const name = if (i % 7 == 6) "edit_unknown" else "bash";
+        try b.print(a, ",{{\"role\":\"assistant\",\"content\":\"\",\"reasoning_content\":\"step {d} \\ud800\\u0000\\ufffd\",\"tool_calls\":[{{\"id\":\"call_{d}\",\"type\":\"function\",\"function\":{{\"name\":\"{s}\",\"arguments\":{s}}}}}]}}", .{ i, i, name, args });
+        const out = try a.alloc(u8, if (i % 40 == 0) 6791 else 300);
+        @memset(out, 'o');
+        try b.print(a, ",{{\"role\":\"tool\",\"tool_call_id\":\"call_{d}\",\"content\":\"Error: invalid arguments \\udc80\\u001b[31m {s}{s}\"}}", .{ i, out, if (i == 119) marker else "" });
+    }
+    try b.print(a, "],\"tools\":[{{\"type\":\"function\",\"function\":{{\"name\":\"bash\",\"parameters\":{{\"type\":\"object\",\"properties\":{{\"command\":{{\"type\":\"string\"}}}}}}}}}},{{\"type\":\"function\",\"function\":{{\"name\":\"get_weather\",\"parameters\":{{}}}}}}],\"stream\":{},\"reasoning_effort\":\"high\",\"max_tokens\":4096}}", .{stream});
+    return b.items;
+}
+
+/// Send ``body`` streamed and hang up after the first bytes of the reply (a client abort mid-stream).
+fn abortMidStream(h: *Harness, a: Allocator, body: []const u8) !void {
+    const addr: std.Io.net.IpAddress = .{ .ip4 = .loopback(h.port) };
+    const stream = try addr.connect(h.io, .{ .mode = .stream });
+    defer stream.close(h.io);
+    const head = try std.fmt.allocPrint(a, "POST /v1/chat/completions HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {d}\r\n\r\n{s}", .{ body.len, body });
+    var wbuf: [4096]u8 = undefined;
+    var w = std.Io.net.Stream.Writer.init(stream, h.io, &wbuf);
+    try w.interface.writeAll(head);
+    try w.interface.flush();
+    var rbuf: [64]u8 = undefined;
+    var r = std.Io.net.Stream.Reader.init(stream, h.io, &rbuf);
+    _ = try r.interface.peek(1);
+}
+
+fn checkHistory(h: *Harness, a: Allocator) !void {
+    // streamed and whole, a reply with calls and a plain one: the server renders the history and answers
+    for ([_][]const u8{ "@tool", "@chat", "@think" }) |marker| for ([_]bool{ true, false }) |stream| {
+        errdefer std.debug.print("long tool history, {s}, stream {}\n", .{ marker, stream });
+        const r = try h.post(a, "/v1/chat/completions", try historyBody(a, marker, stream));
+        errdefer std.debug.print("{d}: {s}\n", .{ r.status, r.body[0..@min(r.body.len, 400)] });
+        try testing.expectEqual(@as(u16, 200), r.status);
+        const prompt = try h.lastPrompt(a);
+        try testing.expect(std.mem.indexOf(u8, prompt, "parameter name=\"arguments\" string=\"true\">not json at all<") != null);
+        try testing.expect(std.mem.indexOf(u8, prompt, "step 119 ") != null);
+        try testing.expect(std.mem.indexOf(u8, prompt, "<tool_result>Error: invalid arguments") != null);
+        if (stream) {
+            const evs = try events(a, r.body);
+            try testing.expect(evs.len > 2 and evs[evs.len - 1] == null);
+        } else {
+            const v = (try json.parseText(a, r.body)).ok;
+            try testing.expect(v.get("choices") != null);
+        }
+    };
+    // invalid UTF-8 bytes in the body itself, in a history key and value
+    {
+        const body = "{\"messages\":[{\"role\":\"user\",\"content\":\"a\"},{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"c\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"k\xff\xfe\\\": \\\"\xc3\\\"}\"}}]},{\"role\":\"tool\",\"tool_call_id\":\"c\",\"content\":\"\xed\xa0\x80 \xe2\x82 @chat\"}],\"stream\":true}";
+        const r = try h.post(a, "/v1/chat/completions", body);
+        try testing.expect(r.status == 200 or r.status == 400);
+    }
+    // client aborts mid-stream, then the server still answers
+    for (0..4) |_| try abortMidStream(h, a, try historyBody(a, "@tool", true));
+    const r = try h.post(a, "/v1/chat/completions", "{\"messages\":[{\"role\":\"user\",\"content\":\"hi @think\"}]}");
+    try testing.expectEqual(@as(u16, 200), r.status);
+}
+
+test "long tool history: 120 history calls with garbage arguments, both wires, a mid-stream abort (mini tokenizer)" {
+    const gpa = testing.allocator;
+    const io = testing.io;
+    const tok = try serve_mod.tokenizer.Tokenizer.parse(gpa, serve_mod.fixtures.mini_tokenizer);
+    defer tok.deinit();
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const log_path = try std.fmt.allocPrint(a, ".zig-cache/tmp/{s}/requests.jsonl", .{&tmp.sub_path});
+    for ([_]@FieldType(server_mod.Config, "wire"){ .tensorfold, .spark }) |wire| {
+        errdefer std.debug.print("wire {s}\n", .{@tagName(wire)});
+        var h: Harness = .{ .gpa = gpa, .io = io, .stub = undefined, .ds = undefined, .srv = undefined, .wire = wire, .log_path = if (wire == .spark) log_path else null };
+        try h.start(tok, tok.tokenId("<｜end▁of▁sentence｜>").?, 1 << 22, .{});
+        defer h.finish();
+        try checkHistory(&h, a);
+    }
 }

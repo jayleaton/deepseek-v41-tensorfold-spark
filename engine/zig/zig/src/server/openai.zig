@@ -214,7 +214,17 @@ fn promptText(srv: *Server, cx: *Cx, p: Value) errors.Refused![]const u8 {
         .array => |items| {
             if (allInts(items)) {
                 const toks = try cx.a.alloc(u32, items.len);
-                for (items, toks) |t, *slot| slot.* = if (t == .bool) @intFromBool(t.bool) else @intCast(@max(0, t.int64() orelse 0));
+                const vocab = srv.text.vocabSize();
+                for (items, toks) |t, *slot| {
+                    if (t == .bool) {
+                        slot.* = @intFromBool(t.bool);
+                        continue;
+                    }
+                    // as legacyPrompt: an id outside the vocabulary is the request's error, not an @intCast panic
+                    const n = t.int64();
+                    if (n == null or n.? < 0 or n.? >= vocab) return cx.fail(.request, "prompt token ids must be integers in the valid range 0 to {d}", .{@as(i64, vocab) - 1});
+                    slot.* = @intCast(n.?);
+                }
                 return srv.text.decode(cx.a, toks) catch return error.OutOfMemory;
             }
             var parts: std.ArrayList([]const u8) = .empty;

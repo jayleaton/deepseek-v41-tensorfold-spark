@@ -657,6 +657,10 @@ const Generation = struct {
         const t = g.collected.items;
         const reason: []const u8 = if (calls.len > 0) "tool_calls" else if (g.stop_hit or (!g.ignore_eos and t.len > 0 and g.isEos(t[t.len - 1]))) "stop" else "length";
         if (g.srv.family) |fam| fam.remember(parsed.reasoning, content, calls);
+        // a reply with tools on offer that ended without a call but holds tool markup: what the parser saw (once,
+        // at most 300 bytes of the reply; the window is cut at UTF-8 boundaries and escaped by the log line)
+        if (calls.len == 0 and g.tools.len > 0) if (r.markup() catch null) |m|
+            std.log.warn("tool markup with no call: request {s}, finish {s}: {s}; reply bytes {d}..: {f}", .{ g.reply_id, reason, m.reason, m.at, std.zig.fmtString(m.window) });
         return .{ .content = content, .reasoning = if (parsed.reasoning.len > 0) parsed.reasoning else null, .calls = calls, .reason = reason, .used = if (g.stop_hit and g.stop_at > 0) g.stop_at else t.len };
     }
 

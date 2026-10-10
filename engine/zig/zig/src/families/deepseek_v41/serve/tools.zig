@@ -610,6 +610,58 @@ pub fn parse(a: Allocator, text: []const u8, thinking: bool, tools: Tools, ids: 
     return .{ .reasoning = sp.reasoning, .content = content, .calls = usable.items };
 }
 
+/// A reply that offered tools but yields no usable call while it holds DSML markup: why the markup was not a call
+/// and at most ``note_window`` bytes of text around its first tag, cut at UTF-8 boundaries (``note``).
+pub const Note = struct { at: usize, reason: []const u8, window: []const u8 };
+pub const note_window = 300;
+const DSML = "｜DSML｜";
+
+/// The finished reply ``text`` (as ``parse`` reads it) when it holds DSML markup that ``parse`` turns into no usable
+/// call, else null: the server logs it (a reply that ended "stop" or "length" with a call the parser missed).
+pub fn note(a: Allocator, text: []const u8, thinking: bool, tools: Tools) Allocator.Error!?Note {
+    const hit = std.mem.indexOf(u8, text, DSML) orelse return null;
+    // the first tag's ``<`` / ``</`` when it has one
+    const at = if (hit >= 2 and text[hit - 2] == '<' and text[hit - 1] == '/') hit - 2 else if (hit >= 1 and text[hit - 1] == '<') hit - 1 else hit;
+    const reason = try noteReason(a, text, thinking, tools) orelse return null;
+    return .{ .at = at, .reason = reason, .window = window(text, at, note_window) };
+}
+
+fn noteReason(a: Allocator, text: []const u8, thinking: bool, tools: Tools) Allocator.Error!?[]const u8 {
+    if (!tools.offered()) return "the request offered no tools";
+    const sp = split(text, thinking, std.mem.indexOf(u8, text, THINK_END), blockTag(text, 0, text.len, false));
+    const rest = text[sp.rest_at..];
+    const b = blockTag(rest, 0, rest.len, false) orelse {
+        if (std.mem.indexOf(u8, rest, DSML) == null) return "DSML markup only inside the reasoning (no calls block after it)";
+        return "DSML tags but no calls / tool_calls / function_calls block opening tag";
+    };
+    const close = blockTag(rest, b.end, rest.len, true);
+    var calls: std.ArrayList(Call) = .empty;
+    const scratch: IdSource = .{};
+    try readCalls(a, rest, b.end, if (close) |c| c.start else rest.len, tools, scratch, 0, &calls);
+    if (calls.items.len == 0) {
+        if (invokeOpen(rest, b.end, rest.len) == null) return "a calls block without a complete invoke header";
+        return "an invoke that read as no call";
+    }
+    for (calls.items) |c| if (tools.known(c.name) != null) return null; // a usable call: parse emits it
+    return try std.fmt.allocPrint(a, "an invoke of a tool the request did not offer: \"{s}\"{s}", .{ window(calls.items[0].name, 0, 64), if (close == null) " (calls block not closed)" else "" });
+}
+
+/// At most ``max`` bytes of ``s`` around ``at`` (a third before it), cut so no UTF-8 sequence is split.
+pub fn window(s: []const u8, at: usize, max: usize) []const u8 {
+    const p = @min(at, s.len);
+    var lo = p -| max / 3;
+    var hi = @min(s.len, lo + max);
+    while (lo < hi and s[lo] & 0xC0 == 0x80) lo += 1; // not inside a sequence
+    if (hi > lo) {
+        // the last sequence whole: not cut at hi (nor by the end of s itself)
+        var k = hi - 1;
+        while (k > lo and s[k] & 0xC0 == 0x80) k -= 1;
+        const need = std.unicode.utf8ByteSequenceLength(s[k]) catch 1;
+        if (k + need > hi) hi = k;
+    }
+    return s[lo..hi];
+}
+
 // -- streaming -------------------------------------------------------------------------------------------------------
 
 pub const Delta = union(enum) {
@@ -848,7 +900,9 @@ pub const Stream = struct {
             o.param_pos = c.end;
             if (o.seen.contains(h.name)) continue;
             try o.seen.put(a, h.name, {});
-            try o.call.args.append(a, .{ .key = h.name, .value = try paramValue(a, t[h.end..c.start], h.string, s.tools.prop(o.call.name, h.name)) });
+            // the value is copied too: the call is kept (Stream.calls) and serialized again at the reply's end, when
+            // ``text`` is long gone; a string value would otherwise be a slice of it
+            try o.call.args.append(a, .{ .key = h.name, .value = try paramValue(a, try a.dupe(u8, t[h.end..c.start]), h.string, s.tools.prop(o.call.name, h.name)) });
         }
     }
 
@@ -937,6 +991,55 @@ test "streamed keys and call names outlive the text they were read from (each fe
     };
     try std.testing.expectEqualStrings("bash", name);
     try std.testing.expectEqualStrings("{\"command\":\"grep -n 'pub fn stdout' /opt/zig/lib/std/Io/File.zig | head -40\",\"timeout\":30}", args.items);
+    // the kept call (the reply's end serializes it again, every buffer freed by then): its values are copies too
+    try std.testing.expectEqual(@as(usize, 1), s.calls.items.len);
+    try std.testing.expectEqualStrings("{\"command\":\"grep -n 'pub fn stdout' /opt/zig/lib/std/Io/File.zig | head -40\",\"timeout\":30}", try s.calls.items[0].arguments(a));
+}
+
+test "note: DSML markup that yields no call is reported once with a reason and a bounded window; clean text and good calls are not" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const tools_json = (try json.parseText(a,
+        \\[{"type":"function","function":{"name":"bash","parameters":{"type":"object","properties":{"command":{"type":"string"}}}}}]
+    )).ok;
+    const tools = try Tools.init(a, tools_json.array);
+    const good = "done</think>ok\n\n<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"bash\">\n<｜DSML｜ parameter name=\"command\" string=\"true\">ls</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+    try std.testing.expect((try note(a, good, true, tools)) == null);
+    try std.testing.expect((try note(a, "done</think>All set, nothing more to run.", true, tools)) == null);
+    // an unknown tool
+    const unknown = "x</think><｜DSML｜ calls>\n<｜DSML｜ invoke name=\"zsh\">\n<｜DSML｜ parameter name=\"command\" string=\"true\">ls</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+    const n1 = (try note(a, unknown, true, tools)).?;
+    try std.testing.expect(std.mem.indexOf(u8, n1.reason, "did not offer: \"zsh\"") != null);
+    try std.testing.expectEqual(@as(usize, 9), n1.at); // the "<" of the first tag
+    // a tag with no calls block, at the very start of the text
+    const stray = "<｜DSML｜ invoke name=\"bash\">";
+    const n2 = (try note(a, stray, false, tools)).?;
+    try std.testing.expectEqualStrings("DSML tags but no calls / tool_calls / function_calls block opening tag", n2.reason);
+    try std.testing.expectEqual(@as(usize, 0), n2.at);
+    try std.testing.expectEqualStrings(stray, n2.window);
+    // a block whose invoke header never completes, at the very end of a long text: the window is <= 300 bytes and
+    // valid UTF-8 (the filler is multi-byte, so a byte cut would split a sequence)
+    var long: std.ArrayList(u8) = .empty;
+    for (0..400) |_| try long.appendSlice(a, "é");
+    try long.appendSlice(a, "</think><｜DSML｜ calls>\n<｜DSML｜ invoke name=\"ba");
+    const n3 = (try note(a, long.items, true, tools)).?;
+    try std.testing.expectEqualStrings("a calls block without a complete invoke header", n3.reason);
+    try std.testing.expect(n3.window.len <= note_window);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(n3.window));
+    try std.testing.expect(std.mem.endsWith(u8, long.items, n3.window));
+    // the window itself at the buffer's edges and inside sequences
+    const e = "aé€😀b";
+    for (0..e.len + 1) |at| for ([_]usize{ 0, 1, 2, 3, 4, 5, 300 }) |max| {
+        const w = window(e, at, max);
+        try std.testing.expect(w.len <= max);
+        try std.testing.expect(std.unicode.utf8ValidateSlice(w));
+    };
+    try std.testing.expectEqualStrings(e, window(e, 3, 300));
+    try std.testing.expectEqualStrings("aé", window(e, 0, 4)); // € would be cut at 4
+    // a reply that ends inside a sequence (the stream cut a character): the partial bytes are left out
+    try std.testing.expectEqualStrings("ab", window("ab€"[0..4], 0, 300));
+    try std.testing.expectEqualStrings("", window("", 0, note_window));
 }
 
 test "a call to a tool the request did not offer goes out as a call, whole and streamed; a nameless one stays text" {
