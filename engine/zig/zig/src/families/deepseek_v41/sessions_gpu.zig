@@ -242,9 +242,12 @@ pub const Sessions = struct {
         try s.reset();
     }
 
-    fn restoreFn(ptr: *anyopaque, id: u32) anyerror!void {
+    fn restoreFn(ptr: *anyopaque, id: u32, ids: []const i64) anyerror!void {
         const s: *Sessions = @ptrCast(@alignCast(ptr));
-        _ = try s.restore(id);
+        const p = try s.gpa.alloc(u32, ids.len);
+        defer s.gpa.free(p);
+        for (ids, p) |t, *y| y.* = @intCast(t);
+        _ = try s.restore(id, if (ids.len > 0) p else null);
     }
 
     /// A follower: the leader's admission (forward.zig op_sess_admit: [op, need, n, spilled ids...]).
@@ -270,7 +273,7 @@ pub const Sessions = struct {
     }
 
     /// The slot the one-slot operations run on (the pool's current slot: slots.zig `activate`).
-    fn cur(s: *const Sessions) u32 {
+    pub fn cur(s: *const Sessions) u32 {
         return s.kx.slot.id;
     }
 
@@ -483,7 +486,7 @@ pub const Sessions = struct {
         const hit = try s.find(prompt);
         if (max_new) |mn| try s.admit(hit, prompt.len, mn);
         s.ds_valid[s.cur()] = 0;
-        return (try s.resumeHit(prompt.len, hit)).at;
+        return (try s.resumeHit(prompt, hit)).at;
     }
 
     /// The longest saved entry that strictly prefixes `prompt` (a row must remain to prefill), null: none.
@@ -504,19 +507,22 @@ pub const Sessions = struct {
 
     /// The round planner's admission into the (empty) slot (rounds.py `_admit`): `spills` evicted (the round's, with
     /// its first admission), `need` pages reserved, then `hit` restored. Every rank, in the leader's order.
-    pub fn resumePlanned(s: *Sessions, n: u64, need: u32, hit: ?sessions.store.Hit, spills: []const u32) !Resumed {
+    pub fn resumePlanned(s: *Sessions, prompt: []const u32, need: u32, hit: ?sessions.store.Hit, spills: []const u32) !Resumed {
         if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
         s.stats.admits += 1;
         try s.f.sendSessAdmit(need, spills);
         try s.applyAdmit(need, spills);
         s.ds_valid[s.cur()] = 0;
-        return s.resumeHit(n, hit);
+        return s.resumeHit(prompt, hit);
     }
 
-    fn resumeHit(s: *Sessions, n: u64, hit: ?sessions.store.Hit) !Resumed {
+    fn resumeHit(s: *Sessions, prompt: []const u32, hit: ?sessions.store.Hit) !Resumed {
         const h = hit orelse return .{};
-        try s.f.sendSess(.restore, h.id);
-        if (!try s.restore(h.id)) return .{ .damaged = true };
+        const n = prompt.len;
+        // out of RAM no tokens are indexed: the history is the prompt's prefix (rounds.py `_admit`)
+        const ids: ?[]const u32 = if (s.store.entry(h.id).ram) null else prompt[0..@intCast(h.pos)];
+        try s.f.sendRestore(h.id, ids);
+        if (!try s.restore(h.id, ids)) return .{ .damaged = true };
         std.log.scoped(.dsv41).info("sessions: slot {d} resumed {d} of {d} prompt tokens from {s}", .{ s.cur(), h.pos, n, if (h.ram) "RAM" else "NVMe" });
         return .{ .at = h.pos };
     }
@@ -552,7 +558,7 @@ pub const Sessions = struct {
     /// back on some rank (a damaged NVMe entry: rounds.py `_admit`'s `except (ValueError, KeyError)`): every rank's slot
     /// is empty again with its reservation, the entry is forgotten (prod's sessdisk deletes the file), and the caller
     /// prefills the prompt from 0.
-    pub fn restore(s: *Sessions, id: u32) !bool {
+    pub fn restore(s: *Sessions, id: u32, ids: ?[]const u32) !bool {
         if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
         try s.active();
         const e = s.store.entry(id);
@@ -583,7 +589,13 @@ pub const Sessions = struct {
         try s.kx.dev.syncTables();
         const h = &s.hist[s.cur()];
         try h.resize(s.gpa, pos);
-        try s.store.index.idsOf(id, h.items);
+        // RAM: the path's indexed tokens; NVMe: the ids the leader sent (its prompt's prefix), as Python's history
+        const given: ?[]i32 = if (ids) |x| try s.gpa.alloc(i32, x.len) else null;
+        defer if (given) |g| s.gpa.free(g);
+        if (given) |g| for (ids.?, g) |t, *y| {
+            y.* = @intCast(t);
+        };
+        try s.store.historyOf(id, given, h.items);
         return true;
     }
 
