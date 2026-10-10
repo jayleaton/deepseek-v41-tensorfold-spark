@@ -35,6 +35,10 @@ pub const Store = struct {
     /// ``keys`` from --api-key, ``environment`` from TENSORFOLD_API_KEY; errors carry Python's message.
     pub fn init(gpa: Allocator, keys: []const []const u8, environment: []const u8, path: ?[]const u8, metrics_open: bool, problem: *[]const u8) !Store {
         var static: std.ArrayList(Key) = .empty;
+        errdefer {
+            for (static.items) |k| gpa.free(k.label);
+            static.deinit(gpa);
+        }
         for (keys, 1..) |key, i| {
             const d = digest(key) orelse return fail(problem, "API keys must be nonempty text without whitespace");
             try static.append(gpa, .{ .digest = d, .label = try std.fmt.allocPrint(gpa, "cli-{d}", .{i}) });
@@ -48,7 +52,8 @@ pub const Store = struct {
             const d = digest(key) orelse return fail(problem, "API keys must be nonempty text without whitespace");
             try static.append(gpa, .{ .digest = d, .label = try std.fmt.allocPrint(gpa, "env-{d}", .{i}) });
         }
-        var store: Store = .{ .gpa = gpa, .static = static.items, .path = path, .metrics_open = metrics_open };
+        var store: Store = .{ .gpa = gpa, .static = try static.toOwnedSlice(gpa), .path = path, .metrics_open = metrics_open };
+        errdefer store.deinit();
         if (path != null) {
             store.readFile(problem) catch |e| switch (e) {
                 error.Unsafe => {
@@ -60,6 +65,13 @@ pub const Store = struct {
             };
         }
         return store;
+    }
+
+    pub fn deinit(s: *Store) void {
+        for (s.static) |k| s.gpa.free(k.label);
+        s.gpa.free(s.static);
+        if (s.file_arena) |*x| x.deinit();
+        s.* = undefined;
     }
 
     fn fail(problem: *[]const u8, message: []const u8) error{KeyFile} {

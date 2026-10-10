@@ -48,6 +48,11 @@ pub const Metrics = struct {
     tpot: TpotHistogram = .{},
     requests: std.ArrayList(struct { key: []const u8, status: u16, count: u64 }) = .empty,
 
+    pub fn deinit(m: *Metrics) void {
+        for (m.requests.items) |r| m.gpa.free(r.key);
+        m.requests.deinit(m.gpa);
+    }
+
     pub fn note(m: *Metrics, io: std.Io, prompt: usize, generation: usize, drafted: u64, accepted: u64, rounds: u64, latency: f64, ttft: ?f64, decode: ?f64, prefill: ?f64, tpot: ?f64) void {
         m.mutex.lockUncancelable(io);
         defer m.mutex.unlock(io);

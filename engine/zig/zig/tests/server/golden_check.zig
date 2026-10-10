@@ -469,6 +469,7 @@ pub fn main(init: std.process.Init) !void {
     // the verdicts by group, then the total against the frozen answers
     const GroupCounts = struct { name: []const u8, equal: usize = 0, differ: usize = 0, known: usize = 0 };
     var groups: std.ArrayList(GroupCounts) = .empty;
+    defer groups.deinit(gpa);
     var failed: usize = 0;
     for (outcomes.items) |r| {
         var g: ?*GroupCounts = null;

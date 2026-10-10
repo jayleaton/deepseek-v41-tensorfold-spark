@@ -135,6 +135,7 @@ pub const Server = struct {
         if (srv.keepalive) |k| k.stop(); // before the engine's queue goes away
         srv.arena.deinit();
         srv.store.deinit();
+        srv.metrics.deinit();
         srv.gpa.destroy(srv);
     }
 
