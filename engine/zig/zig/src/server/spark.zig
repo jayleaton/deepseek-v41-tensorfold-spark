@@ -45,6 +45,8 @@ pub const Settings = struct {
     log: ?LogSettings = null,
     /// TF_DSV41_DRAIN_S / GLM53_TF_DRAIN_S: seconds requests in progress may finish after a stop signal (serve.zig).
     drain_s: f64 = 20,
+    /// TF_DSV41_SSE_KEEPALIVE_S / GLM53_TF_SSE_KEEPALIVE_S: a silent stream's keepalive period (0: none)
+    keepalive_s: f64 = 15,
 
     /// The knobs from ``env``; ``problem`` names a bad one.
     pub fn fromEnv(env: ?*const std.process.Environ.Map, problem: *[]const u8) error{Invalid}!Settings {
@@ -60,6 +62,7 @@ pub const Settings = struct {
             s.health = if (std.ascii.eqlIgnoreCase(t, "basic")) .basic else if (std.ascii.eqlIgnoreCase(t, "strict")) .strict else return bad(problem, "GLM53_TF_HEALTH / TF_DSV41_HEALTH: expected one of basic, strict");
         }
         if (knob(m, "STALL_S")) |v| s.stall_s = try nonNegative(v, 0, problem, "GLM53_TF_STALL_S: must be a number >= 0");
+        if (knob(m, "SSE_KEEPALIVE_S")) |v| s.keepalive_s = try nonNegative(v, 15, problem, "TF_DSV41_SSE_KEEPALIVE_S / GLM53_TF_SSE_KEEPALIVE_S: seconds, a number >= 0");
         if (knob(m, "DRAIN_S")) |v| s.drain_s = try nonNegative(v, 20, problem, "TF_DSV41_DRAIN_S / GLM53_TF_DRAIN_S: seconds, a number >= 0");
         if (m.get("GLM53_TF_STALL_PREFILL_TPS")) |v| s.stall_prefill_tps = try nonNegative(v, 200, problem, "GLM53_TF_STALL_PREFILL_TPS: must be a number >= 0");
         if (knob(m, "REQUEST_LOG")) |v| {
