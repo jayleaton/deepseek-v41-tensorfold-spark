@@ -1,0 +1,305 @@
+# CUDA Zig serving on two DGX Sparks
+
+Recommended weights: **q28-v2 EXL3 2.8 bpw**,
+[`jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw).
+Publication is pending and that repository name is provisional. The port loads EXL3 directly, including q28-v2's
+per-expert widths. There are two processes: `tensorfold-dsv41 serve` on rank 0 and `tf-dsv41-m1 follow` on rank 1.
+
+## Availability and requirements
+
+The CUDA DeepSeek source is included at [`engine/zig`](../engine/zig), exported from the qualified kit
+snapshot on top of [TensorFold 1.0.2](https://github.com/ashhart/TensorFold), under Apache-2.0.
+See [source provenance](../engine/zig/SOURCE-EXPORT.md). Generated GPU assets and model weights are separate:
+the host build alone embeds empty CUDA blobs and cannot serve a GPU model. The existing Python patches target
+0.6.0 and provide the public reference source used by the AOT generators.
+
+Required on both nodes:
+
+- Two DGX Sparks (GB10, 128 GB each), TP=2, cabled/addressed CX7 ports; Docker with NVIDIA Container Toolkit,
+  RDMA devices and matching image contents. Set the interface/HCA values to your own link.
+- Identical q28-v2 model files; rank-specific packed Engram shards on local NVMe. [Engram packing](INSTALL.md)
+  writes `engram-l{1,14}-r{rank}of2.bin`. The weights download alone is not sufficient.
+- Rank-specific `/assets/rope.bin`, `engram-host.bin`, and `aot/`: RoPE tables covering the configured context plus
+  prefill rows, native host lookup data, and Triton programs for all emitted shapes. At four slots, include DSpark,
+  row-mode up to 64 rows, CED replay, the device chain variants, 4K prefill pieces and replay runs, and the
+  `INDEX_BOUND` twins. `aot-needs` enumerates them from the serving env (see below).
+- `/cache/pfdense-table.json` (the published `config/pfdense-table.json`). Draft costs come from the engine's own
+  boot measurement (`CALIB=zig`): the first boot times its windows on both ranks and stores the table under
+  `/state/calib-zig`; later boots read it.
+- Writable prepared and session directories on local NVMe. Plan roughly 100 GB weights, 95 GB Engram shards,
+  another rank's weight-sized prepared cache and up to 128 GiB session files per node, plus image/build space.
+  Keep other workloads off the GPUs and preserve the 5 GiB target / 4 GiB hard MemAvailable floor on both ranks.
+
+The source kit's `tools/zig/dsv41_m2c2/build-kit.sh` builds the ARM64 binaries and checks the sm_121 fatbins.
+It generates a `knob-names.txt` from the names actually read by Zig. Asset generation uses
+`tools/zig/dsv41_rope_tables.py`, `dsv41_engram_host.py`, `triton_fill.py`, the engine's `aot-needs` command and
+`dsv41_m4/fill-prod.env` (or the 4K fill). Python reference source, Torch, Triton 3.7.1 and ptxas 13.3.73 are
+needed for that fill. Copy assets per rank and validate the fill manifest; a `MissingTritonVariant` is a missing
+prerequisite, not a reason to keep running. These generator tools are included in `engine/zig/tools/zig`.
+
+## Quick start
+
+The source, build recipe and launcher are included. Generate the assets below before serving. Hardware execution
+was not repeated for this publication; the exported host build and host tests are reported in the source guide.
+
+1. Clone this public recipe and download the pack on both nodes:
+
+   ```bash
+   git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
+   cd deepseek-v41-tensorfold-spark
+   hf download jayleaton/DeepSeek-V4.1-Flash-EXL3-2.8bpw --local-dir /srv/models/q28-v2
+   cp config/prod-zig.env.example config/prod-zig.env
+   $EDITOR config/prod-zig.env
+   ```
+
+   Set the image, rank 0's link address, NIC/HCA settings and each node's own absolute directories. The engine
+   settings must match on both ranks. `config/prod-zig.env` is ignored by git. The template is the measured
+   serving profile, with 4K prefill (it falls back to 2K per piece when memory is short); the pack URL remains
+   provisional until publication completes.
+
+2. Build the included source on an ARM64 build host:
+
+   ```bash
+   mkdir -p build/zig/src build/zig/fatbins
+   git archive HEAD engine/zig | tar -x --strip-components=2 -C build/zig/src/
+   # Optionally copy its validated sm_121 *.fatbin files, including tp_mailbox.fatbin, into build/zig/fatbins/.
+   touch build/zig/fatbins/.keep
+   docker build -f docker/zig/Dockerfile --build-arg ZIG_COMMIT="$(git rev-parse HEAD)" \
+     -t tensorfold-dsv41-zig:local build/zig
+   docker save tensorfold-dsv41-zig:local -o build/zig-image.tar
+   ```
+
+   The image label records the recipe commit you built (set `ZIG_COMMIT` in the config to the same value); the engine source revision is in `engine/zig/SOURCE-EXPORT.md`. Transfer the tar to rank 1 and run
+   `docker load -i build/zig-image.tar` there. Compare the label and root filesystem layers on both nodes with
+   `docker image inspect tensorfold-dsv41-zig:local`. Set `IMAGE=tensorfold-dsv41-zig:local` in both configs.
+
+   The multi-stage image uses Zig 0.17.0, CUDA 13, ReleaseSafe ARM64, sm_121 kernels, NCCL and verbs providers.
+   Its default nvcc image is CUDA 13.0.1; for prebuilt kernels use the exact CUDA devel/runtime versions validated
+   with them (build args `CUDA_DEVEL` / `CUDA_RUNTIME`). Use `ZIG_URL` for the exact Zig compiler tarball if the
+   default download URL is unavailable. The first start builds prepared files; do not reuse Python's cache.
+
+3. Check the commands, then run rank 1 on its node followed promptly by rank 0 on its node:
+
+   ```bash
+   scripts/run-zig.sh 1 --dry-run    # on rank 1
+   scripts/run-zig.sh 0 --dry-run    # on rank 0
+   scripts/run-zig.sh 1             # rank 1: keep running in this terminal
+   scripts/run-zig.sh 0             # rank 0: another terminal on its node
+   ```
+
+   The launcher passes the serving settings to both processes, sets TP world/rank/device explicitly, and uses
+   Docker `--init` because the follower exits when orphaned. It validates local directories and basic assets;
+   it does not replace the engine's memory checks, fill validation, or a production watchdog. Keep the same env
+   across restarts. A failure on either rank should end both via fail-fast (exit 70).
+
+   To stop, signal rank 0 only and let it drain: on SIGTERM it answers new requests with 503 (`/health` reports
+   `draining`), gives requests in progress `TF_DSV41_DRAIN_S` seconds to finish, then halts both ranks at a round
+   boundary. Give Docker more time than the drain before it kills, then wait for rank 1 to exit on its node:
+
+   ```bash
+   docker stop -t $((DRAIN_S + 60)) tensorfold-zig-r0   # rank 0 node; DRAIN_S = TF_DSV41_DRAIN_S (20)
+   docker wait tensorfold-zig-r1                        # rank 1 node
+   ```
+
+   The launcher's `--rm` removes both containers once they exit (otherwise `docker rm` them). A second signal
+   cuts the drain short.
+
+   Streams that have not sent their first token yet get a keepalive every `TF_DSV41_SSE_KEEPALIVE_S` seconds
+   (`: keepalive` comments on OpenAI streams, `ping` events on Anthropic streams), so client or proxy idle
+   timeouts do not end long prefills.
+
+4. Wait for the model to load and inspect the boot log: four slots, CED replay, row graphs, successful device-draft
+   self-check and RoCE probe. First preparation can take several minutes. Then query rank 0:
+
+   ```bash
+   curl -fsS localhost:8000/v1/models
+   curl -fsS localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
+     -d '{"model":"DeepSeek-V4.1-Flash-TF","messages":[{"role":"user","content":"What is 17 * 23?"}],"temperature":0,"reasoning_effort":"low"}'
+   ```
+
+   Check that the answer is 391; do not infer readiness from a live container alone.
+
+## Generate runtime assets
+
+Prepare the already-public Python reference source from the recipe root. Use a GPU-capable ARM64 environment
+with Torch, Triton **3.7.1**, and ptxas **13.3.73**, matching the qualified fill toolchain. This stage needs the
+model config/tokenizer, but does not require running inference. Set `TRITON_PTXAS_PATH` and
+`TRITON_PTXAS_BLACKWELL_PATH` to that compiler executable. Do not use a CPU-only host build for GPU serving.
+
+```bash
+mkdir -p build/python-source
+git -C vendor/TensorFold archive HEAD | tar -x -C build/python-source
+for patch_file in patches/*.patch; do
+  patch -d build/python-source -p1 < "$patch_file"
+done
+export PY_SOURCE="$PWD/build/python-source/src"
+export PACK=/srv/models/q28-v2
+export ASSETS=/srv/assets/rank-0
+export ROPE_ROWS=1052672  # configured 1M context plus 4K headroom
+mkdir -p "$ASSETS"
+# Run the following in the build image/environment, from engine/zig.
+cd engine/zig
+python tools/zig/triton_fill.py sigs --py "$PY_SOURCE" --out "$ASSETS/sigs.json"
+set -a
+source ../../config/prod-zig.env
+set +a
+# Asset enumeration uses this local destination rather than the serving container mount.
+export TF_DSV41_ASSETS="$ASSETS"
+export TF_TP_WORLD=2
+zig-out/bin/tf-dsv41-m1 aot-needs "$ASSETS/sigs.json" "$ASSETS/needs.json"
+python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$ASSETS/needs.json" \
+  --options tools/zig/dsv41_triton_options.json --arch 121 --out "$ASSETS/aot"
+PYTHONPATH="$PY_SOURCE" python tools/zig/dsv41_rope_tables.py \
+  --config "$PACK/config.json" --rows "$ROPE_ROWS" --out "$ASSETS/rope.bin"
+python tools/zig/dsv41_engram_host.py --py-src "$PY_SOURCE" --config "$PACK/config.json" \
+  --tokenizer "$PACK/tokenizer.json" --out "$ASSETS/engram-host.bin"
+```
+
+For the asset environment, build the builder stage with `docker build --target build -f docker/zig/Dockerfile
+-t tensorfold-dsv41-zig:builder build/zig` from the recipe root. Install the matching Torch/Triton toolchain in that
+environment. The Docker build's builder stage contains the Zig binaries under `/out/bin`; add them to `PATH` or copy them
+into `zig-out/bin` in the asset-generation environment. Mount the public reference, model and asset directories
+there. Repeat/check the manifest for each rank. Engram host tables do not replace packed
+model Engram shards. The existing public reference supports the recommended `R1=1` fill; the optional R1-off
+binding against newer Python pruning variants is outside this recipe's qualification.
+
+## Serving settings
+
+These are the exact environment names from the serving profile and the port's knob readers, with the measured
+all-on additions. **Default means unset engine behavior**, not the template value. The template explicitly opts
+into optimizations whose engine defaults remain off. Both ranks need the same settings. `1` means on and `0`
+means off unless the row gives another meaning. The recommended column is what the exported template uses;
+`verify (unset)` documents an intentional default. This table describes the inspected port snapshot, not generic
+upstream TensorFold settings.
+
+| Name | Unset engine default | Recommended profile | What it does |
+| --- | --- | --- | --- |
+| `TF_DSV41_R1` | 0 | `1` | Complete decode R1 bundle |
+| `TF_DSV41_DRAFTS` | 0 | `1` | DSpark drafting |
+| `TF_DSV41_OWN_PREFILL` | 0 | `1` | Native prompt prefill rather than decode windows |
+| `TF_DSV41_GRAPHS` | 0 | `1` | CUDA graphs for decode windows |
+| `TF_DSV41_PREFILL` | full | `replay` | CED encoder prefill and bounded decoder replay, matching Python |
+| `TF_DSV41_PROMPT_TAIL` | verify | `verify (unset)` | Last prompt token enters the first decode window |
+| `TF_DSV41_PREFILL_PIECES` | 0 | `1` | Interleave prompt pieces with other slots' decode |
+| `TF_DSV41_SESSION_SLOTS` | 0 | `1` | Session store with several live slots |
+| `TF_DSV41_TAIL_JOIN` | 0 | `1` | Join prompt tail to the first shared verify round; needs PREFILL_PIECES |
+| `TF_DSV41_DRAFT_TIMED` | 0 | `1` | Price draft depth from measured round times |
+| `TF_DSV41_SLOTS` | 1 | `4` | Concurrent live slots |
+| `TF_DSV41_SLOT_DRAFTS` | 0 | `1` | Per-slot drafts with batched verification |
+| `TF_DSV41_ROWS_CAP` | 16 | `64` | Maximum rows per decode forward; requires matching AOT |
+| `TF_DSV41_POOL_TOKENS` | unset: no paged pool | `1400000` | Shared paged KV capacity, not capacity per slot |
+| `TF_DSV41_SAMPLING` | 0 | `1` | Keyed sampling for nonzero temperature |
+| `TF_DSV41_EXPERT_TOPP` | unset: no pruning | `0.85` | Decode routed-expert top-p pruning |
+| `TF_DSV41_INDEX_BUDGET_MIB` | 256 | `64` | Index selection scratch budget |
+| `TF_DSV41_PREFILL_CHUNK` | 2048 | `4096` | Segment row limit |
+| `TF_DSV41_PREFILL_ROWS` | 2048 | `4096` | Second row limit; smaller of CHUNK and ROWS wins |
+| `TF_DSV41_PREFETCH_AHEAD` | 0 | `1` | Read next segment's Engram rows ahead |
+| `TF_DSV41_PF_DENSE` | off | `fused` | Fused dense EXL3 prefill GEMM |
+| `TF_DSV41_PF_DENSE_TABLE` | unset: heuristic | `/cache/pfdense-table.json` | Shape-specific GEMM tuning table |
+| `TF_DSV41_GM_V2` | 0 | `1` | x3gm v2 routed-expert prefill |
+| `TF_DSV41_BRANCHES` | 0 | `1` | Indexer, compressor and applicable KV work on a side stream |
+| `TF_DSV41_BRANCHES_PRIO` | main | `side` | Side stream priority (eager execution) |
+| `TF_DSV41_MHC_DEFER` | 0 | `1` | R1 mHC coefficients on their own stream |
+| `TF_DSV41_L2PF` | 0 | `1` | Decode L2 prefetch |
+| `TF_DSV41_L2PF_MB` | 12 | `12` | Fixed prefetch budget; other values refused |
+| `TF_DSV41_L2PF_PACE_GBPS` | 150 | `150` | Fixed prefetch pacing; other values refused |
+| `TF_DSV41_ENGRAM_GATE` | 0 | `1` | GPU waits for decode Engram reads |
+| `TF_DSV41_GREEDY_GPU` | 0 | `1` | Device greedy choice and device-started draft round |
+| `TF_DSV41_SPEC_DRAFT` | 0 | `1` | Start next speculative DSpark pass after verify |
+| `TF_DSV41_DRAFT_GRAPHS` | 0: host path | `1` | Device candidates and graphed drafts; boot self-check |
+| `TF_DSV41_ROUTER_GROUP_ROT` | 0 | `1` | Fuse histogram grouping and input rotation |
+| `TF_DSV41_MHC_PFDEC` | 0 | `17` | Use prefill mHC kernels for decode windows of at least 17 rows |
+| `TF_DSV41_DRAFT_BATCH_PROJ` | 0 | `1` | Project and normalize all slots' main rows together |
+| `TF_DSV41_DRAFT_CHAIN` | 0 | `1` | Device draft chain; needs DRAFT_GRAPHS and chain AOT variant |
+| `TF_DSV41_DRAFT_OVERLAP` | 0 | `1` | Overlap draft ingests and window tail; needs GREEDY_GPU device start |
+| `TF_DSV41_ROUND_GRAPH` | 0 | `1` | Split head/tail graphs and event-based Engram gate |
+| `TF_DSV41_KV_NORM_STORE` | 0 | `1` | Fuse KV RMS, SWA RoPE and FP8 store |
+| `TF_DSV41_LOOKUP` | 0 | `1` | Copy drafts from repeated token spans |
+| `TF_DSV41_ENGRAM_PREFETCH` | 0 | `1` | Prepare decode Engram reads ahead of the forward |
+| `TF_DSV41_LOOKUP_PLAN` | 0 | `1` | Cost-priced copy-draft lookup planning |
+| `TF_DSV41_PF_4K` | 0 | `1` | 4096-row prefill workspace; may fall back to 2K |
+| `TF_DSV41_PF_4K_MEMORY_OK` | unset | `1` | Required acknowledgment for 4K memory cost |
+| `TF_DSV41_PF_WS_FLOOR_GIB` | FLOOR_HARD_GIB (4) | `3.5` | Memory remaining after workspace allocation on every rank |
+| `TF_DSV41_PIECE_RUNS` | 0 | `1` | Combine several slots' prompt pieces in one run; needs PREFILL_PIECES and replay |
+| `TF_DSV41_REPLAY_RUNS` | 0 | `1` | Several slots' CED decoder replays in one run |
+| `TF_DSV41_JOIN_DRAFTS` | 0 | `1` | Prompts finishing in one round draft their first tokens in one pass |
+| `TF_DSV41_PF_WS_SHARE` | 0 | `1` | 4K workspace shares the index-stream scratch instead of a second copy |
+| `TF_DSV41_LIN2` | 0 | `1` | Dense linears of 17-64-row decode windows in one pass |
+| `TF_DSV41_INDEX_BOUND` | 0 | `1` | Row-bounded index scores and decode top-k; needs the twins in the AOT fill |
+| `TF_DSV41_MHC_DEFER_AT` | unset | `exchange` | Issue deferred mHC coefficient launches just before their exchange |
+| `TF_DSV41_DRAFT_CAPTURE` | 0 | `1` | Capture draft graphs with the round |
+| `TF_DSV41_GRAPH_FLOOR` | shed | `hold` | Under the memory floor, run a missing graph eagerly and keep the held ones |
+| `TF_DSV41_ENGRAM_AIO` | 0 | `1` | Native async reads for Engram rows |
+| `TF_DSV41_CODE_ACCEPT` | 0 | `0` | Expand high-acceptance short-context draft chains; off |
+
+### Data, serving and transport settings
+
+| Name | Unset engine default | Recommended profile | What it does |
+| --- | --- | --- | --- |
+| `TF_DSV41_CONTEXT` | 4096 | `1048576` | Slot position limit, not a promise that every slot can fill it together |
+| `TF_DSV41_ASSETS` | unset | `/assets` | Per-rank rope, host Engram lookup and AOT programs |
+| `TF_DSV41_INDEX_KV` | FP8 fixed in this port | `fp8` | Compatibility setting; does not select a different Zig index type |
+| `TF_DSV41_ENGRAM_DIR` | unset | `/engram` | Packed per-rank Engram shards |
+| `TF_DSV41_CALIB` | cached | `zig` | Engine's own boot measurement, stored and reused; `real` / `cached` read Python's stored tables |
+| `TF_DSV41_CALIB_DIR` | user cache directory | `/state/calib-zig` | Directory of stored cost tables |
+| `TF_DSV41_CALIB_FILE` | unset | `unset (optional)` | Pin one stored table after the first boot measured it |
+| `TF_DSV41_PREPARED` | unset | `/prepared` | Zig prepared layer images (different from Python prepared folders) |
+| `TF_DSV41_PREPARED_WRITE` | 0 | `1` | Write missing prepared files |
+| `TF_DSV41_PLAN_TIMEOUT` | 300 | `1800` | Seconds allowed for TP rendezvous connection |
+| `TF_DSV41_PLAN_LINK` | blocking socket | `rdma` | Spin on the plan socket before blocking; 5000 μs when rdma |
+| `TF_DSV41_PLAN_PIN` | off | `auto` | Pin plan threads to the best available CPU |
+| `TF_DSV41_DEPTH_JOINT` | 1 | `0` | Disable joint draft depth policy, matching the Python reference |
+| `TF_DSV41_SESSIONS` | 0 | `1` | Session reuse; SESSION_SLOTS additionally required at four slots |
+| `TF_DSV41_SESSION_RAM_MIB` | 256 | `256` | Bounded session state RAM tier |
+| `TF_DSV41_SESSION_DISK` | unset: RAM only | `/sessions` | NVMe session tier |
+| `TF_DSV41_SESSION_DISK_GIB` | 64 | `128` | NVMe tier file budget |
+| `TF_DSV41_SESSION_DISK_MIN` | 1024 | `1024` | Minimum token count for parking a session |
+| `TF_DSV41_FLOOR_GIB` | max(5, hard floor) | `5` | Target MemAvailable in GiB per rank |
+| `TF_DSV41_FLOOR_HARD_GIB` | 4 | `4` | Hard admission floor in GiB |
+| `TF_DSV41_REQUEST_LOG` | unset: off | `/state/requests.jsonl` | Request metadata log |
+| `TF_DSV41_DISCONNECT` | 1 | `1` | Cancel generation when client disconnects |
+| `TF_DSV41_DRAIN_S` | 20 | `20` | Seconds requests in progress may finish after SIGTERM before both ranks halt |
+| `TF_DSV41_SSE_KEEPALIVE_S` | 15 | `15` | Seconds between keepalives on a stream before its first token (0: none) |
+| `TF_DSV41_THINKING` | 1 | `1` | Default thinking mode; requests can override |
+| `TF_DSV41_DEFAULT_EFFORT` | high | `high` | Default effort (high = 75) |
+| `TF_DSV41_SCHEMA_PROMPT` | 1 | `1` | Include response-format schema in the prompt |
+| `TF_DSV41_IMAGES` | placeholder | `placeholder` | Replace image parts with an omission notice; this profile does not serve native vision |
+| `TF_DSV41_GRAMMAR` | 0 | `1` | Grammar-constrained structured output |
+| `TF_DSV41_TOOL_GRAMMAR` | 0 | `0` | Automatic tool-schema constraint; remains off |
+
+| Name | Unset engine default | Recommended profile | What it does |
+| --- | --- | --- | --- |
+| `GLM53_TF_ROCE_MAX_KB` | 256 | 1024 | RoCE message cap; keeps larger multi-slot windows on RoCE |
+| `GLM53_TF_ROCE_FAST` | 0 | 1 | Fast RoCE gather path |
+| `TF_TP_WORLD` | 1 | 2 (launcher) | Number of TP ranks |
+| `TF_TP_RANK` | 0 | 0 or 1 (launcher) | This node's rank |
+| `TF_TP_DEVICE` | 0 | 0 (launcher) | Local CUDA device |
+| `TF_TP_MASTER` | loopback | your rank 0 link address | TP rendezvous address |
+| `TF_TP_PORT` | 29500 | 29571 | Rendezvous port; plan port defaults to this plus 7 |
+| `TF_COMM_BACKEND` | nccl | roce | Tensor exchange transport |
+| `TF_TP_KERNEL_IMAGE` | unset | image's tp_mailbox.fatbin (launcher) | TP kernel image |
+| `NCCL_SOCKET_IFNAME` | library auto-selection | your link interface | NCCL network interface |
+| `NCCL_IB_HCA` | library auto-selection | your cabled RDMA devices | NCCL/RoCE HCA selection |
+
+`IMAGE`, `MODEL_DIR`, `ENGRAM_DIR`, `ASSETS_DIR`, `PREPARED_DIR`, `STATE_DIR`, and `CACHE_DIR` are required
+launcher inputs, not engine knobs. `HOST=localhost` and `PORT=8000` are launcher defaults for the HTTP listener.
+The maximum reply is 32768 tokens and the served model ID is `DeepSeek-V4.1-Flash-TF` in this small launcher.
+
+### 4K prefill and its fallback
+
+The profile sets **all** of `TF_DSV41_PF_4K=1`, `TF_DSV41_PF_4K_MEMORY_OK=1`, `TF_DSV41_PREFILL_CHUNK=4096`, and
+`TF_DSV41_PREFILL_ROWS=4096`, with `PF_WS_SHARE=1`. It requires `GM_V2=1`, `PREFILL=replay`, and an AOT fill made from
+the same env. The 4K workspace is transient and released after the CED finish. Each prompt piece checks headroom
+across both ranks; if either cannot leave `TF_DSV41_PF_WS_FLOOR_GIB` free, both use 2K segments with the same bits.
+The boot budget can also refuse a profile that cannot fit.
+
+`TF_DSV41_PF_WS_FLOOR_GIB` defaults to the hard floor (4 GiB); the profile uses 3.5 GiB so the more constrained rank
+does not fall back persistently. That trades workspace margin for speed. For a conservative 2K profile set
+`PF_4K=0`, drop `PF_4K_MEMORY_OK` and `PF_WS_FLOOR_GIB`, and use 2048 for `PREFILL_CHUNK` / `PREFILL_ROWS`. Do not
+enable two-batch prefill overlap (PF_TBO) alongside 4K without a separate memory gate: the tested combination
+exhausted memory.
+
+`PIECE_RUNS`, `REPLAY_RUNS` and `JOIN_DRAFTS` batch several slots' prompt work into one run. They need
+`PREFILL_PIECES=1`, replay mode and the multi-segment AOT programs `aot-needs` lists under them.
+Do not equate the serving profile with enabling every experimental knob: the engine has more default-off paths
+than the profile uses.

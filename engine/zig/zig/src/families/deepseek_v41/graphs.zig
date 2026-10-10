@@ -1,0 +1,336 @@
+//! R4: CUDA graphs for decode windows (Python graphs.py / rowgraphs.py), over cuda/graph_cache.zig.
+//!
+//! A window's launch sequence is fixed by its rows and its **context bucket**: the indexer scores the bucket's keys
+//! (`bucketEnd`, Python graphs.bucket_end; 2,048-token buckets to 32K, then 1.25x apart), not the window's own end.
+//! Keys past a row's end score -inf and never reach its attention, so a graphed window's bits are the eager window's
+//! (Python's tested contract; our pod gate compares graphed with eager tokens and logits).
+//!
+//! What a graph holds: every launch of the window, the exchanges included (each Collective backend enqueues on the
+//! stream with device-side sequence words: NCCL, mailbox, RoCE, hybrid). What stays outside, on the host, each step:
+//! - the inputs, staged into `Statics` by one copy before the launch: the ids, the first position (positions_dev reads
+//!   it), and the Engram rows of each Engram layer (hashed on the host, copied into persistent rows; the graph keeps
+//!   only their all-gather and column order);
+//! - the choices (greedy / sampling / top-p read the logits on the host), `keep`'s accepted count and its carry, the
+//!   trace gate's downloads (a traced program is never graphed: `audit`).
+//!
+//! One slot, rows exact (Python's per-width graphs): padding rows to a bucket needs the stacked multi-slot state
+//! (row mode) and comes with it. Knobs: TF_DSV41_GRAPHS (unset: on for M4's served model, model.zig; off for the gates'
+//! drivers; pods 17 / 22 showed graphed == eager, tokens and logits, R1 included),
+//! TF_DSV41_GRAPHS_MAX (48), TF_DSV41_GRAPH_BUCKET (2048), TF_DSV41_GRAPH_BUCKET_GROW (1.25),
+//! TF_DSV41_GRAPH_ROWS_MAX (64), TF_DSV41_GRAPH_FLOOR_GIB (5.0).
+
+const std = @import("std");
+const cuda = @import("cuda");
+const tp = @import("tp");
+const calls = @import("calls.zig");
+
+pub const gc = cuda.graph_cache;
+
+/// rowtab.BUCKETS: the row counts Python captures (here: the rows of a window are exact; this caps them)
+pub const row_buckets = [_]u32{ 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32, 48, 64 };
+/// context buckets 0-15 are `size` tokens each; past them each ends `grow` x further (Python LINEAR)
+pub const linear = 16;
+
+pub const Settings = struct {
+    on: bool = false,
+    max: u32 = 48,
+    bucket: u32 = 2048,
+    grow: f64 = 1.25,
+    rows_max: u32 = 64,
+    floor_gib: f64 = 5.0,
+    /// TF_DSV41_GRAPH_FLOOR=hold (default `shed`): under the floor a miss runs eagerly, the held graphs stay
+    /// (graph_cache.Settings.hold)
+    floor_hold: bool = false,
+
+    pub fn fromEnv() !Settings {
+        return fromEnvOr(false);
+    }
+
+    /// The knobs, graphs `on_default` when TF_DSV41_GRAPHS is unset (M4's served model: on; every rank alike, since
+    /// a graphed rank's capture agreements are collectives).
+    pub fn fromEnvOr(on_default: bool) !Settings {
+        var s: Settings = .{ .on = on_default };
+        if (std.c.getenv("TF_DSV41_GRAPHS")) |v| s.on = !std.mem.eql(u8, std.mem.span(v), "0");
+        if (std.c.getenv("TF_DSV41_GRAPHS_MAX")) |v| s.max = try std.fmt.parseInt(u32, std.mem.span(v), 10);
+        if (std.c.getenv("TF_DSV41_GRAPH_BUCKET")) |v| s.bucket = try std.fmt.parseInt(u32, std.mem.span(v), 10);
+        if (std.c.getenv("TF_DSV41_GRAPH_BUCKET_GROW")) |v| s.grow = try std.fmt.parseFloat(f64, std.mem.span(v));
+        if (std.c.getenv("TF_DSV41_GRAPH_ROWS_MAX")) |v| s.rows_max = try std.fmt.parseInt(u32, std.mem.span(v), 10);
+        if (std.c.getenv("TF_DSV41_GRAPH_FLOOR_GIB")) |v| s.floor_gib = try std.fmt.parseFloat(f64, std.mem.span(v));
+        if (std.c.getenv("TF_DSV41_GRAPH_FLOOR")) |v| {
+            const m = std.mem.span(v);
+            if (std.mem.eql(u8, m, "hold")) s.floor_hold = true else if (!(m.len == 0 or std.mem.eql(u8, m, "shed"))) return error.BadGraphFloor;
+        }
+        if (s.bucket == 0) return error.BadGraphBucket;
+        return s;
+    }
+};
+
+/// The end (exclusive) of bucket `b` (Python _ends): `size` steps for `linear` buckets, then x `grow` rounded up to
+/// `size` (int() of the product first, as Python's), at least one `size` further; grow <= 1: equal steps.
+pub fn endOf(b: u32, size: u64, grow: f64) u64 {
+    var e: u64 = size * @min(b + 1, linear);
+    var i: u32 = linear;
+    while (i <= b) : (i += 1) {
+        const nxt: u64 = if (grow > 1) blk: {
+            const prod: u64 = @intFromFloat(@trunc(@as(f64, @floatFromInt(e)) * grow));
+            break :blk ((prod + size - 1) / size) * size;
+        } else e + size;
+        e = @max(nxt, e + size);
+    }
+    return e;
+}
+
+/// The context bucket of a window whose last position is `last` (Python bucket_of: bisect_right over the ends).
+pub fn bucketOf(last: u64, size: u64, grow: f64) u32 {
+    var b: u32 = 0;
+    while (endOf(b, size, grow) <= last) b += 1;
+    return b;
+}
+
+/// The last position bucket `b`'s graphs score keys for (Python bucket_end).
+pub fn bucketEnd(b: u32, size: u64, limit: u64, grow: f64) u64 {
+    return @min(endOf(b, size, grow) - 1, limit - 1);
+}
+
+/// `part`: 0 a whole window; 1 / 2 its head / tail graph (TF_DSV41_ROUND_GRAPH=split, round_graph.zig)
+pub const Key = struct { rows: u32, ctx: u32, part: u8 = 0 };
+
+pub const Cache = gc.Cache(Key);
+
+/// The window's start for emitting a graphed program: its end lands at the bucket's end, so the indexer's NK is
+/// the bucket's (Python Win.last = bucket_end).
+pub fn emitStart(n: u32, b: u32, s: Settings, limit: u64) i64 {
+    return @as(i64, @intCast(bucketEnd(b, s.bucket, limit, s.grow))) + 1 - n;
+}
+
+/// Why a window's program cannot be captured (null: it can): a glue step that reads the device on the host.
+pub fn audit(cs: []const calls.Call) ?[]const u8 {
+    for (cs) |c| if (c.glue and std.mem.eql(u8, c.name, "glue.trace")) return "glue.trace downloads the streams";
+    return null;
+}
+
+/// MemAvailable >= the floor (true where /proc/meminfo cannot be read): the cache's `room`.
+pub fn roomAbove(floor_gib: f64) bool {
+    var buf: [4096]u8 = undefined;
+    const fd = std.c.open("/proc/meminfo", .{ .ACCMODE = .RDONLY });
+    if (fd < 0) return true;
+    defer _ = std.c.close(fd);
+    const n = std.c.read(fd, &buf, buf.len);
+    if (n <= 0) return true;
+    return memAvailableAbove(buf[0..@intCast(n)], floor_gib);
+}
+
+/// MemAvailable in GiB (null where /proc/meminfo cannot be read): the prefill's handoff log.
+pub fn memAvailableGiB() ?f64 {
+    var buf: [4096]u8 = undefined;
+    const fd = std.c.open("/proc/meminfo", .{ .ACCMODE = .RDONLY });
+    if (fd < 0) return null;
+    defer _ = std.c.close(fd);
+    const n = std.c.read(fd, &buf, buf.len);
+    if (n <= 0) return null;
+    return memAvailableOf(buf[0..@intCast(n)]);
+}
+
+fn memAvailableOf(text: []const u8) ?f64 {
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "MemAvailable:")) continue;
+        var f = std.mem.tokenizeScalar(u8, line["MemAvailable:".len..], ' ');
+        const kb = std.fmt.parseInt(u64, f.next() orelse return null, 10) catch return null;
+        return @as(f64, @floatFromInt(kb)) / (1 << 20);
+    }
+    return null;
+}
+
+fn memAvailableAbove(text: []const u8, floor_gib: f64) bool {
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "MemAvailable:")) continue;
+        var f = std.mem.tokenizeScalar(u8, line["MemAvailable:".len..], ' ');
+        const kb = std.fmt.parseInt(u64, f.next() orelse return true, 10) catch return true;
+        return @as(f64, @floatFromInt(kb)) * 1024.0 >= floor_gib * (1 << 30);
+    }
+    return true;
+}
+
+/// Every rank's verdict over the Collective: one i32 a rank all-gathered (every backend has the gather), on a stream
+/// outside any capture; true when every rank said yes. Any world size.
+pub const Agreement = struct {
+    comm: tp.collective.Collective,
+    stream: cuda.Stream,
+    dev: cuda.DeviceBuffer,
+    host: cuda.HostBuffer,
+
+    pub fn init(d: *const cuda.Driver, comm: tp.collective.Collective, stream: cuda.Stream) !Agreement {
+        const w = comm.world();
+        const dev = try cuda.DeviceBuffer.alloc(d, 4 * (w + 1));
+        errdefer {
+            var b = dev;
+            b.free();
+        }
+        return .{ .comm = comm, .stream = stream, .dev = dev, .host = try cuda.HostBuffer.alloc(d, 4 * (w + 1)) };
+    }
+
+    pub fn deinit(a: *Agreement) void {
+        a.dev.free();
+        a.host.free();
+    }
+
+    pub fn agree(a: *Agreement) gc.Agree {
+        return .{ .ctx = a, .all = all };
+    }
+
+    fn all(ctx: *anyopaque, ok: bool) anyerror!bool {
+        const a: *Agreement = @ptrCast(@alignCast(ctx));
+        const w = a.comm.world();
+        const h = a.host.slice(i32);
+        h[0] = @intFromBool(ok);
+        try a.dev.uploadAsync(0, std.mem.sliceAsBytes(h[0..1]), a.stream.handle);
+        try a.comm.allGather(a.dev.ptr, a.dev.ptr + 4, 1, .i32, a.stream.handle);
+        try a.dev.downloadAsync(4, std.mem.sliceAsBytes(h[1 .. 1 + w]), a.stream.handle);
+        try a.stream.synchronize();
+        for (h[1 .. 1 + w]) |v| if (v != 1) return false;
+        return true;
+    }
+};
+
+/// A graphed window's inputs: the device block its graph reads (ids int64 [rows_max], start int32), filled by one
+/// copy from pinned staging before each launch. Two staging halves alternate; a half is rewritten only after its
+/// previous copy finished (its event), so no step waits on the window in flight.
+pub const Statics = struct {
+    pub const ids_off = 0;
+
+    rows_max: u32,
+    dev: cuda.DeviceBuffer,
+    host: [2]cuda.HostBuffer,
+    copied: [2]cuda.Event,
+    half: u1 = 0,
+
+    pub fn bytes(rows_max: u32) usize {
+        return 8 * @as(usize, rows_max) + 256;
+    }
+
+    pub fn startOff(rows_max: u32) usize {
+        return 8 * @as(usize, rows_max);
+    }
+
+    pub fn init(d: *const cuda.Driver, rows_max: u32) !Statics {
+        const n = bytes(rows_max);
+        var s: Statics = .{ .rows_max = rows_max, .dev = try cuda.DeviceBuffer.alloc(d, n), .host = undefined, .copied = undefined };
+        try s.dev.fill8(0, null);
+        for (&s.host, &s.copied) |*h, *e| {
+            h.* = try cuda.HostBuffer.alloc(d, n);
+            e.* = try cuda.Event.init(d, false);
+            try e.record(.{ .d = d, .handle = null }); // a first wait returns at once
+        }
+        return s;
+    }
+
+    pub fn deinit(s: *Statics) void {
+        s.dev.free();
+        for (&s.host, &s.copied) |*h, *e| {
+            h.free();
+            e.deinit();
+        }
+    }
+
+    pub fn idsDev(s: *const Statics) u64 {
+        return s.dev.ptr + ids_off;
+    }
+
+    pub fn startDev(s: *const Statics) u64 {
+        return s.dev.ptr + startOff(s.rows_max);
+    }
+
+    /// The window's ids and first position, copied on `stream` ahead of its graph.
+    pub fn stage(s: *Statics, stream: cuda.Stream, ids: []const u32, start: u64) !void {
+        if (ids.len > s.rows_max) return error.TooManyRows;
+        const h = s.half;
+        try s.copied[h].synchronize();
+        const b = s.host[h].bytes;
+        for (ids, 0..) |id, i| std.mem.writeInt(i64, b[8 * i ..][0..8], id, .little);
+        std.mem.writeInt(i32, b[startOff(s.rows_max)..][0..4], @intCast(start), .little);
+        try s.dev.uploadAsync(0, b[0 .. 8 * ids.len], stream.handle);
+        try s.dev.uploadAsync(startOff(s.rows_max), b[startOff(s.rows_max)..][0..4], stream.handle);
+        try s.copied[h].record(stream);
+        s.half = h +% 1;
+    }
+};
+
+/// One Engram layer's staged rows: this rank's bf16 [rows_max, cols], copied before the window from pinned staging
+/// (two halves, as Statics'); the graph gathers them from here.
+pub const EngramStage = struct {
+    layer: u32,
+    cols: usize,
+    dev: cuda.DeviceBuffer,
+    host: [2]cuda.HostBuffer,
+    copied: [2]cuda.Event,
+    half: u1 = 0,
+
+    pub fn init(d: *const cuda.Driver, layer: u32, rows_max: u32, cols: usize) !EngramStage {
+        const n = 2 * @as(usize, rows_max) * cols;
+        var e: EngramStage = .{ .layer = layer, .cols = cols, .dev = try cuda.DeviceBuffer.alloc(d, n), .host = undefined, .copied = undefined };
+        for (&e.host, &e.copied) |*h, *ev| {
+            h.* = try cuda.HostBuffer.alloc(d, n);
+            ev.* = try cuda.Event.init(d, false);
+            try ev.record(.{ .d = d, .handle = null });
+        }
+        return e;
+    }
+
+    pub fn deinit(e: *EngramStage) void {
+        e.dev.free();
+        for (&e.host, &e.copied) |*h, *ev| {
+            h.free();
+            ev.deinit();
+        }
+    }
+
+    /// The pinned half to fill with `n` rows (its previous copy has finished).
+    pub fn begin(e: *EngramStage, n: usize) ![]u16 {
+        try e.copied[e.half].synchronize();
+        return @alignCast(std.mem.bytesAsSlice(u16, e.host[e.half].bytes[0 .. 2 * n * e.cols]));
+    }
+
+    /// Copies the filled half's `n` rows on `stream`.
+    pub fn commit(e: *EngramStage, stream: cuda.Stream, n: usize) !void {
+        const h = e.half;
+        try e.dev.uploadAsync(0, e.host[h].bytes[0 .. 2 * n * e.cols], stream.handle);
+        try e.copied[h].record(stream);
+        e.half = h +% 1;
+    }
+};
+
+// -- host tests ---------------------------------------------------------------------------------------------------
+
+test "graphs: context buckets as Python's (2,048 steps to 32K, then 1.25x rounded up to 2,048)" {
+    // Python: _ends(2048, 1.25, ...) = 2048, 4096, ..., 32768, 40960, 51200, 65536, 81920, 102400, 129024, ...
+    const want = [_]u64{ 2048, 4096, 6144, 8192, 10240, 12288, 14336, 16384, 18432, 20480, 22528, 24576, 26624, 28672, 30720, 32768, 40960, 51200, 65536, 81920, 102400, 129024 };
+    for (want, 0..) |e, b| try std.testing.expectEqual(e, endOf(@intCast(b), 2048, 1.25));
+    try std.testing.expectEqual(@as(u32, 0), bucketOf(0, 2048, 1.25));
+    try std.testing.expectEqual(@as(u32, 0), bucketOf(2047, 2048, 1.25));
+    try std.testing.expectEqual(@as(u32, 1), bucketOf(2048, 2048, 1.25));
+    try std.testing.expectEqual(@as(u32, 16), bucketOf(32768, 2048, 1.25));
+    try std.testing.expectEqual(@as(u32, 17), bucketOf(40960, 2048, 1.25));
+    try std.testing.expectEqual(@as(u64, 2047), bucketEnd(0, 2048, 1 << 20, 1.25));
+    try std.testing.expectEqual(@as(u64, 3999), bucketEnd(1, 2048, 4000, 1.25)); // capped at limit - 1
+    // grow 1: equal steps throughout
+    try std.testing.expectEqual(@as(u64, 2048 * 20), endOf(19, 2048, 1.0));
+}
+
+test "graphs: emitted start puts the window's end at the bucket's end" {
+    const s: Settings = .{};
+    // a 5-row window in bucket 0: rows end at 2047, so end = start + n = 2048, NK = 2048 / ratio
+    try std.testing.expectEqual(@as(i64, 2043), emitStart(5, 0, s, 1 << 20));
+}
+
+test "graphs: MemAvailable in GiB" {
+    try std.testing.expectEqual(@as(?f64, 6.0), memAvailableOf("MemTotal: 1 kB\nMemAvailable:   6291456 kB\n"));
+    try std.testing.expectEqual(@as(?f64, null), memAvailableOf("MemTotal: 1 kB\n"));
+}
+
+test "graphs: MemAvailable floor" {
+    try std.testing.expect(memAvailableAbove("MemTotal: 1 kB\nMemAvailable:   6291456 kB\n", 5.0));
+    try std.testing.expect(!memAvailableAbove("MemAvailable:   4194304 kB\n", 5.0));
+    try std.testing.expect(memAvailableAbove("nothing here\n", 5.0));
+}

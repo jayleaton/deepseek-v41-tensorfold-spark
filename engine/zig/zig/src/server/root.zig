@@ -1,0 +1,51 @@
+//! The native HTTP server's surface: what main and the test servers build a server from.
+pub const json = @import("json");
+pub const errors = @import("errors.zig");
+pub const auth = @import("auth.zig");
+pub const cli = @import("cli.zig");
+pub const log = @import("log.zig");
+pub const live = @import("live.zig");
+pub const model_text = @import("model_text.zig");
+pub const hf_text = @import("hf_text.zig");
+pub const listener = @import("listener.zig");
+pub const server = @import("server.zig");
+pub const serve = @import("serve.zig");
+pub const hub = @import("hub.zig");
+pub const tool_specs = @import("tool_specs.zig");
+pub const family = @import("family.zig");
+pub const deepseek = @import("deepseek.zig");
+pub const Server = server.Server;
+pub const Config = server.Config;
+
+test {
+    @import("std").testing.refAllDecls(@This());
+    _ = @import("json");
+    _ = @import("fields.zig");
+    _ = @import("reply_text.zig");
+    _ = @import("tool_parse.zig");
+    _ = @import("tool_stream.zig");
+    _ = @import("tool_params.zig");
+    _ = @import("pyrepr.zig");
+    _ = @import("metrics.zig");
+    _ = @import("http_conn.zig");
+    _ = @import("auth.zig");
+    _ = @import("cli.zig");
+    _ = @import("live.zig");
+    _ = @import("listener.zig");
+    _ = @import("hub.zig");
+    _ = @import("chunk_plan.zig");
+    _ = @import("status_routes.zig");
+    _ = @import("log.zig");
+    _ = @import("messages.zig");
+    _ = @import("stream_preflight_test.zig");
+    _ = @import("deepseek.zig");
+    _ = @import("deepseek_test.zig");
+    _ = @import("drain_test.zig");
+    _ = @import("keepalive_test.zig");
+    _ = @import("spark.zig");
+    _ = @import("wire_test.zig");
+    _ = @import("late_system_test.zig");
+    _ = @import("compact_test.zig");
+    _ = @import("decisions.zig");
+    _ = @import("decisions_test.zig");
+}

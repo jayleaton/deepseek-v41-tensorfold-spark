@@ -1,0 +1,265 @@
+{
+  "label": "zig",
+  "cells": [
+    {
+      "work": "code",
+      "temp": 0.0,
+      "streams": 1,
+      "per_stream": [
+        87.63
+      ],
+      "mean_tok_s": 87.63,
+      "aggregate_tok_s": null,
+      "ttft_s": [
+        0.249
+      ],
+      "tokens": [
+        384
+      ],
+      "sha": [
+        "6fbe71fe7f8373e5"
+      ],
+      "tpr": [
+        3.491
+      ],
+      "mean_tpr": 3.491,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "code",
+      "temp": 0.0,
+      "streams": 4,
+      "per_stream": [
+        34.08,
+        39.53,
+        37.0,
+        36.8
+      ],
+      "mean_tok_s": 36.85,
+      "aggregate_tok_s": 147.41,
+      "ttft_s": [
+        0.249,
+        0.928,
+        0.928,
+        0.927
+      ],
+      "tokens": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "sha": [
+        "6fbe71fe7f8373e5",
+        "6f36c39c97012c6d",
+        "55b86db3f828ec7a",
+        "891846427b3ccc27"
+      ],
+      "tpr": [
+        3.491,
+        4.0,
+        3.692,
+        3.657
+      ],
+      "mean_tpr": 3.71,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "code",
+      "temp": 0.7,
+      "streams": 1,
+      "per_stream": [
+        89.96
+      ],
+      "mean_tok_s": 89.96,
+      "aggregate_tok_s": null,
+      "ttft_s": [
+        0.248
+      ],
+      "tokens": [
+        384
+      ],
+      "sha": [
+        "7caa94bdde7023bc"
+      ],
+      "tpr": [
+        3.632
+      ],
+      "mean_tpr": 3.632,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "code",
+      "temp": 0.7,
+      "streams": 4,
+      "per_stream": [
+        33.6,
+        40.42,
+        35.74,
+        34.99
+      ],
+      "mean_tok_s": 36.19,
+      "aggregate_tok_s": 144.75,
+      "ttft_s": [
+        0.247,
+        0.93,
+        0.929,
+        0.928
+      ],
+      "tokens": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "sha": [
+        "7caa94bdde7023bc",
+        "6e8d740b8eba030c",
+        "ce5c44733428137c",
+        "5b828f33c32ad3c3"
+      ],
+      "tpr": [
+        3.565,
+        4.174,
+        3.589,
+        3.429
+      ],
+      "mean_tpr": 3.689,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "prose",
+      "temp": 0.0,
+      "streams": 1,
+      "per_stream": [
+        54.39
+      ],
+      "mean_tok_s": 54.39,
+      "aggregate_tok_s": null,
+      "ttft_s": [
+        0.236
+      ],
+      "tokens": [
+        384
+      ],
+      "sha": [
+        "8fe8174e4970bfaa"
+      ],
+      "tpr": [
+        1.753
+      ],
+      "mean_tpr": 1.753,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "prose",
+      "temp": 0.0,
+      "streams": 4,
+      "per_stream": [
+        25.56,
+        24.78,
+        24.3,
+        23.62
+      ],
+      "mean_tok_s": 24.57,
+      "aggregate_tok_s": 98.26,
+      "ttft_s": [
+        0.906,
+        0.906,
+        0.906,
+        0.241
+      ],
+      "tokens": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "sha": [
+        "8fe8174e4970bfaa",
+        "17ccef6067ecf3fc",
+        "4a46e73ad45c48fd",
+        "051a480d1e5ebc49"
+      ],
+      "tpr": [
+        1.738,
+        1.681,
+        1.62,
+        1.655
+      ],
+      "mean_tpr": 1.673,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "prose",
+      "temp": 0.7,
+      "streams": 1,
+      "per_stream": [
+        49.21
+      ],
+      "mean_tok_s": 49.21,
+      "aggregate_tok_s": null,
+      "ttft_s": [
+        0.236
+      ],
+      "tokens": [
+        384
+      ],
+      "sha": [
+        "62688d6e40bd0821"
+      ],
+      "tpr": [
+        1.607
+      ],
+      "mean_tpr": 1.607,
+      "failed_streams": 0,
+      "rep": 0
+    },
+    {
+      "work": "prose",
+      "temp": 0.7,
+      "streams": 4,
+      "per_stream": [
+        24.74,
+        24.45,
+        23.87,
+        25.91
+      ],
+      "mean_tok_s": 24.74,
+      "aggregate_tok_s": 98.97,
+      "ttft_s": [
+        0.906,
+        0.239,
+        0.905,
+        0.905
+      ],
+      "tokens": [
+        384,
+        384,
+        384,
+        384
+      ],
+      "sha": [
+        "62688d6e40bd0821",
+        "2fad7da1ab8df8db",
+        "24dcb271c8d9b8e3",
+        "b89b7b01dd2e3c4b"
+      ],
+      "tpr": [
+        1.627,
+        1.692,
+        1.512,
+        1.734
+      ],
+      "mean_tpr": 1.641,
+      "failed_streams": 0,
+      "rep": 0
+    }
+  ]
+}

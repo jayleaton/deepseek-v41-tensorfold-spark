@@ -1,0 +1,12 @@
+TensorFold
+Copyright 2026 TensorFold contributors
+https://github.com/ashhart/TensorFold
+
+TensorFold is licensed under the Apache License, Version 2.0 (LICENSE) from 0.6.0.
+Releases up to 0.5.0 were MIT-licensed, and code written before 0.6.0 keeps its
+MIT notice in LICENSES/MIT.txt. Third-party code and its licenses are listed in
+THIRD_PARTY_NOTICES.md.
+
+Source origin: TensorFold 1.0.2, https://github.com/ashhart/TensorFold
+Upstream revision: f8fe17d24629aedabf90bbf78279dd776e6d62e7
+DeepSeek-V4.1 CUDA source export: 8e96f99cc27743bb80f4827ea78b30481e3b4bcc
