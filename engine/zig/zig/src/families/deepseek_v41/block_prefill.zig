@@ -112,6 +112,9 @@ const Seg = struct {
     /// `run` emits no whole exchange after it
     sent_attn: bool = false,
     sent_moe: bool = false,
+    /// TF_DSV41_PF_OVERLAP_SITE: the last exchange's k pieces are all on the side stream, marks 1..k; the next
+    /// boundary site runs in those pieces (`sitePieces`), anything else joins first. 0: none pending
+    pend: i64 = 0,
 
     // -----------------------------------------------------------------------------------------------------------
     // TF_DSV41_PF_OVERLAP: the exchanges in row pieces, overlapped with their producers' next piece
@@ -139,15 +142,26 @@ const Seg = struct {
     /// rows copied, the peer's received: the whole exchange's bytes at the same places, a piece at a time). Every piece
     /// but the last goes on the side stream once the main stream issued its producer (fork); the last runs on the main
     /// stream after the side stream's pieces (join), so the consumer (the next mHC site) reads a whole buffer.
-    fn sendPiece(s: *Seg, part: Arg, into: Arg, r0: i64, rows: i64, last: bool) !void {
+    /// TF_DSV41_PF_OVERLAP_SITE: every piece p (the last too) on the side, marking p + 1 for the next site's piece p;
+    /// the call after the last piece joins unless that site takes the pieces (`pend`).
+    fn sendPiece(s: *Seg, part: Arg, into: Arg, r0: i64, rows: i64, p: i64, k: i64) !void {
         const e = s.e;
         const send = try rowsOf(e, part, .bf16, r0, rows, e.cfg.hidden);
-        if (last) e.br_join = true else {
+        const last = p + 1 == k;
+        if (last and !e.o.pf_overlap_site) e.br_join = true else {
             e.br_fork = true;
             e.br_side = true;
+            if (e.o.pf_overlap_site) e.br_mark = @intCast(p + 1);
         }
         defer e.br_side = false;
-        try e.glue("exchange_rows", &.{ send, into, .{ .i = r0 } });
+        // the piece's all-gather lands in "L.xrows" [world, rows, D] (a planned role: in the 4K workspace and its
+        // price), then each rank's rows are copied into `into`: the collective's own channels, no NCCL p2p state
+        const tmp = try e.buf("L.xrows", .{}, .bf16, &.{ e.o.world, rows, e.cfg.hidden });
+        try e.glue("exchange_rows", &.{ send, into, .{ .i = r0 }, tmp });
+        if (last and e.o.pf_overlap_site) {
+            s.pend = k;
+            e.br_join = true;
+        }
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -277,9 +291,18 @@ const Seg = struct {
     /// segment: mhc_cuda alone).
     fn site(s: *Seg, L: u32, which: []const u8, mode: moe.Mode) !void {
         const e = s.e;
+        const pend = s.pend;
+        s.pend = 0;
         // the decoder replay's boundaries write the streams in place (replay.finish's Streams has no `alt`)
         if (s.short) return moe.mhcInto(e, L, which, mode, s.part == .decoder);
         const n = e.n;
+        if (pend > 1 and mode == .boundary and n >= pend * pf_rows and n > split_rows) return s.sitePieces(L, which, pend, true);
+        // TF_DSV41_MHC_SITE_ROWS: the boundary in row pieces on the main stream, each piece's partials and normed
+        // input still in L2 when its `_finish_k` reads them
+        if (mode == .boundary and e.o.mhc_site_rows > 0 and n > e.o.mhc_site_rows) {
+            const k = cdiv(n, e.o.mhc_site_rows);
+            if (n >= k * pf_rows) return s.sitePieces(L, which, k, false);
+        }
         const D: i64 = e.cfg.hidden;
         const post = mode == .boundary;
         const x = try e.streams();
@@ -304,9 +327,57 @@ const Seg = struct {
                 .{ .i = n },                  .{ .i = @intFromEnum(mode) },
             });
         } else try s.siteTriton(x, if (post) xout else null, if (post) try gathered(e, which) else null, prev, if (mode != .site1) prev[0] else null, fnw, part, c, tap, if (mode == .site1) 1 else 2, true);
-        try s.finish(.{ L, which }, next, try e.weight("L{d}.{s}", .{ L, if (std.mem.eql(u8, which, "hc_attn")) "attn_norm" else "ffn_norm" }, .f32, &.{D}), part, c);
+        try s.finish(.{ L, which }, next, try e.weight("L{d}.{s}", .{ L, if (std.mem.eql(u8, which, "hc_attn")) "attn_norm" else "ffn_norm" }, .f32, &.{D}), part, c, 0);
         e.coef = 1 - e.coef;
         if (spare) e.cur = 1 - e.cur;
+    }
+
+    /// TF_DSV41_PF_OVERLAP_SITE: a boundary site over the last exchange's k row pieces (`pieceAt`), piece p on the main
+    /// stream once exchange piece p landed (its mark; the last after the whole side: join), so the site's earlier
+    /// pieces run beside the later pieces' exchanges. mhc_pf.run and `_finish_k` are row-wise (a row's streams in place,
+    /// its gathered rows, its coefficients, its partials; no row reads another, and each piece is >= 256 rows, so
+    /// mhc_pf as for the whole): the site's calls over row views, every row the same bits.
+    /// `overlapped` false (TF_DSV41_MHC_SITE_ROWS): the pieces one after another on the main stream, no marks.
+    fn sitePieces(s: *Seg, L: u32, which: []const u8, k: i64, overlapped: bool) !void {
+        const e = s.e;
+        const n = e.n;
+        const D: i64 = e.cfg.hidden;
+        const W: i64 = e.o.world;
+        const x = try e.streams();
+        const prev = try coefs(e, e.coef);
+        const next = try coefs(e, 1 - e.coef);
+        const b0 = try e.empty(.bf16);
+        const fnw = try e.buf("s.L{d}.{s}.fn16", .{ L, which }, .bf16, &.{ 6 * @as(i64, e.cfg.hc_mult), 4 * D });
+        const part = try e.buf("L.mhc.part", .{}, .f32, &.{ n, 4, 40, 32 });
+        const c = try e.buf("L.mhc.c", .{}, .bf16, &.{ n, D });
+        const g = try gathered(e, which);
+        const tap = try tapOf(e, L, which, .boundary);
+        const nw = try e.weight("L{d}.{s}", .{ L, if (std.mem.eql(u8, which, "hc_attn")) "attn_norm" else "ffn_norm" }, .f32, &.{D});
+        if (overlapped) e.br_join = false; // piece p waits for its own exchange piece; the last joins
+        defer e.n = n;
+        var p: i64 = 0;
+        while (p < k) : (p += 1) {
+            const r = pieceAt(n, k, p);
+            const m = r[1] - r[0];
+            e.n = m;
+            if (overlapped) {
+                if (p + 1 < k) e.br_wait = @intCast(p + 1) else e.br_join = true;
+            }
+            const xr = try rowsOf(e, x, .bf16, r[0], m, 4 * D);
+            const nx: [3]Arg = .{ try rowsOf(e, next[0], .f32, r[0], m, 4), try rowsOf(e, next[1], .f32, r[0], m, 4), try rowsOf(e, next[2], .f32, r[0], m, 16) };
+            const pr = try e.view(part.t.role, .f32, &.{ m, 4, 40, 32 }, &.{ 4 * 40 * 32, 40 * 32, 32, 1 }, r[0] * 4 * 40 * 32 * 4);
+            const cr = try rowsOf(e, c, .bf16, r[0], m, D);
+            try e.ext("tf_dsv41_mhc_pf_v1.run", &.{
+                xr,                                                                                   xr,
+                try e.view(g.t.role, .bf16, &.{ W, m, D }, &.{ n * D, D, 1 }, r[0] * D * 2),          try rowsOf(e, prev[1], .f32, r[0], m, 4),
+                try rowsOf(e, prev[2], .f32, r[0], m, 16),                                            try rowsOf(e, prev[0], .f32, r[0], m, 4),
+                fnw,                                                                                  pr,
+                cr,                                                                                   if (tap) |t| try e.view(t.t.role, .bf16, &.{ m, D }, t.t.stride, t.t.offset + r[0] * t.t.stride[0] * 2) else b0,
+                .{ .i = m },                                                                          .{ .i = @intFromEnum(moe.Mode.boundary) },
+            });
+            try s.finish(.{ L, which }, nx, nw, pr, cr, r[0]);
+        }
+        e.coef = 1 - e.coef;
     }
 
     /// mhc._launch's Triton `_site`: `xout` / `g` with the post, `pre` with collapse 2, `fnw` with the mix.
@@ -335,7 +406,8 @@ const Seg = struct {
     }
 
     /// mhc._finish: the partials' sums, the next coefficients (a layer's site) and the normed input into "w.out".
-    fn finish(s: *Seg, hc: ?struct { u32, []const u8 }, next: [3]Arg, nw: Arg, part: Arg, c: Arg) !void {
+    /// `r0`: the first of the e.n rows of "w.out" it writes (a site piece's; 0 for a whole site).
+    fn finish(s: *Seg, hc: ?struct { u32, []const u8 }, next: [3]Arg, nw: Arg, part: Arg, c: Arg, r0: i64) !void {
         const e = s.e;
         const D: i64 = e.cfg.hidden;
         const coef = hc != null;
@@ -346,7 +418,7 @@ const Seg = struct {
             .{ .name = "SCALE", .arg = scale },                            .{ .name = "PRE", .arg = if (coef) next[0] else part },
             .{ .name = "POST", .arg = if (coef) next[1] else part },       .{ .name = "COMB", .arg = if (coef) next[2] else part },
             .{ .name = "C", .arg = c },                                    .{ .name = "NW", .arg = nw },
-            .{ .name = "OUT", .arg = try e.buf("w.out", .{}, .bf16, &.{ e.n, D }) }, .{ .name = "eps", .arg = .{ .f = E.dec(e.cfg.eps) } },
+            .{ .name = "OUT", .arg = try rowsOf(e, try e.buf("w.out", .{}, .bf16, &.{ e.n, D }), .bf16, r0, e.n, D) }, .{ .name = "eps", .arg = .{ .f = E.dec(e.cfg.eps) } },
             .{ .name = "hc_eps", .arg = .{ .f = E.dec(e.cfg.hc_eps) } },  .{ .name = "post_alpha", .arg = .{ .f = E.dec(e.cfg.hc_post_alpha) } },
             .{ .name = "D", .arg = .{ .i = D } },                          .{ .name = "NB", .arg = .{ .i = 40 } },
             .{ .name = "ITERS", .arg = .{ .i = e.cfg.hc_sinkhorn_iters } }, .{ .name = "COEF", .arg = .{ .b = coef } },
@@ -358,6 +430,7 @@ const Seg = struct {
     /// mhc.post_only: the last exchange's post into `xout` (the streams in place, or the trace's copy).
     fn postOnly(s: *Seg, xout: Arg) !void {
         const e = s.e;
+        s.pend = 0; // reads the whole gathered buffer: it joined (sendPiece)
         if (s.short) return moe.postOnly(e, xout);
         const prev = try coefs(e, e.coef);
         const x = try e.streams();
@@ -367,6 +440,7 @@ const Seg = struct {
     /// mhc.final: the last post, collapse 2, the final norm; then the head's columns over every row.
     fn final(s: *Seg) !void {
         const e = s.e;
+        s.pend = 0;
         if (s.short) return moe.finish(e); // mhc_cuda's final, then the same head
         const n = e.n;
         const D: i64 = e.cfg.hidden;
@@ -375,7 +449,7 @@ const Seg = struct {
         const part = try e.buf("L.mhc.part", .{}, .f32, &.{ n, 4, 40, 32 });
         const c = try e.buf("L.mhc.c", .{}, .bf16, &.{ n, D });
         try s.siteTriton(x, x, try gathered(e, ""), prev, prev[0], null, part, c, null, 2, false);
-        try s.finish(null, prev, try e.weight("norm", .{}, .f32, &.{D}), part, c);
+        try s.finish(null, prev, try e.weight("norm", .{}, .f32, &.{D}), part, c, 0);
         // the head: the decode path's linear (prefill_mm.fast off), upstream's 128 rows a launch
         const V: i64 = e.cfg.vocab / e.o.world;
         var a: i64 = 0;
@@ -676,6 +750,31 @@ const Seg = struct {
             const nk = @max(@divFloor(e.start + a + rows, ratio), 1);
             const ns = longpf.splits(nk);
             const buf = try e.buf("L.ix.stream", .{}, .i64, &.{ rows, ns, 2 * topk });
+            if (e.o.stream_rb == 1 or e.o.stream_rb == 2 or e.o.stream_rb == 4) {
+                // TF_DSV41_STREAM_RB: `_stream_pf` (1) or `_stream_rb<N>`, N rows a program (the same buffers, the
+                // same merge)
+                const rb = e.o.stream_rb;
+                try e.triton(switch (rb) {
+                    1 => "_stream_pf",
+                    2 => "_stream_rb2",
+                    else => "_stream_rb4",
+                }, .{ cdiv(rows, rb), ns, 1 }, &.{
+                    .{ .name = "QI", .arg = try e.view(.{ .buf = "L.qi" }, .bf16, &.{ rows, IH, ID }, &.{ IH * ID, ID, 1 }, (e.row0 + a) * IH * ID * 2) },
+                    .{ .name = "W", .arg = try e.view(.{ .buf = "L.ix_w" }, .f32, &.{ rows, IH }, &.{ IH, 1 }, (e.row0 + a) * IH * 4) },
+                    .{ .name = "w_stride", .arg = .{ .i = IH } },           .{ .name = "IK", .arg = try indexKeys(e, src) },
+                    .{ .name = "POS", .arg = p },                           .{ .name = "R", .arg = .{ .i = rows } },
+                    .{ .name = "BUF", .arg = buf },                         .{ .name = "nsplit", .arg = .{ .i = ns } },
+                    .{ .name = "RATIO", .arg = .{ .i = ratio } },           .{ .name = "H", .arg = .{ .i = IH } },
+                    .{ .name = "D", .arg = .{ .i = ID } },                  .{ .name = "BP", .arg = .{ .i = 64 } },
+                    .{ .name = "WS", .arg = .{ .f = 1.0 / @sqrt(@as(f64, @floatFromInt(IH))) } },
+                    .{ .name = "SCALE", .arg = .{ .f = 1.0 / @sqrt(@as(f64, @floatFromInt(ID))) } },
+                    .{ .name = "SPLIT", .arg = .{ .i = longpf.split_keys } }, .{ .name = "K", .arg = .{ .i = topk } },
+                    .{ .name = "CAP", .arg = .{ .i = 2 * topk } },          .{ .name = "PT", .arg = spg.pt },
+                    .{ .name = "PSH", .arg = .{ .i = spg.psh } },           .{ .name = "KFP8", .arg = .{ .b = true } },
+                });
+                try e.glue("stream_merge", &.{ buf, try rowsOf(e, out, .i32, a, rows, topk), .{ .i = topk }, try e.buf("L.ix.keys", .{}, .i64, &.{ rows, ns * topk }) });
+                continue;
+            }
             try e.triton("_stream", .{ rows, ns, 1 }, &.{
                 .{ .name = "QI", .arg = try e.view(.{ .buf = "L.qi" }, .bf16, &.{ rows, IH, ID }, &.{ IH * ID, ID, 1 }, (e.row0 + a) * IH * ID * 2) },
                 .{ .name = "W", .arg = try e.view(.{ .buf = "L.ix_w" }, .f32, &.{ rows, IH }, &.{ IH, 1 }, (e.row0 + a) * IH * 4) },
@@ -846,7 +945,7 @@ const Seg = struct {
             }
             try s.matmul(try e.fmt("L{d}.attn.wo_b", .{L}), .lanes, try rowsOf(e, zall, .bf16, r[0], m, groups * ol), groups * ol, D, .{ .role = part.t.role, .dt = .bf16, .stride = D, .offset = r[0] * D * 2 });
             e.n = n;
-            try s.sendPiece(part, gath, r[0], m, p + 1 == k);
+            try s.sendPiece(part, gath, r[0], m, p, k);
         }
         s.sent_attn = true;
     }
@@ -1139,7 +1238,7 @@ const Seg = struct {
                 try s.proj(try e.fmt("{s}.w2", .{sh}), .stored, ar, I, D, yr);
                 try e.glue("moe_sum", &.{ try rowsOf(e, routed, .f32, r[0], m, D), yr, try rowsOf(e, part, .bf16, r[0], m, D) });
                 e.n = n;
-                try s.sendPiece(part, gath, r[0], m, p + 1 == k);
+                try s.sendPiece(part, gath, r[0], m, p, k);
             }
             s.sent_moe = true;
             return;
@@ -1256,6 +1355,22 @@ const Seg = struct {
             }
         }
         if (head) try s.final();
+        s.unpend();
+    }
+
+    /// A program ending on an exchange's pieces (TF_DSV41_PF_OVERLAP_SITE, no consumer after them): its last piece
+    /// back on the main stream after a join, as without the knob, so no fork stays open.
+    fn unpend(s: *Seg) void {
+        const e = s.e;
+        if (s.pend == 0) return;
+        s.pend = 0;
+        e.br_join = false;
+        const c = &e.out.items[e.out.items.len - 1];
+        std.debug.assert(std.mem.eql(u8, c.name, "glue.exchange_rows") and c.side);
+        c.side = false;
+        c.fork = false;
+        c.mark = 0;
+        c.join = true;
     }
 };
 
@@ -1407,13 +1522,21 @@ pub fn tboRole(a: std.mem.Allocator, r: []const u8) ![]const u8 {
     return ownRole(a, r, "b~");
 }
 
-fn ownArg(a: std.mem.Allocator, x: Arg, comptime tag: []const u8) !Arg {
+/// The roles a namespace leaves as they are (ownCallsKeep): the forward's, which hold them already.
+pub const Keep = std.StringHashMapUnmanaged(void);
+
+fn ownArg(a: std.mem.Allocator, x: Arg, comptime tag: []const u8, keep: ?*const Keep) !Arg {
     return switch (x) {
-        .t => |t| if (t.role == .buf) .{ .t = .{ .role = .{ .buf = try ownRole(a, t.role.buf, tag) }, .dt = t.dt, .shape = t.shape, .stride = t.stride, .offset = t.offset } } else x,
-        .opaque_table => |t| if (t.role == .buf) .{ .opaque_table = .{ .role = .{ .buf = try ownRole(a, t.role.buf, tag) }, .dt = t.dt, .shape = t.shape, .stride = t.stride, .offset = t.offset } } else x,
+        .t, .opaque_table => |t| blk: {
+            if (t.role != .buf) break :blk x;
+            if (keep) |k| if (k.contains(t.role.buf)) break :blk x;
+            var u = t;
+            u.role = .{ .buf = try ownRole(a, t.role.buf, tag) };
+            break :blk if (x == .t) .{ .t = u } else .{ .opaque_table = u };
+        },
         .list => |l| blk: {
             const out = try a.alloc(Arg, l.len);
-            for (l, out) |y, *z| z.* = try ownArg(a, y, tag);
+            for (l, out) |y, *z| z.* = try ownArg(a, y, tag, keep);
             break :blk .{ .list = out };
         },
         else => x,
@@ -1421,16 +1544,21 @@ fn ownArg(a: std.mem.Allocator, x: Arg, comptime tag: []const u8) !Arg {
 }
 
 fn tboArg(a: std.mem.Allocator, x: Arg) !Arg {
-    return ownArg(a, x, "b~");
+    return ownArg(a, x, "b~", null);
 }
 
 /// `cs` with every role in namespace `tag` (ownRole), the calls otherwise as they are.
 pub fn ownCalls(a: std.mem.Allocator, cs: []const calls.Call, comptime tag: []const u8) ![]calls.Call {
+    return ownCallsKeep(a, cs, tag, null);
+}
+
+/// `ownCalls` but for the roles in `keep`, which stay the forward's.
+pub fn ownCallsKeep(a: std.mem.Allocator, cs: []const calls.Call, comptime tag: []const u8, keep: ?*const Keep) ![]calls.Call {
     const out = try a.alloc(calls.Call, cs.len);
     for (cs, out) |c, *x| {
         x.* = c;
         const args = try a.alloc(calls.Named, c.args.len);
-        for (c.args, args) |y, *z| z.* = .{ .name = y.name, .arg = try ownArg(a, y.arg, tag) };
+        for (c.args, args) |y, *z| z.* = .{ .name = y.name, .arg = try ownArg(a, y.arg, tag, keep) };
         x.args = args;
     }
     return out;
@@ -1529,5 +1657,6 @@ fn emitMarked(a: std.mem.Allocator, cfg: *const Config, w: *const block.Widths, 
     if (ring < n + W - 1) return error.Unsupported; // attn_pf: the ring must hold the rows and their windows
     var s: Seg = .{ .e = &e, .staged = staged, .ring = ring, .short = n <= 16, .part = part };
     try s.run(layers, head);
+    if (o.holdsDeferred(n)) calls.holdDeferred(e.out.items);
     return e.out.items;
 }

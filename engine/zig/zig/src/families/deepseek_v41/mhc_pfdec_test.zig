@@ -305,3 +305,156 @@ test "TF_DSV41_MHC_PFDEC: DSpark passes (1 and 4 slots) take it at their in-plac
         if (deferred) try expectDeferred(a, off, on);
     };
 }
+
+// -- TF_DSV41_MHC_DEFER_AT=exchange (calls.holdDeferred) ----------------------------------------------------------
+
+/// `held` is `cs` with each deferred coefficient launch moved later: the other calls in the same order (marks
+/// included), the deferred ones the same calls in the same order, each now just before an exchange or the call that
+/// joins it, still joined before its coefficients' next reader and sharing no role with main's calls before its
+/// join. Returns how many sit before an exchange.
+fn expectHeld(a: std.mem.Allocator, cs: []const Call, held: []const Call) !usize {
+    try testing.expectEqual(cs.len, held.len);
+    var i: usize = 0;
+    var j: usize = 0;
+    var di: usize = 0;
+    var dj: usize = 0;
+    var at_exchange: usize = 0;
+    while (true) {
+        while (i < cs.len and cs[i].defer_side) i += 1;
+        while (j < held.len and held[j].defer_side) j += 1;
+        if (i == cs.len or j == held.len) break;
+        errdefer std.debug.print("main call {d} ({s}) vs held {d} ({s})\n", .{ i, cs[i].name, j, held[j].name });
+        try testing.expect(sameCall(cs[i], held[j]) and cs[i].defer_join == held[j].defer_join);
+        i += 1;
+        j += 1;
+    }
+    try testing.expect(i == cs.len and j == held.len);
+    while (true) {
+        while (di < cs.len and !cs[di].defer_side) di += 1;
+        while (dj < held.len and !held[dj].defer_side) dj += 1;
+        if (di == cs.len or dj == held.len) break;
+        try testing.expect(sameCall(cs[di], held[dj]));
+        try testing.expect(dj >= di); // only ever later
+        const next = held[dj + 1];
+        errdefer std.debug.print("deferred launch at {d} -> {d}, followed by {s}\n", .{ di, dj, next.name });
+        try testing.expect(calls.isExchange(next) or next.defer_join);
+        at_exchange += @intFromBool(calls.isExchange(next));
+        di += 1;
+        dj += 1;
+    }
+    try testing.expect(di == cs.len and dj == held.len);
+    const so = try expectJoined(a, cs);
+    const sn = try expectJoined(a, held);
+    try testing.expectEqual(@as(usize, 0), so.len);
+    try testing.expectEqual(@as(usize, 0), sn.len);
+    return at_exchange;
+}
+
+test "TF_DSV41_MHC_DEFER_AT reader: unset / empty / 0 / off prod's, exchange the hold, anything else refused" {
+    for ([_]?[]const u8{ null, "", "0", "off", " OFF " }) |v| try testing.expect(!try branches.deferAt(v));
+    for ([_][]const u8{ "exchange", "Exchange", " exchange\n" }) |v| try testing.expect(try branches.deferAt(v));
+    for ([_][]const u8{ "1", "on", "experts", "exchanges" }) |v| try testing.expectError(error.BadDeferAt, branches.deferAt(v));
+}
+
+test "TF_DSV41_MHC_DEFER_AT=exchange: decode windows' coefficient launches each move to just before their sublayer's exchange, nothing else changes" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const w = try widths(a);
+    const cfg: Config = .{};
+    var backbone: [40]u32 = undefined;
+    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
+    const limit: i64 = 1 << 20;
+    for ([_]i64{ 0, 17, 1 }) |pf| for ([_]i64{ 1, 2, 5, 16, 17, 20, 24, 32, 48, 64 }) |n| {
+        errdefer std.debug.print("pfdec {d}, {d} rows\n", .{ pf, n });
+        // the off path's windows past 16 rows run Triton's site with its coefficients inline: nothing deferred
+        const deferred = pf > 0 and n >= pf or n <= 16;
+        const o = prodOptions(limit, pf, true);
+        var oh = o;
+        oh.mhc_defer_hold = true;
+        const cs = try block.emit(a, &cfg, &w, o, &backbone, n, 300_000, true);
+        const held = try block.emit(a, &cfg, &w, oh, &backbone, n, 300_000, true);
+        const moved = try expectHeld(a, cs, held);
+        var coefs: usize = 0;
+        for (held) |c| coefs += @intFromBool(c.defer_side);
+        // every mixing site's launch (two a layer) ends up at its sublayer's exchange: none waits at a join
+        try testing.expectEqual(if (deferred) @as(usize, 2 * cfg.layers) else 0, coefs);
+        try testing.expectEqual(coefs, moved);
+        if (n > 1) {
+            const rw = try rowmode.transform(a, held, @intCast(n), .{ .slots = 4, .rmax = 64, .pts = prodOptions(limit, 0, false).pool.?.pts });
+            try testing.expectEqual(held.len, rw.len);
+        }
+        // and the hold is what the knob adds: off, the emitter's program is the old one call for call
+        const again = try block.emit(a, &cfg, &w, o, &backbone, n, 300_000, true);
+        for (cs, again) |x, y| try testing.expect(sameCall(x, y) and x.defer_side == y.defer_side and x.defer_join == y.defer_join);
+    };
+}
+
+test "TF_DSV41_MHC_DEFER_AT=exchange: DSpark passes (1 and 4 slots) keep their calls, each deferred launch later and joined" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const w = try widths(a);
+    const cfg: Config = .{};
+    for ([_]i64{ 0, 1, 17 }) |pf| for ([_]i64{ 1, 4 }) |slots| {
+        errdefer std.debug.print("pfdec {d}, {d} slots\n", .{ pf, slots });
+        const o = prodOptions(1 << 20, pf, true);
+        var oh = o;
+        oh.mhc_defer_hold = true;
+        const cs = try dspark_emit.emitPassSlots(a, &cfg, &w, o, cfg.dspark_block, slots, 4);
+        const held = try dspark_emit.emitPassSlots(a, &cfg, &w, oh, cfg.dspark_block, slots, 4);
+        _ = try expectHeld(a, cs, held);
+    };
+}
+
+test "calls.holdDeferred: a launch with no exchange or join after it, or carrying other marks, stays; never past another deferred launch" {
+    const mk = struct {
+        fn c(name: []const u8, glue: bool, ds: bool, dj: bool) Call {
+            return .{ .triton = false, .glue = glue, .name = name, .args = &.{}, .defer_side = ds, .defer_join = dj };
+        }
+    };
+    var cs = [_]Call{ mk.c("coef", false, true, false), mk.c("a", false, false, false), mk.c("b", false, false, false), mk.c("glue.exchange", true, false, false), mk.c("site", false, false, true), mk.c("coef2", false, true, false), mk.c("c", false, false, false) };
+    calls.holdDeferred(&cs);
+    const want = [_][]const u8{ "a", "b", "coef", "glue.exchange", "site", "coef2", "c" };
+    for (cs, want) |x, y| try testing.expectEqualStrings(y, x.name);
+    // a join before any exchange: the launch waits just before its join
+    var js = [_]Call{ mk.c("coef", false, true, false), mk.c("a", false, false, false), mk.c("site", false, false, true), mk.c("glue.exchange", true, false, false) };
+    calls.holdDeferred(&js);
+    for (js, [_][]const u8{ "a", "coef", "site", "glue.exchange" }) |x, y| try testing.expectEqualStrings(y, x.name);
+    // a branch-forking launch stays
+    var fs = [_]Call{ mk.c("coef", false, true, false), mk.c("a", false, false, false), mk.c("glue.exchange", true, false, false) };
+    fs[0].fork = true;
+    calls.holdDeferred(&fs);
+    try testing.expectEqualStrings("coef", fs[0].name);
+}
+
+test "TF_DSV41_MHC_DEFER_AT_ROWS: the reader; programs over the threshold keep the launch after its site, the rest hold it" {
+    try testing.expectEqual(@as(i64, 0), try branches.deferAtRows(null));
+    try testing.expectEqual(@as(i64, 0), try branches.deferAtRows(" "));
+    try testing.expectEqual(@as(i64, 16), try branches.deferAtRows("16"));
+    for ([_][]const u8{ "-1", "65", "x" }) |v| try testing.expectError(error.BadDeferAt, branches.deferAtRows(v));
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const w = try widths(a);
+    const cfg: Config = .{};
+    var backbone: [40]u32 = undefined;
+    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
+    const o = prodOptions(1 << 20, 17, true);
+    var oh = o;
+    oh.mhc_defer_hold = true;
+    oh.mhc_defer_hold_rows = 16;
+    var ho = o;
+    ho.mhc_defer_hold = true;
+    for ([_]i64{ 1, 6, 16, 17, 24, 32 }) |n| {
+        errdefer std.debug.print("{d} rows\n", .{n});
+        const base = try block.emit(a, &cfg, &w, o, &backbone, n, 300_000, true);
+        const all = try block.emit(a, &cfg, &w, ho, &backbone, n, 300_000, true);
+        const cut = try block.emit(a, &cfg, &w, oh, &backbone, n, 300_000, true);
+        // at or under the threshold: the held program; over it: the program without the hold, call for call
+        const want = if (n <= 16) all else base;
+        try testing.expectEqual(want.len, cut.len);
+        for (want, cut) |x, y| try testing.expect(sameCall(x, y) and x.defer_side == y.defer_side and x.defer_join == y.defer_join);
+    }
+    try testing.expect(oh.holdsDeferred(16) and !oh.holdsDeferred(17) and ho.holdsDeferred(64) and !o.holdsDeferred(1));
+}

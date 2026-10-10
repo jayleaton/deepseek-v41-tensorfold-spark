@@ -51,6 +51,10 @@ SERVED_PY = "/dsv41-tf/src"
 SERVED_TRITON = "/usr/local/lib/python3.12/dist-packages/triton"
 # where the served family's kernels live (the EXL3 prefill GEMM is shared code): other families reuse kernel names
 KERNEL_DIRS = ("tensorfold/families/deepseek_v41", "tensorfold/cuda")
+# the Zig engine's own Triton kernels (no Python engine twin, e.g. the row-blocked stream top-k): a package beside this
+# script, imported after the served tree (they reuse its helpers)
+OWN_DIR = HERE / "dsv41_triton"
+OWN_PKG = "dsv41_zig_triton"
 # call-site options a launch passes (the rest are the backend's defaults, the same for every launch)
 OPTION_KEYS = ("num_warps", "num_stages", "num_ctas", "maxnreg", "enable_fp_fusion", "launch_pdl",
                "launch_cooperative_grid")
@@ -99,13 +103,15 @@ def load_tree(py: Path, served_py: str, served_triton: str) -> dict:
         return name, line
 
     cg.get_jit_fn_file_line = mapped
+    sys.path.append(str(OWN_DIR))
     out: dict = {}
-    files = [f for d in KERNEL_DIRS for f in sorted((py / d).rglob("*.py"))]
-    for f in files:
+    files = [(f, py) for d in KERNEL_DIRS for f in sorted((py / d).rglob("*.py"))]
+    files += [(f, OWN_DIR) for f in sorted((OWN_DIR / OWN_PKG).rglob("*.py"))]
+    for f, root in files:
         text = f.read_text(errors="replace")
         if "triton.jit" not in text:
             continue
-        mod = ".".join(f.relative_to(py).with_suffix("").parts)
+        mod = ".".join(f.relative_to(root).with_suffix("").parts)
         try:
             m = importlib.import_module(mod)
         except Exception as e:                      # a module that needs a GPU extension at import

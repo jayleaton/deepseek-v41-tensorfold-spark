@@ -231,8 +231,18 @@ fn argEql(p: calls.Arg, q: calls.Arg) bool {
 
 const buffers = @import("buffers.zig");
 const fp = @import("forward_prefill.zig");
+const branches = @import("branches.zig");
 
 test "TF_DSV41_PF_4K adds no byte to the forward's buffer plan: the 4K program's own roles are its workspace's, the rest the 2K plan's at their sizes" {
+    // the forward's options under 4K are its 2K ones (prod_knobs.apply leaves them); 4K segments emit with k4Options
+    try planWithin(.{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = 64 << 20, .taps = true });
+}
+
+test "TF_DSV41_PF_4K + TF_DSV41_PF_OVERLAP (+ _SITE): the pieced 4K program stays in its workspace, its streams share only the partials (and the gathered buffers)" {
+    for ([_]i64{ 2, 4 }) |k| for ([_]bool{ false, true }) |site| try planWithin(.{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = 64 << 20, .taps = true, .branches = true, .pf_overlap = k, .pf_overlap_site = site });
+}
+
+fn planWithin(base: block.Options) !void {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -240,8 +250,6 @@ test "TF_DSV41_PF_4K adds no byte to the forward's buffer plan: the 4K program's
     const w = try widths(aa);
     var enc: [21]u32 = undefined;
     for (&enc, 0..) |*l, i| l.* = @intCast(i);
-    // the forward's options under 4K are its 2K ones (prod_knobs.apply leaves them); 4K segments emit with k4Options
-    const base: block.Options = .{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = 64 << 20, .taps = true };
     const o4 = fp.k4Options(base);
     try testing.expectEqual(@as(i64, 4096), o4.prefill_rows);
     try testing.expect(o4.pf4k and !base.pf4k and base.prefill_rows == 2048);
@@ -249,7 +257,24 @@ test "TF_DSV41_PF_4K adds no byte to the forward's buffer plan: the 4K program's
     var p4: buffers.Plan = .{ .a = aa };
     for ([_]i64{ 0, (1 << 20) - 4096 - 1 }) |start| {
         try p2.add(try bp.emitReplay(aa, &cfg, &w, base, &enc, 2048, start + 2048, .encoder));
-        try p4.add(try bp.ownCalls(aa, try bp.emitReplay(aa, &cfg, &w, o4, &enc, 4096, start, .encoder), fp.K4.tag));
+        const c4 = try bp.ownCalls(aa, try bp.emitReplay(aa, &cfg, &w, o4, &enc, 4096, start, .encoder), fp.K4.tag);
+        try p4.add(c4);
+        if (base.pf_overlap > 1) {
+            try testing.expect(count(c4, "glue.exchange_rows") > 0);
+            // the pieces' all-gather scratch is the workspace's (priced with it)
+            var xr = false;
+            for (c4) |c| if (std.mem.eql(u8, c.name, "glue.exchange_rows")) {
+                xr = true;
+                try testing.expectEqualStrings("L.k4~xrows", roleOf(c.args[3].arg));
+            };
+            try testing.expect(xr);
+            const sh = try branches.shared(aa, c4);
+            try testing.expectEqual(@as(usize, if (base.pf_overlap_site) 4 else 2), sh.len);
+            // the partials (and the gathered buffers the site pieces read) both streams touch are the workspace's
+            // (ownCalls tags them in place)
+            for (sh) |r| try testing.expect(std.mem.eql(u8, r, "L.k4~part") or std.mem.eql(u8, r, "L.k4~moe16") or
+                (base.pf_overlap_site and (std.mem.eql(u8, r, "L.k4~recv.attn") or std.mem.eql(u8, r, "L.k4~recv.moe"))));
+        }
     }
     var own: u64 = 0;
     for (p4.sizes.keys(), p4.sizes.values()) |k, v| {
@@ -271,4 +296,93 @@ test "TF_DSV41_PF_4K adds no byte to the forward's buffer plan: the 4K program's
     try testing.expect(p4.sizes.get("s.k4~ex.z").? >= 4096 * 6 * 5120 * 4);
     try testing.expect(p4.sizes.contains("s.k4~stage.v") or p4.sizes.contains("s.k4~stage.s"));
     try testing.expect(own > 1 << 30);
+    if (base.pf_overlap == 0) try shared4k(aa, &p2, &p4, own);
+}
+
+/// TF_DSV41_PF_4K alone (forward_prefill.k4Trim): the roles the 2K plan holds at least as large leave the workspace,
+/// and the 4K program as the segment runs it (ownCallsKeep) names them bare. Every role it names is then the
+/// workspace's (in the trimmed plan, at no more than its size) or the forward's (in the 2K plan, at no less).
+fn shared4k(aa: std.mem.Allocator, p2: *const buffers.Plan, p4: *const buffers.Plan, own: u64) !void {
+    var wp: buffers.Plan = .{ .a = aa };
+    for (p4.sizes.keys(), p4.sizes.values()) |k, v| try wp.sizes.put(aa, k, v);
+    var keep: bp.Keep = .empty;
+    try fp.k4Trim(aa, &wp, p2, &keep);
+    for ([_][]const u8{ "L.ix.stream", "L.ix.keys", "s.pf.w" }) |r| try testing.expect(keep.contains(r));
+    try testing.expect(!keep.contains("s.ex.z") and !keep.contains("L.q")); // twice the 2K size: the workspace's
+    var trimmed: u64 = 0;
+    for (wp.sizes.keys(), wp.sizes.values()) |k, v| {
+        if (std.mem.indexOf(u8, k, fp.K4.tag) != null) trimmed += v;
+    }
+    try testing.expect(own >= trimmed + (400 << 20));
+    const cfg: Config = .{};
+    const w = try widths(aa);
+    var enc: [21]u32 = undefined;
+    for (&enc, 0..) |*l, i| l.* = @intCast(i);
+    const o4 = fp.k4Options(.{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = 64 << 20, .taps = true });
+    for ([_]i64{ 0, (1 << 20) - 4096 - 1 }) |start| {
+        var run: buffers.Plan = .{ .a = aa };
+        try run.add(try bp.ownCallsKeep(aa, try bp.emitReplay(aa, &cfg, &w, o4, &enc, 4096, start, .encoder), fp.K4.tag, &keep));
+        for (run.sizes.keys(), run.sizes.values()) |k, v| {
+            if (std.mem.indexOf(u8, k, fp.K4.tag) != null) {
+                try testing.expect(v <= wp.sizes.get(k).?);
+            } else try testing.expect(v <= p2.sizes.get(k).?);
+        }
+    }
+}
+
+test "TF_DSV41_GM_GU2: 0 / 1, and a 4,096-row segment's gate / up at GU2 over its own 128-member plan, down unchanged" {
+    Fake.pairs = &.{};
+    try testing.expect(!try pk.gmGu2(&Fake.get));
+    Fake.pairs = &.{.{ "TF_DSV41_GM_GU2", "1" }};
+    try testing.expect(try pk.gmGu2(&Fake.get));
+    Fake.pairs = &.{.{ "TF_DSV41_GM_GU2", "2" }};
+    try testing.expectError(error.BadKnob, pk.gmGu2(&Fake.get));
+    Fake.pairs = &.{};
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+    const cfg: Config = .{};
+    const w = try widths(aa);
+    const layers = [_]u32{ 1, 2, 3 };
+    const four: block.Options = .{ .gm_v2 = .one, .limit = 1 << 16, .rope_rows = (1 << 16) + 2048, .pf4k = true, .prefill_rows = 4096 };
+    var on_o = four;
+    on_o.gm_gu2 = true;
+    for ([_]i64{ 2048, 4096 }) |n| {
+        const off = try bp.emitPrefill(aa, &cfg, &w, four, &layers, n, 0, false);
+        const gu2 = try bp.emitPrefill(aa, &cfg, &w, on_o, &layers, n, 0, false);
+        if (n < 4096) { // a 2K segment: the knob changes nothing
+            try sameCalls(off, gu2, 1);
+            continue;
+        }
+        // one more plan a MoE call (gate / up's, 128-member passes), every other call the same in order
+        try testing.expectEqual(off.len + layers.len, gu2.len);
+        var i: usize = 0;
+        var gu: usize = 0;
+        var dn: usize = 0;
+        for (gu2, 0..) |c, j| {
+            if (std.mem.eql(u8, c.name, "glue.gm_plan") and c.args[8].arg.i == 128) {
+                // its roles: its own ("L.gm.h0.*"), the same picks
+                try testing.expect(std.mem.startsWith(u8, roleOf(c.args[1].arg), "L.gm.h0."));
+                try testing.expectEqualStrings(roleOf(off[i - 1].args[0].arg), roleOf(c.args[0].arg));
+                continue;
+            }
+            try testing.expectEqualStrings(off[i].name, c.name);
+            if (std.mem.eql(u8, c.name, "tf_dsv41_x3gm_v1.gateup2")) {
+                try testing.expectEqual(@as(i64, 2), c.args[18].arg.i); // GU2
+                try testing.expect(std.mem.startsWith(u8, roleOf(c.args[5].arg), "L.gm.h0.")); // its plan
+                try testing.expectEqualStrings("glue.gm_plan", gu2[j - 1].name);
+                gu += 1;
+            }
+            if (std.mem.eql(u8, c.name, "tf_dsv41_x3gm_v1.down2")) {
+                try testing.expectEqual(@as(i64, 0), c.args[13].arg.i); // DN0
+                try testing.expect(std.mem.startsWith(u8, roleOf(c.args[3].arg), "L.gm.g0.")); // the 64-member plan
+                for (c.args, off[i].args) |x, y| try testing.expectEqualDeep(y.arg, x.arg);
+                dn += 1;
+            }
+            i += 1;
+        }
+        try testing.expectEqual(off.len, i);
+        try testing.expectEqual(layers.len, gu);
+        try testing.expectEqual(layers.len, dn);
+    }
 }

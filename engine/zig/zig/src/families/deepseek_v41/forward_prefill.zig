@@ -91,6 +91,9 @@ pub const State = struct {
         s.ids.deinit(gpa);
         s.next.deinit(gpa);
         if (s.agreement) |*x| x.deinit();
+        var it = s.k4ws.keep.keyIterator();
+        while (it.next()) |k| gpa.free(k.*);
+        s.k4ws.keep.deinit(gpa);
     }
 };
 
@@ -102,6 +105,23 @@ pub fn plan(f: *Forward, p: *buffers.Plan, rows: u32) !void {
     var la = std.heap.ArenaAllocator.init(f.gpa);
     defer la.deinit();
     const layers = try f.backbone(la.allocator());
+    try planPrograms(f, p, rows, layers);
+    if (f.prefill_state.k4 or (f.prefill_state.mode == .replay and f.opts.pf_tbo)) {
+        const ws = &f.prefill_state.k4ws;
+        if (ws.plan == null) {
+            ws.plan = .{ .a = f.gpa };
+            try planWorkspace(f, &ws.plan.?, rows, layers);
+            if (keepsShared(f)) {
+                const before = planBytes(&ws.plan.?);
+                try k4Trim(f.gpa, &ws.plan.?, p, &ws.keep);
+                log.info("prefill 4K: rank {d}: {d} roles shared with the forward (TF_DSV41_PF_WS_SHARE): workspace {d} -> {d} MiB", .{ f.comm.rank(), ws.keep.count(), before >> 20, planBytes(&ws.plan.?) >> 20 });
+            }
+        }
+    }
+}
+
+/// The forward's prefill programs at `rows` (`plan` without the workspace).
+fn planPrograms(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u32) !void {
     const sizes = [_]u32{ rows, 17, 16 };
     for (sizes[if (rows > 17) 0 else 1..]) |n| {
         const top = try lastStart(f, layers, n, .whole);
@@ -118,11 +138,43 @@ pub fn plan(f: *Forward, p: *buffers.Plan, rows: u32) !void {
     const replay = f.prefill_state.mode == .replay;
     const runs = try block_prefill.planRuns(ra.allocator(), f.cfg, f.widths, vision_rows.planOptions(f), if (replay) try encoderLayers(f, layers) else layers, if (replay) try decoderLayers(f, layers) else null, rows, if (replay) .encoder else .whole);
     for (runs.items) |cs| try p.add(cs);
-    if (f.prefill_state.k4 or (replay and f.opts.pf_tbo)) {
-        if (f.prefill_state.k4ws.plan == null) {
-            f.prefill_state.k4ws.plan = .{ .a = f.gpa };
-            try planWorkspace(f, &f.prefill_state.k4ws.plan.?, rows, layers);
+}
+
+/// TF_DSV41_PF_WS_SHARE=1 (default 0) with TF_DSV41_PF_4K alone (no TBO pair, whose micro-batches run at once): a 4K
+/// segment runs by itself, so a role its
+/// program names that the forward's plan already holds at least as large stays the forward's (`K4.keep`, at boot)
+/// instead of a second copy in the workspace (the index stream / keys budget, the pf.w scratch: ~0.44 GiB). Each
+/// role is its own allocation or arena offset (buffers.zig), and the 2K segments use those roles the same way
+/// between the same programs, so nothing changes but where the 4K segment's bytes live.
+fn keepsShared(f: *const Forward) bool {
+    return f.prefill_state.k4 and !f.opts.pf_tbo and envOn("TF_DSV41_PF_WS_SHARE");
+}
+
+fn envOn(name: [:0]const u8) bool {
+    const v = std.mem.span(std.c.getenv(name) orelse return false);
+    return std.mem.eql(u8, v, "1");
+}
+
+/// Moves the workspace roles (`wp`, in the namespace) that `forward` holds at least as large into `keep` (their bare
+/// names): the 4K program then names the forward's role, and the workspace no longer sizes it.
+pub fn k4Trim(gpa: std.mem.Allocator, wp: *buffers.Plan, forward: *const buffers.Plan, keep: *block_prefill.Keep) !void {
+    var i: usize = 0;
+    while (i < wp.sizes.count()) {
+        const k = wp.sizes.keys()[i];
+        const v = wp.sizes.values()[i];
+        const at = std.mem.indexOf(u8, k, K4.tag) orelse {
+            i += 1;
+            continue;
+        };
+        const bare = try std.mem.concat(gpa, u8, &.{ k[0..at], k[at + K4.tag.len ..] });
+        const have = forward.sizes.get(bare) orelse 0;
+        if (have < v or keep.contains(bare)) {
+            gpa.free(bare);
+            if (have >= v) wp.sizes.orderedRemoveAt(i) else i += 1;
+            continue;
         }
+        try keep.put(gpa, bare, {});
+        wp.sizes.orderedRemoveAt(i);
     }
 }
 
@@ -164,7 +216,15 @@ pub fn workspaceBytes(f: *Forward, rows: u32) !u64 {
     var la = std.heap.ArenaAllocator.init(f.gpa);
     defer la.deinit();
     var wp: buffers.Plan = .{ .a = la.allocator() };
-    try planWorkspace(f, &wp, rows, try f.backbone(la.allocator()));
+    const layers = try f.backbone(la.allocator());
+    try planWorkspace(f, &wp, rows, layers);
+    if (keepsShared(f)) {
+        // the same trim `plan` makes: the roles the forward's prefill programs hold already
+        var fp: buffers.Plan = .{ .a = la.allocator() };
+        try planPrograms(f, &fp, rows, layers);
+        var keep: block_prefill.Keep = .empty;
+        try k4Trim(la.allocator(), &wp, &fp, &keep);
+    }
     return planBytes(&wp);
 }
 
@@ -254,6 +314,8 @@ pub const K4 = struct {
     pub const rows: u32 = prod_knobs.pf4k_rows;
     pub const tag = "k4~";
     plan: ?buffers.Plan = null,
+    /// the bare roles a 4K segment shares with the forward (k4Trim under TF_DSV41_PF_WS_SHARE=1; else none)
+    keep: block_prefill.Keep = .empty,
     buf: ?cuda.DeviceBuffer = null,
     bytes: u64 = 0,
     allocs: u64 = 0,
@@ -577,7 +639,7 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
         if (e == error.Unsupported) log.warn("prefill: the {d}-row segment at {d} is not on the prefill path (block_prefill: Unsupported)", .{ n, start });
         return e;
     };
-    const cs = if (big) try block_prefill.ownCalls(a, plain, K4.tag) else plain;
+    const cs = if (big) try block_prefill.ownCallsKeep(a, plain, K4.tag, &st.k4ws.keep) else plain;
     if (big) try k4Acquire(f);
     // the glue reads the ids (embedding, Engram) and the pending window (positions)
     f.ids = ids;
@@ -865,6 +927,7 @@ pub fn finish(f: *Forward) !void {
 /// tensors' rows 0 .. n.
 fn stashCopy(f: *Forward, r: *run.Runner, c: *const calls.Call, store: bool) !void {
     const p = f.slot.pending orelse return error.BadGlue;
+    if (f.pf_stash) |h| try h.run(h.ctx); // the ring holds this slot's rows (slots.zig swaps it lazily)
     const x = c.args;
     if (x.len != 2 * ced.roles.len) return error.BadGlue;
     const k: u64 = @min(p.n, ced.ring);
@@ -905,7 +968,8 @@ fn commitRoles(f: *Forward, n: u32, row0: usize, comptime pre: []const u8, adv: 
     defer la.deinit();
     const row: usize = 4 * 2 * @as(usize, f.cfg.head_dim); // fp32 [kv | gate]
     for (try f.backbone(la.allocator())) |L| if (f.cfg.isKvSource(L) and f.cfg.compressRatio(L) == 2) {
-        const src = r.addressOf(try std.fmt.bufPrint(&nb, "w." ++ pre ++ "L{d}.proj", .{L})) orelse return error.Unbound;
+        // a role the 4K segment shares with the forward (K4.keep) is under its bare name
+        const src = r.addressOf(try std.fmt.bufPrint(&nb, "w." ++ pre ++ "L{d}.proj", .{L})) orelse r.addressOf(try std.fmt.bufPrint(&nb, "w.L{d}.proj", .{L})) orelse return error.Unbound;
         const dst = r.addressOf(try std.fmt.bufPrint(&nb, "s.L{d}.carry", .{L})) orelse return error.Unbound;
         try copy(r, dst, src + (row0 + n - 1) * row, row);
     };

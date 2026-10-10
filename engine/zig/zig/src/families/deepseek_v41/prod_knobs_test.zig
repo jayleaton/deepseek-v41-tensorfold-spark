@@ -18,6 +18,7 @@ test {
     _ = @import("pf4k_test.zig");
     _ = @import("pfovl_test.zig");
     _ = @import("pftbo_test.zig");
+    _ = @import("streamrb_test.zig");
 }
 
 const Fake = struct {

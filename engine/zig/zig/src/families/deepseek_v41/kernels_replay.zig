@@ -181,7 +181,9 @@ pub fn call(k: *const Kernels, s: cuda.Stream, ext: []const u8, func: []const u8
     if (is(ext, "tensorfold_exl3_experts_v1")) return expertsExt(k.experts(s), func, args, kwargs);
     if (is(ext, "tf_dsv41_x3ld_v1") or is(ext, "tf_dsv41_x3pf_v1")) return groupedExt(k.experts(s), ext, func, args, kwargs);
     if (is(ext, "tf_dsv41_x3gm_v1")) return x3gmExt(k.experts(s), func, args, kwargs);
+    if (is(ext, "tf_dsv41_x3ld_epi_v1")) return x3ldEpiExt(k.experts(s), func, args, kwargs);
     if (is(ext, "tf_dsv41_attn_cuda_v1")) return attnExt(k.others(s), func, args, kwargs);
+    if (is(ext, "tf_dsv41_topk_b_v1") and is(func, "topk")) return topkCall(k.others(s), args, kwargs, true);
     if (is(ext, "tf_dsv41_mhc_cuda_v1") and is(func, "run")) return mhcRun(k.others(s), args, kwargs);
     if (is(ext, "tf_dsv41_mhc_cuda_v1") and is(func, "coef")) return mhcCoef(k.others(s), args, kwargs);
     if (is(ext, "tf_dsv41_mhc_pf_v1") and is(func, "run")) return mhcPfRun(k.others(s), args, kwargs);
@@ -426,6 +428,34 @@ fn groupedExt(o: exl3.Ops, ext: []const u8, func: []const u8, args: []const Arg,
     return true;
 }
 
+// tf_dsv41_x3ld_epi_v1 (ours, TF_DSV41_X3LD_EPI; no Python twin): x3ld.grouped's arguments up to its hi (cb, nt, pd,
+// lo, hi; no probe or PDL), then the epilogue's: gateup (gateup_epilogue's pick, svh_g, svh_u, suh_d, xd, E, limit,
+// act_mode) and down (down_combine's pick, svh_d, y, wts, out, E), each followed by the ticket words.
+fn x3ldEpiExt(o: exl3.Ops, func: []const u8, args: []const Arg, kwargs: []const Kw) !bool {
+    const base = grouped_names ++ [_][]const u8{ "nt", "pd", "lo", "hi", "pick" };
+    if (is(func, "gateup")) {
+        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &(base ++ [_][]const u8{ "svh_g", "svh_u", "suh_d", "xd", "E", "limit", "act_mode", "ticket" }) };
+        if (try c.int(16) != 2 or try c.int(17) != 8) return error.Unsupported;
+        try o.x3ldEpi(try groupedArgs(c, 19), .gu, try c.u(18), .{
+            .pick = try c.ptr(21), .sv0 = try c.ptr(22), .sv1 = try c.ptr(23), .sd = try c.ptr(24), .xd = try c.ptr(25),
+            .E = @intCast(try c.int(26)), .limit = @floatCast(try c.float(27)), .act_mode = @intCast(try c.int(28)), .ticket = try c.ptr(29),
+        });
+        return true;
+    }
+    if (is(func, "down")) {
+        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &(base ++ [_][]const u8{ "svh_d", "y", "wts", "out", "E", "ticket" }) };
+        if (try c.int(16) != 2 or try c.int(17) != 8) return error.Unsupported;
+        const out = try c.tensor(25);
+        if (out.dtype != .f32 and out.dtype != .bf16) return error.WrongArgument;
+        try o.x3ldEpi(try groupedArgs(c, 19), if (out.dtype == .bf16) .dnb else .dn, try c.u(18), .{
+            .pick = try c.ptr(21), .sv0 = try c.ptr(22), .y = try c.ptr(23), .wts = try c.ptr(24), .out = out.ptr,
+            .E = @intCast(try c.int(26)), .ticket = try c.ptr(27),
+        });
+        return true;
+    }
+    return false;
+}
+
 // tf_dsv41_x3gm_v1 (x3gm.cpp)
 fn x3gmExt(o: exl3.Ops, func: []const u8, args: []const Arg, kwargs: []const Kw) !bool {
     if (is(func, "gateup")) {
@@ -531,19 +561,23 @@ fn attnExt(o: ops.Ops, func: []const u8, args: []const Arg, kwargs: []const Kw) 
         try o.attention(b, try c.u(22), numel(sl) > 0, numel(hi) > 0, split);
         return true;
     }
-    if (is(func, "topk")) {
-        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "s0", "c0", "o0", "n0", "nk0", "k0", "m0", "e0", "s1", "c1", "o1", "n1", "nk1", "k1", "m1", "e1", "jobs", "pos", "ratio", "bs", "R", "CL" } };
-        const jobs = try c.usz(16);
-        const pos = try c.tensor(17);
-        var a: ops.topk.Args = .{ .job = undefined, .pos = pos.ptr, .pos64 = @intFromBool(pos.dtype == .i64), .ratio = @intCast(try c.int(18)), .bs = @intCast(try c.int(19)) };
-        a.job[0] = try topkJob(c, 0);
-        a.job[1] = if (jobs > 1) try topkJob(c, 8) else a.job[0];
-        const e0 = try c.usz(7);
-        const ept = if (jobs > 1) @max(e0, try c.usz(15)) else e0;
-        try o.topK(a, jobs, try c.usz(20), try c.usz(21), ept);
-        return true;
-    }
+    if (is(func, "topk")) return topkCall(o, args, kwargs, false);
     return false;
+}
+
+/// tf_dsv41_attn_cuda_v1.topk (dsv41_topk_run_cuda), or with `bounded` tf_dsv41_topk_b_v1.topk (ours,
+/// TF_DSV41_INDEX_BOUND: topk_b.cu's twin, the same arguments)
+fn topkCall(o: ops.Ops, args: []const Arg, kwargs: []const Kw, bounded: bool) !bool {
+    const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "s0", "c0", "o0", "n0", "nk0", "k0", "m0", "e0", "s1", "c1", "o1", "n1", "nk1", "k1", "m1", "e1", "jobs", "pos", "ratio", "bs", "R", "CL" } };
+    const jobs = try c.usz(16);
+    const pos = try c.tensor(17);
+    var a: ops.topk.Args = .{ .job = undefined, .pos = pos.ptr, .pos64 = @intFromBool(pos.dtype == .i64), .ratio = @intCast(try c.int(18)), .bs = @intCast(try c.int(19)) };
+    a.job[0] = try topkJob(c, 0);
+    a.job[1] = if (jobs > 1) try topkJob(c, 8) else a.job[0];
+    const e0 = try c.usz(7);
+    const ept = if (jobs > 1) @max(e0, try c.usz(15)) else e0;
+    if (bounded) try o.topKB(a, jobs, try c.usz(20), try c.usz(21), ept) else try o.topK(a, jobs, try c.usz(20), try c.usz(21), ept);
+    return true;
 }
 
 fn topkJob(c: Call, at: usize) !ops.topk.Job {

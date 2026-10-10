@@ -372,3 +372,7 @@ DSV41_X3GM3(1, 1, 2, 8, 4, 4, 8, 1)
 DSV41_X3GM3(1, 1, 1, 8, 4, 4, 8, 0)
 DSV41_X3GM3(1, 1, 1, 8, 4, 4, 8, 1)
 DSV41_X3GM3(1, 1, 1, 8, 2, 6, 8, 1)
+
+// v2's gate/up at x3gm.cu's 128-member tile GU2 (NG 16, two rotated inputs; TF_DSV41_GM_GU2 at 4,096-row segments):
+// gm2_kernel itself, the instance x3gm.cu's bindings never build. Tiles move data only: v2's bits.
+template __global__ void dsv41_x3gm::gm2_kernel<2, 2, GM_GU2>(const dsv41_x3gm::Args);

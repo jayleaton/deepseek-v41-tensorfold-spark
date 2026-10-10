@@ -35,6 +35,12 @@ pub const DevicePool = struct {
     local: cuda.DeviceBuffer,
     host_table: []i32,
     host_local: []i32,
+    /// TF_DSV41_PT_PINNED=1: the host tables live in pinned memory (`pinned`), so their uploads are truly asynchronous
+    /// (a pageable source is staged by the driver inside the call: ~30 us a round on GB10, rank 1's critical path); the
+    /// host rewrites rows only after the last upload ran (`uploaded`, recorded after it on the compute stream)
+    pinned: ?cuda.HostBuffer = null,
+    uploaded: ?cuda.Event = null,
+    upload_pending: bool = false,
     pts: u32,
     slots: u32,
     io: cuda.Stream,
@@ -61,11 +67,30 @@ pub const DevicePool = struct {
         var local = try cuda.DeviceBuffer.alloc(d, n * 4);
         errdefer local.free();
         try local.fill32(pool.local_null, compute.handle);
-        const ht = try gpa.alloc(i32, n);
-        errdefer gpa.free(ht);
+        var pinned: ?cuda.HostBuffer = null;
+        errdefer if (pinned) |*h| h.free();
+        var uploaded: ?cuda.Event = null;
+        errdefer if (uploaded) |*e| e.deinit();
+        var ht: []i32 = undefined;
+        var hl: []i32 = undefined;
+        if (pinnedFromEnv()) {
+            pinned = try cuda.HostBuffer.alloc(d, 2 * n * 4);
+            const all: []i32 = @alignCast(std.mem.bytesAsSlice(i32, pinned.?.bytes[0 .. 2 * n * 4]));
+            ht = all[0..n];
+            hl = all[n .. 2 * n];
+            uploaded = try cuda.Event.init(d, false);
+        } else {
+            ht = try gpa.alloc(i32, n);
+            hl = gpa.alloc(i32, n) catch |e| {
+                gpa.free(ht);
+                return e;
+            };
+        }
+        errdefer if (pinned == null) {
+            gpa.free(ht);
+            gpa.free(hl);
+        };
         @memset(ht, @intCast(pool.null_page));
-        const hl = try gpa.alloc(i32, n);
-        errdefer gpa.free(hl);
         @memset(hl, @intCast(pool.local_null));
         var io = try cuda.Stream.init(d, true);
         errdefer io.deinit();
@@ -74,7 +99,7 @@ pub const DevicePool = struct {
         // the fills ran on the compute stream (a blocking-API memset is asynchronous on the legacy stream and races with a
         // non-blocking stream's later table upload): done before anything else touches the tensors or tables
         try compute.synchronize();
-        return .{ .gpa = gpa, .d = d, .ctx = ctx, .pool = pool, .tensors = t, .table = table, .local = local, .host_table = ht, .host_local = hl, .pts = max_pages, .slots = slots, .io = io, .events = ev, .compute = compute };
+        return .{ .gpa = gpa, .d = d, .ctx = ctx, .pool = pool, .tensors = t, .table = table, .local = local, .host_table = ht, .host_local = hl, .pinned = pinned, .uploaded = uploaded, .pts = max_pages, .slots = slots, .io = io, .events = ev, .compute = compute };
     }
 
     pub fn deinit(p: *DevicePool) void {
@@ -82,8 +107,13 @@ pub const DevicePool = struct {
         p.gpa.free(p.tensors);
         p.table.free();
         p.local.free();
-        p.gpa.free(p.host_table);
-        p.gpa.free(p.host_local);
+        if (p.pinned) |*h| {
+            if (p.uploaded) |*e| e.deinit();
+            h.free();
+        } else {
+            p.gpa.free(p.host_table);
+            p.gpa.free(p.host_local);
+        }
         for (&p.events) |*e| e.deinit();
         p.io.deinit();
         p.* = undefined;
@@ -91,9 +121,17 @@ pub const DevicePool = struct {
 
     /// Uploads the table entries each slot changed since the last sync (ensure / truncate / adopt), on the compute stream.
     pub fn syncTables(p: *DevicePool) !void {
+        var any = false;
         for (p.pool.slots.items) |s| {
             if (s.id >= p.slots) return error.TooManySlots;
             const r = s.takeDirty() orelse continue;
+            if (!any and p.upload_pending) {
+                // pinned tables: the last upload read the host rows asynchronously; it ran before the previous window
+                // (same stream), so this returns at once in steady state
+                try p.uploaded.?.synchronize();
+                p.upload_pending = false;
+            }
+            any = true;
             const row = @as(usize, s.id) * p.pts;
             for (r.lo..r.hi) |i| {
                 p.host_table[row + i] = @intCast(s.tableAt(@intCast(i)));
@@ -104,6 +142,10 @@ pub const DevicePool = struct {
             try p.table.uploadAsync(a * 4, std.mem.sliceAsBytes(p.host_table[a..][0..n]), p.compute.handle);
             try p.local.uploadAsync(a * 4, std.mem.sliceAsBytes(p.host_local[a..][0..n]), p.compute.handle);
         }
+        if (any) if (p.uploaded) |*e| {
+            try e.record(p.compute);
+            p.upload_pending = true;
+        };
     }
 
     /// Family fam as the kernels take it for one slot (row mode: slot 0's row with pts, the stacked table).
@@ -185,3 +227,9 @@ pub const DevicePool = struct {
         try p.io.synchronize();
     }
 };
+
+/// TF_DSV41_PT_PINNED: 1 = the slots' host page tables in pinned memory (DevicePool.pinned), unset / 0 = heap (today).
+pub fn pinnedFromEnv() bool {
+    const v = std.c.getenv("TF_DSV41_PT_PINNED") orelse return false;
+    return std.mem.eql(u8, std.mem.span(v), "1");
+}

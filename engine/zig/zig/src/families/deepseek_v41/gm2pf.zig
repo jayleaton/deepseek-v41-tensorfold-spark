@@ -26,6 +26,16 @@ pub const max_widths: i64 = 7;
 pub const bm: i64 = 64;
 /// x3gm.tuned2(shx False) without TF_DSV41_GM_CFG
 pub const cfg_gu: i64 = 1;
+/// TF_DSV41_GM_GU2: gate / up at x3gm.cu's GU2 (128-member passes, kernels_exl3.gu2_cfg) over a plan of bm2
+pub const cfg_gu2: i64 = 2;
+pub const bm2: i64 = 128;
+/// GU2 runs where passes fill: a 4,096-row segment's block (~64 members an expert; T2-0 measured it there)
+pub const gu2_rows: i64 = 4096;
+
+fn gu2On(e: *const E, r: Routed) bool {
+    _ = r;
+    return e.o.gm_gu2 and e.n >= gu2_rows;
+}
 pub const cfg_dn: i64 = 0;
 /// x3gm.K2S: the widths gm2_kernel dispatches (x3gm.supported refuses a block with any other)
 pub const k2s: u32 = (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8) | (1 << 10);
@@ -91,8 +101,13 @@ pub fn emit(e: *E, m: Mode, r: Routed) !void {
     const k2g = try e.buf("s.L{d}.gm.k2g", .{L}, .i32, &.{r.Et + 1});
     const k2d = try e.buf("s.L{d}.gm.k2d", .{L}, .i32, &.{r.Et + 1});
     if (m == .one) {
-        const p = try planOf(e, r, "g", 0, 0, false, tmax);
-        try gateup(e, r, tab, k2g, p, 0);
+        const p = try planOf(e, r, "g", 0, 0, false, tmax, bm);
+        if (gu2On(e, r)) {
+            // TF_DSV41_GM_GU2: gate / up at 128-member passes over its own plan (the same order: a stable sort by
+            // expert, whatever the pass size, so Xd's rows are where down's 64-member plan reads them)
+            const h = try planOf(e, r, "h", 0, 0, false, @divFloor(r.P, bm2) + r.Et + 1, bm2);
+            try gateupCfg(e, r, tab, k2g, h, 0, cfg_gu2);
+        } else try gateup(e, r, tab, k2g, p, 0);
         return down(e, r, tab[2], k2d, p, 0);
     }
     const w = r.widths orelse return error.NoWidth;
@@ -100,7 +115,7 @@ pub fn emit(e: *E, m: Mode, r: Routed) !void {
         var j: i64 = 0;
         for (0..32) |kk| {
             if (w[dn] >> @intCast(kk) & 1 == 0) continue;
-            const p = try planOf(e, r, if (dn == 1) "d" else "g", j, @intCast(kk), dn == 1, tmax);
+            const p = try planOf(e, r, if (dn == 1) "d" else "g", j, @intCast(kk), dn == 1, tmax, bm);
             if (dn == 0) try gateup(e, r, tab, k2g, p, j) else try down(e, r, tab[2], k2d, p, j);
             j += 1;
         }
@@ -109,7 +124,7 @@ pub fn emit(e: *E, m: Mode, r: Routed) !void {
 
 /// x3gm.plan's five tensors of one launch (glue gm_plan; k2 0: every pick, x3gm._run_v2's one plan; else
 /// Ragged.picks' mask of that width first).
-fn planOf(e: *E, r: Routed, tag: []const u8, j: i64, k2: i64, dn: bool, tmax: i64) ![5]Arg {
+fn planOf(e: *E, r: Routed, tag: []const u8, j: i64, k2: i64, dn: bool, tmax: i64, pass: i64) ![5]Arg {
     const p = [5]Arg{
         try e.buf("L.gm.{s}{d}.order", .{ tag, j }, .i32, &.{r.P}),
         try e.buf("L.gm.{s}{d}.pe", .{ tag, j }, .i32, &.{tmax}),
@@ -117,7 +132,7 @@ fn planOf(e: *E, r: Routed, tag: []const u8, j: i64, k2: i64, dn: bool, tmax: i6
         try e.buf("L.gm.{s}{d}.pcnt", .{ tag, j }, .i32, &.{tmax}),
         try e.buf("L.gm.{s}{d}.npass", .{ tag, j }, .i32, &.{1}),
     };
-    try e.glue("gm_plan", &.{ r.pk, p[0], p[1], p[2], p[3], p[4], .{ .i = k2 }, .{ .b = dn }, .{ .i = bm }, .{ .i = r.Et } });
+    try e.glue("gm_plan", &.{ r.pk, p[0], p[1], p[2], p[3], p[4], .{ .i = k2 }, .{ .b = dn }, .{ .i = pass }, .{ .i = r.Et } });
     return p;
 }
 
@@ -128,6 +143,10 @@ fn ticketAt(e: *E, r: Routed, i: i64) !Arg {
 /// x3gm.cpp gateup2(xg, xu, tg, tu, k2e, order, pe, poff, pcnt, npass, ticket, svh_g, svh_u, suh_d, xd, K, N, shx,
 /// cfg, use_ticket, limit, tables)
 fn gateup(e: *E, r: Routed, tab: [3]Arg, k2g: Arg, p: [5]Arg, j: i64) !void {
+    return gateupCfg(e, r, tab, k2g, p, j, cfg_gu);
+}
+
+fn gateupCfg(e: *E, r: Routed, tab: [3]Arg, k2g: Arg, p: [5]Arg, j: i64, cfg: i64) !void {
     try e.ext("tf_dsv41_x3gm_v1.gateup2", &.{
         r.xg,                                                         r.xu,
         tab[0],                                                       tab[1],
@@ -138,7 +157,7 @@ fn gateup(e: *E, r: Routed, tab: [3]Arg, k2g: Arg, p: [5]Arg, j: i64) !void {
         try e.weight("{s}.w3.svh", .{r.pre}, .f16, &.{ r.Et, r.I }), try e.weight("{s}.w2.suh", .{r.pre}, .f16, &.{ r.Et, r.I }),
         r.xd,                                                         .{ .i = r.D },
         .{ .i = r.I },                                                .{ .b = false },
-        .{ .i = cfg_gu },                                             .{ .b = true },
+        .{ .i = cfg },                                                .{ .b = true },
         .{ .f = r.limit },                                            .{ .b = true },
     });
 }

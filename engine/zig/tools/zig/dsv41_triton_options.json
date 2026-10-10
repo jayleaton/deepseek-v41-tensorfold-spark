@@ -143,6 +143,42 @@
    "num_ctas": 1,
    "num_stages": 3,
    "num_warps": 4
+  },
+  "dsv41_zig_triton.stream_rb._stream_pf": {
+   "enable_fp_fusion": true,
+   "launch_cooperative_grid": false,
+   "launch_pdl": false,
+   "num_ctas": 1,
+   "num_stages": 3,
+   "num_warps": 8
+  },
+  "dsv41_zig_triton.stream_rb._stream_rb2": {
+   "enable_fp_fusion": true,
+   "launch_cooperative_grid": false,
+   "launch_pdl": false,
+   "num_ctas": 1,
+   "num_stages": 3,
+   "num_warps": 8
+  },
+  "dsv41_zig_triton.stream_rb._stream_rb4": {
+   "enable_fp_fusion": true,
+   "launch_cooperative_grid": false,
+   "launch_pdl": false,
+   "num_ctas": 1,
+   "num_stages": 3,
+   "num_warps": 8
+  },
+  "dsv41_zig_triton.scores_b._scores_b": {
+   "enable_fp_fusion": true,
+   "launch_cooperative_grid": false,
+   "launch_pdl": false,
+   "num_ctas": 1,
+   "num_stages": 3,
+   "num_warps": 8
+  },
+  "dsv41_zig_triton.dtopk_b._dtopk_b": {
+   "num_warps": 8,
+   "source": "dtopk_b.py = csa2/dtopk.py's _dtopk launch: csa2/dtopk.py:167 num_warps=WARPS"
   }
  },
  "generator": "tools/zig/triton_fill.py",
