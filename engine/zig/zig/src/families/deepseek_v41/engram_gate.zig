@@ -132,7 +132,17 @@ pub const Gate = struct {
     gpu_free: ?*const fn (a: std.mem.Allocator, gpu: *anyopaque) void = null,
     sync: ?Sync = null,
 
-    pub const Stats = struct { rounds: u64 = 0, warm: u64 = 0, syncs: u64 = 0, failed: u64 = 0 };
+    pub const Stats = struct {
+        rounds: u64 = 0,
+        warm: u64 = 0,
+        syncs: u64 = 0,
+        failed: u64 = 0,
+        /// TF_DSV41_WIN_PROF=1: summed host ns of each arm's sync, previous-round wait and job + push; logged at deinit
+        prof: bool = false,
+        sync_ns: u64 = 0,
+        wait_ns: u64 = 0,
+        push_ns: u64 = 0,
+    };
     pub const Sync = struct { ctx: *anyopaque, run: *const fn (ctx: *anyopaque) anyerror!void };
 
     /// The gate over `src` with its own worker; `mem` sized by `memBytes` (host tests pass plain slices).
@@ -142,6 +152,7 @@ pub const Gate = struct {
         errdefer a.destroy(g);
         const cols = host.headShard(rank, world)[1] * dim;
         g.* = .{ .a = a, .host = host, .src = src, .layers = try a.dupe(u32, layers), .rank = rank, .world = world, .dim = dim, .cols = cols, .rows = s.rows, .timeout_ns = s.timeout_ns, .wait_ns = s.wait_ns, .mem = mem };
+        g.stats.prof = if (std.c.getenv("TF_DSV41_WIN_PROF")) |v| std.mem.eql(u8, std.mem.span(v), "1") else false;
         if (mem.ctl.len < ctl_n or mem.staging.len < 2 * layers.len * s.rows * cols) return error.BadEngramGate;
         @memset(mem.ctl, 0);
         g.thread = try std.Thread.spawn(.{ .stack_size = 1 << 20 }, loop, .{g});
@@ -192,6 +203,10 @@ pub const Gate = struct {
         if (g.armed) |j| j.free(g.a);
         if (g.gpu) |x| g.gpu_free.?(g.a, x);
         log.info("engram gate: {d} rounds, {d} warm jobs, {d} syncs, {d} failed", .{ g.stats.rounds, g.stats.warm, g.stats.syncs, g.stats.failed });
+        if (g.stats.prof and g.stats.rounds > 0) {
+            const n: f64 = @floatFromInt(g.stats.rounds);
+            log.info("engram gate arm (rank {d}, us a round): sync {d:.1}, previous round's wait {d:.1}, job + push {d:.1}", .{ g.rank, @as(f64, @floatFromInt(g.stats.sync_ns)) / 1e3 / n, @as(f64, @floatFromInt(g.stats.wait_ns)) / 1e3 / n, @as(f64, @floatFromInt(g.stats.push_ns)) / 1e3 / n });
+        }
         g.a.free(g.layers);
         g.a.destroy(g);
     }
@@ -263,12 +278,15 @@ pub const Gate = struct {
     /// and the control word set; the stream the earlier rounds' windows ran on (`sync`) synchronized first. The
     /// window's `engram_rows` steps then launch the gate kernel.
     pub fn arm(g: *Gate, items: []const Item, fill: u32) !void {
+        var t = if (g.stats.prof) nowNs() else 0;
         if (g.armed) |prev| {
             if (g.sync) |s| {
                 try s.run(s.ctx); // every window armed before has read its rows
                 g.stats.syncs += 1;
             }
+            if (g.stats.prof) g.stats.sync_ns += lap(&t);
             try g.wait(prev);
+            if (g.stats.prof) g.stats.wait_ns += lap(&t);
             const failed = prev.failed;
             prev.free(g.a);
             g.armed = null;
@@ -285,6 +303,20 @@ pub const Gate = struct {
         g.stats.rounds += 1;
         @as(*volatile i64, &g.mem.ctl[ctl_want]).* = @intCast(j.seq); // before the launches that read it
         g.push(j);
+        if (g.stats.prof) g.stats.push_ns += lap(&t);
+    }
+
+    fn nowNs() u64 {
+        var ts: std.c.timespec = undefined;
+        _ = std.c.clock_gettime(.MONOTONIC, &ts);
+        return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
+    }
+
+    /// The ns since `t`, `t` moved to now.
+    fn lap(t: *u64) u64 {
+        const x = nowNs();
+        defer t.* = x;
+        return x - t.*;
     }
 
     /// After a window: its round's reads done (bounded by TF_DSV41_ENGRAM_WAIT_S), a failed read or a timed-out GPU wait
