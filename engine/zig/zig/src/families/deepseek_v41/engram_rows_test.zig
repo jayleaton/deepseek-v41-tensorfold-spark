@@ -344,3 +344,41 @@ test "engram lookback: the tail, then the kept rows of the window in flight" {
     // the sequence start: fewer than keep_n
     try testing.expectEqualSlices(u32, &.{5}, eh.lookbackAt(&.{}, 0, &.{ 5, 6 }, 1, 3, &buf).?);
 }
+
+/// Slots of the record map that hold neither a key nor a tombstone: a lookup that misses probes until it finds one.
+fn freeSlots(r: *const er.Rows) usize {
+    const m = &r.tables[0].map;
+    const meta = m.metadata orelse return 0;
+    var n: usize = 0;
+    for (meta[0..m.capacity()]) |x| n += @intFromBool(x.isFree());
+    return n;
+}
+
+test "engram rows: a long run of bulk reads and evictions leaves the record map free slots (no probe of the whole map)" {
+    // bulk reads past cap / 4 (inserted, then dropped) and evictions, as a long uncached prefill does
+    const a = testing.allocator;
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const fx: Fx = .{ .lo = 1000, .rows = 20000, .total = 40000, .sets = undefined };
+    try writeShard(a, io, tmp.dir, fx);
+    const root = try tmp.dir.realPathFileAlloc(io, ".", a);
+    defer a.free(root);
+    const r = try er.Rows.open(a, root, 0, 2, &.{1}, 4096);
+    defer r.close();
+    const ids = try a.alloc(i64, 1500);
+    defer a.free(ids);
+    const out = try a.alloc(u16, ids.len * 256);
+    defer a.free(out);
+    var rng = std.Random.DefaultPrng.init(7);
+    var least: usize = std.math.maxInt(usize);
+    for (0..300) |i| {
+        // a prompt segment's bulk read (past cap / 4: read through, its keys dropped), then a decode window's few
+        const n: usize = if (i % 2 == 0) ids.len else 64;
+        for (ids[0..n]) |*x| x.* = @intCast(fx.lo + rng.random().uintLessThan(u64, fx.rows));
+        try r.rows(0, ids[0..n], 256, out[0 .. n * 256]);
+        least = @min(least, freeSlots(r));
+    }
+    errdefer std.debug.print("record map: {d} of {d} slots free at the least\n", .{ least, r.tables[0].map.capacity() });
+    try testing.expect(least * 8 >= r.tables[0].map.capacity());
+}
