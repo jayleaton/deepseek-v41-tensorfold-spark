@@ -359,6 +359,12 @@ any rank is a cache miss: the prompt is prefilled from 0 and serving continues. 
 exchange (see [ZIG-RESULTS](ZIG-RESULTS.md#split-kv-and-the-30m-pool)). For a speed-first profile without long contexts,
 drop `KV_SPLIT` and `KV_SPLIT_COMPACT` and set `POOL_TOKENS=1400000`.
 
+The Zig serving path starts with a fresh session index on each process boot; it does not yet reconcile persisted
+sessions across ranks. It therefore removes previous-process `.tfs` and interrupted `.tmp` cache files in its own
+compatibility/rank directory before opening the tier. Within-process NVMe reuse is unchanged. The
+`TF_DSV41_SESSION_DISK_GIB` budget is per rank and is not a filesystem quota: leave headroom for in-flight writes,
+prepared assets and other compatibility directories (which this startup cleanup deliberately leaves untouched).
+
 `PIECE_RUNS`, `REPLAY_RUNS` and `JOIN_DRAFTS` batch several slots' prompt work into one run. They need
 `PREFILL_PIECES=1`, replay mode and the multi-segment AOT programs `aot-needs` lists under them.
 Do not equate the serving profile with enabling every experimental knob: the engine has more default-off paths
