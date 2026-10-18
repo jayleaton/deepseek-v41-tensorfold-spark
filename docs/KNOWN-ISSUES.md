@@ -1,9 +1,18 @@
 # What is not solved
 
-- **4 streams on the mixed cell are below the 120 target.** C4 mixed decode aggregate is ~101 tok/s (136 while all
-  four streams are live). The cell's wall is mostly its prose stream finishing alone; 4 distinct code streams are
-  estimated at ~125-135 but that cell has not been measured. The built-but-off `TF_DSV41_SPEC_NUCLEUS` measured
-  +1.3% on C2 steady and -0.6% on C4 steady: not adopted.
+- **The mixed C4 cell is prose-bound, and 120 is the wrong yardstick for it.** Measured over HTTP on the flash17
+  pair at the recommended profile (pool 2.1M, 2184 MHz; `tools/tensorfold-dsv41/dsv41_bench/c4bench.py`, medians of
+  6 reps, ranges in brackets): the mixed cell (code, prose, tweet, edit; 384-token caps; every other stream at
+  T 0.7) decodes 98.0 tok/s [96.7-102.1], with 47% of the span all four streams live and 32% the prose stream
+  running alone; steady 139.4 [137.9-141.2]. The prose stream ends last in every rep: 246 rounds at 1.57 tokens a
+  round to its 384-token cap, while the other three streams end by 10.2 s. The 120 target is defined for short code
+  at four streams (docs/campaign/TARGETS.md) and is met on that definition: four distinct code streams decode 137.9
+  [136.9-140.2], inside the old 125-135 estimate. Four distinct prose streams decode 87.6 [86.7-90.2], so at 1.57
+  tokens a round no prose-heavy cell reaches 120. The lever on the mixed cell is prose acceptance, the drafting item
+  below: 1.57 to ~1.92 accepted tokens a round shortens the span to 12.3 s and reads 120 (arithmetic from the
+  measured chain, round times held). Four distinct code streams run 17% under the same-prompt cell
+  (166.8 [165.7-184.3]): four streams touch more distinct experts a round. `TF_DSV41_SPEC_NUCLEUS` stays off
+  (G17: C2 steady +1.3%, C4 steady -0.6%).
 - **Prose drafting.** DSpark keeps ~1.7 tokens a round on prose (3.7 on code), so prose (1.44x) and 2 streams (1.59x)
   are not at 2x. Self-distilling the drafter on our own logs helped prose and hurt code; not shipped.
 - **The graph cache still shrinks under repeated memory dips.** Long prefills at 2,048 rows dip the worker's memory;

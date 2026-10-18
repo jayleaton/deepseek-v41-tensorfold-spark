@@ -88,6 +88,7 @@ MASTER_PORT=29561 HEAD_STATE=... WORKER_STATE=... scripts/serve.sh start`).
 | `bench/soak.py --minutes 60 --kinds g16` | the same plus growing agent sessions (40 tools, to 120K tokens, screenshots), image requests and idle gaps: the G16-G19 serving-memory soaks. In-stream error events (a refusal after the 200) count as errors | 0 errors; sample RssAnon and MemAvailable on both nodes (G19: RssAnon slope < 0) |
 | `bench/stress.py stress --long 299000 --dctx 65536 --decode 2048` | one 299K prefill while three 64K prompts decode 2,048 tokens (ignore_eos) | every stream complete; watch MemAvailable on both nodes |
 | `bench/stress.py admit` | seconds to the first token of one request after a start (admission) | |
+| `tools/tensorfold-dsv41/dsv41_bench/c4bench.py --cells mixed4,code4,code4d --reps 2 --out R.json` | the C4 concurrent cells over HTTP on m2bench's metric: decode aggregate, steady, the all-live share, and per-stream rounds and tokens a round | four distinct code streams ≥ 120 decode aggregate; the mixed cell's all-live share |
 
 Common flags: `--base http://127.0.0.1:8000 --model DeepSeek-V4.1-Flash-TF --out R.json`. Sample MemAvailable on
 both nodes while they run (`awk '/MemAvailable/' /proc/meminfo` every second; avoid polling `nvidia-smi` every second,

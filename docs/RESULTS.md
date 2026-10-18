@@ -50,6 +50,24 @@ G18 reference: every cell within 1.5%, exact on both boots (drafted == serial, e
 request alone, replies == the reference). G14's own boots read a little higher than the later windows' on the same
 levers (boot-to-boot spread ~1-1.5 tok/s on code); later windows changed prefill, memory and images, not decode.
 
+**C4 cells over HTTP (flash17, the recommended profile: pool 2.1M, 2184 MHz).**
+`tools/tensorfold-dsv41/dsv41_bench/c4bench.py` run on rank 0 against the running server, thinking off, 384-token
+caps, medians of 6 reps with ranges. The metric is m2bench's:
+`decode_aggregate_tok_s` = all tokens over the first-to-last token span, and steady over the all-live span.
+
+| cell | decode aggregate | steady | all live |
+| --- | ---: | ---: | ---: |
+| mixed (code, prose, tweet, edit) | 98.0 [96.7-102.1] | 139.4 [137.9-141.2] | 47% |
+| 4 distinct code | 137.9 [136.9-140.2] | 150.1 [149.1-153.4] | 82% |
+| code, one prompt on four streams | 166.8 [165.7-184.3] | 178.1 [176.8-198.8] | 91% |
+| 4 distinct prose | 87.6 [86.7-90.2] | 90.0 [89.1-90.6] | 90% |
+| prose, one prompt on four streams | 114.3 [105.7-122.9] | 117.4 [111.0-123.8] | 94% |
+
+The last row is 2 reps. The prose stream ends last in every mixed rep, and 32% of that span is prose alone; the
+120 target (TARGETS.md, short code) is met by the distinct-code row. The same-prompt code row runs 17% over the
+distinct row, matching the harness note that four identical streams touch half the distinct experts of four
+distinct ones.
+
 G13 rows below for history. `exact_all True` (drafted == serial) in every run. DSpark tokens a round (G10 / G11): code 3.88, prose 1.57-1.59,
 structured 5.91; in G13 code read 3.80 (the depth policy reads the cheaper calibrated windows and drafts a little
 differently; the replies are the same). G13 gates on the production set: top-1 vs the kit 0.9961 (first copy 0.9502),
