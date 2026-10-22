@@ -21,6 +21,16 @@ dot sees another, every dot is `_stream`'s [2, 4]. Each row keeps its own buffer
 own keys tile by tile in the same tile order; tiles past a row's visible end (the block's later rows see one more key
 every RATIO positions) offer nothing (every key masked: no append, no compaction). Keys are unique, so a row's
 selected set is `_stream`'s, and its split buffer is `_stream`'s slot for slot. `merge` is unchanged.
+
+`_stream_rb4` (TF_DSV41_STREAM_RB=4) is not a per-row twin: it trades the per-row dots for throughput. The block's four
+queries form one [4 H, D] operand, loaded once, and each step is ONE [4 H, D] x [D, 2 BP] dot over two key tiles (an
+MMA M of 128 instead of 32), then the head sums per row and each row's offers as above; 4 warps instead of 8 (the
+offers' per-tile counts are cross-warp reductions: half the warps, cheaper barriers). Per-tile latency was the limit
+(module doc above), so fewer, larger steps pay: on GB10, `tf-dsv41-test stream-rb` at prod's shapes gives 1.60-1.84x
+`_stream` (300 / 2,047 / 2,048 rows at starts 32,768 and 129,024), and at 300K / 480K keys (2,048 rows) 1.87-1.89x.
+Its bits are not argued from the layout (`check_stream_rb.py` checks only pf / rb2's): they are established by the GPU
+A/B, which compares every row's split buffer slot for slot with `_stream`'s and passed on every case, and on a TP=2
+pair by identical replies (304K and 320K-token prompts, greedy) with and without it.
 """
 
 from __future__ import annotations
@@ -111,29 +121,30 @@ def _stream_rb2(QI, W, w_stride, IK, POS, R, BUF, nsplit, RATIO: tl.constexpr, H
 def _stream_rb4(QI, W, w_stride, IK, POS, R, BUF, nsplit, RATIO: tl.constexpr, H: tl.constexpr, D: tl.constexpr,
                 BP: tl.constexpr, WS: tl.constexpr, SCALE: tl.constexpr, SPLIT: tl.constexpr, K: tl.constexpr,
                 CAP: tl.constexpr, PT=None, PSH: tl.constexpr = 0, KFP8: tl.constexpr = False):
-    """Program (row block b of 4 rows, split c): `_stream` MODE 0 for rows 4b .. 4b + 3 (< R)."""
+    """Program (row block b of 4 rows, split c): `_stream` MODE 0 for rows 4b .. 4b + 3 (< R) of split c. The four
+    rows' queries are loaded once as one [4 H, D] block and scored by ONE [4 H, D] x [D, 2 BP] dot a step (two key
+    tiles), each row's scores then offered to its own buffer in key order, as `_stream` does. Built with num_warps 4,
+    num_stages 1 (dsv41_triton_options.json). See the module doc for what fixes its bits."""
 
     b = tl.program_id(0)
     c = tl.program_id(1)
     r0 = b * 4
-    r1 = r0 + 1
-    r2 = r0 + 2
-    r3 = r0 + 3
     q0 = tl.load(POS) + r0
     lo = c * SPLIT
     h0 = tl.minimum(lo + SPLIT, (q0 + 1) // RATIO)
-    h1 = tl.where(r1 < R, tl.minimum(lo + SPLIT, (q0 + 2) // RATIO), lo)
-    h2 = tl.where(r2 < R, tl.minimum(lo + SPLIT, (q0 + 3) // RATIO), lo)
-    h3 = tl.where(r3 < R, tl.minimum(lo + SPLIT, (q0 + 4) // RATIO), lo)
+    h1 = tl.where(r0 + 1 < R, tl.minimum(lo + SPLIT, (q0 + 2) // RATIO), lo)
+    h2 = tl.where(r0 + 2 < R, tl.minimum(lo + SPLIT, (q0 + 3) // RATIO), lo)
+    h3 = tl.where(r0 + 3 < R, tl.minimum(lo + SPLIT, (q0 + 4) // RATIO), lo)
     hi = tl.maximum(tl.maximum(h0, h1), tl.maximum(h2, h3))
-    qv0, w0 = _row_q(QI, W, w_stride, r0, H, D, WS)
-    qv1, w1 = _row_q(QI, W, w_stride, tl.minimum(r1, R - 1), H, D, WS)
-    qv2, w2 = _row_q(QI, W, w_stride, tl.minimum(r2, R - 1), H, D, WS)
-    qv3, w3 = _row_q(QI, W, w_stride, tl.minimum(r3, R - 1), H, D, WS)
+    m = tl.arange(0, 4 * H)
+    row = tl.minimum(r0 + m // H, R - 1).to(tl.int64)
+    d = tl.arange(0, D)
+    qv = tl.load(QI + (row * H + m % H)[:, None] * D + d[None, :]).to(tl.bfloat16)
+    wv = tl.load(W + row * w_stride + m % H).to(tl.float32) * WS
     buf0 = BUF + (r0.to(tl.int64) * nsplit + c) * CAP
-    buf1 = BUF + (r1.to(tl.int64) * nsplit + c) * CAP
-    buf2 = BUF + (r2.to(tl.int64) * nsplit + c) * CAP
-    buf3 = BUF + (r3.to(tl.int64) * nsplit + c) * CAP
+    buf1 = buf0 + nsplit * CAP
+    buf2 = buf1 + nsplit * CAP
+    buf3 = buf2 + nsplit * CAP
     n0 = 0
     n1 = 0
     n2 = 0
@@ -142,30 +153,33 @@ def _stream_rb4(QI, W, w_stride, IK, POS, R, BUF, nsplit, RATIO: tl.constexpr, H
     th1 = tl.full((), -9223372036854775808, tl.int64)
     th2 = tl.full((), -9223372036854775808, tl.int64)
     th3 = tl.full((), -9223372036854775808, tl.int64)
-    for t0 in range(lo, hi, BP):
-        j = t0 + tl.arange(0, BP)
-        k = _keys_tile(IK, j, j < hi, D, PT, PSH, KFP8)
+    BT: tl.constexpr = 2 * BP
+    for t0 in range(lo, hi, BT):
+        j = t0 + tl.arange(0, BT)
+        okk = j < hi
+        jr = prow(tl.where(okk, j, 0).to(tl.int64), PT, PSH, okk)
+        k = load_keys(IK, jr, okk, d, D, KFP8)                                       # [BT, D]
+        dots = tl.dot(qv, tl.trans(k))                                               # [4 H, BT]
+        t = wv[:, None] * tl.maximum(dots * SCALE, 0.0)
+        s = tl.sum(tl.reshape(t, (4, H, BT)), axis=1)                                # [4, BT]
+        s = tl.reshape(tl.permute(s, (1, 0)), (BT, 2, 2))                            # [BT, row // 2, row % 2]
+        sa, sb = tl.split(s)                                                         # rows {0, 2} / {1, 3}
+        s0, s2 = tl.split(sa)
+        s1, s3 = tl.split(sb)
         ok0 = j < h0
+        n0, th0 = _offer(buf0, score_key(tl.where(ok0, s0, float("-inf")), j), ok0, n0, th0, K, CAP)
         ok1 = j < h1
+        n1, th1 = _offer(buf1, score_key(tl.where(ok1, s1, float("-inf")), j), ok1, n1, th1, K, CAP)
         ok2 = j < h2
+        n2, th2 = _offer(buf2, score_key(tl.where(ok2, s2, float("-inf")), j), ok2, n2, th2, K, CAP)
         ok3 = j < h3
-        s0 = _row_scores(qv0, w0, k, ok0, SCALE)
-        n0, th0 = _offer(buf0, score_key(s0, j), ok0, n0, th0, K, CAP)
-        if r1 < R:  # each later row in its own region: see the module doc (the dot's MMA layout)
-            s1 = _row_scores(qv1, w1, k, ok1, SCALE)
-            n1, th1 = _offer(buf1, score_key(s1, j), ok1, n1, th1, K, CAP)
-        if r2 < R:
-            s2 = _row_scores(qv2, w2, k, ok2, SCALE)
-            n2, th2 = _offer(buf2, score_key(s2, j), ok2, n2, th2, K, CAP)
-        if r3 < R:
-            s3 = _row_scores(qv3, w3, k, ok3, SCALE)
-            n3, th3 = _offer(buf3, score_key(s3, j), ok3, n3, th3, K, CAP)
+        n3, th3 = _offer(buf3, score_key(tl.where(ok3, s3, float("-inf")), j), ok3, n3, th3, K, CAP)
     _row_end(buf0, n0, K, CAP)
-    if r1 < R:
+    if r0 + 1 < R:
         _row_end(buf1, n1, K, CAP)
-    if r2 < R:
+    if r0 + 2 < R:
         _row_end(buf2, n2, K, CAP)
-    if r3 < R:
+    if r0 + 3 < R:
         _row_end(buf3, n3, K, CAP)
 
 
