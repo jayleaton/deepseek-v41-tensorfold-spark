@@ -115,6 +115,56 @@ fn roundTrip(world: u32, rank: u32) !void {
     try testing.expectError(error.ChecksumMismatch, d.readFile(ext.items[1], &sink, true));
 }
 
+test "fresh serving starts do not accumulate files from previous processes" {
+    const gpa = testing.allocator;
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmp.dir.realPathFileAlloc(io, ".", gpa);
+    defer gpa.free(root);
+    const opts: disk.Options = .{ .root = root, .compat = @splat(5), .rank = 0, .world = 2, .fresh_start = true };
+    {
+        const d = try disk.Disk.open(gpa, io, opts);
+        defer d.close();
+        // Exercise cleanup with hundreds of stale files.
+        for (0..300) |i| {
+            var name_buf: [32]u8 = undefined;
+            const name = try std.fmt.bufPrint(&name_buf, "stale-{d}.tfs", .{i});
+            const f = try d.dir.createFile(io, name, .{});
+            f.close(io);
+        }
+        // These are disposable, unindexed files left by a previous serving process.
+        for ([_][]const u8{ "old.tfs", "interrupted.tmp", "keep.txt" }) |name| {
+            const f = try d.dir.createFile(io, name, .{});
+            f.close(io);
+        }
+    }
+    const other = try disk.Disk.open(gpa, io, .{ .root = root, .compat = @splat(5), .rank = 1, .world = 2 });
+    defer other.close();
+    const peer = try other.dir.createFile(io, "peer.tfs", .{});
+    peer.close(io);
+    const foreign = try disk.Disk.open(gpa, io, .{ .root = root, .compat = @splat(6) });
+    defer foreign.close();
+    const unrelated = try foreign.dir.createFile(io, "foreign.tfs", .{});
+    unrelated.close(io);
+
+    const reopened = try disk.Disk.open(gpa, io, opts);
+    defer reopened.close();
+    try testing.expectError(error.FileNotFound, reopened.dir.openFile(io, "old.tfs", .{}));
+    try testing.expectError(error.FileNotFound, reopened.dir.openFile(io, "interrupted.tmp", .{}));
+    var it = reopened.dir.iterate();
+    while (try it.next(io)) |ent| {
+        try testing.expect(!std.mem.endsWith(u8, ent.name, ".tfs"));
+        try testing.expect(!std.mem.endsWith(u8, ent.name, ".tmp"));
+    }
+    const marker = try reopened.dir.openFile(io, "keep.txt", .{});
+    marker.close(io);
+    const peer_after = try other.dir.openFile(io, "peer.tfs", .{});
+    peer_after.close(io);
+    const foreign_after = try foreign.dir.openFile(io, "foreign.tfs", .{});
+    foreign_after.close(io);
+}
+
 test "whole and delta files round-trip bit for bit (replicated)" {
     try roundTrip(1, 0);
 }

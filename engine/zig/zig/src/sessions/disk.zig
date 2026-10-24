@@ -41,6 +41,9 @@ pub const Options = struct {
     lanes: u32 = 4,
     /// delta files a chain may stack before a park writes the entry whole
     max_chain: u32 = 8,
+    /// A caller that starts with an empty index must not leave previous-process files outside its budget.
+    /// Keep false for callers that rebuild the persistent index with Store.reconcile().
+    fresh_start: bool = false,
 };
 
 /// A piece of bounded state (rings, carries, taps): small, host bytes.
@@ -155,6 +158,18 @@ pub const Disk = struct {
         defer root.close(io);
         const dir = try root.createDirPathOpen(io, sub, .{ .open_options = .{ .iterate = true } });
         errdefer dir.close(io);
+        if (opts.fresh_start) {
+            // Only this compatibility namespace and rank, before any tier jobs start.
+            // Do not silently continue with an empty accounting index if deletion fails.
+            var it = dir.iterate();
+            while (try it.next(io)) |ent| {
+                if (!std.mem.endsWith(u8, ent.name, ".tfs") and !std.mem.endsWith(u8, ent.name, ".tmp")) continue;
+                // Fail closed: an unknown type could be a regular file left outside the budget.
+                if (ent.kind == .unknown) return error.UnknownCacheEntryType;
+                if (ent.kind != .file) continue;
+                try dir.deleteFile(io, ent.name);
+            }
+        }
         d.* = .{ .gpa = gpa, .io = io, .opts = opts, .dir = dir, .staging = try Staging.init(gpa, io, @max(2, opts.staging), up(opts.chunk)), .lanes = undefined };
         errdefer d.staging.deinit();
         d.lanes = try Lanes.start(gpa, io, &d.staging, @max(1, opts.lanes));
