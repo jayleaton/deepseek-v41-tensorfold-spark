@@ -29,7 +29,7 @@ pub const Options = struct {
     compat: Digest,
     rank: u32 = 0,
     world: u32 = 1,
-    /// bytes of files the tier keeps (least recently used files without dependents go first)
+    /// charges of files the tier keeps (alike on every rank); least recently used files without dependents go first
     budget: u64 = 64 << 30,
     /// entries shorter than this are dropped, not parked
     min_tokens: u64 = 1024,
@@ -68,6 +68,8 @@ pub const WriteSrc = struct {
     /// per family: family-tensor pages of this rank's logical pages [first_page, npages), in logical order
     pages: []const []const u32,
     blobs: []const Blob = &.{},
+    /// the entry's bounded state as the store measures it (Bounded `nbytes`): alike on every rank, unlike blob bytes
+    measure: u64 = 0,
 };
 
 /// One file of a restore: read logical pages [lo, hi) of it into the slot.
@@ -112,6 +114,8 @@ pub const Rec = struct {
     first_page: u32,
     npages: u32,
     size: u64,
+    /// what the file counts against the budget, alike on every rank (`register`; a file `scan` finds counts its size)
+    charge: u64,
     /// files stacked on this one
     refs: u32 = 0,
     /// files under it, this one included
@@ -143,7 +147,7 @@ pub const Disk = struct {
     /// least recently used first
     oldest: u32 = none,
     newest: u32 = none,
-    used: u64 = 0,
+    used: u64 = 0, // the files' charges, which `trim` holds to the budget
     stats: Stats = .{},
 
     pub fn open(gpa: std.mem.Allocator, io: Io, opts: Options) !*Disk {
@@ -399,14 +403,17 @@ pub const Disk = struct {
 
     /// Records a written file in the index (round thread, at the plan's point); its base gains a dependent.
     pub fn register(d: *Disk, src: *const WriteSrc, size: u64) !u32 {
-        const id = try d.add(src.key, src.base, src.tag, src.kind, src.pos, src.first_page, src.npages, size);
+        // pages at a rank's average (a split family's at 1 / W), ids and the entry's measure: alike on every rank
+        var charge: u64 = @as(u64, src.ids.len) * 4 + src.measure;
+        for (src.families) |f| charge += @as(u64, src.npages - src.first_page) * f.pageBytes(src.page) / (if (f.split and d.opts.world > 1) d.opts.world else 1);
+        const id = try d.add(src.key, src.base, src.tag, src.kind, src.pos, src.first_page, src.npages, size, charge);
         d.stats.writes += 1;
         d.stats.bytes_written += size;
         return id;
     }
 
-    fn add(d: *Disk, key: Digest, base: ?Digest, tag: u32, kind: u32, pos: u64, first_page: u32, npages: u32, size: u64) !u32 {
-        var r: Rec = .{ .key = key, .tag = tag, .kind = kind, .pos = pos, .first_page = first_page, .npages = npages, .size = size };
+    fn add(d: *Disk, key: Digest, base: ?Digest, tag: u32, kind: u32, pos: u64, first_page: u32, npages: u32, size: u64, charge: u64) !u32 {
+        var r: Rec = .{ .key = key, .tag = tag, .kind = kind, .pos = pos, .first_page = first_page, .npages = npages, .size = size, .charge = charge };
         if (base) |b| {
             const bi = d.by_key.get(b) orelse return error.NoBase;
             r.base = bi;
@@ -420,7 +427,7 @@ pub const Disk = struct {
         if (r.base != none) d.recs.items[r.base].refs += 1;
         d.recs.items[id] = r;
         d.link(id);
-        d.used += size;
+        d.used += charge;
         return id;
     }
 
@@ -471,7 +478,7 @@ pub const Disk = struct {
                 _ = out.orderedRemove(i);
                 continue;
             }
-            _ = try d.add(f.head.key, base, f.head.tag, f.head.kind, f.head.pos, f.head.first_page, f.head.npages, f.size);
+            _ = try d.add(f.head.key, base, f.head.tag, f.head.kind, f.head.pos, f.head.first_page, f.head.npages, f.size, f.size);
             i += 1;
         }
     }
@@ -551,7 +558,7 @@ pub const Disk = struct {
         if (r.base != none) d.recs.items[r.base].refs -= 1;
         d.unlink(id);
         _ = d.by_key.remove(key);
-        d.used -= r.size;
+        d.used -= r.charge;
         r.live = false;
         var nb: [48]u8 = undefined;
         _ = linux.unlinkat(d.dir.handle, fileName(key, "tfs", &nb), 0);
