@@ -73,7 +73,7 @@ scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank 
   [`config/prod-zig-flash17.env.example`](config/prod-zig-flash17.env.example) and keep its engine settings. It needs
   the **2.1M-token pool** (`TF_DSV41_POOL_TOKENS=2100000`). With q28-v2's 3.0M pool this pack goes under the 4 GiB
   memory floor during 4K prefills ([why](docs/FLASH-1017.md#memory-the-21m-pool)).
-- Pack the **1017 Engram shards** with `scripts/pack_engram.py` ([INSTALL step 3](docs/INSTALL.md), with
+- Pack the **1017 Engram shards** with `scripts/pack_engram.py` ([Engram setup](docs/INSTALL.md#engram-source-setup-68), with
   `deepseek-ai/DeepSeek-V4.1-Flash-1017` as the source); the September shards do not match this pack.
 - We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
 - Check the answer to `What is 17 * 23?` is 391 before serving traffic.
