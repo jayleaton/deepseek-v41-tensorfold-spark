@@ -1,6 +1,7 @@
 # Install and run the native recipe
 
-The recommended pack is flash17. Follow [ZIG-SERVE](ZIG-SERVE.md) for the existing native build, rank assets,
+The recommended pack is flash17. Read [ENGINE](ENGINE.md) first: the initial upstream pin rejects its
+`dsq-1` metadata, and this migration has no new pack/device qualification. Follow [ZIG-SERVE](ZIG-SERVE.md) for the existing native build, rank assets,
 image checks and launch. The retired Python build/cache/start workflow is no longer an installation option.
 Use matching model and release-specific Engram tables on both nodes; q28-v2 keeps its separate rollback profile.
 

@@ -1,42 +1,33 @@
-# Build context: src/ is an exported CUDA DeepSeek Zig port; fatbins/ holds optional sm_121 kernels.
-# See docs/ZIG-SERVE.md for source availability and required runtime assets.
-# must match the nvcc the gated fatbins were built with when fatbins/ is empty (13.x)
+# Build from the upstream commit in config/tensorfold.rev, supplied by scripts/build-native.sh.
 ARG CUDA_DEVEL=nvcr.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 ARG CUDA_RUNTIME=nvcr.io/nvidia/cuda:13.0.1-base-ubuntu24.04
-
 FROM ${CUDA_DEVEL} AS build
+ARG TENSORFOLD_REV
 ARG ZIG_VERSION=0.17.0
 ARG ZIG_URL=
 ARG ZIG_TARGET=aarch64-linux-gnu
-# the GB10's ARMv8 crypto extensions for the host code: std's SHA-256 (prepared files, PREPARED_VERIFY) runs in software
-# on the generic aarch64 baseline (adds instructions only; no float code changes)
 ARG ZIG_CPU=baseline+sha2+aes
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates xz-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates xz-utils \
     && rm -rf /var/lib/apt/lists/*
+RUN set -eu; test "${#TENSORFOLD_REV}" = 40; \
+    git init /ctx/src && cd /ctx/src && git remote add origin https://github.com/ashhart/TensorFold.git && \
+    git fetch --depth=1 origin "$TENSORFOLD_REV" && git checkout --detach FETCH_HEAD && \
+    test "$(git rev-parse HEAD)" = "$TENSORFOLD_REV"
 RUN set -eu; url="${ZIG_URL:-https://ziglang.org/download/${ZIG_VERSION}/zig-aarch64-linux-${ZIG_VERSION}.tar.xz}"; \
     mkdir -p /opt/zig && curl -fsSL "$url" | tar -xJ -C /opt/zig --strip-components=1; \
-    /opt/zig/zig version
+    test "$(/opt/zig/zig version)" = "$ZIG_VERSION"
 ENV PATH=/opt/zig:/usr/local/cuda/bin:$PATH
-COPY src /ctx/src
-COPY fatbins/ /ctx/fatbins/
 WORKDIR /ctx/src
-RUN set -eu; \
-    if ls /ctx/fatbins/dsv41_*.fatbin >/dev/null 2>&1; then \
-        echo "using the prebuilt fatbins in /ctx/fatbins"; \
-        test -f /ctx/fatbins/tp_mailbox.fatbin; \
-        cp /ctx/fatbins/tp_mailbox.fatbin /tp_mailbox.fatbin; \
-        gpu="-Dfatbins=/ctx/fatbins -Dtp-fatbin=/tp_mailbox.fatbin"; \
-    else \
-        echo "no prebuilt fatbins: building with $(nvcc --version | tail -1)"; \
-        nvcc -fatbin -O3 -std=c++17 -gencode=arch=compute_120,code=sm_120 -gencode=arch=compute_121,code=sm_121 \
-            -gencode=arch=compute_90,code=compute_90 -o /tp_mailbox.fatbin zig/src/fabric/tp/mailbox.cu; \
-        gpu="-Dnvcc=/usr/local/cuda/bin/nvcc -Dtp-fatbin=/tp_mailbox.fatbin"; \
-    fi; \
-    zig build -Dtarget="$ZIG_TARGET" -Dcpu="$ZIG_CPU" $gpu -Dsm=121 -Doptimize=ReleaseSafe -j4 --prefix /out install; \
-    test -x /out/bin/tensorfold-dsv41 && test -x /out/bin/tf-dsv41-m1
+RUN set -eu; test "$(cat .zig-version)" = "$ZIG_VERSION"; \
+    nvcc -fatbin -O3 -std=c++17 -gencode=arch=compute_121,code=sm_121 \
+        -o /tp_mailbox.fatbin zig/src/fabric/tp/mailbox.cu; \
+    zig build dsv41-serve -Dtarget="$ZIG_TARGET" -Dcpu="$ZIG_CPU" \
+        -Dnvcc=/usr/local/cuda/bin/nvcc -Ddsv41-nvcc=/usr/local/cuda/bin/nvcc \
+        -Dtp-fatbin=/tp_mailbox.fatbin -Dsm=121 -Doptimize=ReleaseSafe -j2 --prefix /out; \
+    test -x /out/bin/tensorfold-dsv41 && test -x /out/bin/tf-dsv41
 
 FROM ${CUDA_RUNTIME}
-ARG ZIG_COMMIT=unknown
+ARG TENSORFOLD_REV
 # libnccl2 from the CUDA apt repo the nvidia images ship configured; libibverbs + the mlx5 provider for RoCE; cuBLAS /
 # cuBLASLt pinned at 13.6.0.2 (libcublas-13-3, the same repo): the build the vision tower's bit-exact proof ran on, dlopened
 # only with TF_DSV41_IMAGES=native. Its directory goes on the loader path (the base image's points at its own CUDA).
@@ -45,7 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libnccl2 libibv
     && apt-mark hold libcublas-13-3 \
     && dirname "$(dpkg -L libcublas-13-3 | grep '/libcublas\.so\.13$')" > /etc/ld.so.conf.d/990_cublas-13-3.conf && ldconfig \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/bin/tensorfold-dsv41 /out/bin/tf-dsv41-m1 /opt/tensorfold/bin/
+COPY --from=build /ctx/src/LICENSE /ctx/src/NOTICE /ctx/src/THIRD_PARTY_NOTICES.md /opt/tensorfold/licenses/
+COPY --from=build /ctx/src/LICENSES/ /opt/tensorfold/licenses/LICENSES/
+COPY --from=build /out/bin/tensorfold-dsv41 /out/bin/tf-dsv41 /opt/tensorfold/bin/
 COPY --from=build /tp_mailbox.fatbin /opt/tensorfold/share/tp_mailbox.fatbin
 # libproof: every library name the engine can dlopen is covered, each resolves here with its whole NEEDED chain, and
 # cuBLAS / cuBLASLt are the pinned 13.6.0.2 files by sha256; any miss or other build fails the image build
@@ -75,4 +68,5 @@ EOF
 RUN bash /opt/tensorfold/share/libproof.sh
 ENV PATH=/opt/tensorfold/bin:$PATH \
     TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin
-LABEL org.tensorfold.zig-commit="${ZIG_COMMIT}"
+LABEL org.tensorfold.revision="${TENSORFOLD_REV}"
+LABEL org.opencontainers.image.source="https://github.com/ashhart/TensorFold"

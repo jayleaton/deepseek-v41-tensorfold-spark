@@ -7,17 +7,20 @@ Support me here: https://buymeacoffee.com/jayleaton
 ![flash17: DeepSeek-V4.1-Flash-1017, EXL3 2.8 bpw, now available](assets/flash17-now-available.png)
 
 A recipe for serving DeepSeek-V4.1-Flash-1017 on two NVIDIA DGX Sparks behind an OpenAI-compatible API. It ships
-our EXL3 pack (**flash17**) and the TensorFold Zig engine that serves it, with the exact serving profile we measured.
+our EXL3 pack (**flash17**) and a pinned upstream TensorFold native build. The measurements below describe
+the previously deployed engine and profile.
 
 | | |
 | --- | --- |
 | Model | [`deepseek-ai/DeepSeek-V4.1-Flash-1017`](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) |
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
-| Engine | TensorFold Zig, CUDA port `9131e10a` (source in [`engine/zig`](engine/zig)) |
+| Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
 
-flash17 is serving as the production default on our two Sparks (model ID `DeepSeek-V4.1-Flash-TF`).
+This branch migrates the recipe to upstream native serving. **The initial pin rejects flash17’s `dsq-1` metadata.**
+The engine/pack/device qualification is pending; the historical production results below do not qualify this pin.
+See [ENGINE](docs/ENGINE.md) for the admission limit and single-pin update procedure.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
 > relying on it.
@@ -63,7 +66,7 @@ git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
-scripts/run-zig.sh 1 --check-aot && scripts/run-zig.sh 1   # rank 1 node; then the same with 0 on rank 0
+scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting
 ```
 
 - Fill in the node paths and link settings from
