@@ -4,6 +4,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -16,8 +18,8 @@ def checkout(tmp_path):
     return tmp_path
 
 
-def scan(root):
-    return subprocess.run([os.environ.get("TEST_BASH", "bash"), "scripts/check-public.sh"],
+def scan(root, shell=None):
+    return subprocess.run([shell or os.environ.get("TEST_BASH", "bash"), "scripts/check-public.sh"],
                           cwd=root, text=True, capture_output=True)
 
 
@@ -58,3 +60,46 @@ def test_history_keeps_all_alias_paths_and_removed_data(tmp_path):
                              'private|192[.]168[.]|fixture.txt'], cwd=root, text=True, capture_output=True)
     assert result.returncode == 1
     assert 'leak.txt:1:' in result.stdout and 'fixture.txt:1:' not in result.stdout
+
+
+@pytest.fixture
+def bash32():
+    shell = os.environ.get("BASH32")
+    if not shell:
+        pytest.skip("set BASH32 to the real Bash 3.2 executable")
+    version = subprocess.run([shell, "-c", 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"'],
+                             text=True, capture_output=True, check=True)
+    assert version.stdout == "3.2", "BASH32 must run GNU Bash 3.2"
+    return shell
+
+
+def test_bash32_scan_clean_and_findings(tmp_path, bash32):
+    root = checkout(tmp_path)
+    f = root / "file with spaces\nand newline.txt"
+    f.write_text("ordinary content\n")
+    result = scan(root, bash32)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "check-public: clean" in result.stdout
+    f.write_text("private=" + ".".join(("192", "168", "42", "7")) + "\n")
+    result = scan(root, bash32)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "private IPv4" in result.stdout and "check-public: FINDINGS" in result.stdout
+    assert "unbound variable" not in result.stderr
+
+
+def test_bash32_empty_scan_list(tmp_path, bash32):
+    root = checkout(tmp_path)
+    # This additional pattern excludes every file, exercising the empty scan array.
+    (root / ".check-public.local").write_text("never-match\t*\n")
+    result = scan(root, bash32)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "check-public: clean" in result.stdout
+
+
+def test_bash32_empty_file_list(tmp_path, bash32):
+    root = checkout(tmp_path)
+    (root / ".gitignore").write_text("scripts/\n.gitignore\n")
+    result = scan(root, bash32)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "no files to scan" in result.stderr
+    assert "unbound variable" not in result.stderr

@@ -26,7 +26,8 @@ def rank(tmp_path, monkeypatch):
     (model / 'model.safetensors.index.json').write_text(json.dumps({'weight_map': {'x': 'weights.safetensors'}}))
     (model / 'weights.safetensors').write_bytes(b'fixture weight bytes')
     (out / 'rope.bin').write_bytes(b'DSV41RP1' + struct.pack('<II', 2052, 64) + bytes(2 * 2052 * 64 * 4))
-    sha = lambda name: hashlib.sha256((model / name).read_bytes()).digest()
+    def sha(name):
+        return hashlib.sha256((model / name).read_bytes()).digest()
     token_map = b'DSENGR01' + struct.pack('<6I', 4, 3, 2, 4, 8, 1) + sha('tokenizer.json') + sha('config.json')
     token_map += struct.pack('<2I4Q24I24I', 1, 48, 1, 3, 5, 7, *([2] * 24), *range(0, 48, 2))
     token_map += struct.pack('<4I', 0, 1, 2, 2)

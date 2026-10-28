@@ -71,7 +71,7 @@ while IFS= read -r -d '' f; do
     case "$f" in vendor/TensorFold|vendor/TensorFold/*|"$SELF"|"$LOCAL_LIST") continue ;; esac
     [[ -f "$f" ]] && FILES+=("$f")
 done < <(git ls-files -z -co --exclude-standard 2>/dev/null)
-if [[ ${#FILES[@]} -eq 0 ]]; then echo "no files to scan (not a git checkout?)" >&2; exit 2; fi
+if [[ -z "${FILES[*]-}" ]]; then echo "no files to scan (not a git checkout?)" >&2; exit 2; fi
 
 # /home/<name>/ is allowed for these generic placeholders
 HOME_OK='/home/(user|you|<you>|<user>|ubuntu)/'
@@ -84,11 +84,12 @@ for entry in "${PATTERNS[@]}"; do
     for f in "${FILES[@]}"; do
         skipped=0
         read -ra globs <<< "$skip"
-        for g in "${globs[@]}"; do [[ "$f" == $g ]] && { skipped=1; break; }; done
+        # Bash 3.2 treats even a declared empty array as unset under nounset.
+        for g in ${globs[@]+"${globs[@]}"}; do [[ "$f" == $g ]] && { skipped=1; break; }; done
         [[ $skipped -eq 1 ]] || scan_files+=("$f")
     done
     hits=""
-    if [[ ${#scan_files[@]} -gt 0 ]]; then
+    if [[ -n "${scan_files[*]-}" ]]; then
         hits=$(grep -HnIiE -- "$re" "${scan_files[@]}" 2>/dev/null)
     fi
     [[ "$name" == "home directories" && -n "$hits" ]] && hits=$(grep -viE "$HOME_OK" <<< "$hits")

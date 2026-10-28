@@ -277,6 +277,7 @@ def check_engram(
     probe: int,
     warn_us: float,
     seed: int,
+    latency_probe=None,
 ) -> None:
     if not edir or "<" in edir:
         rep.add(
@@ -409,7 +410,7 @@ def check_engram(
     if probe > 0 and ok_files:
         target = max(ok_files, key=lambda p: p.stat().st_size)
         try:
-            r = read_latency(target, probe, seed)
+            r = (latency_probe or read_latency)(target, probe, seed)
         except OSError as exc:
             rep.add("engram-latency", WARN, f"probe failed on {target.name}: {exc}")
             return
@@ -722,32 +723,65 @@ def check_health(rep: Report, url: str) -> None:
         rep.add("health", WARN, f"{url}/health: {exc}")
         return
     if not isinstance(h, dict) or not h:
-        rep.add("health", WARN, "/health shape unknown; health and graph floors unmeasured", measured=False)
+        rep.add(
+            "health",
+            WARN,
+            "/health shape unknown; health and graph floors unmeasured",
+            measured=False,
+        )
         return
     status = h.get("status")
-    if h.get("ok") is False or h.get("fatal") or status in ("error", "fatal", "stalled", "draining", "unhealthy"):
-        rep.add("health", FAIL, f"/health not ok: status {status}, fatal {h.get('fatal')}")
+    if (
+        h.get("ok") is False
+        or h.get("fatal")
+        or status in ("error", "fatal", "stalled", "draining", "unhealthy")
+    ):
+        rep.add(
+            "health", FAIL, f"/health not ok: status {status}, fatal {h.get('fatal')}"
+        )
         return
     if not (h.get("ok") is True or status == "ok") or h.get("warming") is True:
-        rep.add("health", WARN, "/health readiness unknown or warming; unmeasured", measured=False)
+        rep.add(
+            "health",
+            WARN,
+            "/health readiness unknown or warming; unmeasured",
+            measured=False,
+        )
         return
     graphs = h.get("graphs")
-    if not isinstance(graphs, dict) or not graphs or any(
-        not isinstance(g, dict) or not isinstance(g.get("under_floor"), bool)
-        for g in graphs.values()
+    if (
+        not isinstance(graphs, dict)
+        or not graphs
+        or any(
+            not isinstance(g, dict) or not isinstance(g.get("under_floor"), bool)
+            for g in graphs.values()
+        )
     ):
-        rep.add("health", WARN, "/health reports ok; graph memory floors unmeasured", measured=False)
+        rep.add(
+            "health",
+            WARN,
+            "/health reports ok; graph memory floors unmeasured",
+            measured=False,
+        )
         return
     under = [n for n, g in graphs.items() if g["under_floor"]]
     hits = {n: g.get("floor_hits") for n, g in graphs.items()}
     if under:
-        rep.add("health", WARN, f"graph caches under their memory floor now: {', '.join(under)} (floor hits {hits})")
+        rep.add(
+            "health",
+            WARN,
+            f"graph caches under their memory floor now: {', '.join(under)} (floor hits {hits})",
+        )
     else:
-        rep.add("health", OK, f"/health ok, inflight {h.get('inflight')}, graph floor hits {hits}")
+        rep.add(
+            "health",
+            OK,
+            f"/health ok, inflight {h.get('inflight')}, graph floor hits {hits}",
+        )
 
 
 # ------------------------------------------------------------------------------------------------------------ main
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, latency_probe=None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -793,7 +827,9 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(__file__).resolve().parent.parent
     cfg = Path(a.config) if os.path.isabs(a.config) else root / a.config
     env, src = settings(cfg)
-    secrets = known_secrets() + known_secrets(read_env_file(cfg) if cfg.is_file() else {})
+    secrets = known_secrets() + known_secrets(
+        read_env_file(cfg) if cfg.is_file() else {}
+    )
     if a.engram_dir:
         env["ENGRAM_DIR"] = a.engram_dir
     if a.model_dir:
@@ -820,6 +856,7 @@ def main(argv: list[str] | None = None) -> int:
         0 if a.no_probe else a.probe,
         a.latency_warn_us,
         a.seed,
+        latency_probe,
     )
     try:
         mem = meminfo(a.meminfo)
@@ -834,11 +871,17 @@ def main(argv: list[str] | None = None) -> int:
         if a.url:
             check_health(rep, a.url)
     if a.json:
-        saved = json.dumps(clean_report({"exit": rep.code, "checks": rep.checks}, secrets), indent=1)
+        saved = json.dumps(
+            clean_report({"exit": rep.code, "checks": rep.checks}, secrets), indent=1
+        )
         print(mask_values(saved, [json.dumps(v)[1:-1] for v in secrets]))
     else:
         for c in rep.checks:
-            print(redact_text(f"[{c['status'].upper():4s}] {c['check']}: {c['detail']}", secrets))
+            print(
+                redact_text(
+                    f"[{c['status'].upper():4s}] {c['check']}: {c['detail']}", secrets
+                )
+            )
         print(f"preflight: {['ok', 'warnings', 'FAILED'][rep.code]} (exit {rep.code})")
     return rep.code
 

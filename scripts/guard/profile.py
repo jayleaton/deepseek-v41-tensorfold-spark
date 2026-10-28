@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from backend import Backend
-from common import RANKS, SCHEDULE_ENV, atomic, container_names, inference_environment, validate_profiles
+from common import RANKS, atomic, container_names, inference_environment, validate_profiles
 
 def snapshot(config, backend):
     sha = hashlib.sha256(Path(config["production_config"]).read_bytes()).hexdigest()

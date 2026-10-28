@@ -6,7 +6,9 @@ import importlib.util
 import json
 import os
 import struct
+from itertools import count
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -111,9 +113,27 @@ def checks(capsys) -> dict:
     return {c["check"]: c for c in out["checks"]}, out["exit"]
 
 
-def test_all_ok(tmp_path, capsys):
-    args, _, _ = setup(tmp_path)
-    assert pf.main(args + ["--rank", "0", "--probe", "32"]) == 0
+def test_all_ok(tmp_path, capsys, monkeypatch):
+    args, engram, _ = setup(tmp_path)
+    # Any accidental real probe sees a deterministic 1 ms read, regardless of host load.
+    monkeypatch.setattr(
+        pf, "time", SimpleNamespace(perf_counter_ns=count(0, 1_000_000).__next__)
+    )
+    calls = []
+
+    def probe(path, reads, seed):
+        calls.append((path, reads, seed))
+        return {
+            "reads": reads,
+            "direct": True,
+            "p50_us": 90,
+            "p99_us": 120,
+            "max_us": 150,
+        }
+
+    assert pf.main(args + ["--rank", "0", "--probe", "32"], latency_probe=probe) == 0
+    assert len(calls) == 1 and calls[0][0].parent == engram
+    assert calls[0][1:] == (32, 0)
     c, code = checks(capsys)
     assert code == 0
     assert (
@@ -125,6 +145,26 @@ def test_all_ok(tmp_path, capsys):
     )
     assert c["engram-latency"]["data"]["reads"] == 32
     assert c["settings"]["data"]["TF_DSV41_FLOOR_HARD_GIB"] == "4"
+
+
+@pytest.mark.parametrize(
+    ("latency_us", "code"), [(299, 0), (300, 0), (301, 1), (1000, 1)]
+)
+def test_latency_threshold_with_measured_clock(
+    tmp_path, capsys, monkeypatch, latency_us, code
+):
+    args, _, _ = setup(tmp_path)
+    monkeypatch.setattr(
+        pf,
+        "time",
+        SimpleNamespace(perf_counter_ns=count(0, latency_us * 1000).__next__),
+    )
+    # Exercise the measurement and threshold path without device I/O or actual sleeps.
+    monkeypatch.setattr(pf.os, "preadv", lambda fd, buffers, offset: 4096)
+    assert pf.main(args + ["--rank", "0", "--probe", "32"]) == code
+    c, _ = checks(capsys)
+    assert c["engram-latency"]["data"]["p50_us"] == latency_us
+    assert c["engram-latency"]["status"] == ("warn" if code else "ok")
 
 
 def test_rank_inferred_and_wrong_rank_layout(tmp_path, capsys):
@@ -304,18 +344,27 @@ def test_text_report(tmp_path, capsys):
     assert "[OK  ] engram-fs" in out and "preflight: ok (exit 0)" in out
 
 
-@pytest.mark.parametrize(("body", "status"), [
-    ({}, "warn"), (None, "warn"), ([], "warn"), ("ok", "warn"),
-    ({"unrecognized": True}, "warn"), ({"ok": "true"}, "warn"),
-    ({"status": "ok"}, "warn"), ({"ok": True, "graphs": []}, "warn"),
-    ({"ok": True, "graphs": {"decode": None}}, "warn"),
-    ({"ok": True, "graphs": {"decode": {}}}, "warn"),
-    ({"status": "draining"}, "fail"), ({"ok": False}, "fail"),
-    ({"ok": True, "fatal": "failed"}, "fail"),
-    ({"status": "ok", "warming": True}, "warn"),
-    ({"ok": True, "graphs": {"decode": {"under_floor": True}}}, "warn"),
-    ({"ok": True, "graphs": {"decode": {"under_floor": False}}}, "ok"),
-])
+@pytest.mark.parametrize(
+    ("body", "status"),
+    [
+        ({}, "warn"),
+        (None, "warn"),
+        ([], "warn"),
+        ("ok", "warn"),
+        ({"unrecognized": True}, "warn"),
+        ({"ok": "true"}, "warn"),
+        ({"status": "ok"}, "warn"),
+        ({"ok": True, "graphs": []}, "warn"),
+        ({"ok": True, "graphs": {"decode": None}}, "warn"),
+        ({"ok": True, "graphs": {"decode": {}}}, "warn"),
+        ({"status": "draining"}, "fail"),
+        ({"ok": False}, "fail"),
+        ({"ok": True, "fatal": "failed"}, "fail"),
+        ({"status": "ok", "warming": True}, "warn"),
+        ({"ok": True, "graphs": {"decode": {"under_floor": True}}}, "warn"),
+        ({"ok": True, "graphs": {"decode": {"under_floor": False}}}, "ok"),
+    ],
+)
 def test_health_shape(monkeypatch, body, status):
     class Response:
         def __enter__(self):
@@ -356,11 +405,27 @@ def test_preflight_redacts_errors_and_details(tmp_path, capsys, monkeypatch, as_
     monkeypatch.setattr(pf, "check_health", failed_health)
     log = tmp_path / "boot.log"
     log.write_text(BOOT_LOG)
-    assert pf.main(args + ["--rank", "0", "--no-probe", "--after-boot", "--boot-log", str(log),
-                           "--url", "http://localhost"]) == 2
+    assert (
+        pf.main(
+            args
+            + [
+                "--rank",
+                "0",
+                "--no-probe",
+                "--after-boot",
+                "--boot-log",
+                str(log),
+                "--url",
+                "http://localhost",
+            ]
+        )
+        == 2
+    )
     printed = capsys.readouterr()
     assert "<redacted>" in printed.out
-    assert key not in printed.out + printed.err and shaped not in printed.out + printed.err
+    assert (
+        key not in printed.out + printed.err and shaped not in printed.out + printed.err
+    )
     if as_json:
         assert json.loads(printed.out)["exit"] == 2
 

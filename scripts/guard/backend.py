@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from common import POLICY, RANKS, container_names, inference_environment
+from common import RANKS, container_names, inference_environment
 
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time

@@ -88,6 +88,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from redact import known_secrets, mask_values, redact, redact_argv, redact_text
 
+
 def output_secrets(values):
     """Include JSON and repr escapes used by HTTP error bodies and exception details."""
     variants = set(v for v in values if v)
@@ -111,7 +112,10 @@ class OutputParser(argparse.ArgumentParser):
 
     def _print_message(self, message, file=None):
         if message:
-            super()._print_message(redact_text(message, getattr(self, "output_secrets", known_secrets())), file)
+            super()._print_message(
+                redact_text(message, getattr(self, "output_secrets", known_secrets())),
+                file,
+            )
 
 
 SCHEMA = 1
@@ -388,10 +392,12 @@ class Client:
     ):
         u = urllib.parse.urlsplit(url.rstrip("/"))
         if u.scheme not in ("http", "https") or not u.hostname:
-            raise SystemExit(redact_text(
-                f"--url must be http(s)://host[:port], not {url!r}",
-                output_secrets(known_secrets() + ([api_key] if api_key else [])),
-            ))
+            raise SystemExit(
+                redact_text(
+                    f"--url must be http(s)://host[:port], not {url!r}",
+                    output_secrets(known_secrets() + ([api_key] if api_key else [])),
+                )
+            )
         self.url, self.https, self.host = (
             url.rstrip("/"),
             u.scheme == "https",
@@ -761,7 +767,9 @@ def gaps_during(times: list[float], lo: float, hi: float) -> list[float]:
 class Run:
     def __init__(self, a: argparse.Namespace, client: Client):
         self.a, self.c = a, client
-        self.secrets = output_secrets(known_secrets() + ([a.api_key] if a.api_key else []))
+        self.secrets = output_secrets(
+            known_secrets() + ([a.api_key] if a.api_key else [])
+        )
         self.salt = (
             a.salt
             if a.salt is not None
@@ -1817,9 +1825,11 @@ def load_run(path: str) -> dict:
         }
     if "summary" in doc and "runs" in doc and isinstance(doc.get("runs"), list):
         return adapt_mia(path, doc)
-    raise SystemExit(redact_text(
-        f"{path}: neither a {TOOL} run nor a tools/bench.py run", known_secrets()
-    ))
+    raise SystemExit(
+        redact_text(
+            f"{path}: neither a {TOOL} run nor a tools/bench.py run", known_secrets()
+        )
+    )
 
 
 def adapt_mia(path: str, doc: dict) -> dict:
@@ -2197,10 +2207,12 @@ def main(argv: list[str] | None = None) -> int:
     suites = [s.strip() for s in a.suite.split(",") if s.strip()]
     bad = [s for s in suites if s not in SUITES]
     if bad:
-        raise SystemExit(redact_text(
-            f"unknown suite {bad}; choose from {', '.join(SUITES)}",
-            output_secrets(known_secrets() + ([a.api_key] if a.api_key else [])),
-        ))
+        raise SystemExit(
+            redact_text(
+                f"unknown suite {bad}; choose from {', '.join(SUITES)}",
+                output_secrets(known_secrets() + ([a.api_key] if a.api_key else [])),
+            )
+        )
     a.prompts = [p.strip() for p in a.prompts.split(",") if p.strip()]
     if not a.prompts or any(p not in PROMPTS for p in a.prompts):
         raise SystemExit(f"--prompts: choose from {', '.join(PROMPTS)}")

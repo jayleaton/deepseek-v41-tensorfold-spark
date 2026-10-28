@@ -130,7 +130,13 @@ def make_handler(fake: Fake):
             )
             if fake.error_mode and self.path != "/tokenize":
                 key = self.headers.get("Authorization", "").removeprefix("Bearer ")
-                obj = {"type": "error", "error": {"type": "invalid_request_error", "message": f"rejected {key}; {fake.error_shape}"}}
+                obj = {
+                    "type": "error",
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": f"rejected {key}; {fake.error_shape}",
+                    },
+                }
                 if fake.error_mode == "http" or not body.get("stream"):
                     return self.send_json(400, obj)
                 self.send_response(200)
@@ -839,18 +845,37 @@ def test_api_key_never_saved(server, tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize("suite", ["decode", "exact", "reuse", "anthropic"])
 @pytest.mark.parametrize("mode", ["http", "sse"])
 @pytest.mark.parametrize("source", ["separate", "equals", "env"])
-def test_error_echo_redacted_before_output(server, tmp_path, monkeypatch, capsys, suite, mode, source):
+def test_error_echo_redacted_before_output(
+    server, tmp_path, monkeypatch, capsys, suite, mode, source
+):
     key = "arbitrary-" + 'quote"slash\\key'
     shaped = "sk-" + "synthetic" * 4
     server.error_mode, server.error_shape = mode, shaped
-    flags = {"separate": ["--api-key", key], "equals": ["--api-key=" + key], "env": []}[source]
+    flags = {"separate": ["--api-key", key], "equals": ["--api-key=" + key], "env": []}[
+        source
+    ]
     if source == "env":
         monkeypatch.setenv("API_KEY", key)
     output = tmp_path / "errors.json"
-    rc = speed.main([
-        "--url", server.url, "--suite", suite, "--reps", "1", "--prompts", "code",
-        "--reuse-system", "10", "--reuse-history", "10", "--out", str(output), *flags,
-    ])
+    rc = speed.main(
+        [
+            "--url",
+            server.url,
+            "--suite",
+            suite,
+            "--reps",
+            "1",
+            "--prompts",
+            "code",
+            "--reuse-system",
+            "10",
+            "--reuse-history",
+            "10",
+            "--out",
+            str(output),
+            *flags,
+        ]
+    )
     assert rc == 1
     saved = output.read_text()
     printed = capsys.readouterr()
@@ -868,8 +893,16 @@ def test_report_and_compare_redact_details(tmp_path, capsys):
     key = "report-" + "arbitrary-value"
     args = speed.build_parser().parse_args(["--api-key", key])
     run = speed.Run(args, speed.Client("http://localhost", "m"))
-    speed.report({"summary": {key: key}, "runs": {}, "notes": [key], "exact_ref": key,
-                  "exact_check": {"case": "error: " + key}}, run)
+    speed.report(
+        {
+            "summary": {key: key},
+            "runs": {},
+            "notes": [key],
+            "exact_ref": key,
+            "exact_check": {"case": "error: " + key},
+        },
+        run,
+    )
     assert key not in capsys.readouterr().out
     path = tmp_path / "ref.json"
     path.write_text(json.dumps({**_doc({"detail": key}, model=key), "label": key}))
