@@ -116,8 +116,16 @@ class Lifecycle:
             argv = ['bash', '-c', f"cd {shlex.quote(self.env['WORKER_REPO'])} && {shlex.join(argv)}"]
         return self.command(rank, argv)
 
+    def stop_marker(self):
+        try:
+            return self.stop_file.read_bytes()
+        except FileNotFoundError:
+            return None
+
     @contextmanager
-    def locked(self):
+    def locked(self, initial_stop=Ellipsis):
+        if initial_stop is Ellipsis:
+            initial_stop = self.stop_marker()
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)
         with self.lock_file.open('a') as stream:
             try:
@@ -127,7 +135,25 @@ class Lifecycle:
             try:
                 yield
             finally:
-                fcntl.flock(stream, fcntl.LOCK_UN)
+                # STOP is published before its caller tries this nonblocking lock.
+                # A losing caller hands completion to the current lock holder. Keep
+                # the marker lock through lifecycle unlock so no STOP can be lost
+                # between our final acknowledgement and releasing this operation.
+                with self.marker_locked():
+                    current = self.stop_marker()
+                    drain = current is not None and current != initial_stop
+                    if not drain:
+                        fcntl.flock(stream, fcntl.LOCK_UN)
+                if drain:
+                    # Runtime calls must not hold the marker lock: another STOP
+                    # can publish intent while draining, and no launch can take
+                    # place until this lifecycle lock is released.
+                    try:
+                        self.deadline = None
+                        self.stop_owned()
+                    finally:
+                        with self.marker_locked():
+                            fcntl.flock(stream, fcntl.LOCK_UN)
 
     def policy(self, check_stop=True, operation="start"):
         if check_stop and self.stop_file.exists():
@@ -205,8 +231,10 @@ class Lifecycle:
             fcntl.flock(stream, fcntl.LOCK_EX)
             yield
 
-    def hold(self, reason):
+    def hold(self, reason, only_if_absent=False):
         with self.marker_locked():
+            if only_if_absent and self.stop_file.exists():
+                return self.stop_file.read_bytes()
             durable_json(self.stop_file, {'reason': reason, 'time': self.wall(), 'token': os.urandom(16).hex()})
             return self.stop_file.read_bytes()
 
@@ -227,21 +255,22 @@ class Lifecycle:
         if errors:
             raise OpsError('; '.join(errors))
 
-    def start_locked(self, explicit=False, expected_stop=None):
-        stopped = self.stop_file.read_bytes() if self.stop_file.exists() else None
-        if expected_stop is not None and stopped != expected_stop:
+    def start_locked(self, explicit=False, expected_stop=Ellipsis):
+        stopped = self.stop_marker()
+        if expected_stop is not Ellipsis and stopped != expected_stop:
             raise OpsError("STOP changed during restart; start refused", 78)
         self.policy(check_stop=not explicit)
         self.preflight()
         if explicit:
             with self.marker_locked():
-                current = self.stop_file.read_bytes() if self.stop_file.exists() else None
+                current = self.stop_marker()
                 if current != stopped:
                     raise OpsError('STOP changed during preflight; start refused', 78)
                 self.stop_file.unlink(missing_ok=True)
-        if self.ready(self.containers()):
-            return
         try:
+            if self.ready(self.containers()):
+                self.policy()
+                return
             self.stop_owned()
             self.policy()
             self.launch_command(1, '--detach')
@@ -255,12 +284,13 @@ class Lifecycle:
                 if remaining <= 0:
                     break
                 if self.ready(self.containers(), min(self.http_timeout, remaining / 2)):
+                    self.policy()
                     return
                 self.sleep(min(1, max(0, deadline - self.clock())))
             raise OpsError('native pair readiness timed out')
         except Exception:
             self.deadline = None
-            self.hold('boot failure; explicit start required')
+            self.hold('boot failure; explicit start required', only_if_absent=True)
             try:
                 self.stop_owned()
             except OpsError:
@@ -270,8 +300,9 @@ class Lifecycle:
             self.deadline = None
 
     def start(self):
-        with self.locked():
-            self.start_locked(explicit=True)
+        stopped = self.stop_marker()
+        with self.locked(initial_stop=stopped):
+            self.start_locked(explicit=True, expected_stop=stopped)
 
     def stop(self):
         self.hold('operator STOP')
@@ -280,7 +311,7 @@ class Lifecycle:
 
     def restart(self):
         restart_marker = self.hold('operator restart in progress')
-        with self.locked():
+        with self.locked(initial_stop=restart_marker):
             self.stop_owned()
             self.start_locked(explicit=True, expected_stop=restart_marker)
 

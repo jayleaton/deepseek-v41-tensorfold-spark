@@ -1,5 +1,6 @@
 """Native supervision with isolated runtimes, clock and HTTP; never invokes Docker or SSH."""
 
+from contextlib import contextmanager
 import importlib.util
 import json
 from pathlib import Path
@@ -336,4 +337,68 @@ def test_operator_stop_during_restart_drain_is_preserved(world):
     with pytest.raises(ops.OpsError, match='STOP changed'):
         world.ops.restart()
     assert json.loads(world.ops.stop_file.read_text())['reason'] == 'operator STOP during drain'
+    assert not world.launches()
+
+
+@pytest.mark.parametrize('already_running', [True, False])
+def test_operator_stop_during_successful_readiness_drains_pair(world, already_running):
+    if already_running:
+        world.ranks = [world.item(0), world.item(1)]
+    ready = world.ops.ready
+    markers, exits = [], []
+
+    def stop_during_ready(pair, timeout=None):
+        result = ready(pair, timeout)
+        if result:
+            try:
+                world.ops.stop()
+            except ops.OpsError as error:
+                exits.append(error.code)
+            markers.append(world.ops.stop_file.read_bytes())
+        return result
+
+    world.ops.ready = stop_during_ready
+    with pytest.raises(ops.OpsError, match='STOP'):
+        world.ops.start()
+    assert exits == [75]
+    assert world.ranks == [None, None]
+    assert len(world.stop_calls) == 2
+    assert world.ops.stop_file.read_bytes() == markers[0]
+    assert json.loads(markers[0])['reason'] == 'operator STOP'
+    assert world.ops.tick().startswith('held:')
+
+
+def test_stop_at_lifecycle_unlock_is_acknowledged_by_lock_holder(world):
+    world.ranks = [world.item(0), world.item(1)]
+    marker = None
+    with world.ops.locked():
+        with pytest.raises(ops.OpsError) as error:
+            world.ops.stop()
+        assert error.value.code == 75
+        marker = world.ops.stop_file.read_bytes()
+    assert world.ranks == [None, None]
+    assert world.ops.stop_file.read_bytes() == marker
+
+
+
+def test_stop_after_lock_acquisition_before_preflight_is_not_cleared(world):
+    world.ranks = [world.item(0), world.item(1)]
+    locked = world.ops.locked
+    marker = None
+
+    @contextmanager
+    def stop_before_body(**kwargs):
+        nonlocal marker
+        with locked(**kwargs):
+            with pytest.raises(ops.OpsError) as error:
+                world.ops.stop()
+            assert error.value.code == 75
+            marker = world.ops.stop_file.read_bytes()
+            yield
+
+    world.ops.locked = stop_before_body
+    with pytest.raises(ops.OpsError, match='STOP changed'):
+        world.ops.start()
+    assert world.ranks == [None, None]
+    assert world.ops.stop_file.read_bytes() == marker
     assert not world.launches()
