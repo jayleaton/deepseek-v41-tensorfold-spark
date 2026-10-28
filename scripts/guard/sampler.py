@@ -9,7 +9,10 @@ import subprocess
 import time
 from pathlib import Path
 
+import sys
+
 from common import atomic, load_config
+from safe_output import cli
 
 NODE_SAMPLE = r"""
 import glob,json,re,time
@@ -87,4 +90,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

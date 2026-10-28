@@ -45,7 +45,7 @@ watch_run() {
 watch_filter() {
     local filtered
     filtered=$(command python3 -c '
-import datetime,os,re,sys
+import datetime,json,math,os,re,sys
 sys.path.insert(0, "scripts")
 from safe_output import clean
 from redact import secret_name
@@ -53,6 +53,50 @@ known=[v for k,v in os.environ.items() if secret_name(k) and v]
 mode=sys.argv[1]
 raw=sys.stdin.read()
 value=raw.strip()
+def number(v): return type(v) is int or (type(v) is float and math.isfinite(v))
+def project(text):
+ try:
+  d=json.loads(text)
+ except (ValueError,TypeError): d={}
+ if not isinstance(d,dict): d={}
+ streams=d.get("streams"); rounds=d.get("rounds")
+ maximum=streams.get("max") if isinstance(streams,dict) else None
+ age=rounds.get("last_age_s") if isinstance(rounds,dict) else None
+ reason=d.get("stall_reason")
+ # Only canonical names, typed values and recognized enums cross the control
+ # boundary. In particular, never redact protocol field names or enum strings.
+ control={
+  "ok": d.get("ok") if type(d.get("ok")) is bool else None,
+  "errors": d.get("errors") if type(d.get("errors")) is int else None,
+  "fatal": bool(d.get("fatal")),
+  "status": "stalled" if d.get("status") == "stalled" else None,
+  "stall_reason": "no round for 0 s with work in flight" if isinstance(reason,str) and re.fullmatch(r"no round for [0-9]+ s with work in flight",reason) else None,
+  "oldest_s": d.get("oldest_s") if number(d.get("oldest_s")) else None,
+  "inflight": d.get("inflight") if type(d.get("inflight")) is int else None,
+  "requests_running": d.get("requests_running") if type(d.get("requests_running")) is int else None,
+  "streams": {"max": maximum if number(maximum) else None},
+  "rounds": {"last_age_s": age if number(age) else None},
+  "choices": [] if isinstance(d.get("choices"),list) else None,
+  "code": "watchdog_deferred" if d.get("code") == "watchdog_deferred" else None,
+ }
+ # Derive all controls above from raw JSON before sanitizing diagnostics.
+ # Opaque/unknown strings exist only in this sanitized diagnostic payload.
+ diagnostic=clean(d.get("diagnostic") if isinstance(d.get("diagnostic"),str) else text, known)
+ return {"diagnostic": diagnostic, **control}
+def predicate(mode,d):
+ if mode == "healthy": return d["ok"] is True and d["errors"] == 0 and not d["fatal"]
+ if mode == "stalled": return d["status"] == "stalled"
+ if mode == "choices": return isinstance(d["choices"],list)
+ if mode == "deferred": return d["code"] == "watchdog_deferred"
+ if mode == "busy":
+  running=d["requests_running"]; maximum=d["streams"]["max"]
+  return running is not None and maximum is not None and maximum > 0 and running >= maximum
+ if mode == "stale":
+  oldest=d["oldest_s"]; age=d["rounds"]["last_age_s"]; active=d["inflight"]
+  return (d["ok"] is False and d["errors"] == 0 and not d["fatal"] and d["status"] == "stalled"
+          and d["stall_reason"] is not None and oldest is not None and 0 <= oldest <= 3
+          and age is not None and age > 120 and active is not None and active > 0)
+ return False
 if mode == "uint":
  if re.fullmatch(r"[0-9]{1,18}", value) is None: sys.exit(1)
  print(int(value))
@@ -65,15 +109,19 @@ elif mode == "started":
 elif mode == "stamp":
  if re.fullmatch(r"[0-9]{8}-[0-9]{6}", value) is None: sys.exit(1)
  print(datetime.datetime.strptime(value, "%Y%m%d-%H%M%S").strftime("%Y%m%d-%H%M%S"))
-elif mode == "http":
+elif mode in ("http", "http_control"):
  body,sep,code=raw.rstrip("\n").rpartition("\n")
  if not sep or re.fullmatch(r"[0-9]{3}", code) is None:
   body,code=raw,"000"
  # Separate curl framing before sanitizing the JSON body structurally. clean()
  # masks opaque string echoes, including multiline keys, but preserves numbers.
- sanitized=clean(body, known)
+ sanitized=json.dumps(project(body), allow_nan=False) if mode == "http_control" else clean(body, known)
  print(code)
  print(sanitized)
+elif mode == "project":
+ print(json.dumps(project(raw), allow_nan=False))
+elif mode in ("healthy", "stale", "busy", "stalled", "choices", "deferred"):
+ print(int(predicate(mode,project(raw))))
 elif mode == "json":
  print(clean(raw, known))
 else: sys.exit(1)
@@ -88,6 +136,9 @@ watch_capture() { # $1 = parser; remaining arguments = command (no raw output in
     shift
     ( "$@" 2> >(watch_redact >&2); watch_command_status=$?; wait; exit "$watch_command_status" ) | watch_filter "$mode"
 }
+# Accept direct raw JSON as well as our canonical projection; parser input is
+# always stdin, never a body or credential in Python process arguments.
+watch_predicate() { [[ "$(printf '%s' "$2" | watch_filter "$1")" == 1 ]]; }
 wssh_control() {
     local mode=$1
     shift
@@ -167,17 +218,17 @@ probe_tick() { # $1 = now, $2 = the /health body. 1: WATCH_PROBE_FAILS tiny comp
     [[ "$WATCH_PROBE" == 1 ]] || return 0
     local last_f="$WATCH_STATE_DIR/probe_last" pf_f="$WATCH_STATE_DIR/probe_fails" last pf out code busy
     last=$(watch_capture uint cat "$last_f" 2>/dev/null || echo 0); (( $1 - last >= WATCH_PROBE_EVERY )) || return 0
-    busy=$(printf '%s' "$2" | watch_capture uint python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("requests_running",0) >= (d.get("streams") or {}).get("max",1e9)))' 2>/dev/null || echo 0)
+    busy=$(printf '%s' "$2" | watch_filter busy)
     if [[ "$busy" == 1 ]]; then log "watch: every request slot busy: probe skipped"; return 0; fi
     echo "$1" > "$last_f"
-    out=$(watch_capture http curl -s -m "$WATCH_PROBE_TIMEOUT" -H 'Content-Type: application/json' -H 'X-TF-Probe: watchdog' -w '\n%{http_code}' \
+    out=$(watch_capture http_control curl -s -m "$WATCH_PROBE_TIMEOUT" -H 'Content-Type: application/json' -H 'X-TF-Probe: watchdog' -w '\n%{http_code}' \
         -d '{"model":"'"$WATCH_MODEL"'","messages":[{"role":"user","content":"ok"}],"max_tokens":1,"temperature":0,"reasoning_effort":"none","chat_template_kwargs":{"enable_thinking":false}}' \
         "$BASE/v1/chat/completions" || true)
     code=${out%%$'\n'*}; out=${out#*$'\n'}
-    if [[ "$code" == 429 && "$out" == *watchdog_deferred* ]]; then
+    if [[ "$code" == 429 ]] && watch_predicate deferred "$out"; then
         log "watch: guard deferred the idle-only probe (user work or admission hold)"; return 0
     fi
-    if [[ "$code" == 200 && "$out" == *'"choices"'* ]]; then echo 0 > "$pf_f"; return 0; fi
+    if [[ "$code" == 200 ]] && watch_predicate choices "$out"; then echo 0 > "$pf_f"; return 0; fi
     pf=$(( $(watch_capture uint cat "$pf_f" 2>/dev/null || echo 0) + 1 )); echo "$pf" > "$pf_f"
     log "watch: probe $pf of $WATCH_PROBE_FAILS failed (http ${code:-none} within ${WATCH_PROBE_TIMEOUT} s)"
     (( pf >= WATCH_PROBE_FAILS )) || return 0
@@ -188,39 +239,18 @@ probe_tick() { # $1 = now, $2 = the /health body. 1: WATCH_PROBE_FAILS tiny comp
 # exact young-request verdict gets a bounded recheck; all other failures keep their policy.
 startup_stale_idle() {
     [[ "$1" == 503 ]] || return 1
-    printf '%s' "$2" | watch_run python3 -c '
-import json,math,re,sys
-def number(v): return type(v) in (int,float) and math.isfinite(v)
-try:
- d=json.load(sys.stdin); age=(d.get("rounds") or {}).get("last_age_s")
- oldest=d.get("oldest_s"); active=d.get("inflight")
- valid=(d.get("ok") is False and type(d.get("errors")) is int and d["errors"] == 0
-        and not d.get("fatal") and d.get("status") == "stalled"
-        and isinstance(d.get("stall_reason"),str)
-        and re.fullmatch(r"no round for [0-9]+ s with work in flight",d["stall_reason"]) is not None
-        and number(oldest) and 0 <= oldest <= 3 and number(age) and age > 120
-        and type(active) is int and active > 0)
-except (ValueError,TypeError,AttributeError): valid=False
-sys.exit(0 if valid else 1)
-'
+    watch_predicate stale "$2"
 }
 
 startup_recheck_healthy() {
     [[ "$1" == 200 ]] || return 1
-    printf '%s' "$2" | watch_run python3 -c '
-import json,sys
-try:
- d=json.load(sys.stdin)
- valid=d.get("ok") is True and type(d.get("errors")) is int and d["errors"] == 0 and not d.get("fatal")
-except (ValueError,TypeError,AttributeError): valid=False
-sys.exit(0 if valid else 1)
-'
+    watch_predicate healthy "$2"
 }
 
 startup_retry() { # $1 = code, $2 = body; prints "code<newline>body" after at most 3 s of rechecks
     local code=$1 body retry_deadline retry_left retry_timeout
     [[ "$code" =~ ^[0-9]{3}$ ]] || code=000
-    body=$(printf '%s' "$2" | watch_filter json) || return 1
+    body=$(printf '%s' "$2" | watch_filter project) || return 1
     retry_deadline=$(( ${EPOCHREALTIME/./} + 3000000 ))
     log "watch: young prefill with stale idle round clock; rechecking health for at most 3 s"
     while startup_stale_idle "$code" "$body"; do
@@ -228,7 +258,7 @@ startup_retry() { # $1 = code, $2 = body; prints "code<newline>body" after at mo
         (( retry_left > 0 )) || break
         # Curl itself is bounded by the remaining window, including a hung health endpoint.
         printf -v retry_timeout '%d.%06d' "$((retry_left / 1000000))" "$((retry_left % 1000000))"
-        body=$(watch_capture http curl -s -m "$retry_timeout" -w '\n%{http_code}' "$BASE/health" || true)
+        body=$(watch_capture http_control curl -s -m "$retry_timeout" -w '\n%{http_code}' "$BASE/health" || true)
         code=${body%%$'\n'*}; body=${body#*$'\n'}
         startup_stale_idle "$code" "$body" || break
         retry_left=$(( retry_deadline - ${EPOCHREALTIME/./} ))
@@ -283,7 +313,7 @@ watch_tick() {
         else
             age=$WATCH_GRACE # An invalid timestamp cannot grant loading grace.
         fi
-        body=$(watch_capture http curl -s -m 10 -w '\n%{http_code}' "$BASE/health" || true)
+        body=$(watch_capture http_control curl -s -m 10 -w '\n%{http_code}' "$BASE/health" || true)
         code=${body%%$'\n'*}; body=${body#*$'\n'}
         if startup_stale_idle "$code" "$body"; then
             if retried=$(startup_retry "$code" "$body"); then code=200; body='{"ok":true}'
@@ -296,7 +326,7 @@ watch_tick() {
         elif [[ "$code" == 200 ]]; then
             probe_tick "$now" "$body" || { bad="wedged: $WATCH_PROBE_FAILS tiny completions in a row got nothing within ${WATCH_PROBE_TIMEOUT} s (/health 200)"; probe_bad=1; }
         elif [[ "$code" == 000 && $age -lt $WATCH_GRACE ]]; then log "watch: loading (${age}s)"; echo 0 > "$fails_f"; return 0
-        elif [[ "$code" == 503 && "$body" =~ \"status\":\ *\"stalled\" ]]; then
+        elif [[ "$code" == 503 ]] && watch_predicate stalled "$body"; then
             # the engine's own stall verdict: heal now, like a fail-fast exit
             bad="stalled: ${body:0:300}"; probe_bad=1
         else bad="/health $code ${body:0:300}"; fi

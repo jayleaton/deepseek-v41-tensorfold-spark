@@ -58,6 +58,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from redact import known_secrets, mask_values, redact_text
+from safe_output import cli, safe_print as print
 
 GIB = 1 << 30
 OK, INFO, WARN, FAIL = "ok", "info", "warn", "fail"
@@ -887,4 +888,4 @@ def main(argv: list[str] | None = None, *, latency_probe=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main, error_code=2))

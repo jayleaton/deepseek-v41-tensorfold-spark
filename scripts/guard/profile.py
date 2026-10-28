@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 
 from backend import Backend
+import sys
+
 from common import RANKS, atomic, container_names, inference_environment, validate_profiles
+from safe_output import cli, safe_print as print
 
 def snapshot(config, backend):
     sha = hashlib.sha256(Path(config["production_config"]).read_bytes()).hexdigest()
@@ -40,4 +43,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

@@ -8,8 +8,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 import time
 import urllib.request
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_output import cli, safe_print as print  # noqa: E402
 
 
 def post(base: str, path: str, body: dict, timeout: float = 300) -> dict:
@@ -67,4 +72,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main))

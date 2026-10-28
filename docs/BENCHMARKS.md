@@ -38,3 +38,19 @@ error text is credential-masked before stdout and JSON output. Unknown native he
 `python3 scripts/preflight.py --config config/prod-zig.env --rank 0` checks local Engram/memory inputs.
 Set `PREFLIGHT=1` for the optional launcher hook: warnings continue, failures stop the start. The helper does not
 certify the checkpoint or justify a pool increase; native HTTP/SSE qualification remains required.
+
+## Credential-safe output
+
+Host launchers and recipe clients sanitize stdout, stderr, snapshots and report
+strings before output or persistence. Credential-named native environment variables
+are excluded from Docker forwarding; arguments containing a known credential are
+refused. Configuration-source diagnostics are withheld, including keys loaded from
+files during shell evaluation. Keep operator configuration and credential inputs
+private; diagnostic filters do not make the supplied credentials public data.
+
+`bench/tooleval/run.sh own` uses the recipe's sanitized client. The pinned external
+`teb`, `sb`, `both` and `chains` evaluator modes now exit 78 before contacting the
+server or invoking a writer: their direct report/raw-dump writes lack an audited
+pre-write adapter. A post-run scrub is insufficient. Setup remains available;
+restore those modes only with an adapter and tests that observe the first write.
+Historical third-party results remain historical and unchanged.

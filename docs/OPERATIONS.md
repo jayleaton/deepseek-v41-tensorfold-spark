@@ -93,3 +93,10 @@ hardware or unattended-recovery qualification is claimed. The guard watchdog is 
 alternative opt-in observer, not a second independently enabled healer. When using
 it, route recovery through `serve.sh watch --once` so automatic recovery cannot
 clear STOP; never set its restart command to explicit `start` or `restart`.
+
+Launcher subprocesses share a supervised process group. A timeout or termination
+signals the group, escalates after a bounded grace period, and reaps children
+before lifecycle cleanup. Worker commands carry a deadline based on the worker's
+monotonic clock; SSH failure waits through that deadline before STOP cleanup,
+preventing a delayed remote launch from racing the stop. This behavior has CPU
+regression coverage; hardware qualification is still required as described above.

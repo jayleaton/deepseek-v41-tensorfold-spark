@@ -80,3 +80,44 @@ def test_check_aot_effective_rank(launcher, rank, contradictory_rank):
     assert "TF_TP_ROCE_HCA" in argv and "fixture_hca" not in argv
     assert "--runtime=runc" in argv and "--gpus" not in argv
     assert argv[-3:] == ["aot-needs", "/assets/sigs.json", f"/state/aot-needs-r{rank}.json"]
+
+
+@pytest.mark.parametrize("mode", ["--check-aot", "--dry-run"])
+def test_launcher_excludes_credential_names(launcher, mode):
+    env, argv_file, _ = launcher
+    credential_names = ("TF_DSV41_API_KEY", "TF_DSV41_AUTH_TOKEN", "TF_CUDA_PASSWORD",
+                        "GLM53_TF_SECRET", "NCCL_CREDENTIAL")
+    secret = "rr1" + "LauncherCredentialOnly"
+    env.update(dict.fromkeys(credential_names, secret))
+    env.update(TF_DSV41_POOL_TOKENS="2100000", TF_DSV41_MAX_TOKENS="32768")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "1", mode],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == (44 if mode == "--check-aot" else 0)
+    printed = result.stdout + result.stderr
+    if mode == "--check-aot":
+        argv = json.loads(argv_file.read_text())["argv"]
+        exposed_names = any(name in argv for name in credential_names)
+        exposed_value = any(secret in arg for arg in argv)
+    else:
+        argv = shlex.split(result.stdout)
+        exposed_names = any(name in printed for name in credential_names)
+        exposed_value = secret in printed
+    # Boolean assertions avoid echoing the synthetic credential in pytest diagnostics.
+    assert not exposed_names, "credential-named variables reached the Docker boundary"
+    printed_value = secret in printed
+    assert not exposed_value and not printed_value, "credential value reached launcher output"
+    for name in ("TF_DSV41_POOL_TOKENS", "TF_DSV41_MAX_TOKENS", "TF_TP_ROCE_HCA"):
+        assert name in argv
+        assert argv[argv.index(name) - 1] == "-e"
+
+
+def test_credential_in_a_native_control_is_refused_without_dropping_the_setting(launcher):
+    env, argv_file, _ = launcher
+    secret = "rr1" + "NativeControlCredential"
+    env.update(API_KEY=secret, TF_DSV41_NATIVE_CONTROL=secret)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    leaked = secret in result.stdout + result.stderr
+    assert not leaked, "credential reached native-environment refusal"
+    assert not argv_file.exists()

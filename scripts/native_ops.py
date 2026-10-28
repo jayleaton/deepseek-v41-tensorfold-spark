@@ -17,6 +17,10 @@ import sys
 import time
 import urllib.request
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
+from safe_exec import TERM_GRACE, run as supervised_run  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -31,7 +35,7 @@ def durable_json(path, value):
     temporary = path.with_name(path.name + f'.{os.getpid()}.tmp')
     try:
         with temporary.open('w') as stream:
-            json.dump(value, stream)
+            safe_dump(value, stream)
             stream.write('\n')
             stream.flush()
             os.fsync(stream.fileno())
@@ -51,7 +55,7 @@ def http_json(url, timeout):
 
 
 class Lifecycle:
-    def __init__(self, env=None, runner=subprocess.run, clock=time.monotonic,
+    def __init__(self, env=None, runner=supervised_run, clock=time.monotonic,
                  sleep=time.sleep, http=http_json, root=ROOT, wall=time.time):
         self.env = dict(os.environ if env is None else env)
         self.runner, self.clock, self.sleep, self.http, self.wall = runner, clock, sleep, http, wall
@@ -92,19 +96,52 @@ class Lifecycle:
         return value
 
     def command(self, rank, argv, timeout=None):
-        if rank == 1:
-            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker, shlex.join(argv)]
+        remote_until = None
         limit = timeout or self.command_timeout
         if self.deadline is not None:
             limit = min(limit, self.deadline - self.clock())
             if limit <= 0:
                 raise OpsError('native pair readiness timed out')
+        if rank == 1:
+            if self.runner is supervised_run:
+                # Calibrate in the worker's monotonic clock domain. A slow
+                # response makes the cutoff earlier, never later; no wall-clock
+                # synchronization or clock adjustment assumption is required.
+                probe_started = time.monotonic()
+                probe_argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker,
+                              shlex.join(['python3', '-c', 'import time; print(time.monotonic())'])]
+                try:
+                    probe = self.runner(probe_argv, cwd=self.root, env=self.env,
+                                        capture_output=True, text=True, timeout=limit)
+                    worker_now = float(probe.stdout.strip())
+                    if probe.returncode or not math.isfinite(worker_now) or worker_now <= 0:
+                        raise ValueError('invalid worker clock')
+                except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                    raise OpsError('worker command clock unavailable') from error
+                limit -= time.monotonic() - probe_started
+                if limit <= 0:
+                    raise OpsError('worker command clock timed out')
+                worker_cutoff = worker_now + limit
+                # The worker owns its command tree, even if SSH disconnects.
+                # The cutoff also refuses a queued, late SSH launch. Allow TERM/
+                # KILL to finish before the local timeout permits STOP cleanup.
+                argv = ['python3', str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py'),
+                        '--monotonic-deadline', str(worker_cutoff), '--timeout', str(limit),
+                        '--command', *argv]
+                limit += 2 * TERM_GRACE
+                remote_until = time.monotonic() + limit
+            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker, shlex.join(argv)]
         try:
             result = self.runner(argv, cwd=self.root, env=self.env, capture_output=True,
                                  text=True, timeout=limit)
         except (OSError, subprocess.TimeoutExpired) as error:
+            if remote_until is not None:
+                # A lost connection is not proof that the worker stopped.
+                time.sleep(max(0, remote_until - time.monotonic()))
             raise OpsError('command unavailable or timed out') from error
         if result.returncode:
+            if remote_until is not None:
+                time.sleep(max(0, remote_until - time.monotonic()))
             raise OpsError(f'command failed (rank {rank}, exit {result.returncode})', result.returncode)
         return result.stdout.strip()
 
@@ -378,4 +415,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(cli(main))

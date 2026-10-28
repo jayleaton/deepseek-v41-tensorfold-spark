@@ -39,9 +39,19 @@ elif role == "docker" and "StartedAt" in args:
 elif role in ("docker", "ssh") and "ExitCode" in args:
     print(os.environ.get("FAKE_EXIT", "0"))
 elif role == "curl":
-    if os.environ.get("FAKE_HEALTHY"):
+    if "/chat/completions" in args:
+        print(os.environ.get("FAKE_COMPLETION", '{"choices":[]}'))
+    elif os.environ.get("FAKE_STALE_ONCE") and not Path(os.environ["FAKE_STALE_ONCE"]).exists():
+        Path(os.environ["FAKE_STALE_ONCE"]).touch()
+        print(json.dumps({"ok": False, "errors": 0, "status": "stalled",
+                          "stall_reason": "no round for 300 s with work in flight",
+                          "oldest_s": 1.5, "rounds": {"last_age_s": 300}, "inflight": 1,
+                          "opaque": key}))
+        print("503")
+        sys.exit(0)
+    elif os.environ.get("FAKE_HEALTHY"):
         print(json.dumps({"ok": True, "errors": 0, "inflight": 200,
-                          "requests_running": 200, "streams": {"max": 200}, "opaque": key}))
+                          "requests_running": int(os.environ.get("FAKE_REQUESTS", "200")), "streams": {"max": 200}, "opaque": key}))
     else:
         print(json.dumps({"ok": False, "status": "stalled", "opaque": key}))
     print("health stderr " + repr(key), file=sys.stderr)
@@ -272,6 +282,12 @@ def test_numeric_key_preserves_health_controls_without_false_heal(
     result = run(env, 'watch_capture json curl "$BASE/health"')
     assert json.loads(result.stdout)["inflight"] == 200
     assert json.loads(result.stdout)["opaque"] == "<redacted>"
+    result = run(env, 'watch_capture http_control curl -w "\\n%{http_code}" "$BASE/health"')
+    code, body = result.stdout.split("\n", 1)
+    control = json.loads(body)
+    assert code == "200"
+    assert control["inflight"] == control["requests_running"] == 200
+    assert json.loads(control["diagnostic"])["opaque"] == "<redacted>"
 
 
 @pytest.mark.parametrize("key", ("true", "70", "200"))
@@ -298,3 +314,66 @@ def test_invalid_control_stdout_is_withheld(tmp_path, mode):
     assert result.returncode != 0
     assert not result.stdout
     no_disclosure(key, result.stderr)
+
+
+@pytest.mark.parametrize("busy", (False, True), ids=("idle", "busy"))
+def test_choices_credential_does_not_turn_successful_probe_into_heal(tmp_path, busy):
+    env = fixture(tmp_path, "choices")
+    env.update(
+        FAKE_HEALTHY="1", FAKE_REQUESTS="200" if busy else "0",
+        WATCH_PROBE="1", WATCH_PROBE_EVERY="0", WATCH_PROBE_FAILS="1",
+        WATCH_HEAL="1", WATCH_FAILS="1",
+    )
+    result = run(
+        env, 'guard_permit() { return 0; }; watch_tick; code=$?; wait; exit "$code"'
+    )
+    assert result.returncode == 0, "protocol-field credential caused false recovery"
+    assert (tmp_path / "state/fails").read_text().strip() == "0"
+    assert not (tmp_path / "state/last_heal").exists()
+    assert not (tmp_path / "healed").exists()
+    assert not (tmp_path / "alert.txt").exists()
+    if not busy:
+        assert (tmp_path / "state/probe_fails").read_text().strip() == "0"
+    assert ("every request slot busy" in result.stderr) == busy
+
+
+@pytest.mark.parametrize("key", ("ok", "status", "stalled"))
+def test_protocol_credentials_preserve_startup_recheck_and_stall_policy(tmp_path, key):
+    env = fixture(tmp_path, key)
+    env.update(
+        FAKE_HEALTHY="1", FAKE_STALE_ONCE=str(tmp_path / "stale-seen"),
+        WATCH_HEAL="1", WATCH_FAILS="1",
+    )
+    result = run(
+        env, 'guard_permit() { return 0; }; watch_tick; code=$?; wait; exit "$code"'
+    )
+    assert result.returncode == 0, "protocol credential broke a healthy startup retry"
+    assert (tmp_path / "stale-seen").exists()
+    assert "resolved by actual healthy 200" in result.stderr
+    assert (tmp_path / "state/fails").read_text().strip() == "0"
+    assert not (tmp_path / "healed").exists()
+    assert not (tmp_path / "alert.txt").exists()
+    # A persistent stall still uses the immediate failure policy when the enum
+    # or its property name happens to equal the configured credential.
+    env.pop("FAKE_STALE_ONCE")
+    env.pop("FAKE_HEALTHY")
+    env["WATCH_HEAL"] = "0"
+    env["WATCH_FAILS"] = "99"
+    result = run(env, 'guard_permit() { return 0; }; watch_tick')
+    assert result.returncode == 1
+    assert "bad tick 1 of 1" in result.stderr
+    assert (tmp_path / "alert.txt").exists()
+    assert not (tmp_path / "healed").exists()
+
+
+@pytest.mark.parametrize("completion", ('{"choices":"text"}', '{"opaque":"choices"}'))
+def test_probe_success_requires_actual_choices_array(tmp_path, completion):
+    env = fixture(tmp_path, "choices")
+    env.update(
+        FAKE_HEALTHY="1", FAKE_REQUESTS="0", FAKE_COMPLETION=completion,
+        WATCH_PROBE="1", WATCH_PROBE_EVERY="0", WATCH_PROBE_FAILS="1",
+    )
+    result = run(env, 'guard_permit() { return 0; }; watch_tick')
+    assert result.returncode == 1
+    assert "bad tick 1 of 1" in result.stderr
+    assert not (tmp_path / "healed").exists()

@@ -5,13 +5,23 @@
 # The engine links only libc; NCCL, verbs and cuBLAS / cuBLASLt are opened by name, so a missing one shows up only
 # when its path first runs (cuBLAS: the first image request). libcuda.so.1 comes from the host driver at run time.
 # CUBLAS_VERSION: the cuBLAS / cuBLASLt release the vision tower's bit-exactness was measured on; any other fails.
+{ set +x; } 2>/dev/null
+# The streamed --inside script remains self-contained in images without Python.
+safe_dir="$(dirname "${BASH_SOURCE[0]:-.}")"
+if [[ "${1:-}" != --inside || -f "$safe_dir/safe_exec.py" ]]; then
+    safe_exec="$(cd "$safe_dir" && pwd)/safe_exec.py"
+    if [[ "${TF_SAFE_EXEC_PARENT:-}" != "$PPID" ]]; then
+        exec python3 "$safe_exec" bash "${BASH_SOURCE[0]}" "$@"
+    fi
+    unset TF_SAFE_EXEC_PARENT
+fi
 set -uo pipefail
 CUBLAS_VERSION=${CUBLAS_VERSION:-13.6.0.2}
 BIN=${BIN:-/opt/tensorfold/bin}
 if [[ "${1:-}" != --inside ]]; then
     image=${1:?usage: check-zig-image.sh IMAGE | --inside}
-    platform=$(docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || exit 2
-    exec docker run --rm -i --platform "$platform" --entrypoint bash -e CUBLAS_VERSION="$CUBLAS_VERSION" "$image" \
+    platform=$(python3 "$safe_exec" --command docker image inspect -f '{{.Os}}/{{.Architecture}}' "$image") || exit 2
+    exec python3 "$safe_exec" --command docker run --rm -i --platform "$platform" --entrypoint bash -e CUBLAS_VERSION="$CUBLAS_VERSION" "$image" \
         -s -- --inside < "${BASH_SOURCE[0]}"
 fi
 TEXT="libnccl.so.2 libibverbs.so.1"     # TP over NCCL and RoCE, every boot

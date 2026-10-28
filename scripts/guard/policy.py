@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from common import MEMORY_MARGIN_GIB, POLICY, atomic
+from safe_output import clean
 
 
 class Policy:
@@ -125,7 +126,7 @@ class Policy:
                     older.replace(newer)
             self.events_path.replace(Path(str(self.events_path) + ".1"))
         with self.events_path.open("a") as output:
-            output.write(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n")
+            output.write(clean(json.dumps(row, separators=(",", ":"), allow_nan=False)) + "\n")
             output.flush()
         return row
 

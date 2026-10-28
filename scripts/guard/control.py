@@ -5,7 +5,10 @@ import json
 import socket
 import time
 
+import sys
+
 from common import load_config
+from safe_output import cli, safe_print as print
 
 HOLD_ERRORS = {
     "operator transition requires both fresh<=86 and no local work",
@@ -57,4 +60,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

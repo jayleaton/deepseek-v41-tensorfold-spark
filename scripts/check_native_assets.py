@@ -12,6 +12,10 @@ import struct
 import sys
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_output import cli, safe_print as print  # noqa: E402
+
+
 def sha(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -119,4 +123,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(cli(main))

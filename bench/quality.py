@@ -31,6 +31,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from safe_output import cli, safe_print as print, write_text as safe_write_text  # noqa: E402
+
+
 LETTERS = "ABCD"
 WORDS = ("river mountain lantern copper harbor meadow quartz signal orchard canvas thunder velvet compass ember "
          "glacier timber falcon prairie marble beacon willow cobalt summit ferry saddle tundra pepper violet "
@@ -83,7 +87,7 @@ def mmlu(a) -> int:
     print(f"[quality] mmlu {a.label} shots {a.shots}: {acc:.3f} ({correct}/{len(rest)}), errors {rec['errors']}, "
           f"prompts over 128 tokens {rec['over_replay_window']}/{len(rest)}, median {rec['prompt_tokens_median']}",
           flush=True)
-    Path(a.out).write_text(json.dumps(rec, indent=1))
+    safe_write_text(a.out, json.dumps(rec, indent=1))
     return 0
 
 
@@ -129,7 +133,7 @@ def needle(a) -> int:
         res.append({"size": size, "prompt_tokens": n, "found": found, "reply": reply[:80],
                     "seconds": round(time.time() - t0, 1)})
         print(f"[quality] needle {a.label} {size}: prompt {n} tokens, found {found} ({res[-1]['seconds']} s)", flush=True)
-    Path(a.out).write_text(json.dumps({"label": a.label, "needles": res, "ok": ok}, indent=1))
+    safe_write_text(a.out, json.dumps({"label": a.label, "needles": res, "ok": ok}, indent=1))
     return 0 if ok else 1
 
 
@@ -151,7 +155,7 @@ def compare(a) -> int:
                          f"({d:+.1f})")
     print("\n".join(lines))
     if a.out:
-        Path(a.out).write_text(json.dumps({"delta_points": delta, "same": same, "n": len(r["items"]), "ok": ok,
+        safe_write_text(a.out, json.dumps({"delta_points": delta, "same": same, "n": len(r["items"]), "ok": ok,
                                            "replay": r["accuracy"], "full": f["accuracy"], "kit": a.kit}, indent=1))
     return 0 if ok else 1
 
@@ -179,4 +183,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main))

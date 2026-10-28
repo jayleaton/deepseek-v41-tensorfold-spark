@@ -6,8 +6,13 @@ import math
 import os
 import re
 import tempfile
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from redact import secret_name  # noqa: E402
+from safe_output import dump as safe_dump  # noqa: E402
 
 # Approved STOP / pause thresholds; enabling requires the exact policy and operator qualification.
 POLICY = {
@@ -33,7 +38,7 @@ INFERENCE_PREFIXES = ("TF_", "GLM53_TF_", "NCCL_", "CUDA_")
 def inference_environment(item):
     env = dict(value.split("=", 1) for value in item["Config"]["Env"] if "=" in value)
     return {key: value for key, value in env.items()
-            if key.startswith(INFERENCE_PREFIXES) and key != "TF_DSV41_LAUNCH_T0"}
+            if key.startswith(INFERENCE_PREFIXES) and key != "TF_DSV41_LAUNCH_T0" and not secret_name(key)}
 
 
 SCHEDULES = (None, "auto", "spin", "yield", "blocking")
@@ -110,7 +115,7 @@ def atomic(path, value):
     try:
         os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w") as output:
-            json.dump(value, output, separators=(",", ":"), allow_nan=False)
+            safe_dump(value, output, separators=(",", ":"), allow_nan=False)
             output.flush()
             os.fsync(output.fileno())
         os.replace(temporary, path)

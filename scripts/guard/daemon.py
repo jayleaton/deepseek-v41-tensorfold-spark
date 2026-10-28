@@ -12,7 +12,10 @@ import time
 from pathlib import Path
 
 from backend import Backend
+import sys
+
 from common import RANKS, atomic, daemon_lock, load_config
+from safe_output import cli
 from front import Front, Server
 from policy import Policy
 
@@ -355,4 +358,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

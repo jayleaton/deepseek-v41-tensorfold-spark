@@ -21,6 +21,7 @@ KEY = "DUMMY" + "-tooleval-" + "5f3c9a0e1b7d"
 MODEL = "DeepSeek-V4.1-Flash-TF"
 
 TEB = """#!/bin/sh
+: > "$RAW_TOOL_CALLED"
 json=""; prev=""
 for a in "$@"; do [ "$prev" = --json-file ] && json=$a; prev=$a; done
 echo "tool-eval-bench argv: $*"
@@ -28,6 +29,7 @@ echo "tool-eval-bench using key $API_KEY" >&2
 printf '{"argv": "%s", "headers": {"Authorization": "Bearer %s"}}\\n' "$*" "$API_KEY" > "$json"
 """
 SB = """#!/bin/sh
+: > "$RAW_TOOL_CALLED"
 echo "spark-bench argv: $*"
 echo "spark-bench key=$SPARK_BENCH_API_KEY"
 printf '{"request_headers": {"x-api-key": "%s"}, "argv": "%s"}\\n' "$SPARK_BENCH_API_KEY" "$*" \\
@@ -75,7 +77,8 @@ def install_fakes(cache: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("curl") is None, reason="run.sh needs curl")
-def test_key_never_saved_or_printed(tmp_path, server):
+@pytest.mark.parametrize("mode", ["teb", "sb", "both", "chains"])
+def test_unadapted_third_party_writers_are_refused_before_any_write(tmp_path, server, mode):
     url, seen = server
     install_fakes(tmp_path / "cache")
     env = dict(
@@ -87,39 +90,20 @@ def test_key_never_saved_or_printed(tmp_path, server):
         TOOLEVAL_CACHE=str(tmp_path / "cache"),
         TEB_ARGS="--api-key=" + KEY,
         SB_ARGS="--api-key=" + KEY,
+        RAW_TOOL_CALLED=str(tmp_path / "raw-tool-called"),
     )
     r = subprocess.run(
-        ["bash", str(ROOT / "bench/tooleval/run.sh"), "both", "off"],
+        ["bash", str(ROOT / "bench/tooleval/run.sh"), mode, "off"],
         env=env,
         check=False,
         capture_output=True,
         text=True,
         timeout=60,
     )
-    assert r.returncode == 0, r.stdout + r.stderr
-    # the key still reached the server, as a header
-    assert seen and all(h == "Bearer " + KEY for h in seen)
-
-    files = [p for p in (tmp_path / "out").rglob("*") if p.is_file()]
-    names = {p.name for p in files}
-    assert {
-        "teb.cmd",
-        "teb.log",
-        "teb.json",
-        "sb.cmd",
-        "sb.log",
-        "raw_dump.jsonl",
-        "models-before.json",
-    } <= names
-    for p in files:
-        assert KEY not in p.read_text(), p
-    assert KEY not in r.stdout + r.stderr
-
-    run = next(p.parent for p in files if p.name == "teb.cmd")
-    teb_cmd = (run / "teb.cmd").read_text()
-    assert (
-        "--api-key '<redacted>'" in teb_cmd
-        and "'--api-key=<redacted>'" in teb_cmd
-        and "--no-think" in teb_cmd
-    )
-    assert "'--api-key=<redacted>'" in (run / "sb.cmd").read_text()
+    assert r.returncode == 78
+    assert not seen, "unadapted mode contacted the server before its safety check"
+    assert not (tmp_path / "raw-tool-called").exists(), "unadapted writer was invoked"
+    assert not (tmp_path / "out").exists(), "unadapted mode created report files"
+    leaked = KEY in r.stdout + r.stderr
+    assert not leaked, "credential reached refusal output"
+    assert "pre-write sanitization is unavailable" in r.stderr

@@ -42,6 +42,10 @@ import sys
 from pathlib import Path
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_output import cli, safe_print as print  # noqa: E402
+
+
 MAGIC = 0x31344E4531565344          # b"DSV41EN1" little-endian
 HEADER = 4096
 VALUES, SCALES = 256, 8
@@ -250,7 +254,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        sys.exit(cli(main, error_code=2))
     except (OSError, ValueError, KeyError) as exc:
         print(f'pack_engram: {exc}', file=sys.stderr)
         sys.exit(2)

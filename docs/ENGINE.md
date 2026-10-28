@@ -44,3 +44,20 @@ The earlier public recipe and measurements remain reproducible at
 [60b6688](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/tree/60b66888a1a379fb38bf85c232b27ec60b007373).
 No old result is relabelled as a measurement of this pin. TensorFold's source, model files and generated kernels keep
 their copyright and license notices.
+
+For the host-tooling regression gates, use Ruff **0.17.3** and set `RUFF` to its
+executable if it is not on `PATH`. Set `BASH32` to a real GNU Bash 3.2 executable
+for the publication portability tests; those tests verify the reported shell
+version and execute clean, finding and empty-list cases. The all-ok preflight test
+injects measured latencies; real disk latency remains an operator measurement,
+with the production 300 µs warning threshold unchanged.
+
+```bash
+ruff check --isolated --select E4,E7,E9,F .
+ruff format --isolated --check bench/speed.py scripts/preflight.py tests/bench/test_speed.py tests/scripts/test_preflight.py
+```
+
+Compare core-lint findings by identity against the base; a smaller total does not
+compensate for newly introduced findings. Run the tooling and full retained suites
+in the authorized compute environment. Keep the original 16 inherited compiler
+errors explicit until their historical source/toolchain prerequisites are addressed.

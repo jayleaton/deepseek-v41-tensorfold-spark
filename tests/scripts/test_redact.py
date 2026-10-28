@@ -141,7 +141,7 @@ def test_text_masks_credentials_keeps_placeholders():
 
 def test_known_values_and_scrub(tmp_path):
     known = known_secrets({"API_KEY": KEY, "SHORT_TOKEN": "1", "MODEL": "x" * 20})
-    assert known == [KEY]
+    assert known == [KEY, "1"]
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "report.json").write_text(
         '{"echo": "the tool said ' + KEY + '"}'
@@ -267,3 +267,17 @@ def test_structured_and_scrub_boundaries_expand_known_values(tmp_path):
     assert changed == 1
     leaked = escaped in path.read_text()
     assert not leaked, "scrub disclosed a known credential"
+
+
+@pytest.mark.parametrize('name', ['AUTH_TOKEN', 'API_TOKEN', 'HF_TOKEN', 'ACCESS_TOKEN', 'SESSION_TOKEN', 'TOKEN', 'SHORT_TOKEN', 'OAUTH_TOKEN', 'JWT_TOKEN'])
+def test_explicit_numeric_token_credentials_are_known(name):
+    values = known_secrets({name: '200', 'TF_DSV41_POOL_TOKENS': '200'})
+    assert values == ['200']
+    assert redact_text('opaque 200', values) == 'opaque <redacted>'
+    assert not known_secrets({'TF_DSV41_POOL_TOKENS': '200'})
+
+
+def test_token_size_measurements_are_not_credentials():
+    value = {'bytes_a_token': 1060, 'bytes_per_token': 1060, 'bits_per_token': 2.5}
+    assert redact(value) == value
+    assert all(not secret_name(name) for name in value)

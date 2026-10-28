@@ -47,7 +47,6 @@ SECRET_WORDS = frozenset(
 POINTER_WORDS = frozenset({"file", "path", "dir"})
 # alone, too common in prose and data to mask in text (a tokenizer's "token")
 GENERIC_WORDS = frozenset({"key", "token", "auth", "cookie"})
-MIN_KNOWN = 8  # Short numeric token-control flags need an explicit credential name to be treated as secrets.
 
 # Credential shapes, shared with scripts/check_secrets.py: (name, pattern).
 TOKEN_PATTERNS = (
@@ -86,6 +85,8 @@ _URL_PASSWORD = re.compile(
 def secret_name(name: str) -> bool:
     """True when a flag, variable or field name names a credential (API_KEY, --hf-token, x-api-key, apiKey)."""
 
+    if re.fullmatch(r"(?:bytes|bits)_(?:a|per)_token", name, re.IGNORECASE):
+        return False
     parts = [
         p.lower()
         for p in re.split(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])", name.lstrip("-"))
@@ -103,10 +104,7 @@ def known_secrets(environ: Mapping[str, str] | None = None) -> list[str]:
 
     env = os.environ if environ is None else environ
     return sorted(
-        {v for k, v in env.items() if v and secret_name(k) and (
-            len(v) >= MIN_KNOWN or not v.isdecimal()
-            or re.search(r"(?:^|_)(?:API_KEY|PASSWORD|PASSWD|SECRET|CREDENTIALS?|AUTHORIZATION|BEARER)$", k.upper())
-        )},
+        {v for k, v in env.items() if v and secret_name(k)},
         key=len,
         reverse=True,
     )
