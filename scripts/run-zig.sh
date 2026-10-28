@@ -66,6 +66,8 @@ identity=$(python3 scripts/check_native_assets.py --rank "$rank" --model "$MODEL
     --engram "$ENGRAM_DIR" --assets "$ASSETS_DIR" --context "${TF_DSV41_CONTEXT:-4096}" \
     --revision "$rev" --image-id "$image_id")
 if [[ "$mode" == --identity ]]; then printf '%s\n' "$identity"; exit; fi
+stop_file=${STOP_FILE:-$STATE_DIR/native-ops/STOP}
+[[ ! -e "$stop_file" ]] || { echo 'durable STOP is set; use serve.sh start explicitly' >&2; exit 78; }
 if [[ "$mode" == --detach ]]; then args=(docker run --detach "${args[@]:2}"); fi
 if [[ -n "${GUARD_CONFIG:-}" ]]; then
     python3 scripts/guard/lifecycle.py --config "$GUARD_CONFIG" check --operation start

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Memory stress / cold-boot admission client (stdlib only) for a running `tensorfold serve` (scripts/serve.sh).
+"""Memory stress / cold-boot admission client (stdlib only) for the native `tensorfold-dsv41 serve` endpoint (docs/ZIG-SERVE.md).
 
   stress.py stress --base URL --long 299000 --dctx 65536 --decode 2048 --out stress.json
       one stream prefills ``--long`` tokens (the 300K prefill) while three streams prefill ``--dctx`` tokens and then

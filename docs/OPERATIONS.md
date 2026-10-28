@@ -2,8 +2,7 @@
 
 Use [ZIG-SERVE](ZIG-SERVE.md) for the current rank commands, memory profile, assets and drain behavior.
 The native containers are `tensorfold-zig-r0` and `tensorfold-zig-r1`, created by `scripts/run-zig.sh`.
-The old Python launcher and its incompatible unattended units have been removed; native supervisor wiring follows
-separately. Do not assume the retired Python stall-exit controls protect the native server.
+The old Python launcher and its incompatible unattended units have been removed; use the native lifecycle below. Do not assume the retired Python stall-exit controls protect the native server.
 
 Historical operational measurements remain in the campaign and result records under their original engine labels.
 
@@ -53,3 +52,44 @@ CPU tests establish those contracts, not the proposed performance benefit. The
 required one-boot alternating G-off/G1v2 Spark comparison remains unrun: start spread
 must be at most 0.3 seconds, and memory minima no more than 0.25 GiB below both
 neighboring off blocks. Keep both options off until those device gates pass.
+
+## Native pair lifecycle and watchdog (#58)
+
+Use `CONFIG=config/prod-zig.env bash scripts/serve.sh preflight` on the head before
+`start`. The config is exported before invoking the native supervisor; set absolute
+`STATE_DIR`, `WORKER_REPO`, `WORKER_CONFIG` and a single `WORKER_SSH` target. Both
+checkouts must have the same engine pin and both ranks must report the same image,
+model, common assets and profile identity. Rank-specific Engram headers are checked
+locally before any worker starts. `serve.sh rank N --identity` checks a single rank;
+`serve.sh build` invokes the pinned native builder.
+
+`start` launches worker then head and waits for both owned containers plus healthy
+`/health` and `/v1/models` responses. Names are `tensorfold-zig-r0` and
+`tensorfold-zig-r1`, or `${CONTAINER_PREFIX}-r0/r1` when overridden on both nodes.
+`stop` writes a durable STOP before signalling, then stops only containers with the
+expected name, rank and revision labels, using their inspected IDs. Its timeout
+allows at least `TF_DSV41_DRAIN_S + 60` seconds (minimum 80); size service timeouts
+for any larger configured budget. A failed boot also leaves STOP set.
+
+Only an explicit `start`/`restart` can clear an unchanged operator STOP after
+preflight. `watch --once`, reboot timers and the optional guard watcher respect it;
+raw `run-zig.sh` also refuses a launch while it exists. A maintenance lease or guard
+hold prevents recovery. An unavailable Docker daemon/SSH connection is an error,
+never evidence of an absent rank or permission to kill an unverified container.
+
+`status` reports readiness. `watch --once` records persistent failure counts;
+`WATCH_HEAL=0` is observation only. Opting into `WATCH_HEAL=1` permits recovery after
+`WATCH_FAILS` failures and `WATCH_MIN_HEAL` seconds since the last attempt. Defaults
+are 3 failures, 300 seconds between attempts and 10 seconds between ticks when run
+continuously. The example timer ticks once per minute. Recovery time additionally
+includes bounded runtime calls, drain time and up to `READY_TIMEOUT` (900 seconds)
+for model loading. This is launcher supervision, not an engine progress proof.
+
+The `scripts/systemd/tf-zig-watchdog.{service,timer}` templates are **not installed**.
+Review the serving user, checkout, environment and timeouts before installation.
+Keep healing off until actual rank-death, stalled-health, cold-start and operator
+STOP scenarios pass on your pair. CPU tests use fake runtimes and HTTP; no new
+hardware or unattended-recovery qualification is claimed. The guard watchdog is an
+alternative opt-in observer, not a second independently enabled healer. When using
+it, route recovery through `serve.sh watch --once` so automatic recovery cannot
+clear STOP; never set its restart command to explicit `start` or `restart`.

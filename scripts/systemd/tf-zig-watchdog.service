@@ -1,0 +1,14 @@
+[Unit]
+Description=Observe the native TensorFold pair (healing requires WATCH_HEAL=1)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=REPLACE_WITH_SERVING_ACCOUNT
+# Replace User and WorkingDirectory with the serving account and recipe checkout.
+WorkingDirectory=/opt/deepseek-v41-tensorfold-spark
+Environment=CONFIG=config/prod-zig.env
+ExecStart=/bin/bash scripts/serve.sh watch --once
+TimeoutStartSec=1200
+Nice=19
