@@ -18,9 +18,9 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
 
-This branch migrates the recipe to upstream native serving. **The initial pin rejects flash17’s `dsq-1` metadata.**
+This branch migrates the recipe to upstream native serving. The pin includes flash17’s `dsq-1` admission support.
 The engine/pack/device qualification is pending; the historical production results below do not qualify this pin.
-See [ENGINE](docs/ENGINE.md) for the admission limit and single-pin update procedure.
+See [ENGINE](docs/ENGINE.md) for the local checkout/bundle build route and single-pin update procedure.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
 > relying on it.

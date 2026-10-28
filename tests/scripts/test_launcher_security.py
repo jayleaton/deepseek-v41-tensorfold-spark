@@ -32,6 +32,10 @@ def launchers(tmp_path):
     for name in ('run-zig.sh', 'serve.sh', 'build-native.sh', 'check-zig-image.sh',
                  'safe_exec.py', 'safe_output.py', 'redact.py'):
         shutil.copyfile(ROOT / 'scripts' / name, scripts / name)
+    docker_dir = tmp_path / 'docker/zig'
+    docker_dir.mkdir(parents=True)
+    for name in ('Dockerfile', 'fetch-source.sh'):
+        shutil.copyfile(ROOT / 'docker/zig' / name, docker_dir / name)
     config_dir = tmp_path / 'config'
     config_dir.mkdir()
     revision = (ROOT / 'config/tensorfold.rev').read_text().strip()

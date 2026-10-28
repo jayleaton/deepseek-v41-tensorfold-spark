@@ -1,7 +1,7 @@
 # Native CUDA serving on two DGX Sparks
 
-This branch wires upstream TensorFold's `dsv41-serve` build target. Read [ENGINE](ENGINE.md) before use: the initial
-pin is not device/pack qualified and rejects the flash17 pack's `dsq-1` metadata. Historical rates and profiles describe
+This branch wires upstream TensorFold's `dsv41-serve` build target. Read [ENGINE](ENGINE.md) before use: the current
+pin includes flash17 `dsq-1` admission but is not device/pack qualified. Historical rates and profiles describe
 the previous deployed engine. Do not bypass checkpoint admission or treat this guide as a new serving receipt.
 
 ## Build
@@ -9,7 +9,7 @@ the previous deployed engine. Do not bypass checkpoint admission or treat this g
 ```bash
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
-scripts/build-native.sh -t tensorfold-dsv41:local
+TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
 scripts/check-zig-image.sh tensorfold-dsv41:local
 docker save tensorfold-dsv41:local -o build-native-image.tar
 ```
@@ -40,9 +40,9 @@ There are four independent inputs:
 3. `rope.bin`: `DSV41RP1`, two fp32 `[context + 2048, 64]` tables from the retained build-only reference arithmetic.
 4. Native `engram-token-map.bin` (`DSENGR01`), `sigs.json`, exact-environment `needs.json` and a complete `aot/`.
 
-The token map is produced by the pinned upstream `zig/dsv41_token_map.zig` tool. At the initial pin, its metadata
-parser also refuses flash17's `dsq-1`; the separately reviewed engine update must resolve asset metadata admission
-without weakening serving checks. Later pins may install it through `zig build dsv41-assets`.
+The token map is produced by the pinned upstream `zig/dsv41_token_map.zig` tool. The pin includes shared
+`dsq-1` metadata admission support. Generate and check assets against the actual selected pack; source admission
+support alone does not establish complete asset or serving qualification.
 
 RoPE and family Triton AOT still require Python/Torch/Triton in an isolated generator environment.
 The existing generators under `engine/zig/tools/zig` and `engine/kernels` are retained unchanged;

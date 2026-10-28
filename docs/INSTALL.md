@@ -1,13 +1,13 @@
 # Install and run the native recipe
 
-The recommended pack is flash17. Read [ENGINE](ENGINE.md) first: the initial upstream
-pin rejects its `dsq-1` metadata, and this migration has no new pack/device
+The recommended pack is flash17. Read [ENGINE](ENGINE.md) first: the pin includes
+`dsq-1` admission support but is still local, and this migration has no new pack/device
 qualification. Follow [ZIG-SERVE](ZIG-SERVE.md) for native rank assets and launch.
 Use matching model and release-specific Engram tables on both nodes; q28-v2 keeps
 its separate rollback profile. `serve.sh start` now invokes only the native pair
 supervisor. It cannot accidentally enter the retired Python builder that asserted
 uniform expert widths (#57). Native per-expert planning is source support, not a
-receipt that this initial pin has loaded the recommended weights. Start with an
+receipt that this pin has loaded the recommended weights. Start with an
 empty prepared directory for cold-start qualification; do not reuse prepared blobs
 as a substitute for actual pack admission and width-class coverage on both ranks.
 

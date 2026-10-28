@@ -9,10 +9,9 @@ ARG ZIG_TARGET=aarch64-linux-gnu
 ARG ZIG_CPU=baseline+sha2+aes
 RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates xz-utils \
     && rm -rf /var/lib/apt/lists/*
-RUN set -eu; test "${#TENSORFOLD_REV}" = 40; \
-    git init /ctx/src && cd /ctx/src && git remote add origin https://github.com/ashhart/TensorFold.git && \
-    git fetch --depth=1 origin "$TENSORFOLD_REV" && git checkout --detach FETCH_HEAD && \
-    test "$(git rev-parse HEAD)" = "$TENSORFOLD_REV"
+COPY docker/zig/fetch-source.sh /fetch-source.sh
+COPY docker/zig/source/ /engine-source/
+RUN bash /fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle
 RUN set -eu; url="${ZIG_URL:-https://ziglang.org/download/${ZIG_VERSION}/zig-aarch64-linux-${ZIG_VERSION}.tar.xz}"; \
     mkdir -p /opt/zig && curl -fsSL "$url" | tar -xJ -C /opt/zig --strip-components=1; \
     test "$(/opt/zig/zig version)" = "$ZIG_VERSION"

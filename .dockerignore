@@ -2,3 +2,6 @@
 !docker/
 !docker/zig/
 !docker/zig/Dockerfile
+!docker/zig/fetch-source.sh
+!docker/zig/source/
+!docker/zig/source/.keep

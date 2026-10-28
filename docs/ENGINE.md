@@ -1,24 +1,51 @@
 # Native TensorFold engine
 
 The recipe builds upstream [TensorFold](https://github.com/ashhart/TensorFold) at the exact commit in
-[`config/tensorfold.rev`](../config/tensorfold.rev). That file is the single engine pin. The Docker build fetches
+[`config/tensorfold.rev`](../config/tensorfold.rev). That file is the single engine pin. The Docker build resolves
 and verifies it, builds the `dsv41-serve` target with both CUDA runtime and DeepSeek family images, and installs
-`tensorfold-dsv41` and `tf-dsv41`. The serving build fetches upstream directly and applies no recipe patches. The older native export stays in
+`tensorfold-dsv41` and `tf-dsv41`. The serving build uses upstream Git objects without recipe patches. The older native export stays in
 `engine/zig` solely to preserve the existing generator/reference dependencies pending their equivalence audit.
 
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The initial pin is an upstream baseline, not a qualified replacement for the previous deployed export. In particular,
-its checkpoint admission rejects the documented flash17 `dsq-1` format metadata. Do not edit a pack's config to bypass
-that refusal. Move the single pin only after the engine changes and actual pack admission have been reviewed.
-Native images, structured output, defaults, sessions and sampling also require their own migration qualification.
+The current pin is the local `dsv41/upgrade-latest` commit `5368c7a35`, including
+flash17 `dsq-1` checkpoint admission from `98f2a3896`. It is not on upstream main yet.
+Use a local checkout or self-contained bundle as described below; upstream fetching
+will work once that exact commit is published. This source support is not a new
+pack/device qualification. Do not edit a pack config to bypass admission checks.
+Native images, structured output, defaults, sessions and sampling still require
+migration qualification; historical production results do not qualify this pin.
 
 ## Build and checks
 
 [`scripts/build-native.sh`](../scripts/build-native.sh) supplies the pin to [`docker/zig/Dockerfile`](../docker/zig/Dockerfile).
 The builder uses Zig 0.17.0, CUDA 13 and real sm_121 images; the runtime keeps NCCL, verbs/mlx5 and pinned cuBLAS
 library verification. A host compile with empty or synthetic GPU images is insufficient for serving.
+
+Until the commit is available upstream, supply a checkout containing the pin:
+
+```bash
+TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
+```
+
+The script reads the exact revision from the pin file, fetches only that revision's
+history into temporary scratch, and creates a self-contained bundle. It does not
+modify the supplied checkout, use its working-tree edits, or require its HEAD to
+match the pin. For transfer to another builder, create a bundle containing the
+upgrade branch and supply the bundle file instead:
+
+```bash
+git -C /absolute/TensorFold bundle create /absolute/tensorfold.bundle dsv41/upgrade-latest
+TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
+```
+
+Bundle prerequisites and exact commit resolution are verified locally and again in
+the Docker builder. A supplied invalid/incomplete bundle fails without falling back
+to the network. Only the Dockerfile, source resolver and selected bundle enter the
+temporary build context; it is removed when the command exits. The bundle never
+enters the runtime image. Without `TENSORFOLD_SOURCE`, the builder fetches the same
+pin from upstream; it does not follow a moving branch. No GitHub push is required.
 
 Follow the pinned upstream `AGENTS.md`, `CONTRIBUTING.md`, `.zig-version` and native contributor documentation for
 engine changes. Upstream gates include fmt, lean with zero new finding identities, host/golden/security/fuzz/kernel
