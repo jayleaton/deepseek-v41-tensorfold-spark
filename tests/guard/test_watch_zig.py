@@ -121,7 +121,7 @@ class WatchZigTests(unittest.TestCase):
         self.assertIn("not restarting", result.stderr)
 
     def test_missing_guard_config_prevents_healing(self):
-        result = self.bash("watch_tick", WATCH_HEAL="1", WATCH_RESTART_CMD="exit 99")
+        result = self.bash("watch_tick", WATCH_HEAL="1", WATCH_RESTART_ARGV=json.dumps(["bash", "scripts/serve.sh", "watch", "--once"]))
         self.assertEqual(result.returncode, 0)
         self.assertIn("guard lifecycle holds", result.stderr)
         self.assertEqual(self.calls(), [])

@@ -107,3 +107,21 @@ are filtered as well as child output. Watchdog numeric controls are validated
 before arithmetic. A heal holds ownership until its command finishes; it does not
 detach an unowned restart after the observing tick exits. Image verification runs
 the image's `/opt/tensorfold/share/libproof.sh` through the host wrapper.
+
+The optional guard watchdog accepts `WATCH_RESTART_ARGV` as a JSON argv array:
+
+```bash
+WATCH_HEAL=1
+WATCH_RESTART_ARGV='["bash","scripts/serve.sh","watch","--once"]'
+```
+
+Strings are literal arguments, with no shell quoting, interpolation, command
+substitution or heredoc evaluation. An entry such as `{"env":"RECIPE_LAUNCHER"}`
+explicitly reads one exported variable as one complete argument; resolved values
+pass the shared credential check before any child starts. Missing references fail
+closed. Only this checkout's reviewed `bash scripts/serve.sh watch --once` recovery
+entry is admitted, including its equivalent absolute script path. Arbitrary
+programs/interpreter payloads and explicit `start`/`restart` are refused, preserving
+durable STOP. The lock remains held through synchronous completion, and command
+failures propagate. `WATCH_RESTART_CMD` is removed: a nonempty old setting exits
+with a clear error directing operators to the JSON form; it is never evaluated.

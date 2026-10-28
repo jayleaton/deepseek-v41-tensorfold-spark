@@ -63,6 +63,7 @@ elif role == "alert-tool":
 elif role == "heal-tool":
     echoes("heal-tool")
     Path(os.environ["HEAL_MARKER"]).touch()
+    sys.exit(int(os.environ.get("HEAL_EXIT", "0")))
 else:
     echoes(role)
 """
@@ -75,6 +76,11 @@ def fixture(tmp_path, key):
         path = bindir / name
         path.write_text(f"#!{sys.executable}\n" + TOOL)
         path.chmod(0o700)
+    # Fake the external native lifecycle Python command, keeping the production
+    # reviewed serve.sh and all of its subprocess boundaries unchanged.
+    python = bindir / "python3"
+    python.write_text('#!/bin/bash\nif [[ "${1:-}" == scripts/native_ops.py ]]; then\nexec "${HEAL_EXEC}"\nfi\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
+    python.chmod(0o700)
     config = tmp_path / "config.env"
     config.write_text("API_KEY=" + shlex.quote(key) + "\n")
     config.chmod(0o600)
@@ -90,7 +96,7 @@ def fixture(tmp_path, key):
         "HEAL_EXEC": str(bindir / "heal-tool"),
         "WATCH_PROBE": "0",
         "WATCH_HEAL": "0",
-        "WATCH_RESTART_CMD": '"$HEAL_EXEC"',
+        "WATCH_RESTART_ARGV": json.dumps(["bash", "scripts/serve.sh", "watch", "--once"]),
         "GUARD_CONFIG": "",
     }
     return env

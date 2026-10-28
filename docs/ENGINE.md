@@ -95,3 +95,8 @@ in the isolated check environment. It rejects direct external commands and exec
 in the host watchdog/launchers, including nested substitutions; `safe_shell.sh`
 is the single adapter to the checked `safe_exec.py` supervisor. The build stage
 includes Python only for that boundary; the serving runtime remains native.
+
+The syntax/AST gate guards against accidental bypasses in the repository's own
+code. It is not a sandbox against deliberately obfuscated code or trusted operator
+configuration. Executable payloads must be statically auditable; unresolvable
+dispatch is rejected outside the explicitly reviewed adapter.

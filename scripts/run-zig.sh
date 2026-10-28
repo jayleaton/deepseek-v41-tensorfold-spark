@@ -67,7 +67,12 @@ if [[ "$rank" == 0 ]]; then
 else
     args+=(tf-dsv41 follow /model /assets)
 fi
-if [[ "$mode" == --dry-run ]]; then printf '%q ' "${args[@]}" | safe_filter; printf '\n'; exit; fi
+if [[ "$mode" == --dry-run ]]; then
+    safe_check_argv "${args[@]}" || exit $?
+    printf '%q ' "${args[@]}" | safe_filter
+    printf '\n'
+    exit
+fi
 image_rev=$(safe_capture revision docker image inspect -f '{{index .Config.Labels "org.tensorfold.revision"}}' "$IMAGE")
 [[ "$image_rev" == "$rev" ]] || { echo "image engine revision differs from config/tensorfold.rev" >&2; exit 2; }
 image_id=$(safe_capture image_id docker image inspect -f '{{.Id}}' "$IMAGE")

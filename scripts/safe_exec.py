@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import codecs
+import json
 import math
 import os
+from pathlib import Path
 import selectors
 import signal
 import subprocess
@@ -250,6 +252,36 @@ def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=Non
             signal.signal(signum, handler)
 
 
+def _restart_argv():
+    """Resolve data-only restart argv; only the audited automatic recovery path runs."""
+    if os.environ.get('WATCH_RESTART_CMD'):
+        raise ValueError('WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv')
+    try:
+        values = json.loads(os.environ.get('WATCH_RESTART_ARGV', ''))
+    except (ValueError, TypeError):
+        raise ValueError('WATCH_RESTART_ARGV must be a JSON argv array') from None
+    if not isinstance(values, list) or not values:
+        raise ValueError('WATCH_RESTART_ARGV must be a nonempty JSON argv array')
+    argv = []
+    for value in values:
+        if isinstance(value, dict) and set(value) == {'env'}:
+            name = value['env']
+            if not isinstance(name, str) or not name.isidentifier() or name not in os.environ:
+                raise ValueError('restart environment reference unavailable')
+            value = os.environ[name]
+        if not isinstance(value, str) or '\0' in value:
+            raise ValueError('restart argv entries must be strings or environment references')
+        argv.append(value)
+    _check_argv(argv, _cli_secrets(argv) + _known())
+    # No arbitrary shell/interpreter trampoline. A reviewed recovery command also
+    # preserves durable STOP: automatic healing may never invoke explicit start.
+    serve = Path(__file__).resolve().with_name('serve.sh')
+    if (len(argv) != 4 or argv[0] not in ('bash', '/bin/bash', '/usr/bin/bash')
+            or Path(argv[1]).resolve() != serve or argv[2:] != ['watch', '--once']):
+        raise ValueError('restart argv must select bash scripts/serve.sh watch --once')
+    return ['/bin/bash', str(serve), 'watch', '--once']
+
+
 def main():
     owner = _owner()
     argv = sys.argv[1:]
@@ -292,6 +324,13 @@ def main():
         if argv:
             raise ValueError('unexpected filter arguments')
         return _filter(control, _cli_secrets([]), owner)
+    if argv and argv[0] == '--check-argv':
+        if len(argv) == 1:
+            raise ValueError('missing argv to check')
+        _check_argv(argv[1:], _cli_secrets(argv[1:]) + _known())
+        return 0
+    if argv == ['--restart']:
+        argv = ['--command', *_restart_argv()]
     checked = bool(argv and argv[0] == '--command')
     if checked:
         argv = argv[1:]

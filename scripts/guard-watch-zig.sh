@@ -8,7 +8,7 @@
 # WATCH_LEASE_MIN minutes, while WATCH_STATE_DIR/stopped exists (touch it when you stop the pair on purpose), while a
 # heal holds the lock, and while the guard's lifecycle check (GUARD_CONFIG, scripts/guard) holds the pair.
 # A tick is bad when a rank is not running or /health fails; WATCH_FAILS bad ticks in a row heal (WATCH_HEAL=1 runs
-# WATCH_RESTART_CMD in the background) at most once every WATCH_MIN_HEAL s. Fail-fast (exit 70), the engine's own
+# WATCH_RESTART_ARGV synchronously) at most once every WATCH_MIN_HEAL s. Fail-fast (exit 70), the engine's own
 # "stalled" verdict and WATCH_PROBE_FAILS failed probes in a row heal on that tick, at most every WATCH_FF_MIN_HEAL s.
 # Never trace configured credentials, including when sourced by a traced caller.
 { set +x; } 2>/dev/null
@@ -63,12 +63,13 @@ WATCH_STATE_DIR="${WATCH_STATE_DIR:-${XDG_STATE_HOME:-${HOME:-/tmp}/.local/state
 GUARD_CONFIG="${GUARD_CONFIG:-}"
 WATCH_GRACE="${WATCH_GRACE:-1800}"; WATCH_FAILS="${WATCH_FAILS:-3}"; WATCH_HEAL="${WATCH_HEAL:-0}"
 WATCH_MIN_HEAL="${WATCH_MIN_HEAL:-1800}"; WATCH_FF_MIN_HEAL="${WATCH_FF_MIN_HEAL:-120}"; WATCH_ALERT="${WATCH_ALERT:-}"
-WATCH_LEASE="${WATCH_LEASE:-}"; WATCH_LEASE_MIN="${WATCH_LEASE_MIN:-20}"; WATCH_RESTART_CMD="${WATCH_RESTART_CMD:-}"
+WATCH_LEASE="${WATCH_LEASE:-}"; WATCH_LEASE_MIN="${WATCH_LEASE_MIN:-20}"; WATCH_RESTART_ARGV="${WATCH_RESTART_ARGV:-}"
 # The probe: /health stays 200 while a wedged engine answers nothing. Every WATCH_PROBE_EVERY s one tiny completion
 # (max_tokens 1, no reasoning, header X-TF-Probe: watchdog) must answer within WATCH_PROBE_TIMEOUT s. It runs only when
 # the pair is idle: skipped while every slot is busy, and the guard defers it (429 watchdog_deferred) behind user work,
 # queued requests and admission holds, so load is never counted as an engine failure.
 WATCH_PROBE="${WATCH_PROBE:-1}"; WATCH_PROBE_EVERY="${WATCH_PROBE_EVERY:-180}"; WATCH_PROBE_TIMEOUT="${WATCH_PROBE_TIMEOUT:-30}"
+export WATCH_RESTART_ARGV
 WATCH_PROBE_FAILS="${WATCH_PROBE_FAILS:-3}"
 WATCH_INTERVAL="${WATCH_INTERVAL:-60}"
 
@@ -237,7 +238,7 @@ _watch_watch_tick() {
     log "watch: bad tick $fails of $need: $bad"
     (( fails >= need )) || return 0
     last=$(watch_capture uint cat "$heal_f" 2>/dev/null || echo 0)
-    if [[ "$WATCH_HEAL" != 1 || -z "$WATCH_RESTART_CMD" ]]; then alert "unhealthy ($bad); not restarting (WATCH_HEAL=1 and WATCH_RESTART_CMD heal)"; return 1; fi
+    if [[ "$WATCH_HEAL" != 1 || -z "$WATCH_RESTART_ARGV" ]]; then alert "unhealthy ($bad); not restarting (WATCH_HEAL=1 and WATCH_RESTART_ARGV JSON argv)"; return 1; fi
     if (( now - last < min )); then alert "unhealthy ($bad); healed $((now - last))s ago, waiting"; return 1; fi
     guard_permit start || { log "watch: guard lifecycle holds the heal; standing down"; return 0; }
     echo "$now" > "$heal_f"; echo 0 > "$fails_f"
@@ -245,14 +246,14 @@ _watch_watch_tick() {
     alert "unhealthy ($bad); restarting both ranks"
     : >> "$WATCH_STATE_DIR/heal.log" || return 1
     watch_run chmod 600 "$WATCH_STATE_DIR/heal.log" || return 1
-    # Feed the configured command over stdin, never as a bash -c process argument.
-    # Keep the heal owned until completion; include lock failures and both streams.
-    printf '%s\n' "$WATCH_RESTART_CMD" |
-        watch_run flock "$WATCH_STATE_DIR/lock" bash +x >> "$WATCH_STATE_DIR/heal.log" 2>&1
+    # flock and the selected launcher share the checked supervisor. Restart data
+    # never enters a shell interpreter; only the reviewed recovery argv is admitted.
+    watch_run flock "$WATCH_STATE_DIR/lock" python3 "$safe_exec" --restart >> "$WATCH_STATE_DIR/heal.log" 2>&1 || return $?
     return 1
 }
 
 watch_validate_numbers() {
+    [[ -z "${WATCH_RESTART_CMD:-}" ]] || { printf '%s\n' 'WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv' >&2; return 78; }
     local key value
     for key in WATCH_GRACE WATCH_FAILS WATCH_HEAL WATCH_MIN_HEAL WATCH_FF_MIN_HEAL WATCH_LEASE_MIN WATCH_PROBE WATCH_PROBE_EVERY WATCH_PROBE_TIMEOUT WATCH_PROBE_FAILS WATCH_INTERVAL; do
         value=${!key}
