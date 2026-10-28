@@ -58,3 +58,26 @@ historical measured runs used the MiaAI-Lab kit's equivalent format; they do not
 qualify a newly generated full checkpoint. Copy the rank-1 output to the worker's
 `ENGRAM_DIR`, then perform native preflight and the actual model canary only when
 the engine/pack migration is ready. This task performs no GPU or TP2 run.
+
+## Pack rank 1 on the head, then copy the output (#69)
+
+Both `--rank 0` and `--rank 1` commands above run on the **head/packing host**, against
+its local source checkpoint and model config. Check rank 1 there before transfer:
+
+```bash
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --check "$RANK1_OUTPUT" --rank 1
+WORKER_SSH=user@worker.example
+WORKER_ENGRAM=/absolute/worker-engram
+ssh "$WORKER_SSH" "mkdir -p '$WORKER_ENGRAM'"
+scp "$RANK1_OUTPUT"/engram-l*-r1of2.bin "$WORKER_SSH:$WORKER_ENGRAM/"
+```
+
+Set the worker's `ENGRAM_DIR` to that destination. Only the generated rank-1 Engram
+files are transferred by this step. The worker needs neither the original DeepSeek
+source checkpoint nor a recipe checkout **for packing**. Native serving still needs
+its own matching model, image, native assets, writable state/prepared directories
+and configured launcher checkout for head-driven lifecycle commands. Do not copy
+rank-0 tables into the worker's Engram directory. An independent worker-side pack
+is optional and requires its own source/index and packer setup. The copy procedure
+is documented and covered by synthetic rank-format tests; a complete public install
+and transfer with the full checkpoint remain unrun in this CPU-only task.

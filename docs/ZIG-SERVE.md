@@ -89,3 +89,8 @@ See [OPERATIONS](OPERATIONS.md) for supervisor and optional guard behavior.
 `PREFLIGHT=1` runs `scripts/preflight.py` before starting a rank. Exit 1 warnings remain visible; exit 2 failures
 stop startup. Native health shapes or graph-floor fields that are absent are explicitly unmeasured. This helper
 does not certify the checkpoint or justify growing its pool.
+
+For head-driven preflight/start/stop/status/watch commands, configure the worker
+checkout and config paths and follow [native operations](OPERATIONS.md#native-pair-lifecycle-and-watchdog-58).
+`serve.sh` uses the native launcher for both ranks; original source-checkpoint
+transfer is unnecessary when [rank 1 is packed on the head](INSTALL.md#pack-rank-1-on-the-head-then-copy-the-output-69).
