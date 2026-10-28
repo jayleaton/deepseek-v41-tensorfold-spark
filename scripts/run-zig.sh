@@ -55,7 +55,12 @@ if [[ "$mode" == --check-aot ]]; then
     mkdir -p "$STATE_DIR"
     # No GPU device is exposed for host-only enumeration.
     docker run --rm --init --runtime=runc -e NVIDIA_VISIBLE_DEVICES=void \
-        -v "$ASSETS_DIR:/assets:ro" -v "$STATE_DIR:/state" "${envs[@]}" -e TF_TP_WORLD=2 \
+        -v "$ASSETS_DIR:/assets:ro" -v "$STATE_DIR:/state" "${envs[@]}" \
+        -e TF_TP_WORLD=2 -e "TF_TP_RANK=$rank" -e TF_TP_DEVICE=0 \
+        -e "TF_TP_MASTER=$TF_TP_MASTER" -e "TF_TP_PORT=${TF_TP_PORT:-29571}" \
+        -e "TF_COMM_BACKEND=${TF_COMM_BACKEND:-roce}" \
+        -e TF_DSV41_ASSETS=/assets -e TF_DSV41_ENGRAM_DIR=/engram \
+        -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin \
         "$IMAGE" tf-dsv41 aot-needs /assets/sigs.json "/state/aot-needs-r$rank.json"
     exec python3 scripts/check_native_assets.py --needs "$STATE_DIR/aot-needs-r$rank.json" --aot "$ASSETS_DIR/aot"
 fi
