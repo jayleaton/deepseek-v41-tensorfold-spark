@@ -35,7 +35,9 @@ args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --net
       -e "TF_TP_MASTER=$TF_TP_MASTER" -e "TF_TP_PORT=${TF_TP_PORT:-29571}"
       -e "TF_COMM_BACKEND=${TF_COMM_BACKEND:-roce}"
       -e TF_DSV41_ASSETS=/assets -e TF_DSV41_ENGRAM_DIR=/engram
-      -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin "$IMAGE")
+      -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin)
+[[ -z "${CPUSET_CPUS:-}" ]] || args+=(--cpuset-cpus "$CPUSET_CPUS")
+args+=("$IMAGE")
 if [[ "$rank" == 0 ]]; then
     args+=(tensorfold-dsv41 serve /model --host "${HOST:-localhost}" --port "${PORT:-8000}"
            --parallel "${TF_DSV41_SLOTS:-1}" --context "${TF_DSV41_CONTEXT:-4096}"
@@ -65,6 +67,9 @@ identity=$(python3 scripts/check_native_assets.py --rank "$rank" --model "$MODEL
     --revision "$rev" --image-id "$image_id")
 if [[ "$mode" == --identity ]]; then printf '%s\n' "$identity"; exit; fi
 if [[ "$mode" == --detach ]]; then args=(docker run --detach "${args[@]:2}"); fi
+if [[ -n "${GUARD_CONFIG:-}" ]]; then
+    python3 scripts/guard/lifecycle.py --config "$GUARD_CONFIG" check --operation start
+fi
 # PREFLIGHT=1 opts into the read-only local Engram/memory checks from #61.
 if [[ "${PREFLIGHT:-0}" == 1 ]]; then
     rc=0
