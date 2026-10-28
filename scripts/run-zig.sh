@@ -78,5 +78,12 @@ if [[ "$table" == /cache/* && ! -e "$CACHE_DIR/${table#/cache/}" ]]; then
     cp config/pfdense-table.json "$CACHE_DIR/${table#/cache/}"
     echo "copied config/pfdense-table.json to $CACHE_DIR/${table#/cache/} (TF_DSV41_PF_DENSE_TABLE=$table)" >&2
 fi
+# PREFLIGHT=1 opts into the read-only local Engram/memory checks from #61.
+if [[ "${PREFLIGHT:-0}" == 1 ]]; then
+    rc=0
+    read -r -a pf_args <<< "${PREFLIGHT_ARGS:-}"
+    python3 scripts/preflight.py --config "$config" --rank "$rank" "${pf_args[@]}" || rc=$?
+    if (( rc >= 2 )); then echo "rank $rank: preflight failed (exit $rc)" >&2; exit 2; fi
+fi
 mkdir -p "$PREPARED_DIR" "$STATE_DIR/sessions"
 exec "${args[@]}"

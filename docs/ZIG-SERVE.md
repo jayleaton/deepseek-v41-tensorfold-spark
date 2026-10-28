@@ -331,3 +331,9 @@ drop `KV_SPLIT` and `KV_SPLIT_COMPACT` and set `POOL_TOKENS=1400000`.
 `PREFILL_PIECES=1`, replay mode and the multi-segment AOT programs `aot-needs` lists under them.
 Do not equate the serving profile with enabling every experimental knob: the engine has more default-off paths
 than the profile uses.
+
+## Optional preflight
+
+`PREFLIGHT=1` runs `scripts/preflight.py` before starting a rank. Exit 1 warnings remain visible; exit 2 failures
+stop startup. Native health shapes or graph-floor fields that are absent are explicitly unmeasured. This helper
+does not certify the checkpoint or justify growing its pool.

@@ -114,3 +114,5 @@ is credited in [CREDITS](docs/CREDITS.md).
 This project's code, patches, scripts, benchmarks and docs: **Apache License 2.0** ([`LICENSE`](LICENSE),
 [`NOTICE`](NOTICE)). TensorFold, the added files, the adapted kernels, the base image and the model weights each keep
 their own terms: [`docs/LICENSING.md`](docs/LICENSING.md).
+
+HTTP tooling: [bench/speed.py](bench/speed.py) and [scripts/preflight.py](scripts/preflight.py); see [BENCHMARKS](docs/BENCHMARKS.md).

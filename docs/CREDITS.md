@@ -46,3 +46,6 @@
   [Weschera/spark-bench](https://github.com/Weschera/spark-bench): the tool-calling benchmarks.
 - [MMLU](https://github.com/hendrycks/test) (Hendrycks et al.): the 200 questions in `bench/data/`.
 - NVIDIA: the DGX Spark and the PyTorch container.
+
+- MiaAI-Lab’s Flash-1017 recipe inspired #61 benchmark suites and local-disk/memory preflight. Credit Coinupbtc
+  for prompt interleave, Eduardo Florencio / eduffd for Anthropic checks, and @jayleaton for the implementation.

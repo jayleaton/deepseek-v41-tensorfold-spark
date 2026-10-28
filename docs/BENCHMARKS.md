@@ -28,3 +28,13 @@ see the README).
 The kit's cells come from the GLM recipe's HTTP clients against the kit's server: `bench/glmbench.py` (suites tf,
 tweet, kit, edit), `bench/multiturn.py concurrent --streams 1,2,4`, `bench/quality.py` (MMLU-200) and a long-prefill
 client (an exact token-id prompt of a repeated filler document, 8K-256K). Raw files: `results/kit-baseline/`.
+
+## Speed suites and preflight (#61)
+
+`python3 bench/speed.py --help` exposes prefill, decode, multi, needle, interleave, exact, reuse and Anthropic suites,
+plus saved-run comparison. Multi reports a common wall-window aggregate and first-token spread. Server-derived
+error text is credential-masked before stdout and JSON output. Unknown native health fields remain unmeasured.
+
+`python3 scripts/preflight.py --config config/prod-zig.env --rank 0` checks local Engram/memory inputs.
+Set `PREFLIGHT=1` for the optional launcher hook: warnings continue, failures stop the start. The helper does not
+certify the checkpoint or justify a pool increase; native HTTP/SSE qualification remains required.
