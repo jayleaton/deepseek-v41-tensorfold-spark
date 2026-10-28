@@ -11,7 +11,6 @@ import math
 import os
 from pathlib import Path
 import re
-import shlex
 import subprocess
 import sys
 import time
@@ -20,6 +19,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
 from safe_exec import TERM_GRACE, run as supervised_run  # noqa: E402
+from safe_quote import join_checked, quote_checked  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -109,7 +109,7 @@ class Lifecycle:
                 # synchronization or clock adjustment assumption is required.
                 probe_started = time.monotonic()
                 probe_argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker,
-                              shlex.join(['python3', '-c', 'import time; print(time.monotonic())'])]
+                              join_checked(['python3', '-c', 'import time; print(time.monotonic())'], env=self.env)]
                 try:
                     probe = self.runner(probe_argv, cwd=self.root, env=self.env,
                                         capture_output=True, text=True, timeout=limit)
@@ -130,7 +130,7 @@ class Lifecycle:
                         '--command', *argv]
                 limit += 2 * TERM_GRACE
                 remote_until = time.monotonic() + limit
-            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker, shlex.join(argv)]
+            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker, join_checked(argv, env=self.env)]
         try:
             result = self.runner(argv, cwd=self.root, env=self.env, capture_output=True,
                                  text=True, timeout=limit)
@@ -150,7 +150,7 @@ class Lifecycle:
                 f'CONTAINER_PREFIX={self.prefix}', 'bash', 'scripts/run-zig.sh', str(rank), mode]
         if rank == 1:
             argv[1] = f"CONFIG={self.env['WORKER_CONFIG']}"
-            argv = ['bash', '-c', f"cd {shlex.quote(self.env['WORKER_REPO'])} && {shlex.join(argv)}"]
+            argv = ['bash', '-c', f"cd {quote_checked(self.env['WORKER_REPO'], env=self.env)} && {join_checked(argv, env=self.env)}"]
         return self.command(rank, argv)
 
     def stop_marker(self):

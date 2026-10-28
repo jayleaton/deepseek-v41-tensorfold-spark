@@ -15,7 +15,7 @@ import sys
 import threading
 import time
 
-from redact import known_secrets, redact_argv, secret_variants
+from redact import check_argv as _check_argv, known_secrets
 from safe_output import _cli_secrets, _known, _Stream, cli
 
 TERM_GRACE = 1.0
@@ -140,12 +140,6 @@ def _filter(mode, secrets, owner):
     stream.write(decoder.decode(b'', final=True))
     stream.finish()
     return int(isinstance(stream, _Control) and stream.failed)
-
-
-def _check_argv(argv, secrets):
-    variants = secret_variants(secrets)
-    if redact_argv(argv, secrets) != argv or any(value in arg for value in variants for arg in argv):
-        raise ValueError('credential value refused in command arguments')
 
 
 def _joined_group():
@@ -324,6 +318,10 @@ def main():
         if argv:
             raise ValueError('unexpected filter arguments')
         return _filter(control, _cli_secrets([]), owner)
+    if argv and argv[0] == '--quote-argv':
+        from safe_quote import join_checked
+        sys.stdout.write(join_checked(argv[1:]) + '\n')
+        return 0
     if argv and argv[0] == '--check-argv':
         if len(argv) == 1:
             raise ValueError('missing argv to check')

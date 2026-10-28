@@ -15,7 +15,7 @@ context="$scratch/context"
 safe_command mkdir -p "$context/docker/zig/source"
 safe_command cp docker/zig/Dockerfile docker/zig/fetch-source.sh "$context/docker/zig/"
 safe_command mkdir -p "$context/scripts"
-safe_command cp scripts/safe_exec.py scripts/safe_output.py scripts/redact.py scripts/safe_shell.sh scripts/watchdog_io.py "$context/scripts/"
+safe_command cp scripts/safe_exec.py scripts/safe_quote.py scripts/safe_output.py scripts/redact.py scripts/safe_shell.sh scripts/watchdog_io.py "$context/scripts/"
 safe_command touch "$context/docker/zig/source/.keep"
 if [[ -n "${TENSORFOLD_SOURCE:-}" ]]; then
     if [[ -d "$TENSORFOLD_SOURCE" ]]; then

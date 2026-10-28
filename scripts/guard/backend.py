@@ -5,7 +5,6 @@ import http.client
 import json
 import os
 import re
-import shlex
 import stat
 import time
 from pathlib import Path
@@ -13,6 +12,7 @@ from urllib.parse import urlsplit
 
 from common import RANKS, container_names, inference_environment
 from safe_exec import run as supervised_run
+from safe_quote import join_checked
 
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time
@@ -82,7 +82,7 @@ class Backend:
                 "-o",
                 "ConnectTimeout=3",
                 self.config["worker_ssh"],
-                shlex.join(args),
+                join_checked(args),
             ]
         )
         result = supervised_run(command, capture_output=True, text=True, timeout=timeout, check=True)

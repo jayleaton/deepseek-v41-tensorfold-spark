@@ -68,9 +68,7 @@ else
     args+=(tf-dsv41 follow /model /assets)
 fi
 if [[ "$mode" == --dry-run ]]; then
-    safe_check_argv "${args[@]}" || exit $?
-    printf '%q ' "${args[@]}" | safe_filter
-    printf '\n'
+    safe_quote_argv "${args[@]}" || exit $?
     exit
 fi
 image_rev=$(safe_capture revision docker image inspect -f '{{index .Config.Labels "org.tensorfold.revision"}}' "$IMAGE")

@@ -1,5 +1,6 @@
 """This gate is a guard against accidental bypass in our own code. It is not a sandbox against deliberately obfuscated code."""
 import ast
+import json
 from pathlib import Path
 import re
 import shlex
@@ -23,7 +24,8 @@ SHELLS = tuple(sorted(p.relative_to(ROOT).as_posix()
 BUILTINS = {'set', 'unset', 'export', 'readonly', 'local', 'declare',
             'return', 'exit', 'printf', 'echo', 'read', 'cd', 'pwd', 'shift', ':',
             'umask', 'compgen', 'wait', 'test', 'true', 'false', 'break', 'continue'}
-ADAPTERS = {'safe_command', 'safe_capture', 'safe_filter', 'safe_shell', 'safe_main', 'safe_check_argv'}
+ADAPTERS = {'safe_command', 'safe_capture', 'safe_filter', 'safe_shell', 'safe_main', 'safe_check_argv',
+            'safe_quote_argv'}
 # These are executable, trusted operator configuration, not arbitrary source
 # targets. Library paths are separately pinned to the audited source tree.
 SOURCES = {
@@ -44,14 +46,14 @@ FORWARDING = {
 }
 
 
-def python_bypasses(source, reviewed_dispatch=False):
+def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False):
     """Conservative, scope-insensitive aliases reach a fixpoint; overwrites never erase a possible spawn."""
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return [(0, 'unparsed Python payload')]
     aliases = {name: {name} for name in ('os', 'posix', 'subprocess', 'asyncio', 'pty', 'builtins',
-                                        'multiprocessing', 'concurrent')}
+                                        'multiprocessing', 'concurrent', 'shlex')}
     aliases.update({name: {name} for name in ('getattr', 'eval', 'exec', 'compile', '__import__')})
     slots = {}
     assignments = []
@@ -119,6 +121,51 @@ def python_bypasses(source, reviewed_dispatch=False):
     else:
         return [(0, 'alias dataflow did not converge')]
 
+    def interpreter_payload_bypasses(node):
+        if not resolve(node.func) & {'safe_exec.run', 'scripts.safe_exec.run'}:
+            return []
+        argv = node.args[0] if node.args else next(
+            (keyword.value for keyword in node.keywords if keyword.arg == 'argv'), None)
+        # Only explicit literal argv trampolines are inspected here. Runtime
+        # argv validation belongs to safe_exec; this is not a general call graph.
+        if not isinstance(argv, (ast.List, ast.Tuple)) or not argv.elts:
+            return []
+        values = [value.value if isinstance(value, ast.Constant) else None for value in argv.elts]
+        executable = values[0].rsplit('/', 1)[-1] if isinstance(values[0], str) else None
+        is_python = bool(executable and re.fullmatch(r'python(?:[23](?:\.\d+)*)?', executable))
+        if not is_python and executable not in {'bash', 'sh', 'dash', 'zsh', 'ksh', 'ash'}:
+            return []
+        flags = [index for index, value in enumerate(values) if value == '-c'
+                 or (not is_python and isinstance(value, str) and value.startswith('-')
+                     and not value.startswith('--') and 'c' in value[1:])]
+        if not flags:
+            return []
+        index = flags[0] + 1
+        payload = values[index] if index < len(values) else None
+        if not isinstance(payload, str):
+            return [(node.lineno, 'dynamic interpreter adapter payload')]
+        if is_python:
+            nested = python_bypasses(payload, quote_only=quote_only)
+        else:
+            nested = shell_quote_bypasses(payload.encode()) if quote_only else bypasses(payload.encode())
+        return [(node.lineno, f'interpreter adapter payload: {reason}') for _, reason in nested]
+
+    if quote_only:
+        # Share the process gate's alias resolver so renaming the module or
+        # assigning a callable cannot silently introduce a second quote boundary.
+        quote_names = {'shlex.quote', 'shlex.join'}
+        violations = [(node.lineno, 'unchecked quoting API import') for node in ast.walk(tree)
+                      if isinstance(node, ast.ImportFrom) and node.module == 'shlex'
+                      and any(alias.name in {'*', 'quote', 'join'} for alias in node.names)]
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                violations.extend(interpreter_payload_bypasses(node))
+            if isinstance(node, ast.Call) and resolve(node.func) & quote_names:
+                violations.append((node.lineno, 'unchecked shell quoting'))
+            elif isinstance(node, (ast.Name, ast.Attribute, ast.Call)) and resolve(node) & quote_names:
+                violations.append((node.lineno, 'unchecked quoting callable reference'))
+        return violations
+
     def forbidden(name):
         module, _, method = name.rpartition('.')
         if module in {'os', 'posix'}:
@@ -136,9 +183,6 @@ def python_bypasses(source, reviewed_dispatch=False):
             return method == 'ProcessPoolExecutor'
         return name in {'<dynamic callable>', 'eval', 'exec', 'compile', '__import__',
                         'builtins.eval', 'builtins.exec', 'builtins.compile', 'builtins.__import__'}
-
-    def literal(value):
-        return value.value if isinstance(value, ast.Constant) else None
 
     reviewed_shape = ast.dump(ast.parse('getattr(ops, args.operation)()', mode='eval').body,
                               include_attributes=False)
@@ -161,29 +205,7 @@ def python_bypasses(source, reviewed_dispatch=False):
         # exception is the exact call, never the file or every getattr invocation.
         reviewed = reviewed_dispatch and len(reviewed_calls) == 1 and node is reviewed_calls[0]
         targets = resolve(node.func)
-        if targets & {'safe_exec.run', 'scripts.safe_exec.run'}:
-            argv = node.args[0] if node.args else next(
-                (keyword.value for keyword in node.keywords if keyword.arg == 'argv'), None)
-            # Only explicit literal argv trampolines are inspected here. Runtime
-            # argv validation belongs to safe_exec; this is not a general call graph.
-            if isinstance(argv, (ast.List, ast.Tuple)) and argv.elts:
-                executable = literal(argv.elts[0])
-                executable = executable.rsplit('/', 1)[-1] if isinstance(executable, str) else None
-                is_python = bool(executable and re.fullmatch(r'python(?:[23](?:\.\d+)*)?', executable))
-                if is_python or executable in {'bash', 'sh', 'dash', 'zsh', 'ksh', 'ash'}:
-                    values = [literal(value) for value in argv.elts]
-                    flags = [index for index, value in enumerate(values) if value == '-c'
-                             or (not is_python and isinstance(value, str) and value.startswith('-')
-                                 and not value.startswith('--') and 'c' in value[1:])]
-                    if flags:
-                        index = flags[0] + 1
-                        payload = literal(argv.elts[index]) if index < len(argv.elts) else None
-                        if not isinstance(payload, str):
-                            violations.append((node.lineno, 'dynamic interpreter adapter payload'))
-                        else:
-                            nested = python_bypasses(payload) if is_python else bypasses(payload.encode())
-                            violations.extend((node.lineno, f'interpreter adapter payload: {reason}')
-                                              for _, reason in nested)
+        violations.extend(interpreter_payload_bypasses(node))
         if any(forbidden(target) for target in targets) and not reviewed:
             violations.append((node.lineno, ast.unparse(node.func)))
         elif isinstance(node.func, (ast.Call, ast.Subscript)) and not targets and not reviewed:
@@ -192,7 +214,7 @@ def python_bypasses(source, reviewed_dispatch=False):
 
 
 def shell_literal(node):
-    if node.type not in {'word', 'string', 'raw_string'}:
+    if node.type not in {'word', 'string', 'raw_string', 'concatenation', 'command_name'}:
         return None
     if any(child.type in {'expansion', 'simple_expansion', 'command_substitution', 'arithmetic_expansion'}
            for child in nodes(node)):
@@ -208,6 +230,236 @@ def nodes(root):
     yield root
     for child in root.children:
         yield from nodes(child)
+
+
+def shell_quote_bypasses(source):
+    tree = Parser(Language(tree_sitter_bash.language())).parse(source)
+    if tree.root_node.has_error:
+        return [(0, 'unparsed shell quoting payload')]
+    violations = []
+    for node in nodes(tree.root_node):
+        if node.type != 'command':
+            continue
+        command = node.child_by_field_name('name')
+        if command is None:
+            continue
+        words = [shell_literal(command), *(shell_literal(arg) for arg in
+                                          node.children_by_field_name('argument'))]
+        line = node.start_point.row + 1
+        # builtin/command and checked adapters do not make printf's quoting safe.
+        offset = {'builtin': 1, 'command': 1, 'safe_command': 1,
+                  'safe_capture': 2, 'watch_run': 1, 'watch_capture': 2}.get(words[0], 0)
+        argv = words[offset:]
+        if not argv or argv[0] is None:
+            continue
+        executable = argv[0].rsplit('/', 1)[-1]
+        if executable == 'printf':
+            at = 3 if len(argv) > 1 and argv[1] == '-v' else 1
+            if len(argv) > at and argv[at] == '--':
+                at += 1
+            fmt = argv[at] if len(argv) > at else None
+            if fmt is not None and any(token != '%%' for token in
+                                      re.findall(r'%%|%[-+ #0]*\d*(?:\.\d+)?q', fmt)):
+                violations.append((line, 'unchecked printf shell quoting'))
+        if executable == 'trap' and len(argv) > 1 and argv[1] not in {None, '-'}:
+            violations.extend((line, reason) for _, reason in shell_quote_bypasses(argv[1].encode()))
+        is_python = bool(re.fullmatch(r'python(?:[23](?:\.\d+)*)?', executable))
+        if is_python or executable in {'bash', 'sh', 'dash', 'zsh', 'ksh', 'ash'}:
+            for index, word in enumerate(argv[1:], 1):
+                if word == '-c' or (not is_python and word and word.startswith('-')
+                                    and not word.startswith('--') and 'c' in word[1:]):
+                    payload = argv[index + 1] if len(argv) > index + 1 else None
+                    if payload is not None:
+                        nested = (python_bypasses(payload, quote_only=True) if is_python
+                                  else shell_quote_bypasses(payload.encode()))
+                        violations.extend((line, reason) for _, reason in nested)
+                    break
+    return violations
+
+
+def docker_shell_sources(source):
+    """Audit shell RUN instructions and executable COPY heredocs, not Docker directives."""
+    lines = iter(source.splitlines())
+    for line in lines:
+        while line.rstrip().endswith('\\'):
+            line = line.rstrip()[:-1] + ' ' + next(lines, '')
+        heredoc = re.search(r'<<-?[\'"]?(\w+)[\'"]?(?=\s|$)', line)
+        if heredoc:
+            delimiter = heredoc.group(1)
+            body = []
+            for content in lines:
+                if content.strip() == delimiter:
+                    break
+                body.append(content)
+            if line.lstrip().upper().startswith(('RUN ', 'COPY ')):
+                yield '\n'.join(body).encode()
+        elif line.lstrip().upper().startswith('RUN '):
+            payload = line.lstrip()[4:].strip()
+            # JSON-form RUN supplies argv directly; only interpreter code is shell.
+            if payload.startswith('['):
+                argv = json.loads(payload)
+                if len(argv) >= 3 and argv[1] == '-c':
+                    yield argv[2].encode()
+            else:
+                yield payload.encode()
+
+
+def quote_boundary_findings(root):
+    violations = []
+    for folder in ('scripts', 'bench', 'tools', 'docker'):
+        for path in sorted((root / folder).rglob('*')):
+            if not path.is_file():
+                continue
+            name = path.relative_to(root).as_posix()
+            if name == 'scripts/safe_quote.py':
+                continue  # The sole reviewed raw quote implementation.
+            if path.suffix == '.py':
+                findings = python_bypasses(path.read_text(), quote_only=True)
+            elif path.suffix == '.sh':
+                findings = shell_quote_bypasses(path.read_bytes())
+            elif path.name == 'Dockerfile' or path.name.startswith('Dockerfile.'):
+                findings = [(line, reason) for source in docker_shell_sources(path.read_text())
+                            for line, reason in shell_quote_bypasses(source)]
+            elif not path.suffix:
+                source = path.read_bytes()
+                shebang = source.split(b'\n', 1)[0]
+                if shebang.startswith(b'#!') and b'python' in shebang:
+                    findings = python_bypasses(source.decode(), quote_only=True)
+                elif shebang.startswith(b'#!') and re.search(rb'\b(?:ba|da|z|k|a)?sh\b', shebang):
+                    findings = shell_quote_bypasses(source)
+                else:
+                    continue
+            else:
+                continue
+            violations.extend((name, line, reason) for line, reason in findings)
+    return violations
+
+
+def test_only_checked_helper_implements_shell_quoting():
+    assert not quote_boundary_findings(ROOT)
+
+
+@pytest.mark.parametrize('source', [
+    'import shlex; shlex.quote(value)',
+    'import shlex; shlex.join(argv)',
+    'import shlex as shell; shell.quote(value)',
+    'from shlex import quote as encode; encode(value)',
+    'from shlex import join as encode; encode(argv)',
+    'import shlex; module = shlex; encode = module.quote; again = encode; again(value)',
+    'import shlex; encode = later; later = shlex.join; encode(argv)',
+    'import shlex; encode: object = shlex.quote; encode(value)',
+    'import shlex; (encode := shlex.join)(argv)',
+    'import shlex; encode, unused = shlex.quote, None; encode(value)',
+    'import shlex; getattr(shlex, "quote")(value)',
+    'import shlex; list(map(shlex.quote, argv))',
+    'import shlex; self.encode = shlex.join; self.encode(argv)',
+    'import shlex; callbacks["encode"] = shlex.quote; callbacks["encode"](value)',
+    'from shlex import *; quote(value)',
+])
+def test_quote_audit_rejects_direct_import_and_assignment_aliases(source):
+    assert python_bypasses(source, quote_only=True), source
+
+
+@pytest.mark.parametrize('source', [
+    'import shlex; shlex.split(value)',
+    'from safe_quote import quote_checked as encode; encode(value)',
+    'from safe_quote import join_checked as encode; encode(argv)',
+    'import scripts.safe_quote as quoting; quoting.join_checked(argv, env=env)',
+    'message = "shlex.quote(value)"',
+])
+def test_quote_audit_accepts_checked_helpers_and_data(source):
+    assert not python_bypasses(source, quote_only=True)
+
+
+@pytest.mark.parametrize('imports,call', [
+    ('from safe_exec import run', 'run({argv})'),
+    ('from safe_exec import run as launch', 'launch(argv={argv})'),
+    ('import scripts.safe_exec as adapter\nlaunch = adapter.run', 'launch({argv})'),
+])
+@pytest.mark.parametrize('interpreter,flag,payload,rejected', [
+    ('python3', '-c', 'import shlex; shlex.quote(value)', True),
+    ('/usr/bin/python3.12', '-c', 'import shlex as s; encode = s.join; encode(argv)', True),
+    ('bash', '-lc', 'printf "%q" "$value"', True),
+    ('python3', '-c', 'from safe_quote import join_checked; join_checked(argv)', False),
+    ('python3', '-c', 'import shlex; shlex.split(value)', False),
+    ('dash', '-c', 'safe_quote_argv "$value"', False),
+])
+def test_quote_audit_inspects_literal_checked_interpreter_payloads(imports, call, interpreter,
+                                                                  flag, payload, rejected):
+    source = imports + '\n' + call.format(argv=repr([interpreter, flag, payload]))
+    # These payloads use the checked spawn API and pass the process-only gate;
+    # the quoting gate must independently inspect code before it is encoded.
+    assert not python_bypasses(source)
+    findings = python_bypasses(source, quote_only=True)
+    assert bool(findings) == rejected, source
+    if rejected:
+        assert any('interpreter adapter payload:' in reason for _, reason in findings)
+
+
+@pytest.mark.parametrize('source', [
+    b'printf %q "$value"',
+    b'printf \'%q \' "${args[@]}"',
+    b'printf "%q" "$value"',
+    b'"printf" \'%q\' "$value"',
+    b'printf \'%\'q "$value"',
+    b'builtin printf -v result \'%q\' "$value"',
+    b'command printf -- \'%q\' "$value"',
+    b'safe_command /usr/bin/printf \'%q\' "$value"',
+    b'echo "$(printf \'%q\' "$value")"',
+    b'trap \'printf "%q" "$value"\' EXIT',
+    b'safe_command bash -c \'printf "%q" "$value"\'',
+    b'safe_command python3 -c \'import shlex as s; s.quote(value)\'',
+])
+def test_quote_audit_rejects_quoted_printf_and_nested_payloads(source):
+    assert shell_quote_bypasses(source), source
+
+
+@pytest.mark.parametrize('source', [
+    b'printf "%s" "%q"',
+    b'printf "%%q"',
+    b'echo "printf %q is data"',
+    b'# printf "%q" "$value"\nsafe_quote_argv "${args[@]}"',
+])
+def test_quote_audit_accepts_nonquoting_formats_and_checked_adapter(source):
+    assert not shell_quote_bypasses(source)
+
+
+@pytest.mark.parametrize('folder', ['scripts', 'bench', 'tools', 'docker'])
+@pytest.mark.parametrize('suffix,source', [
+    ('.py', 'import shlex as s; encode = s.join; encode(argv)'),
+    ('.sh', 'printf "%q" "$value"'),
+    ('', '#!/usr/bin/env bash\nprintf "%q" "$value"'),
+])
+def test_quote_gate_discovers_new_tooling_bypasses(tmp_path, folder, suffix, source):
+    path = tmp_path / folder / ('new-helper' + suffix)
+    path.parent.mkdir(parents=True)
+    path.write_text(source)
+    findings = quote_boundary_findings(tmp_path)
+    assert findings and all(name == path.relative_to(tmp_path).as_posix() for name, _, _ in findings)
+
+
+@pytest.mark.parametrize('source', [
+    'RUN printf "%q" "$value"\n',
+    'RUN set -eu; ' + '\\' + '\n    printf "%q" "$value"\n',
+    'COPY <<\'EOF\' /usr/bin/helper\n#!/bin/bash\nprintf "%q" "$value"\nEOF\n',
+    'RUN ["bash", "-c", "printf %q value"]\n',
+])
+def test_quote_gate_discovers_docker_shell_bypasses(tmp_path, source):
+    path = tmp_path / 'docker' / 'Dockerfile'
+    path.parent.mkdir()
+    path.write_text(source)
+    assert quote_boundary_findings(tmp_path)
+
+
+def test_quote_helper_exception_is_exact(tmp_path):
+    path = tmp_path / 'scripts' / 'safe_quote.py'
+    path.parent.mkdir()
+    path.write_text('import shlex; shlex.quote(value)')
+    assert not quote_boundary_findings(tmp_path)
+    other = tmp_path / 'tools' / 'safe_quote.py'
+    other.parent.mkdir()
+    other.write_text(path.read_text())
+    assert quote_boundary_findings(tmp_path)
 
 
 def enclosing_function(node):
@@ -463,6 +715,7 @@ def test_versioned_python_and_shell_interpreter_sources(interpreter):
 @pytest.mark.parametrize('source', [
     b'safe_command docker inspect x; printf "%s" "docker is data"',
     b'safe_check_argv "${args[@]}"',
+    b'safe_quote_argv "${args[@]}"',
     b'safe_command python3 -c \'import os; print(os.environ.get("MODE"))\'',
     b'trap \'safe_command python3 -c "import shutil,sys; shutil.rmtree(sys.argv[1])" "$scratch"\' EXIT',
     b'cat_data() { read -r value; printf "%s" "$value"; }; cat_data <<\'EOF\'\ndocker is data\nEOF\n',

@@ -38,7 +38,7 @@ def test_build_resolves_pin_and_cleans_private_context(tmp_path, source, kind, d
     source_head = git(repo, 'rev-parse', 'HEAD')
     recipe = tmp_path / 'recipe'
     for name in ('scripts/build-native.sh', 'scripts/safe_exec.py', 'scripts/safe_output.py',
-                 'scripts/redact.py', 'scripts/safe_shell.sh', 'scripts/watchdog_io.py', 'docker/zig/Dockerfile', 'docker/zig/fetch-source.sh'):
+                 'scripts/redact.py', 'scripts/safe_quote.py', 'scripts/safe_shell.sh', 'scripts/watchdog_io.py', 'docker/zig/Dockerfile', 'docker/zig/fetch-source.sh'):
         target = recipe / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
@@ -74,7 +74,7 @@ sys.exit(int(os.environ['DOCKER_EXIT']))
     assert sorted(p.relative_to(capture).as_posix() for p in capture.rglob('*') if p.is_file()) == [
         'call.json', 'docker/zig/Dockerfile', 'docker/zig/fetch-source.sh',
         'docker/zig/source/.keep', 'docker/zig/source/engine.bundle',
-        'scripts/redact.py', 'scripts/safe_exec.py', 'scripts/safe_output.py',
+        'scripts/redact.py', 'scripts/safe_exec.py', 'scripts/safe_output.py', 'scripts/safe_quote.py',
         'scripts/safe_shell.sh', 'scripts/watchdog_io.py']
     output = tmp_path / 'resolved'
     subprocess.run(['bash', str(capture / 'docker/zig/fetch-source.sh'), pin, str(output),

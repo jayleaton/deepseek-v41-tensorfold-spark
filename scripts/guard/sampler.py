@@ -12,6 +12,7 @@ import sys
 
 from common import atomic, load_config
 from safe_exec import run as supervised_run
+from safe_quote import quote_checked
 from safe_output import cli
 
 NODE_SAMPLE = r"""
@@ -46,8 +47,6 @@ def local_sample():
 
 
 def worker_sample(config):
-    import shlex
-
     result = supervised_run(
         [
             "ssh",
@@ -57,7 +56,7 @@ def worker_sample(config):
             "-o",
             "ConnectTimeout=2",
             config["worker_ssh"],
-            "python3 -c " + shlex.quote(NODE_SAMPLE),
+            "python3 -c " + quote_checked(NODE_SAMPLE),
         ],
         capture_output=True,
         text=True,

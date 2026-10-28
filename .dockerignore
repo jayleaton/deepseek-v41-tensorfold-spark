@@ -7,6 +7,7 @@
 !docker/zig/source/.keep
 !scripts/
 !scripts/safe_exec.py
+!scripts/safe_quote.py
 !scripts/safe_output.py
 !scripts/redact.py
 !scripts/safe_shell.sh

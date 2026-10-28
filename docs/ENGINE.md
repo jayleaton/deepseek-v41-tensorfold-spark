@@ -100,3 +100,8 @@ The syntax/AST gate guards against accidental bypasses in the repository's own
 code. It is not a sandbox against deliberately obfuscated code or trusted operator
 configuration. Executable payloads must be statically auditable; unresolvable
 dispatch is rejected outside the explicitly reviewed adapter.
+
+All host tooling shell quoting goes through `scripts/safe_quote.py`. It checks raw
+values with the shared credential rule before encoding shell syntax, including
+nested SSH commands and the worker supervisor path. The checked spawn boundary
+remains in place. The source gate rejects direct quoting outside this adapter.

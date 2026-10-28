@@ -18,6 +18,8 @@ IFS=' ' read -r -a safe_owner_fields <<< "${safe_owner_stat##*) }"
 export TF_SAFE_EXEC_OWNER_PID=$$
 export TF_SAFE_EXEC_OWNER_START=${safe_owner_fields[19]}
 
+safe_quote_argv() { python3 "$safe_exec" --quote-argv "$@"; }
+
 safe_check_argv() { python3 "$safe_exec" --check-argv "$@"; }
 
 safe_command() { python3 "$safe_exec" --command "$@"; }

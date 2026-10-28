@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import sys
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
@@ -219,6 +218,13 @@ def redact_argv(argv: Iterable[str], known: Iterable[str] = ()) -> list[str]:
     return out
 
 
+def check_argv(argv, secrets):
+    variants = secret_variants(secrets)
+    if redact_argv(argv, secrets) != argv or any(value in arg for value in variants for arg in argv):
+        raise ValueError('credential value refused in command arguments')
+
+
+
 def redact_env(env: Mapping[str, str], known: Iterable[str] = ()) -> dict[str, str]:
     """An environment snapshot with credential-named variables masked and secrets inside other values masked."""
 
@@ -303,7 +309,8 @@ def main(argv: list[str] | None = None) -> int:
     known = known_secrets()
     if args[:1] == ["argv"]:
         rest = args[2:] if args[1:2] == ["--"] else args[1:]
-        print(shlex.join(redact_argv(rest, known)))
+        from safe_quote import join_checked
+        print(join_checked(redact_argv(rest, known)))
         return 0
     if args == ["text"]:
         _filter(sys.stdin, sys.stdout, known)
