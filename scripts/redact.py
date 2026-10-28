@@ -13,16 +13,18 @@ token, secret, password, authorization, bearer, auth, credential, cookie (--api-
 {"hf_token": X}); names ending in file / path / dir point at a secret and stay readable. Also masked anywhere in text:
 Authorization / x-api-key / Cookie header values, Bearer tokens, URL passwords, PEM private keys, the known token
 shapes (sk-, hf_, gh*_, github_pat_, xox*-, AKIA), and the literal value of every credential-named variable in the
-environment (8+ characters), so a tool that echoes $API_KEY in its own words is still caught.
+environment, including short explicit keys, so a tool that echoes $API_KEY in its own words is still caught.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
 import sys
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
 from pathlib import Path
 
 MASK = "<redacted>"
@@ -45,7 +47,7 @@ SECRET_WORDS = frozenset(
 POINTER_WORDS = frozenset({"file", "path", "dir"})
 # alone, too common in prose and data to mask in text (a tokenizer's "token")
 GENERIC_WORDS = frozenset({"key", "token", "auth", "cookie"})
-MIN_KNOWN = 8  # shorter env values are not masked by literal match (a "1" would eat every digit)
+MIN_KNOWN = 8  # Short numeric token-control flags need an explicit credential name to be treated as secrets.
 
 # Credential shapes, shared with scripts/check_secrets.py: (name, pattern).
 TOKEN_PATTERNS = (
@@ -97,11 +99,14 @@ def secret_name(name: str) -> bool:
 
 
 def known_secrets(environ: Mapping[str, str] | None = None) -> list[str]:
-    """The values of credential-named environment variables, longest first, long enough to match literally."""
+    """Configured credentials, including short keys; numeric token-control flags stay readable."""
 
     env = os.environ if environ is None else environ
     return sorted(
-        {v for k, v in env.items() if secret_name(k) and len(v) >= MIN_KNOWN},
+        {v for k, v in env.items() if v and secret_name(k) and (
+            len(v) >= MIN_KNOWN or not v.isdecimal()
+            or re.search(r"(?:^|_)(?:API_KEY|PASSWORD|PASSWD|SECRET|CREDENTIALS?|AUTHORIZATION|BEARER)$", k.upper())
+        )},
         key=len,
         reverse=True,
     )
@@ -131,10 +136,50 @@ def mask_values(text: str, values: Iterable[str]) -> str:
     return text
 
 
+@lru_cache(maxsize=256)
+def _secret_variants(value: str) -> tuple[str, ...]:
+    """Known values as tools render them, including copied trailing whitespace and byte diagnostics."""
+    variants = {v for v in (value, value.strip()) if v}
+    # HTTP/encoding errors can show a bytes repr rather than the original Unicode.
+    for v in tuple(variants):
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                variants.add(repr(v.encode(encoding))[2:-1])
+            except UnicodeEncodeError:
+                continue
+    # Three layers cover repr/JSON in exceptions, JSON reports and nested tool output.
+    for _ in range(3):
+        for v in tuple(variants):
+            variants.update((json.dumps(v)[1:-1], json.dumps(v, ensure_ascii=False)[1:-1],
+                             repr(v)[1:-1], ascii(v)[1:-1]))
+    return tuple(sorted(variants, key=len, reverse=True))
+
+
+def secret_variants(values: Iterable[str]) -> list[str]:
+    """Expand explicitly known credentials once for every text/CLI/report boundary."""
+    return sorted({variant for value in values if value for variant in _secret_variants(value)},
+                  key=len, reverse=True)
+
+
+def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
+    """Release complete lines, retaining suffixes that may continue a known multiline credential."""
+    multiline = [value for value in secret_variants(known) if "\n" in value]
+    # Mask complete multiline matches before splitting them into individual records.
+    pending = mask_values(pending, multiline)
+    hold = 0
+    for value in multiline:
+        for size in range(min(len(value) - 1, len(pending)), hold, -1):
+            if value.startswith(pending[-size:]):
+                hold = size
+                break
+    boundary = pending.rfind("\n", 0, len(pending) - hold) + 1
+    return pending[:boundary], pending[boundary:]
+
+
 def redact_text(text: str, known: Iterable[str] = ()) -> str:
     """``text`` with every credential this module recognises replaced by MASK."""
 
-    text = mask_values(text, known)
+    text = mask_values(text, secret_variants(known))
     text = PEM_BLOCK.sub(MASK, text)
     for _, pattern in TOKEN_PATTERNS:
         text = pattern.sub(MASK, text)
@@ -193,7 +238,7 @@ def redact(obj, known: Iterable[str] = ()):
     known = list(known)
     if isinstance(obj, Mapping):
         return {
-            k: MASK
+            redact_text(k, known) if isinstance(k, str) else k: MASK
             if isinstance(k, str)
             and _text_name(k)
             and isinstance(v, (str, int, float))
@@ -236,13 +281,23 @@ def _filter(src, dst, known: list[str]) -> None:
     """Copy src to dst line by line, masked; a PEM private key is masked from its BEGIN line to its END line."""
 
     in_key = False
-    for line in src:
+
+    def emit(line):
+        nonlocal in_key
         if in_key or PEM_BEGIN.search(line):
             in_key = "-----END" not in line
             dst.write(MASK + "\n")
         else:
             dst.write(redact_text(line, known))
         dst.flush()
+
+    pending = ""
+    for line in src:
+        ready, pending = split_safe_records(pending + line, known)
+        for record in ready.split("\n")[:-1]:
+            emit(record + "\n")
+    if pending:
+        emit(pending)
 
 
 def main(argv: list[str] | None = None) -> int:

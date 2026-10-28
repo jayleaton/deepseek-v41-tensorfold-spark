@@ -86,28 +86,36 @@ import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from redact import known_secrets, mask_values, redact, redact_argv, redact_text
+from redact import (
+    known_secrets,
+    redact,
+    redact_argv,
+    redact_text,
+)
 
 
 def output_secrets(values):
-    """Include JSON and repr escapes used by HTTP error bodies and exception details."""
-    variants = set(v for v in values if v)
-    for _ in range(3):
-        variants.update({json.dumps(v)[1:-1] for v in list(variants)})
-        variants.update({repr(v)[1:-1] for v in list(variants)})
-    return sorted(variants, key=len, reverse=True)
+    """Collect raw configured keys; the shared redactor owns their escaped renderings."""
+    return sorted({v for v in values if v}, key=len, reverse=True)
+
+
+def cli_secrets(args):
+    """Collect keys before argparse can fail, including accepted flag abbreviations."""
+    values = known_secrets() + [os.environ.get("API_KEY", "")]
+    for i, arg in enumerate(args):
+        name, eq, value = arg.partition("=")
+        if name.startswith("--") and len(name) > 2 and "--api-key".startswith(name):
+            if eq:
+                values.append(value)
+            elif i + 1 < len(args):
+                values.append(args[i + 1])
+    return output_secrets(values)
 
 
 class OutputParser(argparse.ArgumentParser):
     def parse_args(self, args=None, namespace=None):
         args = list(sys.argv[1:] if args is None else args)
-        values = known_secrets() + [os.environ.get("API_KEY", "")]
-        for i, arg in enumerate(args):
-            if arg == "--api-key" and i + 1 < len(args):
-                values.append(args[i + 1])
-            elif arg.startswith("--api-key="):
-                values.append(arg.partition("=")[2])
-        self.output_secrets = output_secrets(values)
+        self.output_secrets = cli_secrets(args)
         return super().parse_args(args, namespace)
 
     def _print_message(self, message, file=None):
@@ -390,20 +398,27 @@ class Client:
         seed: int = 1234,
         ignore_eos: bool = False,
     ):
-        u = urllib.parse.urlsplit(url.rstrip("/"))
-        if u.scheme not in ("http", "https") or not u.hostname:
-            raise SystemExit(
-                redact_text(
-                    f"--url must be http(s)://host[:port], not {url!r}",
-                    output_secrets(known_secrets() + ([api_key] if api_key else [])),
-                )
+        # Validate before any request (including snapshots and background streams).
+        # http.client's own header errors embed the complete credential in their message.
+        if any(ord(c) < 32 or ord(c) == 127 or ord(c) > 255 for c in api_key):
+            raise ValueError(
+                "--api-key must be a single HTTP header value encodable as Latin-1"
             )
+        try:
+            u = urllib.parse.urlsplit(url.rstrip("/"))
+            if u.scheme not in ("http", "https") or not u.hostname:
+                raise ValueError
+            port = u.port
+        except ValueError:
+            raise ValueError(
+                "--url must be http(s)://host[:port] with a valid port"
+            ) from None
         self.url, self.https, self.host = (
             url.rstrip("/"),
             u.scheme == "https",
             u.hostname,
         )
-        self.port = u.port or (443 if self.https else 80)
+        self.port = port or (443 if self.https else 80)
         self.prefix = u.path.rstrip("/")
         self.model, self.timeout, self.thinking, self.seed, self.ignore_eos = (
             model,
@@ -2201,6 +2216,24 @@ def settings_of(a: argparse.Namespace, run: Run, suites: list[str]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    secrets = cli_secrets(argv)
+    try:
+        return _main(argv)
+    except SystemExit as exc:
+        if exc.code is None or isinstance(exc.code, int):
+            raise
+        raise SystemExit(redact_text(str(exc.code), secrets)) from None
+    except Exception as exc:
+        # Cover parsing/conversion, setup, snapshots, reference/compare reads and writes.
+        # No traceback: exception contexts and chained errors may also carry credentials.
+        print(
+            redact_text(f"speed: {type(exc).__name__}: {exc}", secrets), file=sys.stderr
+        )
+        return 1
+
+
+def _main(argv: list[str]) -> int:
     a = build_parser().parse_args(argv)
     if a.compare:
         return compare(a.compare, a.strict, known=[a.api_key] if a.api_key else [])
@@ -2288,9 +2321,8 @@ def main(argv: list[str] | None = None) -> int:
     report(doc, run)
     if a.out:
         os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-        # Redact structured fields before encoding, then mask escaped literal values (including object keys).
+        # Sanitize fields and object keys before encoding; preserve numeric metrics.
         saved = json.dumps(redact(doc, run.secrets), indent=1)
-        saved = mask_values(saved, [json.dumps(v)[1:-1] for v in run.secrets])
         with open(a.out, "w") as f:
             f.write(saved)
         run.log(f"wrote {a.out}")
