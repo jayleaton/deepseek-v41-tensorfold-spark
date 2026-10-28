@@ -44,10 +44,12 @@
   "memory_transient_reserve_gib": 0.5,
   "prefill_admission_pause_c": 78,
   "prefill_admission_resume_c": 70,
-  "decode_admission_max_prompt_tokens": 0
+  "decode_admission_max_prompt_tokens": 0,
+  "generation_verify_cache_s": 0,
+  "small_body_release_bytes": 0
  },
  "profiles": {},
- "qualification": "unqualified; operator approval and native two-rank gates required",
+ "qualification": "unqualified; dispatch-cost follow-up requires real one-boot alternating G-off/G1v2 Spark gates",
  "allow_clock_changes": false,
  "container_prefix": "tensorfold-zig"
 }

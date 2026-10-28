@@ -37,3 +37,19 @@ its container prefix must match the launcher, and it respects both its own stop 
 CPU tests use isolated fake runtimes, HTTP servers and clocks. Actual native health/tokenize, two-node recovery,
 thermal behavior, memory floors and mixed-concurrency gates remain unrun. No guard default or performance promotion
 is implied by including the source.
+
+### Dispatch-cost options (#66)
+
+The follow-up from @jayleaton adds `generation_verify_cache_s` (0–5 seconds) and
+`small_body_release_bytes` (at most 1 MiB and the configured maximum body size).
+Both default to **0/off**. Ownership, lease, profile and readiness checks remain
+per request. The cache invalidates on native doubt, unhealthy reads, incomplete
+requests, server errors and STOP; an otherwise healthy change within the same
+container can remain undetected until its TTL expires. Early buffer release holds
+small bodies within the pending-plus-inflight bound rather than the reader-buffer
+bound. Qualify the resulting memory bound and cancellation before enabling it.
+
+CPU tests establish those contracts, not the proposed performance benefit. The
+required one-boot alternating G-off/G1v2 Spark comparison remains unrun: start spread
+must be at most 0.3 seconds, and memory minima no more than 0.25 GiB below both
+neighboring off blocks. Keep both options off until those device gates pass.
