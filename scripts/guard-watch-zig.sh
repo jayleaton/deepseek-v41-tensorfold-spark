@@ -10,10 +10,109 @@
 # A tick is bad when a rank is not running or /health fails; WATCH_FAILS bad ticks in a row heal (WATCH_HEAL=1 runs
 # WATCH_RESTART_CMD in the background) at most once every WATCH_MIN_HEAL s. Fail-fast (exit 70), the engine's own
 # "stalled" verdict and WATCH_PROBE_FAILS failed probes in a row heal on that tick, at most every WATCH_FF_MIN_HEAL s.
+# Never trace configured credentials, including when sourced by a traced caller.
+{ set +x; } 2>/dev/null
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+unset BASH_ENV ENV
+umask 077
+cd "${BASH_SOURCE[0]%/*}/.." 2>/dev/null || { printf '%s\n' "watchdog checkout unavailable" >&2; return 78 2>/dev/null || exit 78; }
 config=${CONFIG:-config/prod-zig.env}
-if [[ -f "$config" ]]; then set -a; source "$config"; set +a; fi
+# Only sanitized output may leave a subprocess. Buffer the filtered result so a
+# failing redactor cannot release even partial output; never fall back to raw text.
+watch_redact() {
+    local masked
+    masked=$(command python3 -c '
+import os,sys
+sys.path.insert(0, "scripts")
+from redact import redact_text, secret_name
+# These are explicitly configured credentials, including short values. Read them
+# only inside the filter, never via process arguments or an environment dump.
+known = [value for name,value in os.environ.items() if secret_name(name) and value]
+sys.stdout.write(redact_text(sys.stdin.read(), known))
+' 2>/dev/null) || {
+        printf '%s\n' '[watchdog redaction failed; output withheld]'
+        return 1
+    }
+    [[ -z "$masked" ]] || printf '%s\n' "$masked"
+}
+# Keep diagnostics out of machine-readable stdout (health codes, dates and JSON).
+watch_run() {
+    # Wait for the stderr filter too, so evidence is complete before a heal starts.
+    ( "$@" 2> >(watch_redact >&2); watch_command_status=$?; wait; exit "$watch_command_status" ) | watch_redact
+}
+# Raw stdout travels only through this in-memory pipe to a typed parser. Never
+# apply literal credential substitution to protocol numbers or enum values.
+watch_filter() {
+    local filtered
+    filtered=$(command python3 -c '
+import datetime,os,re,sys
+sys.path.insert(0, "scripts")
+from safe_output import clean
+from redact import secret_name
+known=[v for k,v in os.environ.items() if secret_name(k) and v]
+mode=sys.argv[1]
+raw=sys.stdin.read()
+value=raw.strip()
+if mode == "uint":
+ if re.fullmatch(r"[0-9]{1,18}", value) is None: sys.exit(1)
+ print(int(value))
+elif mode == "running":
+ if value not in ("true", "false", "absent"): sys.exit(1)
+ print(value)
+elif mode == "started":
+ if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})", value) is None: sys.exit(1)
+ print(int(datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()))
+elif mode == "stamp":
+ if re.fullmatch(r"[0-9]{8}-[0-9]{6}", value) is None: sys.exit(1)
+ print(datetime.datetime.strptime(value, "%Y%m%d-%H%M%S").strftime("%Y%m%d-%H%M%S"))
+elif mode == "http":
+ body,sep,code=raw.rstrip("\n").rpartition("\n")
+ if not sep or re.fullmatch(r"[0-9]{3}", code) is None:
+  body,code=raw,"000"
+ # Separate curl framing before sanitizing the JSON body structurally. clean()
+ # masks opaque string echoes, including multiline keys, but preserves numbers.
+ sanitized=clean(body, known)
+ print(code)
+ print(sanitized)
+elif mode == "json":
+ print(clean(raw, known))
+else: sys.exit(1)
+' "$1" 2>/dev/null) || {
+        printf '%s\n' '[watchdog control parse failed; output withheld]' >&2
+        return 1
+    }
+    printf '%s\n' "$filtered"
+}
+watch_capture() { # $1 = parser; remaining arguments = command (no raw output in argv)
+    local mode=$1
+    shift
+    ( "$@" 2> >(watch_redact >&2); watch_command_status=$?; wait; exit "$watch_command_status" ) | watch_filter "$mode"
+}
+wssh_control() {
+    local mode=$1
+    shift
+    watch_capture "$mode" ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_SSH" "$@"
+}
+# Config is trusted shell code; suppress diagnostics until its keys are known.
+if [[ -f "$config" ]]; then
+    set -a
+    source "$config" >/dev/null 2>&1
+    { set +x; } 2>/dev/null
+    unset BASH_ENV ENV
+    set +a
+fi
+# Include credential shell variables set by a sourcing caller without putting any
+# values in argv or printing an environment dump. Python sees variable names only.
+while IFS= read -r watch_key_name; do
+    export "$watch_key_name"
+done < <(compgen -v | command python3 -c '
+import sys
+sys.path.insert(0, "scripts")
+from redact import secret_name
+for name in sys.stdin:
+ name = name.strip()
+ if secret_name(name): print(name)
+' 2>/dev/null)
 CONTAINER_PREFIX="${CONTAINER_PREFIX:-tensorfold-zig}"
 NAME="$CONTAINER_PREFIX"
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "invalid CONTAINER_PREFIX" >&2; return 78 2>/dev/null || exit 78; }
@@ -32,43 +131,54 @@ WATCH_LEASE="${WATCH_LEASE:-}"; WATCH_LEASE_MIN="${WATCH_LEASE_MIN:-20}"; WATCH_
 WATCH_PROBE="${WATCH_PROBE:-1}"; WATCH_PROBE_EVERY="${WATCH_PROBE_EVERY:-180}"; WATCH_PROBE_TIMEOUT="${WATCH_PROBE_TIMEOUT:-30}"
 WATCH_PROBE_FAILS="${WATCH_PROBE_FAILS:-3}"
 
-log() { echo "[tf-zig-watch $(date -u +%H:%M:%S)] $*" >&2; }
-alert() { log "ALERT: $*"; [[ -z "$WATCH_ALERT" ]] || "$WATCH_ALERT" "$*" || true; }
-wssh() { ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_SSH" "$@"; }
-lease_fresh() { [[ -n "$WATCH_LEASE" && -f "$WATCH_LEASE" ]] && (( $(date +%s) - $(stat -c %Y "$WATCH_LEASE") < WATCH_LEASE_MIN * 60 )); }
+log() { printf '[tf-zig-watch %s] %s\n' "$(watch_capture uint date +%s)" "$*" | watch_redact >&2; }
+alert() {
+    local message
+    message=$(printf '%s\n' "$*" | watch_redact) || return 1
+    log "ALERT: $message"
+    [[ -z "$WATCH_ALERT" ]] || watch_run "$WATCH_ALERT" "$message" || true
+}
+wssh() { watch_run ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_SSH" "$@"; }
+lease_fresh() {
+    [[ -n "$WATCH_LEASE" && -f "$WATCH_LEASE" ]] || return 1
+    local now modified
+    now=$(watch_capture uint date +%s) || return 1
+    modified=$(watch_capture uint stat -c %Y "$WATCH_LEASE") || return 1
+    (( now - modified < WATCH_LEASE_MIN * 60 ))
+}
 guard_permit() { # the guard's lifecycle decision: 0 permit, 75 hold, 78 durable STOP (never heal through a STOP)
     # The native supervisor's durable operator STOP also holds this optional watchdog.
     local native_stop="${STOP_FILE:-${STATE_DIR:-}/native-ops/STOP}"
     [[ ! -e "$native_stop" ]] || return 78
     [[ -n "$GUARD_CONFIG" ]] || return 78
-    python3 scripts/guard/lifecycle.py --config "$GUARD_CONFIG" check --operation "$1" > /dev/null
+    watch_run python3 scripts/guard/lifecycle.py --config "$GUARD_CONFIG" check --operation "$1" > /dev/null
 }
 running() { # $1 = rank: true / false / absent (/ unreachable for rank 1)
     local out
-    if [[ "$1" == 0 ]]; then out=$(docker inspect -f '{{.State.Running}}' "$NAME-r0" 2>/dev/null) || { echo absent; return; }
+    if [[ "$1" == 0 ]]; then out=$(watch_capture running docker inspect -f '{{.State.Running}}' "$NAME-r0" 2>/dev/null) || { echo absent; return; }
     else
         [[ -n "$WORKER_SSH" ]] || { echo unreachable; return; }
-        out=$(wssh "docker inspect -f '{{.State.Running}}' $NAME-r1 2>/dev/null || echo absent") || { echo unreachable; return; }
+        out=$(wssh_control running "docker inspect -f '{{.State.Running}}' $NAME-r1 2>/dev/null || echo absent") || { echo unreachable; return; }
     fi
-    echo "$out"
+    printf '%s\n' "$out"
 }
 
 probe_tick() { # $1 = now, $2 = the /health body. 1: WATCH_PROBE_FAILS tiny completions in a row got nothing; else 0
     [[ "$WATCH_PROBE" == 1 ]] || return 0
     local last_f="$WATCH_STATE_DIR/probe_last" pf_f="$WATCH_STATE_DIR/probe_fails" last pf out code busy
-    last=$(cat "$last_f" 2>/dev/null || echo 0); (( $1 - last >= WATCH_PROBE_EVERY )) || return 0
-    busy=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(int(d.get("requests_running",0) >= (d.get("streams") or {}).get("max",1e9)))' "$2" 2>/dev/null || echo 0)
+    last=$(watch_capture uint cat "$last_f" 2>/dev/null || echo 0); (( $1 - last >= WATCH_PROBE_EVERY )) || return 0
+    busy=$(printf '%s' "$2" | watch_capture uint python3 -c 'import json,sys; d=json.load(sys.stdin); print(int(d.get("requests_running",0) >= (d.get("streams") or {}).get("max",1e9)))' 2>/dev/null || echo 0)
     if [[ "$busy" == 1 ]]; then log "watch: every request slot busy: probe skipped"; return 0; fi
     echo "$1" > "$last_f"
-    out=$(curl -s -m "$WATCH_PROBE_TIMEOUT" -H 'Content-Type: application/json' -H 'X-TF-Probe: watchdog' -w '\n%{http_code}' \
+    out=$(watch_capture http curl -s -m "$WATCH_PROBE_TIMEOUT" -H 'Content-Type: application/json' -H 'X-TF-Probe: watchdog' -w '\n%{http_code}' \
         -d '{"model":"'"$WATCH_MODEL"'","messages":[{"role":"user","content":"ok"}],"max_tokens":1,"temperature":0,"reasoning_effort":"none","chat_template_kwargs":{"enable_thinking":false}}' \
         "$BASE/v1/chat/completions" || true)
-    code=${out##*$'\n'}
+    code=${out%%$'\n'*}; out=${out#*$'\n'}
     if [[ "$code" == 429 && "$out" == *watchdog_deferred* ]]; then
         log "watch: guard deferred the idle-only probe (user work or admission hold)"; return 0
     fi
     if [[ "$code" == 200 && "$out" == *'"choices"'* ]]; then echo 0 > "$pf_f"; return 0; fi
-    pf=$(( $(cat "$pf_f" 2>/dev/null || echo 0) + 1 )); echo "$pf" > "$pf_f"
+    pf=$(( $(watch_capture uint cat "$pf_f" 2>/dev/null || echo 0) + 1 )); echo "$pf" > "$pf_f"
     log "watch: probe $pf of $WATCH_PROBE_FAILS failed (http ${code:-none} within ${WATCH_PROBE_TIMEOUT} s)"
     (( pf >= WATCH_PROBE_FAILS )) || return 0
     echo 0 > "$pf_f"; return 1
@@ -78,11 +188,11 @@ probe_tick() { # $1 = now, $2 = the /health body. 1: WATCH_PROBE_FAILS tiny comp
 # exact young-request verdict gets a bounded recheck; all other failures keep their policy.
 startup_stale_idle() {
     [[ "$1" == 503 ]] || return 1
-    python3 -c '
+    printf '%s' "$2" | watch_run python3 -c '
 import json,math,re,sys
 def number(v): return type(v) in (int,float) and math.isfinite(v)
 try:
- d=json.loads(sys.argv[1]); age=(d.get("rounds") or {}).get("last_age_s")
+ d=json.load(sys.stdin); age=(d.get("rounds") or {}).get("last_age_s")
  oldest=d.get("oldest_s"); active=d.get("inflight")
  valid=(d.get("ok") is False and type(d.get("errors")) is int and d["errors"] == 0
         and not d.get("fatal") and d.get("status") == "stalled"
@@ -92,23 +202,25 @@ try:
         and type(active) is int and active > 0)
 except (ValueError,TypeError,AttributeError): valid=False
 sys.exit(0 if valid else 1)
-' "$2"
+'
 }
 
 startup_recheck_healthy() {
     [[ "$1" == 200 ]] || return 1
-    python3 -c '
+    printf '%s' "$2" | watch_run python3 -c '
 import json,sys
 try:
- d=json.loads(sys.argv[1])
+ d=json.load(sys.stdin)
  valid=d.get("ok") is True and type(d.get("errors")) is int and d["errors"] == 0 and not d.get("fatal")
 except (ValueError,TypeError,AttributeError): valid=False
 sys.exit(0 if valid else 1)
-' "$2"
+'
 }
 
 startup_retry() { # $1 = code, $2 = body; prints "code<newline>body" after at most 3 s of rechecks
-    local code=$1 body=$2 retry_deadline retry_left retry_timeout
+    local code=$1 body retry_deadline retry_left retry_timeout
+    [[ "$code" =~ ^[0-9]{3}$ ]] || code=000
+    body=$(printf '%s' "$2" | watch_filter json) || return 1
     retry_deadline=$(( ${EPOCHREALTIME/./} + 3000000 ))
     log "watch: young prefill with stale idle round clock; rechecking health for at most 3 s"
     while startup_stale_idle "$code" "$body"; do
@@ -116,11 +228,11 @@ startup_retry() { # $1 = code, $2 = body; prints "code<newline>body" after at mo
         (( retry_left > 0 )) || break
         # Curl itself is bounded by the remaining window, including a hung health endpoint.
         printf -v retry_timeout '%d.%06d' "$((retry_left / 1000000))" "$((retry_left % 1000000))"
-        body=$(curl -s -m "$retry_timeout" -w '\n%{http_code}' "$BASE/health" || true)
-        code=${body##*$'\n'}; body=${body%$'\n'*}
+        body=$(watch_capture http curl -s -m "$retry_timeout" -w '\n%{http_code}' "$BASE/health" || true)
+        code=${body%%$'\n'*}; body=${body#*$'\n'}
         startup_stale_idle "$code" "$body" || break
         retry_left=$(( retry_deadline - ${EPOCHREALTIME/./} ))
-        if (( retry_left > 200000 )); then sleep 0.2; fi
+        if (( retry_left > 200000 )); then watch_run sleep 0.2; fi
     done
     if startup_recheck_healthy "$code" "$body" && (( ${EPOCHREALTIME/./} <= retry_deadline )); then
         log "watch: startup false-stall 503 resolved by actual healthy 200 within 3 s"; return 0
@@ -129,35 +241,50 @@ startup_retry() { # $1 = code, $2 = body; prints "code<newline>body" after at mo
 }
 
 evidence_dump() { # $1 = why. Before a heal: WATCH_STATE_DIR/heal-evidence/<UTC stamp>/ gets health, logs and state
-    local d; d="$WATCH_STATE_DIR/heal-evidence/$(date -u +%Y%m%d-%H%M%S)"; mkdir -p "$d" || return 0
-    echo "$1" > "$d/why.txt" || true
-    curl -s -m 10 "$BASE/health" > "$d/health.json" 2>&1 || true
-    docker logs --timestamps --tail 400 "$NAME-r0" > "$d/r0.log" 2>&1 || true
-    docker inspect -f '{{json .State}}' "$NAME-r0" > "$d/r0-state.json" 2>&1 || true
+    local d file
+    d=$(watch_capture stamp date -u +%Y%m%d-%H%M%S) || return 1
+    d="$WATCH_STATE_DIR/heal-evidence/$d"
+    watch_run mkdir -p -m 700 "$WATCH_STATE_DIR" "$WATCH_STATE_DIR/heal-evidence" "$d" || return 1
+    watch_run chmod 700 "$WATCH_STATE_DIR" "$WATCH_STATE_DIR/heal-evidence" "$d" || return 1
+    # Tighten existing files too (a previous run may have used a permissive umask).
+    for file in why.txt health.json r0.log r0-state.json r1.log r1-state.json; do
+        (umask 077; : >> "$d/$file") || return 1
+        watch_run chmod 600 "$d/$file" || return 1
+    done
+    printf '%s\n' "$1" | watch_redact > "$d/why.txt" || return 1
+    watch_capture json curl -s -m 10 "$BASE/health" > "$d/health.json" 2>&1 || true
+    watch_run docker logs --timestamps --tail 400 "$NAME-r0" > "$d/r0.log" 2>&1 || true
+    watch_run docker inspect -f '{{json .State}}' "$NAME-r0" > "$d/r0-state.json" 2>&1 || true
     if [[ -n "$WORKER_SSH" ]]; then
-        wssh "docker logs --timestamps --tail 400 $NAME-r1 2>&1" > "$d/r1.log" 2>/dev/null || true
+        wssh "docker logs --timestamps --tail 400 $NAME-r1 2>&1" > "$d/r1.log" 2>&1 || true
         wssh "docker inspect -f '{{json .State}}' $NAME-r1" > "$d/r1-state.json" 2>&1 || true
     fi
     log "watch: heal evidence in $d"
 }
 
 watch_tick() {
-    mkdir -p "$WATCH_STATE_DIR"
-    local fails_f="$WATCH_STATE_DIR/fails" heal_f="$WATCH_STATE_DIR/last_heal" fails r0 r1 age code body now bad="" last
+    watch_run mkdir -p -m 700 "$WATCH_STATE_DIR" || return 1
+    watch_run chmod 700 "$WATCH_STATE_DIR" || return 1
+    local fails_f="$WATCH_STATE_DIR/fails" heal_f="$WATCH_STATE_DIR/last_heal" fails r0 r1 age started code body now bad="" last
     local probe_bad=0 retried
     guard_permit watch || { log "watch: guard lifecycle holds; standing down"; return 0; }
-    fails=$(cat "$fails_f" 2>/dev/null || echo 0); now=$(date +%s)
+    fails=$(watch_capture uint cat "$fails_f" 2>/dev/null || echo 0)
+    now=$(watch_capture uint date +%s) || return 1
     if lease_fresh; then echo 0 > "$fails_f"; log "watch: $WATCH_LEASE is fresh; standing down"; return 0; fi
     if [[ -e "$WATCH_STATE_DIR/stopped" ]]; then echo 0 > "$fails_f"; log "watch: stopped on purpose; standing down"; return 0; fi
-    if ! flock -n "$WATCH_STATE_DIR/lock" true; then log "watch: a heal is in progress; standing down"; return 0; fi
+    if ! watch_run flock -n "$WATCH_STATE_DIR/lock" true; then log "watch: a heal is in progress; standing down"; return 0; fi
     r0=$(running 0); r1=$(running 1)
     if [[ "$r0" != true ]]; then bad="rank 0 $r0"
     elif [[ "$r1" == unreachable ]]; then log "watch: worker unreachable over ssh (not counted)"
     elif [[ "$r1" != true ]]; then bad="rank 1 $r1"
     else
-        age=$(( now - $(date -d "$(docker inspect -f '{{.State.StartedAt}}' "$NAME-r0")" +%s) ))
-        body=$(curl -s -m 10 -w '\n%{http_code}' "$BASE/health" || true)
-        code=${body##*$'\n'}; body=${body%$'\n'*}
+        if started=$(watch_capture started docker inspect -f '{{.State.StartedAt}}' "$NAME-r0"); then
+            age=$(( now - started ))
+        else
+            age=$WATCH_GRACE # An invalid timestamp cannot grant loading grace.
+        fi
+        body=$(watch_capture http curl -s -m 10 -w '\n%{http_code}' "$BASE/health" || true)
+        code=${body%%$'\n'*}; body=${body#*$'\n'}
         if startup_stale_idle "$code" "$body"; then
             if retried=$(startup_retry "$code" "$body"); then code=200; body='{"ok":true}'
             else
@@ -176,8 +303,8 @@ watch_tick() {
     fi
     if [[ -z "$bad" ]]; then echo 0 > "$fails_f"; return 0; fi
     local need=$WATCH_FAILS min=$WATCH_MIN_HEAL e0 e1=""
-    e0=$(docker inspect -f '{{.State.ExitCode}}' "$NAME-r0" 2>/dev/null || true)
-    [[ -z "$WORKER_SSH" ]] || e1=$(wssh "docker inspect -f '{{.State.ExitCode}}' $NAME-r1" 2>/dev/null || true)
+    e0=$(watch_capture uint docker inspect -f '{{.State.ExitCode}}' "$NAME-r0" 2>/dev/null || true)
+    [[ -z "$WORKER_SSH" ]] || e1=$(wssh_control uint "docker inspect -f '{{.State.ExitCode}}' $NAME-r1" 2>/dev/null || true)
     if [[ "$r0" == false && "$e0" == 70 ]] || [[ "$r1" == false && "$e1" == 70 ]]; then
         need=1; min=$WATCH_FF_MIN_HEAL; bad="$bad (fail-fast exit 70)"
     fi
@@ -186,18 +313,23 @@ watch_tick() {
     fails=$((fails + 1)); echo "$fails" > "$fails_f"
     log "watch: bad tick $fails of $need: $bad"
     (( fails >= need )) || return 0
-    last=$(cat "$heal_f" 2>/dev/null || echo 0)
+    last=$(watch_capture uint cat "$heal_f" 2>/dev/null || echo 0)
     if [[ "$WATCH_HEAL" != 1 || -z "$WATCH_RESTART_CMD" ]]; then alert "unhealthy ($bad); not restarting (WATCH_HEAL=1 and WATCH_RESTART_CMD heal)"; return 1; fi
     if (( now - last < min )); then alert "unhealthy ($bad); healed $((now - last))s ago, waiting"; return 1; fi
     guard_permit start || { log "watch: guard lifecycle holds the heal; standing down"; return 0; }
     echo "$now" > "$heal_f"; echo 0 > "$fails_f"
-    evidence_dump "$bad"
+    evidence_dump "$bad" || return 1
     alert "unhealthy ($bad); restarting both ranks"
-    setsid flock "$WATCH_STATE_DIR/lock" bash -c "$WATCH_RESTART_CMD" >> "$WATCH_STATE_DIR/heal.log" 2>&1 < /dev/null &
+    : >> "$WATCH_STATE_DIR/heal.log" || return 1
+    watch_run chmod 600 "$WATCH_STATE_DIR/heal.log" || return 1
+    # Feed the configured command over stdin, never as a bash -c process argument.
+    # Include setsid/flock failures and both heal streams in the same filter.
+    printf '%s\n' "$WATCH_RESTART_CMD" |
+        watch_run setsid flock "$WATCH_STATE_DIR/lock" bash +x >> "$WATCH_STATE_DIR/heal.log" 2>&1 &
     return 1
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     if [[ "${1:-}" == --once ]]; then watch_tick; exit $?; fi
-    while :; do watch_tick || true; sleep "${WATCH_INTERVAL:-60}"; done
+    while :; do watch_tick || true; watch_run sleep "${WATCH_INTERVAL:-60}"; done
 fi
