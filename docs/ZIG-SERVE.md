@@ -14,8 +14,7 @@ follow` on rank 1.
 The CUDA DeepSeek source is included at [`engine/zig`](../engine/zig), exported from the qualified kit
 snapshot on top of [TensorFold 1.0.2](https://github.com/ashhart/TensorFold), under Apache-2.0.
 See [source provenance](../engine/zig/SOURCE-EXPORT.md). Generated GPU assets and model weights are separate:
-the host build alone embeds empty CUDA blobs and cannot serve a GPU model. The existing Python patches target
-0.6.0 and provide the public reference source used by the AOT generators.
+the host build alone embeds empty CUDA blobs and cannot serve a GPU model. The Python kernel and asset generators remain build-time tools pending a separate upstream-equivalence audit.
 
 Required on both nodes:
 
@@ -53,7 +52,7 @@ was not repeated for this publication; the exported host build and host tests ar
 1. Clone this public recipe and download the pack on both nodes:
 
    ```bash
-   git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
+   git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
    cd deepseek-v41-tensorfold-spark
    hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17
    cp config/prod-zig-flash17.env.example config/prod-zig.env
@@ -92,7 +91,7 @@ was not repeated for this publication; the exported host build and host tests ar
    The multi-stage image uses Zig 0.17.0, CUDA 13, ReleaseSafe ARM64, sm_121 kernels, NCCL and verbs providers.
    Its default nvcc image is CUDA 13.0.1; for prebuilt kernels use the exact CUDA devel/runtime versions validated
    with them (build args `CUDA_DEVEL` / `CUDA_RUNTIME`). Use `ZIG_URL` for the exact Zig compiler tarball if the
-   default download URL is unavailable. The first start builds prepared files; do not reuse Python's cache.
+   default download URL is unavailable. The first start builds native prepared files; keep caches separate by engine and pack.
 
 3. Check the commands and the AOT set, then run rank 1 on its node followed promptly by rank 0 on its node:
 
@@ -142,48 +141,10 @@ was not repeated for this publication; the exported host build and host tests ar
 
 ## Generate runtime assets
 
-Prepare the already-public Python reference source from the recipe root. Use a GPU-capable ARM64 environment
-with Torch, Triton **3.7.1**, and ptxas **13.3.73**, matching the qualified fill toolchain. This stage needs the
-model config/tokenizer, but does not require running inference. Set `TRITON_PTXAS_PATH` and
-`TRITON_PTXAS_BLACKWELL_PATH` to that compiler executable. Do not use a CPU-only host build for GPU serving.
-
-```bash
-mkdir -p build/python-source
-git -C vendor/TensorFold archive HEAD | tar -x -C build/python-source
-for patch_file in patches/*.patch; do
-  patch -d build/python-source -p1 < "$patch_file"
-done
-export PY_SOURCE="$PWD/build/python-source/src"
-export PACK=/srv/models/flash17
-export ASSETS=/srv/assets/rank-0
-mkdir -p "$ASSETS"
-# Run the following in the build image/environment, from engine/zig.
-cd engine/zig
-python tools/zig/triton_fill.py sigs --py "$PY_SOURCE" --out "$ASSETS/sigs.json"
-set -a
-source ../../config/prod-zig.env
-set +a
-# Asset enumeration uses this local destination rather than the serving container mount.
-export TF_DSV41_ASSETS="$ASSETS"
-export TF_TP_WORLD=2
-zig-out/bin/tf-dsv41-m1 aot-needs "$ASSETS/sigs.json" "$ASSETS/needs.json"
-python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$ASSETS/needs.json" \
-  --options tools/zig/dsv41_triton_options.json --arch 121 --out "$ASSETS/aot"
-# rows default to TF_DSV41_CONTEXT + 2048 from the sourced env (1,050,624 at the 1M context)
-PYTHONPATH="$PY_SOURCE" python tools/zig/dsv41_rope_tables.py \
-  --config "$PACK/config.json" --out "$ASSETS/rope.bin"
-python tools/zig/dsv41_engram_host.py --py-src "$PY_SOURCE" --config "$PACK/config.json" \
-  --tokenizer "$PACK/tokenizer.json" --out "$ASSETS/engram-host.bin"
-```
-
-For the asset environment, build the builder stage with `docker build --target build -f docker/zig/Dockerfile
--t tensorfold-dsv41-zig:builder build/zig` from the recipe root. Install the matching Torch/Triton toolchain in that
-environment. The Docker build's builder stage contains the Zig binaries under `/out/bin`; add them to `PATH` or copy them
-into `zig-out/bin` in the asset-generation environment. Mount the public reference, model and asset directories
-there. Keep `sigs.json` in the assets directory: `scripts/run-zig.sh N --check-aot` reads it. Repeat/check the
-manifest for each rank. Engram host tables do not replace packed
-model Engram shards. The existing public reference supports the recommended `R1=1` fill; the optional R1-off
-binding against newer Python pruning variants is outside this recipe's qualification.
+The existing kernel and asset generators under `engine/zig/tools/zig` are retained for now. Their RoPE/Triton
+reference-source prerequisites need a separate upstream-equivalence audit; do not reconstruct or launch the retired
+Python serving engine as part of installation. Keep the qualified generated assets until their replacement is proved.
+Native assets remain rank-specific and must cover the configured context and AOT signatures.
 
 ### Changing serving settings
 
@@ -195,7 +156,7 @@ compile only the missing variants into the existing one, on every rank:
 scripts/run-zig.sh 0 --check-aot   # exit 1 lists the missing variants
 # in the asset environment, with the new env sourced as above:
 zig-out/bin/tf-dsv41-m1 aot-needs "$ASSETS/sigs.json" "$ASSETS/needs.json"
-python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$ASSETS/needs.json" \
+python tools/zig/triton_fill.py compile --py "$<reference-source>" --needs "$ASSETS/needs.json" \
   --options tools/zig/dsv41_triton_options.json --arch 121 --have "$ASSETS/aot" --out "$ASSETS/aot"
 ```
 
@@ -217,7 +178,7 @@ upstream TensorFold settings.
 | `TF_DSV41_DRAFTS` | 0 | `1` | DSpark drafting |
 | `TF_DSV41_OWN_PREFILL` | 0 | `1` | Native prompt prefill rather than decode windows |
 | `TF_DSV41_GRAPHS` | 0 | `1` | CUDA graphs for decode windows |
-| `TF_DSV41_PREFILL` | full | `replay` | CED encoder prefill and bounded decoder replay, matching Python |
+| `TF_DSV41_PREFILL` | full | `replay` | CED encoder prefill and bounded decoder replay, using the native replay plan |
 | `TF_DSV41_PROMPT_TAIL` | verify | `verify (unset)` | Last prompt token enters the first decode window |
 | `TF_DSV41_PREFILL_PIECES` | 0 | `1` | Interleave prompt pieces with other slots' decode |
 | `TF_DSV41_SESSION_SLOTS` | 0 | `1` | Session store with several live slots |
@@ -284,15 +245,15 @@ upstream TensorFold settings.
 | `TF_DSV41_ASSETS` | unset | `/assets` | Per-rank rope, host Engram lookup and AOT programs |
 | `TF_DSV41_INDEX_KV` | FP8 fixed in this port | `fp8` | Compatibility setting; does not select a different Zig index type |
 | `TF_DSV41_ENGRAM_DIR` | unset | `/engram` | Packed per-rank Engram shards |
-| `TF_DSV41_CALIB` | cached | `zig` | Engine's own boot measurement, stored and reused; `real` / `cached` read Python's stored tables |
+| `TF_DSV41_CALIB` | cached | `zig` | Engine's own boot measurement, stored and reused; reuse only tables qualified for this native build |
 | `TF_DSV41_CALIB_DIR` | user cache directory | `/state/calib-zig` | Directory of stored cost tables |
 | `TF_DSV41_CALIB_FILE` | unset | `unset (optional)` | Pin one stored table after the first boot measured it |
-| `TF_DSV41_PREPARED` | unset | `/prepared` | Zig prepared layer images (different from Python prepared folders) |
+| `TF_DSV41_PREPARED` | unset | `/prepared` | Zig prepared layer images (native format) |
 | `TF_DSV41_PREPARED_WRITE` | 0 | `1` | Write missing prepared files |
 | `TF_DSV41_PLAN_TIMEOUT` | 300 | `1800` | Seconds allowed for TP rendezvous connection |
 | `TF_DSV41_PLAN_LINK` | blocking socket | `rdma` | Spin on the plan socket before blocking; 5000 μs when rdma |
 | `TF_DSV41_PLAN_PIN` | off | `auto` | Pin plan threads to the best available CPU |
-| `TF_DSV41_DEPTH_JOINT` | 1 | `0` | Disable joint draft depth policy, matching the Python reference |
+| `TF_DSV41_DEPTH_JOINT` | 1 | `0` | Disable joint draft depth policy, with the retained reference policy |
 | `TF_DSV41_SESSIONS` | 0 | `1` | Session reuse; SESSION_SLOTS additionally required at four slots |
 | `TF_DSV41_SESSION_RAM_MIB` | 256 | `256` | Bounded session state RAM tier |
 | `TF_DSV41_SESSION_DISK` | unset: RAM only | `/sessions` | NVMe session tier |

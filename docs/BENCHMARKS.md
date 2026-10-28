@@ -1,79 +1,9 @@
-# Benchmark method, and how to rerun each cell
+# HTTP benchmark clients
 
-Two kinds of measurement: **engine benchmarks** (`m2bench`, `gate`) run inside the engine on both ranks with no HTTP
-server, and **HTTP clients** (`bench/`) run against a started server. The kit was measured with HTTP clients only.
-Each table in [RESULTS.md](RESULTS.md) says which one it is.
-
-Before any run: nothing else on the GPUs, the page cache dropped (`scripts/serve.sh` does it), and MemFree >= 104 GiB
-on both nodes (`MEM_GATE_GIB`). Single-run differences under ~2% are noise on this pair; the tables give ranges over
-runs where there were several.
-
-## 1. Engine benchmarks: `scripts/serve.sh run`
-
-`scripts/serve.sh run MODULE [ARGS]` stops nothing: stop the server first. It starts rank 1 on the worker and rank 0
-here with the production config's knobs (a caller export overrides one), adds `--model /model --rank R --master
-HEAD_IP --port MASTER_PORT`, and mounts `OUT` (default `results/run-<time>/`) at `/out` on rank 0.
-
-**Decode speed** (the README's code / prose / structured / C1 / C2 / C4 cells):
-
-```bash
-scripts/serve.sh stop
-OUT=$PWD/results/run-speed scripts/serve.sh run tensorfold.families.deepseek_v41.cuda.m2bench \
-    --out /out/m2.json --only code,prose,structured --streams 1,2,4 --c-sampling mixed --reps 2 \
-    --c-same code,prose --c-reps 2 --c-exact
-```
-
-The G15-G19 speed checks ran this set two or three times on fresh boots, interleaving the configurations compared.
-
-- Single stream: each workload at T = 0 and T = 0.7 (keyed), tok/s from the first to the last token of a 384-token
-  reply, the median of `--reps`. Every reply is compared with the serial reply (`draft=False`): `exact_all` must be
-  true (exit code 3 otherwise).
-- `--streams 1,2,4`: 1, 2 and 4 concurrent requests cycling code, prose, a JSON task and a copy-heavy edit, every
-  other one at T = 0.7 (`--c-sampling mixed`; `greedy` for all T = 0). `decode_aggregate_tok_s` = all tokens / (last
-  token - first token): the cells the README reports, the same definition as the kit's `multiturn` aggregate.
-- `--c-same code,prose`: same-workload cells (C2-code, C4-prose, ...); `--c-distinct` gives each stream its own
-  prompt of the workload (otherwise the same prompt runs on every stream). Every multi-stream cell also reports the
-  **steady** aggregate (all streams live). `--c-exact` replays every concurrent stream alone and serial and compares
-  the replies (`concurrent_exact_all`).
-- `m2bench` sizes the request slots for `--context` (16,384 by default), not the production 300K pool.
-- `TF_DSV41_PHASES=1` adds per-phase host timings; `--nsys code|prose|c2|...` runs one workload under
-  `cudaProfilerStart/Stop` for an nsys capture (add the nsys entrypoint yourself).
-
-**Cold prefill:**
-
-```bash
-OUT=$PWD/results/run-prefill scripts/serve.sh run tensorfold.families.deepseek_v41.cuda.m2bench \
-    --out /out/prefill.json --prefill 8192,32768,65536,131072 --prefill-reply 32 --context 139264 --parallel 1
-TF_DSV41_PREFILL=full OUT=... scripts/serve.sh run ... --prefill ...     # the exact prefill
-```
-
-One slot, fresh random text, after a 2K warm-up; tok/s and TTFT from the batcher. `--prefill-reply 32` also records
-the first token and a SHA-256 of a 32-token greedy reply at each size: the G17-G19 tables compare them across
-configurations and boots (prefill levers and row counts must not change them).
-
-**Prefix cache.** A prompt that repeats a filler document hits the prefix cache: the repeated part is not prefilled
-again, so the prefill rate comes out impossibly fast (one report: an 87K-token prompt back in about 0.4 s). Check
-`usage.prompt_tokens_details.cached_tokens` in the reply: a value close to `prompt_tokens` means the cache served the
-prompt. Use unique text per prompt for prefill numbers, as `--prefill` does. The Zig server also reports it per reply
-(`tensorfold.cached`), in `/health` (`cached_tokens_total`) and in `/metrics` (`tensorfold_cached_tokens_total`).
-
-**Top-1 agreement with the kit** (needs the kit's prompt-logprobs capture, included):
-
-```bash
-cp results/kit-baseline/oracle-kit.json "$OUT/"
-OUT=$PWD/results/run-gate scripts/serve.sh run tensorfold.families.deepseek_v41.cuda.gate \
-    --capture /out/oracle-kit.json --out /out/gate.json
-```
-
-The capture is the kit's `prompt_logprobs` (top 5) for 8 prompts repeated to 2,048 tokens. The gate feeds the same
-token ids through our engine teacher-forced and reports whole-sequence and first-copy top-1 agreement (the first
-copy is the part where the model cannot copy itself). Run it with `TF_DSV41_PREFILL_KERNELS=exact` to gate decode
-levers (the fast kernels only cover prompt rows).
+Historical engine benchmarks and their measurements remain in release 60b6688. Start the native server using
+[ZIG-SERVE](ZIG-SERVE.md) before running these clients.
 
 ## 2. HTTP clients: `bench/` (standard library only)
-
-Against a running server (`scripts/serve.sh start`; a second test server: `PORT=8001 NAME=dsv41-tf-test
-MASTER_PORT=29561 HEAD_STATE=... WORKER_STATE=... scripts/serve.sh start`).
 
 | client | what | gate used here |
 | --- | --- | --- |

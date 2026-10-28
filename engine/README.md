@@ -1,9 +1,11 @@
-# Engines and reference code
+# Native engine and build-time references
 
-The buildable CUDA Zig engine lives in [`zig/`](zig), with [source provenance](zig/SOURCE-EXPORT.md) and
-[build/run instructions](../docs/ZIG-SERVE.md). It is independent of the Python patch application below.
+The existing native CUDA Zig source is in [`zig/`](zig), with [source provenance](zig/SOURCE-EXPORT.md) and
+[serving instructions](../docs/ZIG-SERVE.md). It already runs independently of the retired Python patch delivery.
 
-The remaining directories hold the code as it was written and tested before it was ported into the TensorFold family (`patches/0002`):
-`reference/` is the pure-PyTorch reference model and checkpoint loader used as the correctness oracle, `kernels/`
-and `serving/` the first versions of the kernels and the serving layer (`scripts/campaign/port_serving.py` copied the
-latter into the engine). The tests are in `../tests/`. The Python engine that runs is the patched TensorFold; these directories are its earlier reference/staging code.
+`kernels/`, `reference/` and the Python tools under `zig/tools/` remain as kernel generators, asset tools and
+independent references. They are retained pending a separate upstream-equivalence audit; their language does not
+make them inference-server code. Their applicable CPU checks remain under `../tests/`.
+
+The staged Python serving layer and its coupled family/server tests were removed with the old Python engine path.
+Historical source and results remain available in public release 60b6688.

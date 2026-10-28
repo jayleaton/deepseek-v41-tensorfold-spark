@@ -1,3 +1,5 @@
+> Some attributions below refer to the historical release 60b6688; retained generators and native source keep their own notices.
+
 # Credits
 
 - [DeepSeek](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash): DeepSeek-V4.1-Flash, its prompt encoding and its

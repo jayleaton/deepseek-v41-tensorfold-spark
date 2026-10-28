@@ -59,7 +59,7 @@ session passed (7 valid tool calls, normal stop).
 The full guide is [ZIG-SERVE](docs/ZIG-SERVE.md). Build the image and the per-rank assets as it describes, then:
 
 ```bash
-git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
+git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
@@ -84,9 +84,6 @@ keeps its own unchanged profile, [`config/prod-zig.env.example`](config/prod-zig
 [FLASH-1017, rollback](docs/FLASH-1017.md#rollback-to-q28-v2). Its measurements are in
 [PREVIOUS-RESULTS](docs/PREVIOUS-RESULTS.md).
 
-The earlier Python recipe (TensorFold 0.6.0 plus three patches, with its original 2.9 bpw pack) is still documented
-in [INSTALL](docs/INSTALL.md).
-
 ## Documentation
 
 | | |
@@ -94,7 +91,7 @@ in [INSTALL](docs/INSTALL.md).
 | [FLASH-1017](docs/FLASH-1017.md) | the flash17 pack: profile, memory, task results, retention, rollback |
 | [ZIG-SERVE](docs/ZIG-SERVE.md) / [ZIG-RESULTS](docs/ZIG-RESULTS.md) | Zig build, TP=2 launch, exact settings, q28-v2 comparisons |
 | [PREVIOUS-RESULTS](docs/PREVIOUS-RESULTS.md) | q28-v2 kit results and the historical 2.9 bpw Python vs vLLM tables |
-| [INSTALL](docs/INSTALL.md) | requirements, weights, Engram shards, the Python recipe, watchdog |
+| [INSTALL](docs/INSTALL.md) | native requirements, weights and Engram shards |
 | [API](docs/API.md) / [IMAGES](docs/IMAGES.md) | endpoints, thinking and effort, image input |
 | [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, turning each lever off |
 | [METHOD](docs/METHOD.md) / [RESULTS](docs/RESULTS.md) / [BENCHMARKS](docs/BENCHMARKS.md) | how it was measured, every table, how to rerun |
