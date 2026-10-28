@@ -65,9 +65,12 @@ if [[ -f "$LOCAL_LIST" ]]; then
 fi
 [[ -n "${CHECK_PUBLIC_EXTRA:-}" ]] && PATTERNS+=("CHECK_PUBLIC_EXTRA|$CHECK_PUBLIC_EXTRA|")
 
-mapfile -t FILES < <(git ls-files -co --exclude-standard 2>/dev/null |
-                     grep -vE '^vendor/TensorFold(/|$)' | grep -vxF "$SELF" | grep -vxF "$LOCAL_LIST" |
-                     while IFS= read -r f; do [[ -f "$f" ]] && printf '%s\n' "$f"; done)
+# Bash 3.2 (the macOS system shell): preserve whitespace and newlines in file names.
+FILES=()
+while IFS= read -r -d '' f; do
+    case "$f" in vendor/TensorFold|vendor/TensorFold/*|"$SELF"|"$LOCAL_LIST") continue ;; esac
+    [[ -f "$f" ]] && FILES+=("$f")
+done < <(git ls-files -z -co --exclude-standard 2>/dev/null)
 if [[ ${#FILES[@]} -eq 0 ]]; then echo "no files to scan (not a git checkout?)" >&2; exit 2; fi
 
 # /home/<name>/ is allowed for these generic placeholders
@@ -77,14 +80,17 @@ fail=0
 for entry in "${PATTERNS[@]}"; do
     name="${entry%%|*}"; rest="${entry#*|}"
     skip="${rest##*|}"; re="${rest%|*}"
-    hits=$(for f in "${FILES[@]}"; do
-               # shellcheck disable=SC2053
-               skipped=0
-               read -ra globs <<< "$skip"
-               for g in "${globs[@]}"; do [[ "$f" == $g ]] && { skipped=1; break; }; done
-               [[ $skipped -eq 1 ]] && continue
-               grep -HnIiE -- "$re" "$f" 2>/dev/null
-           done)
+    scan_files=()
+    for f in "${FILES[@]}"; do
+        skipped=0
+        read -ra globs <<< "$skip"
+        for g in "${globs[@]}"; do [[ "$f" == $g ]] && { skipped=1; break; }; done
+        [[ $skipped -eq 1 ]] || scan_files+=("$f")
+    done
+    hits=""
+    if [[ ${#scan_files[@]} -gt 0 ]]; then
+        hits=$(grep -HnIiE -- "$re" "${scan_files[@]}" 2>/dev/null)
+    fi
     [[ "$name" == "home directories" && -n "$hits" ]] && hits=$(grep -viE "$HOME_OK" <<< "$hits")
     if [[ -n "$hits" ]]; then
         fail=1
@@ -98,7 +104,7 @@ secrets=$(python3 scripts/check_secrets.py "${FILES[@]}" 2>&1)
 if [[ $? -ne 0 ]]; then fail=1; echo "== credentials (scripts/check_secrets.py)"; echo "$secrets"; fi
 
 # e-mail addresses other than placeholder / example domains (model outputs in results/ invent a few)
-emails=$(for f in "${FILES[@]}"; do grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "$f" 2>/dev/null; done |
+emails=$(grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "${FILES[@]}" 2>/dev/null |
          grep -viE '@(([a-z0-9-]+\.)*example(\.(com|org|net))?|company\.com|novatech\.io)$|:noreply@anthropic\.com$' |
          grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
@@ -116,20 +122,13 @@ if [[ "${1:-}" == --history ]]; then
     if [[ -n "$bad_auth" ]]; then fail=1; echo "== commits not authored / committed as $ALLOWED_AUTHOR"; echo "$bad_auth"; fi
     hsecrets=$(python3 scripts/check_secrets.py --history 2>&1)
     if [[ $? -ne 0 ]]; then fail=1; echo "== history: credentials (scripts/check_secrets.py)"; echo "$hsecrets"; fi
+    # Repeated trees share blobs; scan each text blob once while retaining ALL its historical paths.
+    python3 scripts/check_public_history.py "${PATTERNS[@]}" || fail=1
     msgs=$(git log --all --format='%h %B')
     for entry in "${PATTERNS[@]}"; do
-        name="${entry%%|*}"; rest="${entry#*|}"; skip="${rest##*|}"; re="${rest%|*}"
-        pathspec=(-- . ':!scripts/check-public.sh' ':!vendor/TensorFold')
-        for g in $skip; do pathspec+=(":!$g"); done
-        hits=""
-        for c in $commits; do
-            h=$(git grep -I -n -i -E -e "$re" "$c" "${pathspec[@]}" 2>/dev/null)
-            [[ "$name" == "home directories" && -n "$h" ]] && h=$(grep -viE "$HOME_OK" <<< "$h")
-            [[ -n "$h" ]] && hits+="$h"$'\n'
-        done
+        name="${entry%%|*}"; rest="${entry#*|}"; re="${rest%|*}"
         m=$(grep -niE -e "$re" <<< "$msgs" || true)
-        [[ -n "$m" ]] && hits+="commit message: $m"$'\n'
-        if [[ -n "${hits//[[:space:]]/}" ]]; then fail=1; echo "== history: $name"; cut -c1-220 <<< "$hits" | sed '/^$/d'; fi
+        if [[ -n "$m" ]]; then fail=1; echo "== history: $name"; cut -c1-220 <<< "commit message: $m"; fi
     done
 fi
 
