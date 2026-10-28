@@ -317,7 +317,7 @@ def test_invalid_control_stdout_is_withheld(tmp_path, mode):
 
 
 @pytest.mark.parametrize("busy", (False, True), ids=("idle", "busy"))
-def test_choices_credential_does_not_turn_successful_probe_into_heal(tmp_path, busy):
+def test_field_name_credential_does_not_turn_successful_probe_into_heal(tmp_path, busy):
     env = fixture(tmp_path, "choices")
     env.update(
         FAKE_HEALTHY="1", FAKE_REQUESTS="200" if busy else "0",

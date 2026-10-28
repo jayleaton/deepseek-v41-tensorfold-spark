@@ -30,7 +30,7 @@ def launchers(tmp_path):
     scripts = tmp_path / 'scripts'
     scripts.mkdir()
     for name in ('run-zig.sh', 'serve.sh', 'build-native.sh', 'check-zig-image.sh',
-                 'safe_exec.py', 'safe_output.py', 'redact.py'):
+                 'safe_exec.py', 'safe_output.py', 'redact.py', 'safe_shell.sh', 'watchdog_io.py'):
         shutil.copyfile(ROOT / 'scripts' / name, scripts / name)
     docker_dir = tmp_path / 'docker/zig'
     docker_dir.mkdir(parents=True)

@@ -77,13 +77,13 @@ class LeaseTests(unittest.TestCase):
         self.lease.write_text("")
         with self.assertRaisesRegex(ValueError, "operator_lease"):
             self.backend.identity("0", "p")
-        with patch("backend.subprocess.run") as run, self.assertRaisesRegex(ValueError, "ownership changed"):
+        with patch("backend.supervised_run") as run, self.assertRaisesRegex(ValueError, "ownership changed"):
             self.backend.hold_heals("p")
         run.assert_not_called()
 
     def test_hold_heals_stops_configured_timers_or_nothing(self):
         self.backend.profile = lambda: ("p", make_profile())
-        with patch("backend.subprocess.run") as run:
+        with patch("backend.supervised_run") as run:
             self.backend.hold_heals("p")
             run.assert_not_called()
             self.backend.config["watchdog_units"] = ["a.timer", "b.timer"]

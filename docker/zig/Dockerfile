@@ -7,11 +7,12 @@ ARG ZIG_VERSION=0.17.0
 ARG ZIG_URL=
 ARG ZIG_TARGET=aarch64-linux-gnu
 ARG ZIG_CPU=baseline+sha2+aes
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates xz-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates xz-utils python3 \
     && rm -rf /var/lib/apt/lists/*
-COPY docker/zig/fetch-source.sh /fetch-source.sh
+COPY docker/zig/fetch-source.sh /ctx/recipe/docker/zig/fetch-source.sh
+COPY scripts/safe_exec.py scripts/safe_output.py scripts/redact.py scripts/safe_shell.sh scripts/watchdog_io.py /ctx/recipe/scripts/
 COPY docker/zig/source/ /engine-source/
-RUN bash /fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle
+RUN bash /ctx/recipe/docker/zig/fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle
 RUN set -eu; url="${ZIG_URL:-https://ziglang.org/download/${ZIG_VERSION}/zig-aarch64-linux-${ZIG_VERSION}.tar.xz}"; \
     mkdir -p /opt/zig && curl -fsSL "$url" | tar -xJ -C /opt/zig --strip-components=1; \
     test "$(/opt/zig/zig version)" = "$ZIG_VERSION"

@@ -7,12 +7,12 @@ import os
 import re
 import shlex
 import stat
-import subprocess
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from common import RANKS, container_names, inference_environment
+from safe_exec import run as supervised_run
 
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time
@@ -85,7 +85,7 @@ class Backend:
                 shlex.join(args),
             ]
         )
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
+        result = supervised_run(command, capture_output=True, text=True, timeout=timeout, check=True)
         return result.stdout + result.stderr if args[:2] == ["docker", "logs"] else result.stdout
 
     def profile(self):
@@ -271,7 +271,7 @@ class Backend:
         units = self.config.get("watchdog_units", [])
         if not units:
             return
-        subprocess.run(
+        supervised_run(
             ["systemctl", "--user", "stop", *units],
             capture_output=True,
             timeout=5,

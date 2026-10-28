@@ -42,7 +42,7 @@ TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorf
 
 Bundle prerequisites and exact commit resolution are verified locally and again in
 the Docker builder. A supplied invalid/incomplete bundle fails without falling back
-to the network. Only the Dockerfile, source resolver and selected bundle enter the
+to the network. Only the Dockerfile, source resolver, shared credential boundary and selected bundle enter the
 temporary build context; it is removed when the command exits. The bundle never
 enters the runtime image. Without `TENSORFOLD_SOURCE`, the builder fetches the same
 pin from upstream; it does not follow a moving branch. No GitHub push is required.
@@ -88,3 +88,10 @@ Compare core-lint findings by identity against the base; a smaller total does no
 compensate for newly introduced findings. Run the tooling and full retained suites
 in the authorized compute environment. Keep the original 16 inherited compiler
 errors explicit until their historical source/toolchain prerequisites are addressed.
+
+The subprocess architecture regression gate parses launcher Bash syntax with
+`tree-sitter==0.25.2` and `tree-sitter-bash==0.25.1`. Install these alongside pytest
+in the isolated check environment. It rejects direct external commands and exec
+in the host watchdog/launchers, including nested substitutions; `safe_shell.sh`
+is the single adapter to the checked `safe_exec.py` supervisor. The build stage
+includes Python only for that boundary; the serving runtime remains native.

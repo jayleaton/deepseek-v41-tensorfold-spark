@@ -100,3 +100,10 @@ before lifecycle cleanup. Worker commands carry a deadline based on the worker's
 monotonic clock; SSH failure waits through that deadline before STOP cleanup,
 preventing a delayed remote launch from racing the stop. This behavior has CPU
 regression coverage; hardware qualification is still required as described above.
+
+Host watchdog and launcher commands share `safe_shell.sh` / `safe_exec.py`: argv
+validation happens before external commands spawn, and shell-operation diagnostics
+are filtered as well as child output. Watchdog numeric controls are validated
+before arithmetic. A heal holds ownership until its command finishes; it does not
+detach an unowned restart after the observing tick exits. Image verification runs
+the image's `/opt/tensorfold/share/libproof.sh` through the host wrapper.

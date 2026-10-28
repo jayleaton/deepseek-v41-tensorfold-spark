@@ -58,6 +58,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from redact import known_secrets, mask_values, redact_text
+from safe_exec import run as supervised_run
 from safe_output import cli, safe_print as print
 
 GIB = 1 << 30
@@ -642,7 +643,7 @@ def boot_log_text(path: str | None, container: str) -> tuple[str | None, str]:
     if not docker:
         return None, "no --boot-log and no docker here"
     try:
-        r = subprocess.run(
+        r = supervised_run(
             [docker, "logs", container],
             capture_output=True,
             text=True,

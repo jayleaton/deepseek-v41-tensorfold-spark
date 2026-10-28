@@ -5,3 +5,9 @@
 !docker/zig/fetch-source.sh
 !docker/zig/source/
 !docker/zig/source/.keep
+!scripts/
+!scripts/safe_exec.py
+!scripts/safe_output.py
+!scripts/redact.py
+!scripts/safe_shell.sh
+!scripts/watchdog_io.py

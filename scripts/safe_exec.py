@@ -14,11 +14,130 @@ import threading
 import time
 
 from redact import known_secrets, redact_argv, secret_variants
-from safe_output import _cli_secrets, _Stream, cli
+from safe_output import _cli_secrets, _known, _Stream, cli
 
 TERM_GRACE = 1.0
 GROUP_ENV = 'TF_SAFE_EXEC_GROUP'
 DEADLINE_ENV = 'TF_SAFE_EXEC_DEADLINE'
+CONTROL_LIMIT = 8 * 1024 * 1024
+OWNER_PID_ENV = 'TF_SAFE_EXEC_OWNER_PID'
+OWNER_START_ENV = 'TF_SAFE_EXEC_OWNER_START'
+
+
+def _process_identity(pid):
+    try:
+        with open(f'/proc/{pid}/stat') as source:
+            fields = source.read().rsplit(')', 1)[1].split()
+        return fields[0], int(fields[1]), fields[19]
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _owner():
+    """Accept an owner only when its kernel identity is in our ancestry."""
+    pid, start = os.environ.get(OWNER_PID_ENV), os.environ.get(OWNER_START_ENV)
+    if pid is None and start is None:
+        return None
+    try:
+        owner = int(pid)
+    except (ValueError, TypeError):
+        raise ValueError('invalid shell owner') from None
+    current = os.getpid()
+    while current >= 1:
+        identity = _process_identity(current)
+        if identity is None:
+            break
+        state, parent, born = identity
+        if current == owner:
+            if state not in ('Z', 'X') and born == start:
+                return owner, start
+            break
+        if parent == current:
+            break
+        current = parent
+    raise ValueError('invalid shell owner')
+
+
+def _owner_alive(owner):
+    if owner is None:
+        return True
+    identity = _process_identity(owner[0])
+    return identity is not None and identity[0] not in ('Z', 'X') and identity[2] == owner[1]
+
+
+class _Control:
+    """Hold bounded raw controls until their typed projection is validated."""
+
+    def __init__(self, output, mode, secrets):
+        self.output, self.mode, self.secrets = output, mode, secrets
+        self.parts = []
+        self.size = 0
+        self.failed = False
+        self.finished = False
+
+    def write(self, text):
+        self.size += len(text.encode('utf-8'))
+        if self.size > CONTROL_LIMIT:
+            self.failed = True
+            self.parts.clear()
+        elif not self.failed:
+            self.parts.append(text)
+
+    def flush(self):
+        pass
+
+    def finish(self):
+        if self.finished:
+            return
+        self.finished = True
+        try:
+            if self.failed:
+                raise ValueError
+            from watchdog_io import filter_output
+
+            result = filter_output(self.mode, ''.join(self.parts), self.secrets)
+            if not isinstance(result, str):
+                raise ValueError
+        except Exception:
+            self.failed = True
+            print('control parse failed; output withheld', file=sys.stderr)
+        else:
+            # cli() already wraps stdout in _Stream. Preserve the parser's
+            # validated numbers, field names and protocol framing verbatim.
+            self.output.write_sanitized(result)
+            self.output.flush()
+        finally:
+            self.parts.clear()
+
+
+def _filter(mode, secrets, owner):
+    stream = (_Control(sys.stdout, mode, secrets)
+              if mode is not None else _Stream(sys.stdout, secrets))
+    decoder = codecs.getincrementaldecoder('utf-8')('replace')
+    lost_at = None
+    # select() also accepts regular redirected files, unlike Linux epoll.
+    with selectors.SelectSelector() as selector:
+        selector.register(sys.stdin, selectors.EVENT_READ)
+        while True:
+            if not _owner_alive(owner) and lost_at is None:
+                lost_at = time.monotonic()
+            # Leave room for command teardown and its final sanitized writes.
+            if lost_at is not None and time.monotonic() - lost_at >= 3 * TERM_GRACE:
+                break
+            if not selector.select(0.05):
+                continue
+            data = os.read(sys.stdin.fileno(), 65536)
+            if not data:
+                break
+            stream.write(decoder.decode(data))
+            stream.flush()
+    if lost_at is not None:
+        if not isinstance(stream, _Control):
+            stream.finish()
+        return 128 + signal.SIGTERM
+    stream.write(decoder.decode(b'', final=True))
+    stream.finish()
+    return int(isinstance(stream, _Control) and stream.failed)
 
 
 def _check_argv(argv, secrets):
@@ -59,18 +178,22 @@ def _spawn(argv, *, env=None, deadline=None, **kwargs):
     # the *actual* pgid before exec. Nested output wrappers retain that group.
     bootstrap = [sys.executable, str(os.path.abspath(__file__)), '--group-child', *argv]
     env = dict(os.environ if env is None else env)
+    owner = _owner()
+    if owner is not None:
+        env[OWNER_PID_ENV], env[OWNER_START_ENV] = str(owner[0]), owner[1]
     env.pop(DEADLINE_ENV, None)
     if deadline is not None:
         env[DEADLINE_ENV] = str(deadline)
     return subprocess.Popen(bootstrap, env=env, start_new_session=True, **kwargs)
 
 
-def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=None):
+def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=None, check=False):
     """subprocess.run-shaped default runner; timeout returns only after teardown."""
     argv = [os.fsdecode(arg) for arg in argv]
-    _check_argv(argv, _cli_secrets(argv) + known_secrets(env))
+    _check_argv(argv, _cli_secrets(argv) + _known() + known_secrets(env))
     if not capture_output:
         raise ValueError('supervised commands require captured output')
+    owner = _owner()
     deadline = None if timeout is None else time.monotonic() + timeout
     child = _spawn(argv, cwd=cwd, env=env, deadline=deadline,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text)
@@ -96,18 +219,28 @@ def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=Non
                 if handler != signal.SIG_IGN:
                     previous[signum] = handler
                     signal.signal(signum, interrupted)
-        try:
+        while True:
+            if not _owner_alive(owner):
+                raise RuntimeError('shell owner exited')
             remaining = None if deadline is None else max(0, deadline - time.monotonic())
-            out, err = child.communicate(timeout=remaining)
-        except subprocess.TimeoutExpired:
-            _finish_group(child)
-            # SIGKILL closed every owned writer. Do not wait indefinitely for a
-            # deliberately detached process that inherited one of the pipes.
+            interval = remaining
+            if owner is not None:
+                interval = 0.05 if remaining is None else min(0.05, remaining)
             try:
-                child.communicate(timeout=TERM_GRACE)
+                out, err = child.communicate(timeout=interval)
+                break
             except subprocess.TimeoutExpired:
-                pass
-            raise subprocess.TimeoutExpired(argv, timeout) from None
+                if owner is not None and (deadline is None or time.monotonic() < deadline):
+                    continue
+                _finish_group(child)
+                # Detached writers cannot hold the supervisor open indefinitely.
+                try:
+                    child.communicate(timeout=TERM_GRACE)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise subprocess.TimeoutExpired(argv, timeout) from None
+        if check and child.returncode:
+            raise subprocess.CalledProcessError(child.returncode, argv, output=out, stderr=err)
         return subprocess.CompletedProcess(argv, child.returncode, out, err)
     finally:
         _finish_group(child)
@@ -118,6 +251,7 @@ def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=Non
 
 
 def main():
+    owner = _owner()
     argv = sys.argv[1:]
     if argv and argv[0] == '--group-child':
         # Internal exec bootstrap: no output collection and no new session.
@@ -130,8 +264,20 @@ def main():
     timeout = None
     expires = None
     monotonic_expires = None
-    while argv and argv[0] in ('--timeout', '--deadline', '--monotonic-deadline'):
+    control = None
+    filtering = False
+    while argv and argv[0] in (
+        '--timeout', '--deadline', '--monotonic-deadline', '--control', '--filter'
+    ):
+        if argv[0] == '--filter':
+            filtering = True
+            argv = argv[1:]
+            continue
         option, value = argv[:2]
+        if option == '--control':
+            control = value
+            argv = argv[2:]
+            continue
         number = float(value)
         if not math.isfinite(number) or number <= 0:
             raise ValueError('invalid supervisor time budget')
@@ -142,12 +288,16 @@ def main():
         else:
             monotonic_expires = number
         argv = argv[2:]
+    if filtering:
+        if argv:
+            raise ValueError('unexpected filter arguments')
+        return _filter(control, _cli_secrets([]), owner)
     checked = bool(argv and argv[0] == '--command')
     if checked:
         argv = argv[1:]
     if not argv:
         raise ValueError('missing command')
-    secrets = _cli_secrets(argv)
+    secrets = _cli_secrets(argv) + _known()
     if checked:
         _check_argv(argv, secrets)
     for cutoff, clock in ((expires, time.time), (monotonic_expires, time.monotonic)):
@@ -194,17 +344,22 @@ def main():
     streams = []
     emitted = False
     timed_out = False
+    owner_lost = False
     try:
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
             previous[signum] = signal.signal(signum, forward)
         with selectors.DefaultSelector() as selector:
             for pipe, target in ((child.stdout, sys.stdout), (child.stderr, sys.stderr)):
-                stream = _Stream(target, secrets)
+                stream = (_Control(target, control, secrets)
+                          if control is not None and pipe is child.stdout else _Stream(target, secrets))
                 streams.append(stream)
                 selector.register(pipe, selectors.EVENT_READ,
                                   (stream, codecs.getincrementaldecoder('utf-8')('replace')))
             while selector.get_map() or child.poll() is None:
                 now = time.monotonic()
+                if not _owner_alive(owner):
+                    owner_lost = True
+                    forward(signal.SIGTERM, None)
                 if deadline is not None and now >= deadline and not timed_out:
                     timed_out = True
                     forward(signal.SIGTERM, None)
@@ -232,6 +387,10 @@ def main():
         code = child.wait()
         if timed_out:
             code = 124
+        elif owner_lost:
+            code = 128 + signal.SIGTERM
+        if not code and any(isinstance(stream, _Control) and stream.failed for stream in streams):
+            code = 1
         if code and not emitted:
             print('command failed <redacted>', file=sys.stderr)
         return code
@@ -248,7 +407,8 @@ def main():
         for pipe in (child.stdout, child.stderr):
             pipe.close()
         for stream in streams:
-            stream.finish()
+            if not isinstance(stream, _Control):
+                stream.finish()
         for signum, handler in previous.items():
             signal.signal(signum, handler)
 

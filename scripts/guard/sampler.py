@@ -5,13 +5,13 @@ import concurrent.futures
 import glob
 import json
 import re
-import subprocess
 import time
 from pathlib import Path
 
 import sys
 
 from common import atomic, load_config
+from safe_exec import run as supervised_run
 from safe_output import cli
 
 NODE_SAMPLE = r"""
@@ -48,7 +48,7 @@ def local_sample():
 def worker_sample(config):
     import shlex
 
-    result = subprocess.run(
+    result = supervised_run(
         [
             "ssh",
             "-n",
