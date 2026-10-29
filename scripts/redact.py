@@ -45,7 +45,8 @@ SECRET_WORDS = frozenset(
         "cookie",
     ]
 )
-POINTER_WORDS = frozenset({"file", "path", "dir"})
+# a trailing sock / socket names a socket path (SSH_AUTH_SOCK), never a credential
+POINTER_WORDS = frozenset({"file", "path", "dir", "sock", "socket"})
 # a trailing error / exception names a diagnostic (KeyError: 'MODEL_DIR'), never a credential
 DIAGNOSTIC_WORDS = frozenset({"error", "exception"})
 # alone, too common in prose and data to mask in text (a tokenizer's "token")

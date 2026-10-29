@@ -34,7 +34,7 @@ record = {'clock_probe': False, 'command_started': True, 'parse_valid': False,
 try:
     words = shlex.split(sys.argv[-1])
     record['ssh_options_valid'] = sys.argv[1:-1] == [
-        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'RemoteCommand=none', 'worker.example.invalid']
+        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'RemoteCommand=none', '-o', 'ForwardAgent=no', 'worker.example.invalid']
     assert words[:3] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin']
     words = words[3:]
     assert words[:2] == ['/usr/bin/python3', str(Path(os.environ['WORKER_REPO']) / 'scripts/safe_exec.py')]

@@ -74,21 +74,22 @@ args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --net
 if [[ "$serving" == 1 && -n "${NATIVE_AUTH_FILE:-}" ]]; then
     safe_command python3 -c '
 import os, stat, sys
-path = sys.argv[1]
+path, shared = sys.argv[1], [os.path.realpath(d) for d in sys.argv[2:] if d]
 try:
-    if not os.path.isabs(path) or any(c in path for c in ":\r\n"):
+    if (not os.path.isabs(path) or any(c in path for c in ":\r\n")
+            or os.path.realpath(path) != os.path.normpath(path)):
         raise ValueError
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        info = os.fstat(fd)
-        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
-                or info.st_uid != os.geteuid() or not 0 < info.st_size <= 1048576):
-            raise ValueError
-    finally:
-        os.close(fd)
+    # Owned by the operator, or by root so that only the serving container can read it.
+    info = os.lstat(path)
+    if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_uid not in (os.geteuid(), 0) or not 0 < info.st_size <= 1048576):
+        raise ValueError
+    # Never inside a directory mounted into other containers or read by diagnostics.
+    if any(os.path.commonpath([path, d]) == d for d in shared):
+        raise ValueError
 except (OSError, ValueError):
-    raise SystemExit("NATIVE_AUTH_FILE must be an owned, nonempty regular file with mode 0600 and an absolute mount-safe path")
-' "$NATIVE_AUTH_FILE" || exit 2
+    raise SystemExit("NATIVE_AUTH_FILE must be a nonempty regular file with mode 0600, owned by you or root, at an absolute symlink-free path outside the checkout and the model, engram, assets, prepared, state and cache directories")
+' "$NATIVE_AUTH_FILE" "$PWD" "$MODEL_DIR" "$ENGRAM_DIR" "$ASSETS_DIR" "$PREPARED_DIR" "$STATE_DIR" "$CACHE_DIR" || exit 2
     args+=(-v "$NATIVE_AUTH_FILE:/run/tensorfold/auth-keys:ro")
 fi
 args+=("$IMAGE")

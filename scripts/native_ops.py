@@ -113,7 +113,7 @@ class Lifecycle:
                 boundary = str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py')
                 clean = ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', '/usr/bin/python3', boundary]
                 probe_argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
-                              '-o', 'RemoteCommand=none', self.worker,
+                              '-o', 'RemoteCommand=none', '-o', 'ForwardAgent=no', self.worker,
                               join_checked([*clean, '--timeout', str(limit), '--command',
                                             '/usr/bin/python3', '-c', 'import time; print(time.monotonic())'], env=self.env)]
                 try:
@@ -143,7 +143,7 @@ class Lifecycle:
                         '/usr/bin/python3', str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py'),
                         '--timeout', str(limit), '--command', *argv]
             argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
-                    '-o', 'RemoteCommand=none', self.worker, join_checked(argv, env=self.env)]
+                    '-o', 'RemoteCommand=none', '-o', 'ForwardAgent=no', self.worker, join_checked(argv, env=self.env)]
         try:
             result = self.runner(argv, cwd=self.root, env=self.env, capture_output=True,
                                  text=True, timeout=limit)

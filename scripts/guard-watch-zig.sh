@@ -33,7 +33,7 @@ wssh_control() {
     local mode=$1 remote
     shift
     remote=$(watch_remote "$mode" "$@") || return $?
-    watch_capture "$mode" ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none "$WORKER_SSH" "$remote"
+    watch_capture "$mode" ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none -o ForwardAgent=no "$WORKER_SSH" "$remote"
 }
 # Config is trusted shell code; suppress diagnostics until its keys are known.
 if [[ -f "$config" ]]; then
@@ -88,7 +88,7 @@ watch_remote() { safe_shell text _watch_remote "$@"; }
 wssh() {
     local remote
     remote=$(watch_remote text "$@") || return $?
-    watch_run ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none "$WORKER_SSH" "$remote"
+    watch_run ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none -o ForwardAgent=no "$WORKER_SSH" "$remote"
 }
 _watch_lease_fresh() {
     watch_validate_numbers || return $?

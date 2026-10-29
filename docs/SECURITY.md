@@ -4,6 +4,18 @@ Rule: no credential reaches a log, stdout/stderr, an evidence file, Docker or SS
 argv, or an environment dump. The recipe meets it with three mechanisms, in this
 order of importance. The output filter is a backstop, not the boundary.
 
+**What this is, and is not.** These mechanisms stop the recipe from *implicitly*
+handing a key to its children: through their environment, their argv, or a
+remote session. They are not OS isolation. Every child runs as the operator's
+user, with that user's filesystem, `/proc` and Docker access. A child that goes
+looking can read anything that user can read: the key file, if the operator owns
+it; a parent's `/proc/PID/environ`; or the key mounted in rank 0, through
+`docker exec`. Docker access is root-equivalent. The recipe's own diagnostics do
+none of this, and the output backstop masks the ordinary ways a key could still
+appear (section 5). If no non-serving process may be able to obtain a key, use
+OS privileges: a root-owned key file (section 6) and an operator account without
+Docker access.
+
 ## 1. Where credentials live
 
 - **Serving keys** live in one operator-owned file, mode `0600`, outside the checkout.
@@ -21,9 +33,14 @@ order of importance. The output filter is a backstop, not the boundary.
 | rank-0 `tensorfold-dsv41 serve` | yes | reads `/run/tensorfold/auth-keys`, a read-only mount, via `--api-key-file` |
 | rank-0 container environment, argv, `docker inspect` | no | Docker receives only the mount path |
 | rank 1, AOT and diagnostic containers | no | no mount, no key environment |
-| host supervisors (`safe_exec.py`) | in memory only | reads the key file and configured values to mask and refuse them |
-| every other child: Docker CLI, curl, ssh, git, guard/bench helpers | no | sanitized environment (below) |
+| host supervisors (`safe_exec.py`, the `safe_shell.sh` boundary) | in memory | read the key file (when readable) and configured values, to mask and refuse them |
+| recipe Python CLIs wrapped by `safe_output.cli()` | in memory | same as the supervisor: `preflight.py`, `canary.py`, `check_native_assets.py`, `native_ops.py`, `pack_engram.py`, `guard/{control,daemon,lifecycle,profile,sampler}.py`, `bench/{quality,soak,stress,structured}.py`, `bench/tooleval/chains.py` |
+| every other child: Docker CLI, curl, ssh, git, diagnostics | not given one | sanitized environment and argv (below); same-user file and process access remains |
 | an operator-run client | its own key | sent as an HTTP header; never passed to a child |
+
+These are the trusted holders. A process "in memory" holds keys only to mask and
+refuse them. That memory is in a core dump if the process crashes with core
+dumps enabled (section 6).
 
 ## 3. Every child starts from a sanitized environment
 
@@ -44,8 +61,16 @@ shell-quoting site. Before each spawn the supervisor:
 - **refuses argv** containing a known credential, a rendering of one, or a credential
   flag, assignment or header, before anything starts.
 
-A child that never holds a credential cannot print one, whatever encoding it uses:
-`set`, `declare -p`, `printf %q`, `pprint`, JSON, tracebacks or `/proc/*/environ`.
+So a child is never *given* a credential: its `set`, `declare -p`, `printf %q`,
+`pprint`, JSON and tracebacks, and its own `/proc/self/environ`, contain none. This
+covers what the child inherits, not what it can go and read (see the top of this
+file).
+
+`SSH_AUTH_SOCK` is a pointer to the operator's agent, not a key, so it is kept:
+agent-only SSH to the worker works. Every recipe `ssh` passes
+`-o ForwardAgent=no`, and the worker side starts from `env -i`, so the socket
+never leaves the head. Docker receives only the variables the launcher names, so
+it never reaches a container.
 
 ## 4. Remote commands
 
@@ -95,17 +120,29 @@ Every stream and file the recipe writes passes `scripts/redact.py` through the
 - a credential the head never knew: a worker-only key, or a file a child read on its own;
 - a multi-line PEM body in a live stream.
 
-Those cases are covered by sections 1–4: such a value must never be in a
-child process to begin with.
+The backstop protects the recipe's own trusted diagnostics, which print keys
+in none of these ways. It is not a defence against a process that deliberately
+reads a key and re-encodes it. That process has crossed the trust boundary at
+the top of this file.
 
 ## 6. Operator responsibilities
 
 - Keep keys only in the `NATIVE_AUTH_FILE` file; do not export them in shell profiles
-  on either node.
+  on either node. The launcher refuses a file inside the checkout or inside any
+  directory it mounts into a container (model, engram, assets, prepared, state,
+  cache), because rank 1, AOT and diagnostic containers see those.
+- For the strongest setting, make the file `root:root` mode `0600` and run the
+  recipe as a user without it. Only the serving container (root) can then read
+  it. Host diagnostics cannot, and the backstop then has no keys to mask, because
+  none can be read. The launcher accepts a file owned by you or by root.
 - Keep worker shell startup quiet. A login profile runs before `env -i` on the worker,
   and anything it prints reaches the head as output.
 - The bind mount pins one inode: restart through the lifecycle after an atomic key
   replacement.
-- Serving-process core dumps follow the host's `core_pattern`. With Docker's default
-  root user they are root-owned. Evidence collection never gathers core files.
+- Core dumps follow the host's `core_pattern` and `ulimit -c`. The serving
+  process runs as Docker's default root user, so its cores are root-owned. A
+  host supervisor or recipe CLI holds keys in memory to mask them, so its core
+  (mode `0600`, owned by the operator) can contain a key. Keep `ulimit -c 0`,
+  the usual default, for recipe shells, or point `core_pattern` at a root-only
+  location. Evidence collection never gathers core files.
 - Benchmark `--api-key KEY` is visible in `ps` on a shared host; prefer `API_KEY`.

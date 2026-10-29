@@ -247,3 +247,50 @@ def test_checked_ssh_has_no_head_credential_for_sendenv(worker, monkeypatch, tmp
     output = instance.run("1", ["/usr/bin/python3", "-c", SEND_PROBE])
     assert json.loads(record.read_text()) == []
     assert output.strip() == "absent"
+
+
+AGENT_PROBE = "import json,os; print(json.dumps([n in os.environ for n in ('API_KEY', 'SSH_AUTH_SOCK')]))"
+
+
+def test_agent_only_ssh_authenticates_through_checked_and_worker_paths(worker, monkeypatch, tmp_path):
+    # RR8-2: the agent socket is a pointer to a signing service, not a key. A
+    # worker reachable only through ssh-agent must stay reachable; the socket is
+    # never forwarded (ForwardAgent=no) and never reaches the worker's children.
+    agent = subprocess.run(["ssh-agent", "-s"], env={"PATH": PATH}, capture_output=True, text=True, timeout=10)
+    if agent.returncode != 0:
+        pytest.skip("agent-only SSH regression requires ssh-agent")
+    agent_env = {name: re.search(name + r"=([^;]+);", agent.stdout)[1] for name in ("SSH_AUTH_SOCK", "SSH_AGENT_PID")}
+    try:
+        subprocess.run(["ssh-add", str(tmp_path / "client")], env={"PATH": PATH, **agent_env},
+                       capture_output=True, check=True, timeout=10)
+        agent_config = tmp_path / "agent_config"
+        agent_config.write_text(worker["client"].read_text()
+                                .replace(" IdentitiesOnly yes", " IdentitiesOnly no")
+                                .replace(f" IdentityFile {tmp_path}/client", " IdentityFile none")
+                                + " ControlMaster no\n ControlPath none\n")
+        (worker["repo"].parent / "bin/ssh").write_text(
+            f"#!/bin/sh\nexec {quote_checked(worker['ssh'])} -F {quote_checked(str(agent_config))} \"$@\"\n")
+        command = ["ssh", "-o", "BatchMode=yes", "-o", "RemoteCommand=none", "worker.example",
+                   join_checked(["/usr/bin/python3", "-c", "print('agent-session-ok')"])]
+        caller = {"PATH": os.environ["PATH"], **agent_env}
+        # Control: without the agent no identity is offered, so the fixture is agent-only.
+        assert subprocess.run(command, env={"PATH": os.environ["PATH"]}, capture_output=True,
+                              text=True, timeout=15).returncode == 255
+        direct = subprocess.run(command, env=caller, capture_output=True, text=True, timeout=15)
+        assert direct.returncode == 0 and "agent-session-ok" in direct.stdout
+        monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+        checked = module("rr8_agent_safe_exec", ROOT / "scripts/safe_exec.py").run(command, env=caller, timeout=15)
+        assert checked.returncode == 0 and "agent-session-ok" in checked.stdout
+        for name, value in agent_env.items():
+            monkeypatch.setenv(name, value)
+        monkeypatch.setenv("API_KEY", "fake-rr8-agent-caller-credential")
+        monkeypatch.syspath_prepend(str(ROOT / "scripts/guard"))
+        backend = module("rr8_agent_backend", ROOT / "scripts/guard/backend.py")
+        instance = backend.Backend.__new__(backend.Backend)
+        instance.config = {"worker_ssh": "worker.example", "worker_repo": str(worker["repo"])}
+        output = instance.run("1", ["/usr/bin/python3", "-c", AGENT_PROBE])
+        assert json.loads(output) == [False, False]
+        assert worker["key"] not in output
+        assert not worker["profile_marker"].exists()
+    finally:
+        subprocess.run(["ssh-agent", "-k"], env={"PATH": PATH, **agent_env}, capture_output=True, timeout=10)

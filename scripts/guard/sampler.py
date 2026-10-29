@@ -57,6 +57,8 @@ def worker_sample(config):
             "ConnectTimeout=2",
             "-o",
             "RemoteCommand=none",
+            "-o",
+            "ForwardAgent=no",
             config["worker_ssh"],
             join_checked([
                 "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",

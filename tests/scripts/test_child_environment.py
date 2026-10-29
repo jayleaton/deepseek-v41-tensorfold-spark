@@ -295,3 +295,16 @@ def test_publication_shell_git_child_has_no_credential_environment(tmp_path):
     # The empty fake index is an intentional scanner error, not a clean scan.
     assert result.returncode == 2
     observations(env)
+
+
+def test_agent_socket_is_a_pointer_kept_for_ssh_children(tmp_path):
+    # RR8-2: SSH_AUTH_SOCK names a socket path; dropping it broke agent-only SSH.
+    from redact import secret_name
+    assert not secret_name("SSH_AUTH_SOCK")
+    env = {"PATH": "/usr/bin:/bin", "CONFIG": str(tmp_path / "absent.env"),
+           "SSH_AUTH_SOCK": str(tmp_path / "agent.sock"), "API_KEY": "fake-rr8-agent-credential"}
+    child = safe_exec.child_environment(env)
+    assert child["SSH_AUTH_SOCK"] == str(tmp_path / "agent.sock")
+    assert "API_KEY" not in child
+    # A key value in the socket variable is still an alias, and is still dropped.
+    assert "SSH_AUTH_SOCK" not in safe_exec.child_environment({**env, "SSH_AUTH_SOCK": env["API_KEY"]})

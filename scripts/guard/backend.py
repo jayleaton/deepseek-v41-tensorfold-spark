@@ -83,6 +83,8 @@ class Backend:
                 "ConnectTimeout=3",
                 "-o",
                 "RemoteCommand=none",
+                "-o",
+                "ForwardAgent=no",
                 self.config["worker_ssh"],
                 join_checked([
                     "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",

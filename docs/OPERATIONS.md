@@ -61,10 +61,12 @@ neighboring off blocks. Keep both options off until those device gates pass.
 
 ## Native pair lifecycle and watchdog (#58)
 
-For authenticated native serving, put the keys in an operator-owned file outside
-the checkout with mode `0600`, and set `NATIVE_AUTH_FILE=/absolute/path/to/keys`
-in the head's config. Keep key contents out of shell config and environment
-variables. The launcher validates the file's type, owner and mode, mounts it
+For authenticated native serving, put the keys in a file with mode `0600`, owned by
+you or by root (root-only is stronger; see [SECURITY.md](SECURITY.md)), outside the
+checkout and the model, engram, assets, prepared, state and cache directories. Set
+`NATIVE_AUTH_FILE=/absolute/path/to/keys` in the head's config. Keep key contents out
+of shell config and environment variables. The launcher validates the file's type,
+owner, mode and location, mounts it
 read-only at `/run/tensorfold/auth-keys` on rank 0, and passes that path with
 `--api-key-file`. Host supervisors read its keys into memory only to mask and
 refuse them (see [SECURITY.md](SECURITY.md)). Rank 1 and AOT diagnostic containers receive no key mount.

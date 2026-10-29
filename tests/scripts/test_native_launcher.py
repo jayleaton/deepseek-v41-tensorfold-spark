@@ -180,6 +180,43 @@ def test_head_refuses_unsafe_auth_file_before_docker(launcher, tmp_path, kind):
     assert not argv_file.exists()
 
 
+@pytest.mark.parametrize("shared", ["state", "cache", "model", "checkout"])
+def test_head_refuses_auth_file_inside_a_shared_directory(launcher, tmp_path, shared):
+    # Every other container mounts these directories, and diagnostics read them.
+    env, argv_file, _ = launcher
+    parent = ROOT / "tests" if shared == "checkout" else tmp_path / shared
+    if shared == "checkout" and not os.access(parent, os.W_OK):
+        pytest.skip("the checkout case needs a writable checkout")
+    parent.mkdir(parents=True, exist_ok=True)
+    key_file = parent / f"rr8-auth-keys-{tmp_path.name}"
+    try:
+        key_file.write_text("rr8SharedDirectoryCredential\n")
+        key_file.chmod(0o600)
+        env["NATIVE_AUTH_FILE"] = str(key_file)
+        result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                                cwd=ROOT, env=env, text=True, capture_output=True)
+    finally:
+        key_file.unlink()
+    assert result.returncode == 2
+    assert "outside the checkout" in result.stderr
+    assert "docker run" not in result.stdout
+    assert not argv_file.exists()
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason="creating a root-owned file needs root")
+def test_head_accepts_a_root_owned_auth_file(launcher, tmp_path):
+    env, _, _ = launcher
+    key_file = tmp_path / "root-keys"
+    key_file.write_text("rr8RootOwnedCredential\n")
+    key_file.chmod(0o600)
+    assert key_file.stat().st_uid == 0
+    env["NATIVE_AUTH_FILE"] = str(key_file)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert str(key_file) + ":/run/tensorfold/auth-keys:ro" in shlex.split(result.stdout)
+
+
 @pytest.mark.parametrize("source", ["config", "caller"])
 @pytest.mark.parametrize("entry", ["rank", "pair-wrapper"])
 def test_native_auth_environment_requires_file_migration(launcher, source, entry):

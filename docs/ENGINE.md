@@ -137,5 +137,5 @@ loading remains trusted, quiet and separate from implicit shell startup. Remote
 diagnostics run through the worker's checked supervisor under `env -i` with a
 fixed system PATH; SSH configured RemoteCommand is disabled for these commands.
 The worker checkout must contain the same shared boundary scripts. Serving keys
-remain in the separately mounted operator-owned file, never in remote session
+remain in the separately mounted key file, never in remote session
 environment or diagnostic arguments.
