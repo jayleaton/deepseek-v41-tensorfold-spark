@@ -14,6 +14,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from safe_output import cli, safe_print as print  # noqa: E402
+import engine_settings  # noqa: E402
 
 
 def sha(path):
@@ -89,8 +90,10 @@ def identity(args):
     coverage(None, args.assets / 'aot')
     for name in ('rope.bin', 'engram-token-map.bin', 'sigs.json', 'aot/aot.json'):
         files['assets/' + name] = sha(args.assets / name)
-    profile = {k: v for k, v in sorted(os.environ.items()) if k.startswith(('TF_DSV41_', 'GLM53_TF_', 'TF_CUDA_'))
-               and k not in {'TF_DSV41_PLAN_PIN', 'TF_DSV41_LAUNCH_T0'}}
+    # The forwarded engine settings both ranks must share; rank-local ones are left out.
+    _, settings = engine_settings.manifest()
+    profile = {k: os.environ[k] for k in engine_settings.forwarded(os.environ, settings)
+               if not k.startswith('NCCL_') and k not in engine_settings.RANK_LOCAL}
     transport = {key: os.environ.get(key, default) for key, default in
                  [('TF_COMM_BACKEND', 'roce'), ('TF_TP_MASTER', ''), ('TF_TP_PORT', '29571')]}
     value = {'engine': args.revision, 'image': args.image_id, 'files': files,

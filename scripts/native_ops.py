@@ -80,7 +80,7 @@ class Lifecycle:
         self.lease = Path(lease) if lease else None
         self.ready_timeout = self.number('READY_TIMEOUT', 900)
         self.command_timeout = self.number('OPS_COMMAND_TIMEOUT', 30)
-        drain_budget = self.number('TF_DSV41_DRAIN_S', 20) + 60
+        drain_budget = self.number('TF_DRAIN_S', 20) + 60
         self.stop_timeout = math.ceil(max(80, drain_budget, self.number('STOP_TIMEOUT', 80)))
         self.http_timeout = self.number('HTTP_TIMEOUT', 5)
         self.interval = self.number('WATCH_INTERVAL', 10)

@@ -11,10 +11,10 @@ export CONFIG=${CONFIG:-config/prod-zig.env}
 safe_main "${BASH_SOURCE[0]}" "$@"
 set -euo pipefail
 cd "${safe_exec%/*}/.."
-rank=${1:?usage: run-zig.sh 0|1 [--dry-run|--identity|--check-aot|--detach]}
+rank=${1:?usage: run-zig.sh 0|1 [--dry-run|--effective-profile|--identity|--check-aot|--detach]}
 [[ "$rank" == 0 || "$rank" == 1 ]] || { echo 'rank must be 0 or 1' >&2; exit 2; }
 mode=${2:-}
-case "$mode" in ''|--dry-run|--identity|--check-aot|--detach) ;; *) echo 'unknown launch option' >&2; exit 2 ;; esac
+case "$mode" in ''|--dry-run|--effective-profile|--identity|--check-aot|--detach) ;; *) echo 'unknown launch option' >&2; exit 2 ;; esac
 config=${CONFIG:-config/prod-zig.env}
 [[ -f "$config" ]] || { echo 'configuration missing; copy a native profile to CONFIG' >&2; exit 2; }
 set -a
@@ -37,24 +37,22 @@ export NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
 export NCCL_CUMEM_HOST_ENABLE=${NCCL_CUMEM_HOST_ENABLE:-0}
 envs=()
 # Enumerate names only; never pipe credential values through an environment dump.
-forward_names=$(compgen -v | safe_capture names python3 -c '
-import sys
-sys.path.insert(0, "scripts")
-from redact import secret_name
-for name in sys.stdin:
-    name = name.strip()
-    selected = name.startswith(("TF_DSV41_", "GLM53_TF_", "NCCL_", "TF_CUDA_")) or name in ("TF_TP_ROCE_HCA", "TF_EXPERIMENTAL")
-    if selected and not secret_name(name):
-        print(name)
-') || exit 2
+# The pinned engine's own setting names (config/tensorfold-settings.txt) are forwarded;
+# a renamed or removed setting is refused rather than silently left at its default.
+forward_names=$(compgen -v | safe_capture names python3 scripts/engine_settings.py forward) || exit 2
+values=()
 while IFS= read -r key; do
-    # Check shell values before the supervisor removes credential aliases from
-    # child environments. A tainted control must fail, not silently disappear.
-    safe_check_argv "${!key}" || exit 2
+    [[ -n "$key" ]] || continue
+    values+=("${!key}")
     export "$key"
     # TF_TP_ROCE_HCA forwarding contributed by rootsbymenda in #63.
-    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*|TF_TP_ROCE_HCA|TF_EXPERIMENTAL|TF_CUDA_*) envs+=(-e "$key");; esac
+    envs+=(-e "$key")
 done <<< "$forward_names"
+# Check shell values before the supervisor removes credential aliases from
+# child environments. A tainted control must fail, not silently disappear.
+[[ ${#values[@]} == 0 ]] || safe_check_argv "${values[@]}" || exit 2
+case "${TF_DSV41_DEFAULT_EFFORT:-}" in ''|low|medium|high|xhigh) ;;
+    *) echo 'TF_DSV41_DEFAULT_EFFORT must be low, medium, high or xhigh' >&2; exit 2 ;; esac
 prefix=${CONTAINER_PREFIX:-tensorfold-zig}
 [[ "$prefix" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || { echo 'invalid CONTAINER_PREFIX' >&2; exit 2; }
 args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --network host
@@ -98,12 +96,18 @@ if [[ "$rank" == 0 ]]; then
            --parallel "${TF_DSV41_SLOTS:-1}" --context "${TF_DSV41_CONTEXT:-4096}"
            --name DeepSeek-V4.1-Flash-TF --max-tokens 32768)
     [[ "${TF_DSV41_THINKING:-1}" != 0 ]] || args+=(--no-thinking)
+    [[ -z "${TF_DSV41_DEFAULT_EFFORT:-}" ]] || args+=(--reasoning-effort "$TF_DSV41_DEFAULT_EFFORT")
     [[ "$serving" != 1 || -z "${NATIVE_AUTH_FILE:-}" ]] || args+=(--api-key-file /run/tensorfold/auth-keys)
 else
     args+=(tf-dsv41 follow /model /assets)
 fi
 if [[ "$mode" == --dry-run ]]; then
     safe_quote_argv "${args[@]}" || exit $?
+    exit
+fi
+if [[ "$mode" == --effective-profile ]]; then
+    # Names and the container's values; credential names appear by name only.
+    compgen -v | safe_command python3 scripts/engine_settings.py profile "${args[@]}"
     exit
 fi
 image_rev=$(safe_capture revision docker image inspect -f '{{index .Config.Labels "org.tensorfold.revision"}}' "$IMAGE")

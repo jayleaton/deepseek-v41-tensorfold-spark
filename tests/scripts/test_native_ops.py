@@ -340,11 +340,11 @@ def test_watch_observes_http_even_when_one_rank_is_missing(world):
 
 
 @pytest.mark.parametrize('settings,expected', [({}, 80),
-                                               ({'TF_DSV41_DRAIN_S': '45'}, 105),
-                                               ({'TF_DSV41_DRAIN_S': '45.5'}, 106),
+                                               ({'TF_DRAIN_S': '45'}, 105),
+                                               ({'TF_DRAIN_S': '45.5'}, 106),
                                                ({'STOP_TIMEOUT': '120'}, 120),
                                                ({'STOP_TIMEOUT': '5'}, 80),
-                                               ({'TF_DSV41_DRAIN_S': '90', 'STOP_TIMEOUT': '100'}, 150)])
+                                               ({'TF_DRAIN_S': '90', 'STOP_TIMEOUT': '100'}, 150)])
 def test_stop_budget_covers_native_drain_and_subprocess_wait(world, settings, expected):
     world.ops = ops.Lifecycle({**world.env, **settings}, runner=world.run, root=world.ops.root)
     world.ranks = [world.item(0), world.item(1)]

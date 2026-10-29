@@ -27,6 +27,8 @@ Use each pack's own prepared/session/calibration directories. Copy `config/pfden
 when retaining the candidate profile's dense-table setting. The q28-v2 rollback profile stays separate.
 The historic 1M/four-slot profile is a candidate for the new pin; preserve the memory floors and qualify it before use.
 
+Profiles use the engine's own setting names (`config/tensorfold-settings.txt`); the launcher refuses renamed ones.
+`TF_DSV41_THINKING=0` and `TF_DSV41_DEFAULT_EFFORT` become the head's `--no-thinking` and `--reasoning-effort` flags.
 `TF_TP_ROCE_HCA` selects the rank-local RDMA port when more than one peer is cabled. It is forwarded unchanged,
 including a value supplied from the caller environment. Credit: @rootsbymenda, #63. The launcher also keeps both-rank
 `NCCL_CUMEM_ENABLE=0` / `NCCL_CUMEM_HOST_ENABLE=0` defaults from #41. Set topology only in ignored local config.
@@ -62,6 +64,7 @@ After generating the complete assets, on each node:
 scripts/run-zig.sh 0 --check-aot       # use 1 on the worker
 scripts/run-zig.sh 0 --identity        # compare with rank 1: must match
 scripts/run-zig.sh 0 --dry-run
+scripts/run-zig.sh 0 --effective-profile   # the container's engine settings; credential names only
 ```
 
 The launcher checks the upstream image label and local directories, RoPE geometry/size, native token-map pack

@@ -6,6 +6,16 @@ and verifies it, builds the `dsv41-serve` target with both CUDA runtime and Deep
 `tensorfold-dsv41` and `tf-dsv41`. The serving build uses upstream Git objects without recipe patches. The older native export stays in
 `engine/zig` solely to preserve the existing generator/reference dependencies pending their equivalence audit.
 
+[`config/tensorfold-settings.txt`](../config/tensorfold-settings.txt) lists every `TF_*` / `TENSORFOLD_*` setting
+the pinned engine reads. The launcher forwards exactly the ones a profile sets, plus `NCCL_*`, never credential
+names. It refuses a renamed or removed setting (for example `GLM53_TF_ROCE_FAST`, now `TF_TP_ROCE_FAST`) and warns
+about any other engine-looking name the pin does not read, so an old profile cannot silently fall back to defaults.
+Every pin bump regenerates the list from the new engine source, and a test fails when the two disagree:
+
+```bash
+python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # after editing config/tensorfold.rev
+```
+
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 

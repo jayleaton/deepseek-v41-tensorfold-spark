@@ -106,7 +106,7 @@ locally before any worker starts. `serve.sh rank N --identity` checks a single r
 `tensorfold-zig-r1`, or `${CONTAINER_PREFIX}-r0/r1` when overridden on both nodes.
 `stop` writes a durable STOP before signalling, then stops only containers with the
 expected name, rank and revision labels, using their inspected IDs. Its timeout
-allows at least `TF_DSV41_DRAIN_S + 60` seconds (minimum 80); size service timeouts
+allows at least `TF_DRAIN_S + 60` seconds (minimum 80); size service timeouts
 for any larger configured budget. A failed boot also leaves STOP set.
 
 Only an explicit `start`/`restart` can clear an unchanged operator STOP after

@@ -31,7 +31,8 @@ def launchers(tmp_path):
     scripts = tmp_path / 'scripts'
     scripts.mkdir()
     for name in ('run-zig.sh', 'serve.sh', 'build-native.sh', 'check-zig-image.sh',
-                 'safe_exec.py', 'safe_quote.py', 'safe_output.py', 'redact.py', 'safe_shell.sh', 'watchdog_io.py'):
+                 'safe_exec.py', 'safe_quote.py', 'safe_output.py', 'redact.py', 'safe_shell.sh', 'watchdog_io.py',
+                 'engine_settings.py'):
         shutil.copyfile(ROOT / 'scripts' / name, scripts / name)
     docker_dir = tmp_path / 'docker/zig'
     docker_dir.mkdir(parents=True)
@@ -41,6 +42,7 @@ def launchers(tmp_path):
     config_dir.mkdir()
     revision = (ROOT / 'config/tensorfold.rev').read_text().strip()
     (config_dir / 'tensorfold.rev').write_text(revision)
+    shutil.copyfile(ROOT / 'config/tensorfold-settings.txt', config_dir / 'tensorfold-settings.txt')
     assets = tmp_path / 'assets'
     assets.mkdir()
     (assets / 'sigs.json').write_text('{}')
@@ -73,6 +75,7 @@ Path(os.environ['DOCKER_CALLED']).write_text('called')
     env = dict(os.environ, API_KEY=SECRET, CONFIG=str(config), FIXTURE_REV=revision,
                DOCKER_CALLED=str(marker), PATH=str(bindir) + os.pathsep + os.environ['PATH'])
     env.pop('TF_SAFE_EXEC_PARENT', None)
+    env.pop('TENSORFOLD_SOURCE', None)  # build-native.sh would build from that checkout
     return tmp_path, config, env, marker
 
 

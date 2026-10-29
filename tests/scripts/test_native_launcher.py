@@ -89,7 +89,7 @@ def test_launcher_excludes_credential_names(launcher, mode):
                         "GLM53_TF_SECRET", "NCCL_CREDENTIAL")
     secret = "rr1" + "LauncherCredentialOnly"
     env.update(dict.fromkeys(credential_names, secret))
-    env.update(TF_DSV41_POOL_TOKENS="2100000", TF_DSV41_MAX_TOKENS="32768")
+    env.update(TF_DSV41_POOL_TOKENS="2100000", TF_TP_MAILBOX_MAX_KB="1024")
     result = subprocess.run(["bash", "scripts/run-zig.sh", "1", mode],
                             cwd=ROOT, env=env, text=True, capture_output=True)
     assert result.returncode == (44 if mode == "--check-aot" else 0)
@@ -106,7 +106,7 @@ def test_launcher_excludes_credential_names(launcher, mode):
     assert not exposed_names, "credential-named variables reached the Docker boundary"
     printed_value = secret in printed
     assert not exposed_value and not printed_value, "credential value reached launcher output"
-    for name in ("TF_DSV41_POOL_TOKENS", "TF_DSV41_MAX_TOKENS", "TF_TP_ROCE_HCA"):
+    for name in ("TF_DSV41_POOL_TOKENS", "TF_TP_MAILBOX_MAX_KB", "TF_TP_ROCE_HCA"):
         assert name in argv
         assert argv[argv.index(name) - 1] == "-e"
 
@@ -114,7 +114,7 @@ def test_launcher_excludes_credential_names(launcher, mode):
 def test_credential_in_a_native_control_is_refused_without_dropping_the_setting(launcher):
     env, argv_file, _ = launcher
     secret = "rr1" + "NativeControlCredential"
-    env.update(API_KEY=secret, TF_DSV41_NATIVE_CONTROL=secret)
+    env.update(API_KEY=secret, TF_DSV41_ROWS_CAP=secret)
     result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
                             cwd=ROOT, env=env, text=True, capture_output=True)
     assert result.returncode == 78
@@ -275,3 +275,99 @@ def test_explicit_runner_environment_keeps_registry_for_nested_validation(launch
     assert code == 78
     assert refused
     assert not spawned
+
+
+sys.path.insert(0, str(ROOT / "scripts"))
+import engine_settings  # noqa: E402
+from redact import secret_name  # noqa: E402
+
+
+def forwarded_names(argv):
+    return [argv[i + 1].partition("=")[0] for i, arg in enumerate(argv) if arg == "-e"]
+
+
+@pytest.mark.parametrize("rank", [0, 1])
+def test_launcher_forwards_every_setting_the_pinned_engine_reads(launcher, rank):
+    # The arm E defect: profiles set GLM53_TF_ROCE_* / TF_DSV41_PLAN_*, the engine read
+    # TF_TP_*, and the launcher forwarded no TF_TP_* at all, so the RoCE fast path, the
+    # 1 MiB mailbox and the RDMA plan link silently fell back to engine defaults.
+    env, _, _ = launcher
+    _, settings = engine_settings.manifest()
+    expected = sorted(n for n in settings if n not in engine_settings.LAUNCHER_OWNED
+                      and n not in engine_settings.RECIPE_NAMES and not secret_name(n))
+    assert {"TF_TP_ROCE_FAST", "TF_TP_MAILBOX_MAX_KB", "TF_TP_PLAN_LINK", "TF_DRAIN_S",
+            "TENSORFOLD_REQUEST_LOG"} <= set(expected)
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write("".join(f"{name}=1\n" for name in expected))
+        stream.write("TENSORFOLD_BENCHMARK_TOKEN=rr10BenchmarkTokenOnly\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", str(rank), "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    names = forwarded_names(shlex.split(result.stdout))
+    missing = sorted(set(expected) - set(names))
+    assert not missing, f"engine settings not forwarded: {missing}"
+    for owned in ("TF_TP_RANK", "TF_TP_WORLD", "TF_TP_MASTER", "TF_TP_PORT", "TF_COMM_BACKEND"):
+        assert names.count(owned) == 1
+    assert "TENSORFOLD_BENCHMARK_TOKEN" not in names
+    assert "rr10BenchmarkTokenOnly" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("legacy", sorted(engine_settings.LEGACY))
+def test_launcher_refuses_a_setting_the_pinned_engine_no_longer_reads(launcher, legacy):
+    env, argv_file, _ = launcher
+    value = "rr10LegacyValue"
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write(f"{legacy}={value}\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    assert legacy in result.stderr
+    replacement = engine_settings.LEGACY[legacy]
+    assert (replacement or "remove it") in result.stderr
+    assert value not in result.stdout + result.stderr
+    assert "docker run" not in result.stdout and not argv_file.exists()
+
+
+def test_launcher_warns_about_an_engine_name_the_pin_does_not_read(launcher):
+    env, _, _ = launcher
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write("TF_DSV41_ROWS_CAPP=64\nTF_TP_ROCE_FAST=1\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    assert "TF_DSV41_ROWS_CAPP is not read by TensorFold" in result.stderr
+    names = forwarded_names(shlex.split(result.stdout))
+    assert "TF_DSV41_ROWS_CAPP" not in names and "TF_TP_ROCE_FAST" in names
+
+
+def test_effective_profile_prints_settings_and_only_credential_names(launcher):
+    env, argv_file, _ = launcher
+    secret = "rr10" + "EffectiveProfileCredential"
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write(f"TF_TP_MAILBOX_MAX_KB=1024\nTF_TP_PLAN_LINK=rdma\nHF_TOKEN={secret}\n"
+                     "TF_DSV41_DEFAULT_EFFORT=high\nTF_DSV41_ROWS_CAPP=64\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--effective-profile"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert "TF_TP_MAILBOX_MAX_KB=1024  [profile]" in lines
+    assert "TF_TP_PLAN_LINK=rdma  [profile]" in lines
+    assert "TF_TP_RANK=0  [launcher]" in lines
+    assert "HF_TOKEN" in lines and "TF_DSV41_ROWS_CAPP" in lines
+    leaked = secret in result.stdout + result.stderr
+    assert not leaked, "credential value reached the effective profile"
+    assert not argv_file.exists()
+
+
+@pytest.mark.parametrize("effort, code", [("high", 0), ("extreme", 2)])
+def test_default_effort_becomes_the_head_flag(launcher, effort, code):
+    env, _, _ = launcher
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write(f"TF_DSV41_DEFAULT_EFFORT={effort}\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == code
+    if code == 0:
+        argv = shlex.split(result.stdout)
+        assert argv[argv.index("--reasoning-effort") + 1] == "high"
+        assert "TF_DSV41_DEFAULT_EFFORT" not in forwarded_names(argv)
