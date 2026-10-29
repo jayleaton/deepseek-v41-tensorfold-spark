@@ -9,8 +9,11 @@ and verifies it, builds the `dsv41-serve` target with both CUDA runtime and Deep
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is the local `dsv41/upgrade-latest` commit `5368c7a35`, including
-flash17 `dsq-1` checkpoint admission from `98f2a3896`. It is not on upstream main yet.
+The current pin is the local `dsv41/upgrade-latest` commit `314c7a911`, including
+flash17 `dsq-1` checkpoint admission from `98f2a3896`. It boots the real flash17 pack
+on TP2. It adds DeepSeek-V4.x chat rendering, sampling defaults and tool-schema
+holding, and the Spark stats keys in replies (on by default for DeepSeek;
+`TENSORFOLD_WIRE=native` turns them off). It is not on upstream main yet.
 Use a local checkout or self-contained bundle as described below; upstream fetching
 will work once that exact commit is published. This source support is not a new
 pack/device qualification. Do not edit a pack config to bypass admission checks.
