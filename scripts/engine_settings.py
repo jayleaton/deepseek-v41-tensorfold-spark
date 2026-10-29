@@ -31,8 +31,25 @@ LAUNCHER_OWNED = frozenset({
     "TF_TP_WORLD", "TF_TP_RANK", "TF_TP_DEVICE", "TF_TP_MASTER", "TF_TP_PORT", "TF_COMM_BACKEND",
     "TF_DSV41_ASSETS", "TF_DSV41_ENGRAM_DIR", "TF_TP_KERNEL_IMAGE",
 })
-# Per-node settings, outside the identity both ranks must share.
-RANK_LOCAL = frozenset({"TF_TP_PLAN_PIN", "TF_TP_ROCE_HCA", "TF_TP_ROCE_HCAS", "TF_ROCE_GID_INDEX"})
+# The pair identity follows the engine's own split. fabric/tp/config.zig Config.digest
+# hashes only these fields; every other transport setting may differ per rank.
+DIGEST_FIELDS = frozenset({"world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast",
+                           "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env"})
+# Transport settings feeding those fields (world and backend are launcher-owned), plus
+# the older cuda/roce.zig protocol switches. Both ranks must agree on these.
+TRANSPORT_COMMON = frozenset({"TF_TP_MAILBOX_MAX_KB", "TF_TP_ROCE_CHUNKED_KB", "TF_TP_FAILFAST",
+                              "TF_TP_ROCE_WIRE", "TF_TP_ROCE_FALLBACK", "TF_GRAPH_CACHE",
+                              "TF_ROCE", "TF_ROCE_MAX_KB"})
+# Per-rank settings, forwarded but outside the identity both ranks must share: placement
+# (CPUs, devices, ports), timeouts, the fast-path tuning the engine marks local, and diagnostics.
+RANK_LOCAL = frozenset({
+    "TF_TP_PLAN_PORT", "TF_TP_PLAN_TIMEOUT", "TF_TP_PLAN_LINK", "TF_TP_PLAN_SPIN_US", "TF_TP_PLAN_PIN",
+    "TF_TP_MAILBOX_TIMEOUT_S", "TF_TP_FAILFAST_GRACE_S", "TF_TP_PEER_MEM_S",
+    "TF_TP_ROCE_HCA", "TF_TP_ROCE_HCAS", "TF_TP_ROCE_TC", "TF_TP_ROCE_FAST", "TF_TP_ROCE_POLLERS",
+    "TF_TP_ROCE_STAGGER_NS", "TF_TP_ROCE_BLOCKS", "TF_TP_ROCE_CPU", "TF_NCCL_LIB",
+    "TF_TP_ALLOW_HOST_ONLY", "TF_TP_LOCAL", "TF_TP_STATS", "TF_TP_TRACE",  # host-only tests; flashnext only
+    "TF_ROCE_HCA", "TF_ROCE_GID_INDEX",
+})
 # Recipe settings that become engine flags or host behaviour, never container environment.
 RECIPE_NAMES = frozenset({"TF_DSV41_THINKING", "TF_DSV41_DEFAULT_EFFORT", "TF_DSV41_LAUNCH_T0",
                           "TF_NATIVE_REQUIRE_FILE", "TENSORFOLD_SOURCE", "TENSORFOLD_REV", "TF_SRC"})

@@ -73,6 +73,29 @@ index and common asset manifests plus the effective engine profile, image and tr
 asset bytes against their release manifests before deploying; these metadata checks do not certify arithmetic or
 hash every large weight/Engram file at each boot. Run --check-aot after every setting change.
 
+`--identity` must print the same hash on both ranks; `serve.sh` preflight refuses the pair otherwise. Its inputs:
+
+- the engine revision and image ID;
+- the model config, tokenizer and weight index, and the common assets (`rope.bin`, `engram-token-map.bin`,
+  `sigs.json`, `aot/aot.json`); each rank's own Engram shards are checked, but not hashed;
+- `TF_COMM_BACKEND`, `TF_TP_MASTER` and `TF_TP_PORT`;
+- every other forwarded engine setting (`config/tensorfold-settings.txt`), except `NCCL_*` and the rank-local
+  settings below.
+
+Rank-local settings are forwarded with their values but may differ per node. They follow the engine's own
+transport digest (`Config.digest` in `fabric/tp/config.zig`), which hashes only the world size, backend,
+`TF_TP_MAILBOX_MAX_KB`, `TF_TP_ROCE_CHUNKED_KB`, `TF_TP_FAILFAST`, `TF_TP_ROCE_WIRE`, `TF_TP_ROCE_FALLBACK` and
+`TF_GRAPH_CACHE`:
+
+- **placement:** `TF_TP_ROCE_CPU` (the RoCE proxy thread), `TF_TP_PLAN_PIN`, `TF_TP_ROCE_HCA`, `TF_TP_ROCE_HCAS`,
+  `TF_TP_ROCE_TC`, `TF_ROCE_HCA`, `TF_ROCE_GID_INDEX`, `TF_TP_PLAN_PORT`, `TF_NCCL_LIB`;
+- **the fast path's local tuning:** `TF_TP_ROCE_FAST`, `TF_TP_ROCE_POLLERS`, `TF_TP_ROCE_STAGGER_NS`,
+  `TF_TP_ROCE_BLOCKS`, `TF_TP_PLAN_LINK`, `TF_TP_PLAN_SPIN_US`;
+- **timeouts:** `TF_TP_PLAN_TIMEOUT`, `TF_TP_MAILBOX_TIMEOUT_S`, `TF_TP_FAILFAST_GRACE_S`, `TF_TP_PEER_MEM_S`;
+- **test and other-family switches:** `TF_TP_ALLOW_HOST_ONLY`, `TF_TP_LOCAL`, `TF_TP_STATS`, `TF_TP_TRACE`.
+
+The list is `RANK_LOCAL` in `scripts/engine_settings.py`; a test checks it against the pinned engine's digest.
+
 ## Start and stop
 
 Start `scripts/run-zig.sh 1` on the worker, then `scripts/run-zig.sh 0` on the head. These launch `tf-dsv41 follow`

@@ -67,6 +67,43 @@ def test_common_profile_and_transport_change_identity(rank, monkeypatch):
     assert changed != assets.identity(rank)
 
 
+RANK_LOCAL = sorted(assets.engine_settings.RANK_LOCAL)
+COMMON = sorted(assets.engine_settings.TRANSPORT_COMMON)
+
+
+def pair(rank, monkeypatch, first, second):
+    identities = []
+    for r, env in enumerate((first, second)):
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        rank.rank = r
+        identities.append(assets.identity(rank))
+    return identities
+
+
+@pytest.mark.parametrize('name', RANK_LOCAL)
+def test_rank_local_transport_settings_keep_the_pair_identity(rank, monkeypatch, name):
+    # RR10-1: per-node placement (TF_TP_ROCE_CPU=2 on one node, 5 on the other) must not
+    # make preflight refuse the pair; the engine leaves these out of its own digest.
+    first, second = pair(rank, monkeypatch, {name: '2'}, {name: '5'})
+    assert first == second
+
+
+@pytest.mark.parametrize('name', COMMON)
+def test_common_transport_settings_change_the_pair_identity(rank, monkeypatch, name):
+    first, second = pair(rank, monkeypatch, {name: '1024'}, {name: '512'})
+    assert first != second
+
+
+def test_proxy_cpus_differ_but_mailbox_sizes_must_match(rank, monkeypatch):
+    first, second = pair(rank, monkeypatch, {'TF_TP_MAILBOX_MAX_KB': '1024', 'TF_TP_ROCE_CPU': '3'},
+                         {'TF_TP_MAILBOX_MAX_KB': '1024', 'TF_TP_ROCE_CPU': '7'})
+    assert first == second
+    first, second = pair(rank, monkeypatch, {'TF_TP_MAILBOX_MAX_KB': '1024', 'TF_TP_ROCE_CPU': '3'},
+                         {'TF_TP_MAILBOX_MAX_KB': '256', 'TF_TP_ROCE_CPU': '3'})
+    assert first != second
+
+
 def test_token_map_provenance_and_rope_geometry_are_checked(rank):
     (rank.model / 'tokenizer.json').write_text('{"changed":true}')
     with pytest.raises(ValueError, match='token-map geometry/provenance'):
