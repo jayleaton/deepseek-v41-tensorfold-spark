@@ -18,13 +18,11 @@ environment, including short explicit keys, so a tool that echoes $API_KEY in it
 
 from __future__ import annotations
 
-import ast
 import json
 import os
 import re
-import shlex
 import sys
-import warnings
+import urllib.parse
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -63,7 +61,7 @@ TOKEN_PATTERNS = (
 )
 PEM_BEGIN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
 PEM_BLOCK = re.compile(
-    r"-----BEGIN ([A-Z0-9 ]*)PRIVATE KEY-----.*?(?:-----END \1PRIVATE KEY-----|\Z)",
+    r"-----BEGIN ([A-Z0-9 ]*)PRIVATE KEY-----.*?(?:-----END \1PRIVATE KEY-----|(?=\r?\n?\Z))",
     re.DOTALL,
 )
 
@@ -152,6 +150,11 @@ def _secret_variants(value: str) -> tuple[str, ...]:
         for v in tuple(variants):
             variants.update((json.dumps(v)[1:-1], json.dumps(v, ensure_ascii=False)[1:-1],
                              repr(v)[1:-1], ascii(v)[1:-1]))
+    # The single-quoted shell spelling (as set -x and shlex print it) and the URL
+    # spelling. The list is fixed on purpose: the output backstop does not decode
+    # arbitrary encodings (docs/SECURITY.md). This builds text to match, never argv.
+    for v in tuple(variants):
+        variants.update(("'" + v.replace("'", "'\"'\"'") + "'", urllib.parse.quote(v, safe="")))
     return tuple(sorted(variants, key=len, reverse=True))
 
 
@@ -161,204 +164,24 @@ def secret_variants(values: Iterable[str]) -> list[str]:
                   key=len, reverse=True)
 
 
-_LITERAL = re.compile(r'''(?:[bBuUrR])?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')''', re.DOTALL)
-_DECODE_DEPTH = 6
-_DECODE_LIMIT = 256
+def split_lines(text: str) -> tuple[str, str]:
+    """Split text into complete lines (each ending in \\n or \\r) and the unterminated remainder."""
+    boundary = max(text.rfind("\n"), text.rfind("\r")) + 1
+    return text[:boundary], text[boundary:]
 
 
-def _shell_records(text: str):
-    """Yield physical lines and their newline status, independent of diagnostic syntax."""
-    start = 0
-    for match in re.finditer("\n", text):
-        yield text[start:match.end()], True
-        start = match.end()
-    if start < len(text):
-        yield text[start:], False
+def _lines(text: str):
+    """Physical lines with their terminators; \\r ends a progress-style line just as \\n does."""
+    return re.findall(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$", text)
 
 
-def iter_safe_records(text: str):
-    """Iterate physical lines, without their terminating newline."""
-    for record, terminated in _shell_records(text):
-        yield record[:-1] if terminated else record
+def redact_line(line: str, known: Iterable[str] = ()) -> str:
+    """One line with every credential this module recognises replaced by MASK; no state, nothing withheld."""
+    body = line.rstrip("\r\n")
+    return _redact_body(body, known) + line[len(body):]
 
 
-def _ansi_c(text: str, start: int) -> tuple[str, int]:
-    """Decode one Bash ANSI-C string without executing substitutions or shell code."""
-    out = bytearray()
-    i = start
-    escapes = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
-               "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
-    while i < len(text):
-        char = text[i]
-        i += 1
-        if char == "'":
-            return out.decode("utf-8", errors="surrogateescape"), i
-        if char != "\\":
-            out.extend(char.encode("utf-8", errors="surrogateescape"))
-            continue
-        if i == len(text):
-            break
-        char = text[i]
-        i += 1
-        if char in escapes:
-            out.extend(escapes[char].encode())
-        elif char in "01234567xuU":
-            octal = char in "01234567"
-            width = 3 if octal else {"x": 2, "u": 4, "U": 8}[char]
-            begin = i - 1 if octal else i
-            digits = re.match(r"[0-7]+" if octal else r"[0-9a-fA-F]+", text[begin:begin + width])
-            if not digits:
-                raise ValueError("invalid ANSI-C escape")
-            i = begin + len(digits[0])
-            value = int(digits[0], 8 if octal else 16)
-            if octal or char == "x":
-                out.append(value % 256)
-            else:
-                out.extend(chr(value).encode("utf-8"))
-        elif char == "c":
-            if i == len(text):
-                raise ValueError("incomplete ANSI-C control escape")
-            if not text[i].isascii():
-                raise ValueError("non-ASCII ANSI-C control escape")
-            out.append(ord(text[i].upper()) ^ 64)
-            i += 1
-        else:
-            out.extend(("\\" + char).encode("utf-8", errors="surrogateescape"))
-    raise ValueError("unterminated ANSI-C string")
-
-
-def _shell_words(text: str, *, prose: bool = False) -> list[str]:
-    """Use POSIX shlex concatenation, replacing ANSI-C fragments with opaque placeholders first."""
-    parts, replacements = [], {}
-    quote = ""
-    i = 0
-    marker = "__redact_fragment_"
-    while marker in text:
-        marker += "_"
-    while i < len(text):
-        char = text[i]
-        if (prose and not quote and char == "'" and i > 0 and i + 1 < len(text)
-                and text[i - 1].isalpha() and text[i + 1].isalpha()):
-            parts.append("\\'")
-            i += 1
-            continue
-        if not quote and text.startswith("$'", i):
-            value, i = _ansi_c(text, i + 2)
-            placeholder = marker + str(len(replacements)) + "__"
-            replacements[placeholder] = value
-            parts.append(placeholder)
-            continue
-        if quote != "'" and text.startswith("\\\n", i):
-            i += 2
-            continue
-        parts.append(char)
-        i += 1
-        if char == "\\" and quote != "'" and i < len(text):
-            parts.append(text[i])
-            i += 1
-        elif quote:
-            if char == quote:
-                quote = ""
-        elif char in "\"'":
-            quote = char
-    words = shlex.split("".join(parts), comments=False, posix=True)
-    if replacements:
-        fragments = re.compile("|".join(re.escape(key) for key in replacements))
-        words = [fragments.sub(lambda match: replacements[match[0]], word) for word in words]
-    return words
-
-
-def _decoded_secret(record: str, known: list[str]) -> bool:
-    """Inspect bounded inert decoding layers, masking only a matching known value."""
-    pending = [(record, 0)]
-    seen = set()
-    while pending:
-        value, depth = pending.pop()
-        if value in seen:
-            continue
-        seen.add(value)
-        if any(secret in value for secret in known):
-            # Raw occurrences retain the existing fine-grained masking behavior.
-            if depth:
-                return True
-        if depth >= _DECODE_DEPTH or len(seen) >= _DECODE_LIMIT:
-            continue
-        if not any(char in value for char in "\"'\\"):
-            continue
-        try:
-            words = _shell_words(value)
-        except (ValueError, OverflowError, UnicodeError):
-            try:
-                # Prose punctuation must not prevent decoding a later escaped
-                # value on the same line ("can't connect rr5\\ alpha").
-                words = _shell_words(value, prose=True)
-            except (ValueError, OverflowError, UnicodeError):
-                words = []
-        children = [word for word in words if word != value]
-        literals = [value] + [match[0] for match in _LITERAL.finditer(value)]
-        for literal in literals:
-            for parse in (json.loads, ast.literal_eval):
-                try:
-                    # Parser warnings can echo untrusted source, bypassing the output boundary.
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        parsed = parse(literal)
-                except (ValueError, SyntaxError, TypeError, RecursionError):
-                    continue
-                # Only traverse strings and containers; numeric JSON protocol keys stay numeric.
-                containers = [parsed]
-                count = 0
-                while containers:
-                    item = containers.pop()
-                    count += 1
-                    if count > _DECODE_LIMIT:
-                        break
-                    if isinstance(item, str) and item != value:
-                        children.append(item)
-                    elif isinstance(item, bytes):
-                        # A parsed byte diagnostic may use HTTP latin-1 or UTF-8.
-                        # Inspect the decoded data, never another escaped-text spelling.
-                        children.append(item.decode("utf-8", errors="replace"))
-                        children.append(item.decode("latin-1"))
-                    elif isinstance(item, dict):
-                        containers.extend(item.keys())
-                        containers.extend(item.values())
-                    elif isinstance(item, (list, tuple, set)):
-                        containers.extend(item)
-        pending.extend((child, depth + 1) for child in children if child not in seen)
-    return False
-
-
-def _mask_decoded_records(text: str, known: list[str]) -> str:
-    if not known:
-        return text
-    known = [value for secret in known for value in (secret, secret.strip()) if value]
-    return "".join(
-        MASK + ("\n" if record.endswith("\n") else "") if _decoded_secret(record, known) else record
-        for record, _ in _shell_records(text)
-    )
-
-
-def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
-    """Release every newline-terminated line; retain only an incomplete final line."""
-    boundary = pending.rfind("\n") + 1
-    return pending[:boundary], pending[boundary:]
-
-
-def redact_text(text: str, known: Iterable[str] = (), *, decode: bool = True) -> str:
-    """``text`` with every credential this module recognises replaced by MASK."""
-    known = list(known)
-    return ''.join(
-        _redact_line(record[:-1] if terminated else record, known, decode)
-        + ('\n' if terminated else '')
-        for record, terminated in _shell_records(text)
-    )
-
-
-def _redact_line(text: str, known: list[str], decode: bool) -> str:
-    """Apply literal, variant and inert decode checks within one physical line."""
-    if decode:
-        text = _mask_decoded_records(text, known)
+def _redact_body(text: str, known: Iterable[str]) -> str:
     text = mask_values(text, secret_variants(known))
     text = PEM_BLOCK.sub(MASK, text)
     for _, pattern in TOKEN_PATTERNS:
@@ -377,7 +200,20 @@ def _redact_line(text: str, known: list[str], decode: bool) -> str:
     )
 
 
-def redact_argv(argv: Iterable[str], known: Iterable[str] = (), *, decode: bool = True) -> list[str]:
+def redact_lines(text: str, known: Iterable[str] = ()) -> str:
+    """A stream chunk redacted strictly line by line, independent of how the chunk was read."""
+    known = list(known)
+    return "".join(redact_line(line, known) for line in _lines(text))
+
+
+def redact_text(text: str, known: Iterable[str] = ()) -> str:
+    """``text`` redacted line by line. A complete document also loses whole PEM private-key blocks."""
+    known = list(known)
+    text = PEM_BLOCK.sub(MASK, mask_values(text, secret_variants(known)))
+    return "".join(redact_line(line, known) for line in _lines(text))
+
+
+def redact_argv(argv: Iterable[str], known: Iterable[str] = ()) -> list[str]:
     """A command line with the values of credential flags (--api-key X and --api-key=X), credential env assignments
     (API_KEY=X cmd) and credential text inside any argument (-H "Authorization: Bearer X") masked."""
 
@@ -397,17 +233,16 @@ def redact_argv(argv: Iterable[str], known: Iterable[str] = (), *, decode: bool 
         elif eq and re.fullmatch(r"[A-Za-z_]\w*", name) and secret_name(name):
             out.append(name + "=" + MASK)
         else:
-            out.append(redact_text(arg, known, decode=decode))
+            out.append(redact_text(arg, known))
     return out
 
 
 def check_argv(argv, secrets):
+    """Refuse argv carrying a known value, a rendering of one, or a credential flag/assignment/header."""
+    argv = list(argv)
     variants = secret_variants(secrets)
-    # Raw argv has not been shell-encoded. Output-only decoding must not mistake
-    # a literal apostrophe in a path for malformed child diagnostics.
-    if redact_argv(argv, secrets, decode=False) != argv or any(value in arg for value in variants for arg in argv):
+    if redact_argv(argv, secrets) != argv or any(value in arg for value in variants for arg in argv):
         raise ValueError('credential value refused in command arguments')
-
 
 
 def redact_env(env: Mapping[str, str], known: Iterable[str] = ()) -> dict[str, str]:
@@ -467,19 +302,10 @@ def scrub(path: Path, known: Iterable[str] = ()) -> int:
 
 
 def _filter(src, dst, known: list[str]) -> None:
-    """Copy src to dst with independent redaction of each physical line."""
-
-    def emit(line):
-        dst.write(redact_text(line, known))
-        dst.flush()
-
-    pending = ""
+    """Copy src to dst, redacting and releasing each line as soon as it is complete."""
     for line in src:
-        ready, pending = split_safe_records(pending + line, known)
-        for record in iter_safe_records(ready):
-            emit(record + "\n")
-    if pending:
-        emit(pending)
+        dst.write(redact_line(line, known))
+        dst.flush()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -63,7 +63,7 @@ def child_environment(env=None, secrets=()):
             result[name] = value
             continue
         if (any(part in str(value) for part in variants)
-                or redact_text(str(value), known, decode=False) != str(value)):
+                or redact_text(str(value), known) != str(value)):
             # Dropping an operational control could select a default and start
             # work the operator never requested. Refuse such configuration;
             # ordinary diagnostic aliases are simply absent in the child.

@@ -116,13 +116,12 @@ controls, independent of credential-bearing settings. Credentials are never carr
 environment variable or executable argv. Serving authentication uses the native
 read-only key-file transport described in OPERATIONS.
 
-Literal/known-variant masking and inert decoding remain an output backstop.
-Only records with a matching decoded credential are masked; parse/size limits do
-not turn ordinary prose into a secret. Output is strictly line-based and stateless: each complete physical line is
-checked and released immediately. Multiline Python containers are not buffered
-or reconstructed. Credential isolation, rather than output framing, protects
-pprint environment dumps. Single-line environment records retain variable names
-only; ordinary metrics and following errors remain readable.
+Literal/known-variant masking remains an output backstop, never the boundary.
+Output is strictly line-based and stateless: each complete physical line is masked
+in place and released immediately. Nothing is decoded, buffered, reconstructed or
+withheld; credential isolation, rather than output framing, protects environment
+dumps of every encoding. Ordinary settings, metrics and following errors remain
+readable. Complete JSON documents are masked field by field. See SECURITY.md.
 Docker state evidence uses a typed State allowlist and never captures Config.Env.
 The reference SSH loader also uses the checked argv/quoting supervisor; binary
 model bytes remain a data transport, and failed/unparseable responses are not

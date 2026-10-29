@@ -14,7 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import safe_output  # noqa: E402
-from redact import MASK, _filter, redact_text, split_safe_records  # noqa: E402
+from redact import split_lines  # noqa: E402
 
 
 @pytest.mark.parametrize('line', [
@@ -36,30 +36,36 @@ def test_complete_lines_never_wait_for_syntax_or_secret_continuation(line):
     stream.write(' retry\n')
     assert output.getvalue().endswith('partial retry\n')
     assert stream.pending == ''
-    assert split_safe_records(line + 'partial', secrets) == (line, 'partial')
+    assert split_lines(line + 'partial') == (line, 'partial')
 
 
-def test_environment_projection_is_independent_for_each_line(monkeypatch):
+def test_assignment_lines_are_released_verbatim_and_independently(monkeypatch):
     monkeypatch.setenv('ACTUAL_SETTING', 'ordinary environment value')
     text = 'ACTUAL_SETTING=ordinary environment value\nRESULT=ready\nR=7\n'
-    expected = MASK + ' environment variable: ACTUAL_SETTING\nRESULT=ready\nR=7\n'
-    assert safe_output.clean(text) == expected
+    assert safe_output.clean(text) == text
     output = io.StringIO()
     stream = safe_output._Stream(output, [])
     for line in text.splitlines(keepends=True):
         stream.write(line)
-    assert output.getvalue() == expected
+        assert output.getvalue().endswith(line)
     assert stream.pending == ''
 
 
-@pytest.mark.parametrize('wrapper', [str, repr, json.dumps])
-def test_single_line_encoded_credentials_remain_masked(wrapper):
-    secret = "invented' mixed ☃\nvalue"
-    text = wrapper(r"diagnostic $'invented\047 mixed \u2603\nvalue'")
-    assert redact_text(text, [secret]) == MASK
+@pytest.mark.parametrize('terminator', ['\r', '\n'])
+def test_progress_carriage_returns_release_each_update(terminator):
     output = io.StringIO()
-    _filter(io.StringIO(text + '\n'), output, [secret])
-    assert output.getvalue() == MASK + '\n'
+    stream = safe_output._Stream(output, [])
+    stream.write('progress 10%' + terminator + 'progress 20%')
+    assert output.getvalue() == 'progress 10%' + terminator
+    assert stream.pending == 'progress 20%'
+
+
+def test_unterminated_output_is_released_at_the_line_limit():
+    output = io.StringIO()
+    stream = safe_output._Stream(output, [])
+    stream.write('x' * stream.LINE_LIMIT)
+    assert output.getvalue() == 'x' * stream.LINE_LIMIT
+    assert stream.pending == ''
 
 
 def test_real_supervisor_delivers_both_streams_before_exit():
@@ -77,7 +83,9 @@ def test_real_supervisor_delivers_both_streams_before_exit():
         "assert sys.stdin.buffer.read(1) == b'!'\n"
         'raise SystemExit(47)\n'
     )
-    env = {'PATH': os.environ['PATH'], 'CONFIG': '/nonexistent'}
+    # A configured, unrelated credential must not change ordinary framing.
+    env = {'PATH': os.environ['PATH'], 'CONFIG': '/nonexistent',
+           'API_KEY': 'test-rr8-unrelated-' + 'synthetic'}
     child = subprocess.Popen(
         [sys.executable, str(ROOT / 'scripts/safe_exec.py'), '--command',
          sys.executable, '-c', program], env=env,

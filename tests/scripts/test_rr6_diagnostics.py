@@ -103,14 +103,12 @@ def test_single_line_python_environment_at_sinks(monkeypatch, tmp_path, sink):
     except (SyntaxError, ValueError):
         recovered = None
     assert recovered != value, 'pprint credential was reconstructable'
-    if sink != 'filter':
-        assert ordinary not in sanitized
-        assert json.loads(sanitized)['EnvNames'] == list(value)
-    else:
-        assert MASK in sanitized
+    assert secret not in sanitized and MASK in sanitized
+    # Ordinary settings are not credentials; the backstop leaves them readable.
+    assert ordinary in sanitized
 
 
-def test_environment_projection_does_not_consume_following_lines(monkeypatch):
+def test_ordinary_multiline_assignment_and_following_error_are_verbatim(monkeypatch):
     value = "ordinary first line\nsecond line with ' unmatched quote\nlast line"
     monkeypatch.setenv('ACTUAL_ENV_SETTING', value)
     text = 'ACTUAL_ENV_SETTING=' + value + '\nerror: missing aot/kernel.fatbin\n'
@@ -124,10 +122,7 @@ def test_environment_projection_does_not_consume_following_lines(monkeypatch):
             result = output.getvalue()
         else:
             result = safe_output.clean(text)
-        assert value not in result
-        assert "second line with ' unmatched quote\nlast line\n" in result
-        assert 'ACTUAL_ENV_SETTING' in result
-        assert result.endswith('error: missing aot/kernel.fatbin\n')
+        assert result == text
 
 
 def test_environment_assignment_does_not_hide_following_function(monkeypatch):
@@ -156,7 +151,7 @@ def test_large_benign_decoding_does_not_trigger_limit_masking():
 ])
 def test_python_diagnostic_types_preserve_following_output_and_exit(tmp_path, record):
     # A real child emits a Python diagnostic on each stream, then an independent
-    # error. Sink serialization failures previously interrupted child collection.
+    # error. Both lines are released verbatim; nothing is reparsed or reserialized.
     script = tmp_path / 'python-diagnostic.py'
     script.write_text(
         'import sys\n'
@@ -169,17 +164,13 @@ def test_python_diagnostic_types_preserve_following_output_and_exit(tmp_path, re
     assert checked.returncode == 47
     for output in (checked.stdout, checked.stderr):
         lines = output.splitlines()
-        assert len(lines) == 2
-        assert isinstance(json.loads(lines[0]), (dict, list))
-        assert 'ordinary' in lines[0]
-        assert lines[1] == 'error: missing aot/kernel.fatbin'
+        assert lines == [record, 'error: missing aot/kernel.fatbin']
 
 
-def test_python_only_types_are_sanitized_during_normalization(monkeypatch):
+def test_python_only_types_are_masked_in_place(monkeypatch):
     secret = 'test-rr6-private-' + 'normalization-value'
     monkeypatch.setenv('API_KEY', secret)
     record = repr({(secret,): [secret.encode(), {secret}, 1 + 2j]})
     cleaned = safe_output.clean(record)
     assert secret not in cleaned
-    assert MASK in cleaned
-    assert isinstance(json.loads(cleaned), dict)
+    assert cleaned.count(MASK) == 3 and cleaned.endswith('(1+2j)]}')

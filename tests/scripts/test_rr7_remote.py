@@ -46,13 +46,14 @@ def worker(tmp_path, monkeypatch):
         "PermitRootLogin yes\nPubkeyAuthentication yes\nPasswordAuthentication no\n"
         "KbdInteractiveAuthentication no\nUsePAM no\n"
         f"SetEnv API_KEY={key} OTHER_SESSION_VALUE=worker-only\nLogLevel ERROR\n"
+        "AcceptEnv HEAD_ONLY_TOKEN OPAQUE_SETTING\n"
     )
     profile_marker = tmp_path / "profile-ran"
     client = tmp_path / "ssh_config"
     client.write_text(
         f"Host *\n HostName 127.0.0.1\n Port {port}\n User {pwd.getpwuid(os.getuid()).pw_name}\n"
         f" IdentityFile {tmp_path}/client\n IdentitiesOnly yes\n StrictHostKeyChecking no\n"
-        " UserKnownHostsFile /dev/null\n LogLevel ERROR\n"
+        " UserKnownHostsFile /dev/null\n LogLevel ERROR\n SendEnv HEAD_ONLY_TOKEN OPAQUE_SETTING\n"
         f" RemoteCommand touch {quote_checked(str(profile_marker))}\n"
     )
     bindir = tmp_path / "bin"
@@ -183,3 +184,66 @@ def test_evidence_collection_uses_checked_remote_adapters():
     assert re.search(r'^\s*wssh "docker logs .*\$NAME-r1', body, re.MULTILINE)
     assert re.search(r'^\s*wssh_control state "docker inspect .*\$NAME-r1', body, re.MULTILINE)
     assert not re.search(r"^\s*(?:watch_run\s+|watch_capture\s+\w+\s+)?ssh\s", body, re.MULTILINE)
+
+
+@pytest.mark.parametrize("indent", [None, 4], ids=["compact", "docker-indented"])
+def test_backend_remote_inspect_keeps_inference_settings(worker, monkeypatch, tmp_path, indent):
+    # The worker's output filter is a line redactor, not a projection: the guard's
+    # typed ownership check still reads Config.Env through real SSH.
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/guard"))
+    backend = module("rr8_backend", ROOT / "scripts/guard/backend.py")
+    common = module("rr8_common", ROOT / "scripts/guard/common.py")
+    inspect = tmp_path / "inspect.py"
+    inspect.write_text(
+        "import json,os\n"
+        "held=os.environ.get('API_KEY','absent')\n"
+        "env=['TF_DSV41_POOL_TOKENS=2100000','NCCL_IB_HCA=mlx5_0','API_KEY=%s' % held]\n"
+        f"print(json.dumps([{{'Config':{{'Env':env}}}}], indent={indent!r}))\n"
+    )
+    instance = backend.Backend.__new__(backend.Backend)
+    instance.config = {"worker_ssh": "worker.example", "worker_repo": str(worker["repo"])}
+    output = instance.run("1", ["/usr/bin/python3", str(inspect)])
+    assert worker["key"] not in output
+    item = json.loads(output)[0]
+    assert common.inference_environment(item) == {"TF_DSV41_POOL_TOKENS": "2100000", "NCCL_IB_HCA": "mlx5_0"}
+    assert not worker["profile_marker"].exists()
+
+
+HEAD_KEY = "fake-rr8-head-only-credential"
+SEND_PROBE = "import os; print(os.environ.get('HEAD_ONLY_TOKEN', 'absent'))"
+
+
+def test_real_ssh_control_proves_sendenv_forwards_head_values(worker):
+    result = subprocess.run(
+        [worker["ssh"], "-F", str(worker["client"]), "-o", "RemoteCommand=none", "worker.example",
+         join_checked(["/usr/bin/python3", "-c", SEND_PROBE])],
+        env={"PATH": PATH, "HEAD_ONLY_TOKEN": HEAD_KEY}, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == HEAD_KEY
+
+
+def test_checked_ssh_has_no_head_credential_for_sendenv(worker, monkeypatch, tmp_path):
+    # Record the environment the real ssh client receives, then run it.
+    recorder_dir = tmp_path / "recorder"
+    recorder_dir.mkdir()
+    record = tmp_path / "ssh-env.json"
+    recorder = recorder_dir / "ssh"
+    recorder.write_text(
+        f"#!{sys.executable}\nimport json,os,sys\n"
+        f"open({str(record)!r},'w').write(json.dumps(sorted(k for k,v in os.environ.items() if {HEAD_KEY!r} in v)))\n"
+        f"os.execv({str(worker['repo'].parent / 'bin/ssh')!r}, ['ssh', *sys.argv[1:]])\n"
+    )
+    recorder.chmod(0o700)
+    monkeypatch.setenv("PATH", f"{recorder_dir}:{os.environ['PATH']}")
+    monkeypatch.setenv("HEAD_ONLY_TOKEN", HEAD_KEY)
+    monkeypatch.setenv("OPAQUE_SETTING", HEAD_KEY)
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    monkeypatch.syspath_prepend(str(ROOT / "scripts/guard"))
+    backend = module("rr8_sendenv_backend", ROOT / "scripts/guard/backend.py")
+    instance = backend.Backend.__new__(backend.Backend)
+    instance.config = {"worker_ssh": "worker.example", "worker_repo": str(worker["repo"])}
+    output = instance.run("1", ["/usr/bin/python3", "-c", SEND_PROBE])
+    assert json.loads(record.read_text()) == []
+    assert output.strip() == "absent"

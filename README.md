@@ -97,6 +97,7 @@ keeps its own unchanged profile, [`config/prod-zig.env.example`](config/prod-zig
 | [INSTALL](docs/INSTALL.md) | native requirements, weights and Engram shards |
 | [API](docs/API.md) / [IMAGES](docs/IMAGES.md) | endpoints, thinking and effort, image input |
 | [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, turning each lever off |
+| [SECURITY](docs/SECURITY.md) | where keys live, which processes hold them, what the output filter promises |
 | [METHOD](docs/METHOD.md) / [RESULTS](docs/RESULTS.md) / [BENCHMARKS](docs/BENCHMARKS.md) | how it was measured, every table, how to rerun |
 | [CHANGELOG](docs/CHANGELOG.md) | bug fixes and new levers since G13 |
 | [KNOWN-ISSUES](docs/KNOWN-ISSUES.md) | what is not solved |

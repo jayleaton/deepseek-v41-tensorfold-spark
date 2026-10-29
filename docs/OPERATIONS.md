@@ -64,9 +64,10 @@ neighboring off blocks. Keep both options off until those device gates pass.
 For authenticated native serving, put the keys in an operator-owned file outside
 the checkout with mode `0600`, and set `NATIVE_AUTH_FILE=/absolute/path/to/keys`
 in the head's config. Keep key contents out of shell config and environment
-variables. The launcher validates the file without reading its contents, mounts
-it read-only at `/run/tensorfold/auth-keys` on rank 0, and passes that path with
-`--api-key-file`. Rank 1 and AOT diagnostic containers receive no key mount.
+variables. The launcher validates the file's type, owner and mode, mounts it
+read-only at `/run/tensorfold/auth-keys` on rank 0, and passes that path with
+`--api-key-file`. Host supervisors read its keys into memory only to mask and
+refuse them (see [SECURITY.md](SECURITY.md)). Rank 1 and AOT diagnostic containers receive no key mount.
 The file may contain one key per line or upstream's labelled/scoped keys; the
 native server validates the contents and refuses an invalid or empty key set.
 The pinned engine supports this through `zig/src/server/cli.zig` and
@@ -84,9 +85,9 @@ With `NATIVE_AUTH_FILE`, lifecycle readiness uses the public `/health` response
 plus owned/running rank checks and the existing preflight model/asset identity
 comparison. The pinned server checks engine health before returning
 `{"status":"ok"}` and deliberately hides model details with authentication on
-(`zig/src/server/status_routes.zig:13–23`). Lifecycle does not open the key file
-or call authenticated `/v1/models`, so model-list availability is not checked in
-this mode. Check it separately with an authorized client during qualification.
+(`zig/src/server/status_routes.zig:13–23`). Lifecycle never authenticates with
+the keys or calls authenticated `/v1/models`, so model-list availability is not
+checked in this mode. Check it separately with an authorized client during qualification.
 The optional completion watchdog probe requires `WATCH_PROBE=0` when it addresses
 an authenticated native endpoint directly; it receives no serving credential.
 
@@ -142,6 +143,9 @@ are filtered as well as child output. Watchdog numeric controls are validated
 before arithmetic. A heal holds ownership until its command finishes; it does not
 detach an unowned restart after the observing tick exits. Image verification runs
 the image's `/opt/tensorfold/share/libproof.sh` through the host wrapper.
+
+The complete credential model, including what the output filter does and does
+not promise, is in [SECURITY.md](SECURITY.md).
 
 Trusted shell config can temporarily export values while it is sourced. The
 wrapper immediately removes credentials and their aliases from its exported

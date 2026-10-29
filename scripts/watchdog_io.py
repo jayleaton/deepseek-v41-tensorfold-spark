@@ -5,7 +5,7 @@ import json
 import math
 import re
 
-from safe_output import clean
+from safe_output import clean, clean_document
 from redact import known_secrets, check_argv
 
 
@@ -97,7 +97,7 @@ def filter_output(mode, raw, known=()):
         }
         # Derive all controls above from raw JSON before sanitizing diagnostics.
         # Opaque/unknown strings exist only in this sanitized diagnostic payload.
-        diagnostic = clean(
+        diagnostic = clean_document(
             d.get("diagnostic") if isinstance(d.get("diagnostic"), str) else text, known
         )
         return {"diagnostic": diagnostic, **control}
@@ -180,23 +180,17 @@ def filter_output(mode, raw, known=()):
         if not sep or re.fullmatch(r"[0-9]{3}", code) is None:
             raise ValueError("invalid startup health framing")
         return code + "\n" + json.dumps(project(body), allow_nan=False) + "\n"
-    elif mode in ("http", "http_control"):
+    elif mode == "http_control":
+        # Separate curl framing, then project the body to typed controls.
         body, sep, code = raw.rstrip("\n").rpartition("\n")
         if not sep or re.fullmatch(r"[0-9]{3}", code) is None:
             body, code = raw, "000"
-        # Separate curl framing before sanitizing the JSON body structurally. clean()
-        # masks opaque string echoes, including multiline keys, but preserves numbers.
-        sanitized = (
-            json.dumps(project(body), allow_nan=False)
-            if mode == "http_control"
-            else clean(body, known)
-        )
-        return code + "\n" + sanitized + "\n"
+        return code + "\n" + json.dumps(project(body), allow_nan=False) + "\n"
     elif mode == "project":
         return json.dumps(project(raw), allow_nan=False) + "\n"
     elif mode in ("healthy", "stale", "busy", "stalled", "choices", "deferred"):
         return str(int(predicate(mode, project(raw)))) + "\n"
     elif mode == "json":
-        return clean(raw, known) + "\n"
+        return clean_document(raw, known) + "\n"
     else:
         raise ValueError("invalid watchdog control")
