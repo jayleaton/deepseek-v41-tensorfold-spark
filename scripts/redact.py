@@ -45,8 +45,10 @@ SECRET_WORDS = frozenset(
         "cookie",
     ]
 )
-# a trailing sock / socket names a socket path (SSH_AUTH_SOCK), never a credential
-POINTER_WORDS = frozenset({"file", "path", "dir", "sock", "socket"})
+POINTER_WORDS = frozenset({"file", "path", "dir"})
+# Exact socket-pointer names whose words would otherwise read as credential names.
+# DOCKER_HOST and CONTAINERD_ADDRESS contain no credential word, so they need no entry.
+POINTER_NAMES = frozenset({"SSH_AUTH_SOCK"})
 # a trailing error / exception names a diagnostic (KeyError: 'MODEL_DIR'), never a credential
 DIAGNOSTIC_WORDS = frozenset({"error", "exception"})
 # alone, too common in prose and data to mask in text (a tokenizer's "token")
@@ -89,7 +91,7 @@ _URL_PASSWORD = re.compile(
 def secret_name(name: str) -> bool:
     """True when a flag, variable or field name names a credential (API_KEY, --hf-token, x-api-key, apiKey)."""
 
-    if re.fullmatch(r"(?:bytes|bits)_(?:a|per)_token", name, re.IGNORECASE):
+    if name in POINTER_NAMES or re.fullmatch(r"(?:bytes|bits)_(?:a|per)_token", name, re.IGNORECASE):
         return False
     parts = [
         p.lower()

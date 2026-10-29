@@ -308,3 +308,16 @@ def test_agent_socket_is_a_pointer_kept_for_ssh_children(tmp_path):
     assert "API_KEY" not in child
     # A key value in the socket variable is still an alias, and is still dropped.
     assert "SSH_AUTH_SOCK" not in safe_exec.child_environment({**env, "SSH_AUTH_SOCK": env["API_KEY"]})
+
+
+@pytest.mark.parametrize("name", ["API_KEY_SOCK", "AUTH_TOKEN_SOCKET", "HF_TOKEN_SOCK", "SSH_AUTH_SOCKET"])
+def test_only_the_named_agent_socket_is_a_pointer(tmp_path, name):
+    # RR9-1: the agent exemption is the exact name, not any *_SOCK / *_SOCKET suffix.
+    from redact import MASK, redact_text, secret_name
+    value = "fake-rr9-socket-suffixed-credential"
+    assert secret_name(name)
+    child = safe_exec.child_environment({"PATH": "/usr/bin:/bin", "CONFIG": str(tmp_path / "absent.env"),
+                                          name: value, "SSH_AUTH_SOCK": str(tmp_path / "agent.sock")})
+    assert name not in child and value not in child.values()
+    assert child["SSH_AUTH_SOCK"] == str(tmp_path / "agent.sock")
+    assert redact_text(f"{name}={value}\n") == f"{name}={MASK}\n"

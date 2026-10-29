@@ -66,8 +66,9 @@ So a child is never *given* a credential: its `set`, `declare -p`, `printf %q`,
 covers what the child inherits, not what it can go and read (see the top of this
 file).
 
-`SSH_AUTH_SOCK` is a pointer to the operator's agent, not a key, so it is kept:
-agent-only SSH to the worker works. Every recipe `ssh` passes
+`SSH_AUTH_SOCK` is a pointer to the operator's agent, not a key, so it is kept.
+This is an exact-name exception: `API_KEY_SOCK` or `AUTH_TOKEN_SOCKET` is still a
+credential name. Agent-only SSH to the worker works. Every recipe `ssh` passes
 `-o ForwardAgent=no`, and the worker side starts from `env -i`, so the socket
 never leaves the head. Docker receives only the variables the launcher names, so
 it never reaches a container.
