@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from redact import PEM_BEGIN, TOKEN_PATTERNS
+from safe_exec import child_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOW = Path(__file__).resolve().with_name("check-secrets-allow.txt")
@@ -100,6 +101,7 @@ def tree_files(paths: list[str]) -> list[tuple[Path, str]]:
     names = subprocess.run(
         ["git", "ls-files", "-co", "--exclude-standard"],
         cwd=ROOT,
+        env=child_environment(),
         capture_output=True,
         text=True,
         check=True,
@@ -137,6 +139,7 @@ def scan_history(rules) -> list[tuple[str, str, str]]:
             ":(exclude)vendor/TensorFold",
         ],
         cwd=ROOT,
+        env=child_environment(),
         capture_output=True,
         check=True,
     )

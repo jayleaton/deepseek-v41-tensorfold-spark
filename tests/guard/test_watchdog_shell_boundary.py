@@ -19,7 +19,8 @@ def fixture(tmp_path, key):
     marker = tmp_path / 'spawned.json'
     tool = '''import json,os,sys
 from pathlib import Path
-key=os.environ.get('API_KEY') or os.environ['EXPECTED_VALUE']
+assert "API_KEY" not in os.environ and "EXPECTED_VALUE" not in os.environ
+key=FIXTURE_KEY
 args=sys.argv[1:]
 if any(key in arg for arg in args):
  Path(os.environ['SPAWN_MARKER']).write_text(json.dumps({'credential_in_argv':True}))
@@ -29,7 +30,7 @@ else: print('{}')
 '''
     for name in ('docker', 'ssh', 'curl'):
         p = tools / name
-        p.write_text(f'#!{sys.executable}\n' + tool)
+        p.write_text(f'#!{sys.executable}\n' + tool.replace('FIXTURE_KEY', repr(key)))
         p.chmod(0o700)
     python = tools / 'python3'
     python.write_text('#!/bin/bash\nif [[ "${1:-}" == scripts/guard/lifecycle.py ]]; then exit 0; fi\nexec ' + shlex.quote(sys.executable) + ' "$@"\n')
@@ -43,7 +44,7 @@ else: print('{}')
 
 def run(env, snippet=None):
     argv = ['bash', str(SCRIPT), '--once'] if snippet is None else [
-        'bash', '-c', 'source "$WATCH_SCRIPT"; ' + snippet]
+        'bash', '-c', 'source "$WATCH_SCRIPT" || exit $?; ' + snippet]
     return subprocess.run(argv, cwd=ROOT, env=dict(env, WATCH_SCRIPT=str(SCRIPT)),
                           capture_output=True, text=True, timeout=30)
 
@@ -62,7 +63,7 @@ def test_real_watchdog_numeric_failure_is_private(tmp_path, key, sourced):
     result = run(env, 'watch_tick' if sourced else None)
     assert_private(key, result)
     assert result.returncode == 78
-    assert 'invalid watchdog numeric setting' in result.stderr
+    assert 'credential value refused in child configuration' in result.stderr
     assert 'unbound variable' not in result.stderr
 
 
@@ -120,8 +121,9 @@ def test_unexported_caller_credentials_use_shared_name_classification(tmp_path, 
     key = KEYS[0]
     env, marker = fixture(tmp_path, key)
     env.pop('API_KEY')
-    env.update(EXPECTED_VALUE=key, SOURCED_NAME=name, WATCH_SCRIPT=str(SCRIPT), CONTAINER_PREFIX=key)
-    snippet = 'printf -v "$SOURCED_NAME" "%s" "$EXPECTED_VALUE"; source "$WATCH_SCRIPT"; '
+    env.update(EXPECTED_VALUE=key, SOURCED_NAME=name, WATCH_SCRIPT=str(SCRIPT),
+               CONTAINER_PREFIX=key if operation == 'docker' else 'ordinary-prefix')
+    snippet = 'printf -v "$SOURCED_NAME" "%s" "$EXPECTED_VALUE"; source "$WATCH_SCRIPT" || exit $?; '
     snippet += 'log "${!SOURCED_NAME}"' if operation == 'log' else 'watch_run docker logs "$NAME-r0"'
     result = subprocess.run(['bash', '-c', snippet], cwd=ROOT, env=env,
                             capture_output=True, text=True, timeout=30)
@@ -140,7 +142,7 @@ def test_invalid_continuous_interval_exits_instead_of_retrying_without_sleep(tmp
                             capture_output=True, text=True, timeout=15)
     assert_private(KEYS[0], result)
     assert result.returncode == 78
-    assert 'invalid watchdog numeric setting' in result.stderr
+    assert 'credential value refused in child configuration' in result.stderr
 
 
 def test_rejected_continuous_sleep_terminates_the_observer(tmp_path):

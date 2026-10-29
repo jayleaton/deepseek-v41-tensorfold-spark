@@ -23,7 +23,8 @@ import shlex
 import sys
 
 words = shlex.split(sys.argv[-1])
-key = os.environ['API_KEY']
+assert 'API_KEY' not in os.environ
+key = FIXTURE_KEY
 Path(os.environ['REFERENCE_OBSERVER']).write_text(json.dumps({
     'started': True,
     'raw_key': any(key in arg for arg in sys.argv[1:]),
@@ -55,7 +56,7 @@ def reference(tmp_path, monkeypatch):
     bindir = tmp_path / 'bin'
     bindir.mkdir()
     ssh = bindir / 'ssh'
-    ssh.write_text(f'#!{sys.executable}\n' + OBSERVER)
+    ssh.write_text(f'#!{sys.executable}\n' + OBSERVER.replace('FIXTURE_KEY', repr('rr5Reference' + 'SyntheticKey')))
     ssh.chmod(0o700)
     observer = tmp_path / 'observed.json'
     model = tmp_path / 'model'

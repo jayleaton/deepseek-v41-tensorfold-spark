@@ -15,14 +15,15 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SECRET = 'launcher-fixture-"credential-only'
 OUTPUT = '''import json, os, sys
-value = os.environ['API_KEY']
+assert 'API_KEY' not in os.environ
+value = SECRET_VALUE
 data = ('diagnostic ' + value + '\\n').encode()
 os.write(1, data[:17])
 os.write(1, data[17:])
 sys.stderr.write('escaped ' + json.dumps(value) + '\\n')
 sys.stderr.write('final ' + value)
 sys.exit(37)
-'''
+'''.replace('SECRET_VALUE', repr(SECRET))
 
 
 @pytest.fixture
@@ -186,8 +187,10 @@ def test_external_private_key_blocks_are_redacted_across_chunks_and_streams(laun
                f" os.write(fd, {begin.encode()!r} + b'\\n')\n" +
                f" os.write(fd, {body.encode()!r} + b'\\n')\n" +
                f" os.write(fd, {end.encode()!r} + b'\\n')\n")
+    emitter = root / 'emit-private-block.py'
+    emitter.write_text(program)
     result = subprocess.run([sys.executable, str(root / 'scripts/safe_exec.py'),
-                             sys.executable, '-c', program], env=env, capture_output=True, timeout=15)
+                             sys.executable, str(emitter)], env=env, capture_output=True, timeout=15)
     leaked = body.encode() in result.stdout + result.stderr
     assert result.returncode == 0 and not leaked, 'private key body reached a process stream'
     assert result.stdout.count(b'<redacted>') >= 3
@@ -221,4 +224,4 @@ def test_dynamically_loaded_key_cannot_escape_shell_diagnostics(launchers, tmp_p
     result = invoke(launchers, 'run-zig.sh', *args)
     leaked = SECRET in result.stdout + result.stderr
     assert not leaked, 'dynamic credential reached shell diagnostics'
-    assert result.returncode == 2
+    assert result.returncode == (78 if mode == 'directory' else 2)

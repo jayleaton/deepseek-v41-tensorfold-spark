@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 def checkout(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("check-public.sh", "check_secrets.py", "check_public_history.py", "redact.py", "check-secrets-allow.txt"):
+    for name in ("check-public.sh", "check_secrets.py", "check_public_history.py", "redact.py", "check-secrets-allow.txt",
+                 "safe_exec.py", "safe_output.py", "safe_quote.py", "watchdog_io.py"):
         shutil.copyfile(ROOT / "scripts" / name, scripts / name)
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     return tmp_path

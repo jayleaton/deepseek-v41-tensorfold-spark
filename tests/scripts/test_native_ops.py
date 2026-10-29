@@ -260,6 +260,43 @@ def test_readiness_requires_positive_health_and_models(world, health, models):
     assert not world.ops.healthy()
 
 
+def test_file_auth_start_uses_public_health_and_preserves_rank_checks(world, tmp_path):
+    # A nonexistent path proves lifecycle never opens the serving key file.
+    world.ops.env['NATIVE_AUTH_FILE'] = str(tmp_path / 'server-only-keys')
+    calls = []
+
+    def public_http(url, timeout):
+        calls.append(url)
+        assert url.endswith('/health'), 'lifecycle attempted an authenticated model listing'
+        return {'status': 'ok'}  # Exact keyed response at the engine pin.
+
+    world.ops.http = public_http
+    world.ops.start()
+    assert world.launches() == [1, 0]
+    assert world.ops.status()['ready']
+    assert sum('--identity' in str(argv) for _, argv in world.calls) == 2
+    assert calls
+    world.ranks[1] = None
+    assert not world.ops.status()['ready']
+
+
+@pytest.mark.parametrize('health', [{}, {'status': 'unavailable'}, {'status': 'draining'},
+                                  {'status': 'stalled'}, {'status': 'ok', 'ok': False},
+                                  {'status': 'ok', 'fatal': True}])
+def test_file_auth_does_not_bypass_unhealthy_engine(world, health):
+    world.ops.env['NATIVE_AUTH_FILE'] = '/server-only-keys'
+    world.ops.http = lambda url, timeout: health
+    assert not world.ops.healthy()
+
+
+def test_file_auth_does_not_bypass_identity_mismatch(world):
+    world.ops.env['NATIVE_AUTH_FILE'] = '/server-only-keys'
+    world.identities[1] = 'c' * 64
+    with pytest.raises(ops.OpsError, match='identities'):
+        world.ops.start()
+    assert not world.launches()
+
+
 def test_runtime_return_after_outage_can_recover(world):
     world.unavailable.add(1)
     with pytest.raises(ops.OpsError):

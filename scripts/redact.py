@@ -171,8 +171,26 @@ def _shell_records(text: str):
     """Frame quoted shell diagnostics across physical newlines; yield (record, terminated)."""
     start = 0
     while start < len(text):
+        raw_assignment = re.match(r"([A-Za-z_]\w*)=", text[start:])
+        if raw_assignment:
+            value = os.environ.get(raw_assignment[1])
+            end = start + raw_assignment.end() + len(value or "")
+            if (value and text.startswith(value, start + raw_assignment.end())
+                    and (end == len(text) or text[end] == "\n")):
+                # `env` writes values verbatim, including newlines and unmatched
+                # quotes. Their exact inherited value gives an unambiguous end.
+                terminated = end < len(text)
+                yield text[start:end + int(terminated)], terminated
+                start = end + int(terminated)
+                continue
         assignment = bool(_SHELL_RECORD.match(text[start:]))
         quote = ""
+        # pprint uses adjacent string literals inside a container. Keep the
+        # complete container together so literal_eval can join those strings.
+        function = bool(re.match(r"[A-Za-z_]\w*[ \t]*\([ \t]*\)[ \t]*(?:\n[ \t]*)?(?:\{|\Z)", text[start:]))
+        container = function or text[start:].lstrip().startswith(("{", "[", "("))
+        brackets = []
+        body_started = False
         escaped = False
         i = start
         while i < len(text):
@@ -187,12 +205,18 @@ def _shell_records(text: str):
                     quote = ""
             elif char in "\"'":
                 prose_apostrophe = (
-                    not assignment and char == "'" and i > start and i + 1 < len(text)
+                    not assignment and not container and char == "'" and i > start and i + 1 < len(text)
                     and text[i - 1].isalpha() and text[i + 1].isalpha()
                 )
                 if not prose_apostrophe:
                     quote = "$'" if char == "'" and i > start and text[i - 1] == "$" else char
-            if char == "\n" and not quote and not escaped and not continued:
+            elif container and char in "{[(":
+                brackets.append(char)
+                body_started = body_started or char == "{"
+            elif container and char in "}])" and brackets:
+                brackets.pop()
+            if (char == "\n" and not quote and not brackets and not escaped and not continued
+                    and (not function or body_started)):
                 yield text[start:i + 1], True
                 start = i + 1
                 break
@@ -253,7 +277,7 @@ def _ansi_c(text: str, start: int) -> tuple[str, int]:
     raise ValueError("unterminated ANSI-C string")
 
 
-def _shell_words(text: str) -> list[str]:
+def _shell_words(text: str, *, prose: bool = False) -> list[str]:
     """Use POSIX shlex concatenation, replacing ANSI-C fragments with opaque placeholders first."""
     parts, replacements = [], {}
     quote = ""
@@ -263,6 +287,11 @@ def _shell_words(text: str) -> list[str]:
         marker += "_"
     while i < len(text):
         char = text[i]
+        if (prose and not quote and char == "'" and i > 0 and i + 1 < len(text)
+                and text[i - 1].isalpha() and text[i + 1].isalpha()):
+            parts.append("\\'")
+            i += 1
+            continue
         if not quote and text.startswith("$'", i):
             value, i = _ansi_c(text, i + 2)
             placeholder = marker + str(len(replacements)) + "__"
@@ -290,7 +319,7 @@ def _shell_words(text: str) -> list[str]:
 
 
 def _decoded_secret(record: str, known: list[str]) -> bool:
-    """Inspect bounded shell/JSON/Python string layers; ambiguous encoded records fail closed."""
+    """Inspect bounded inert decoding layers, masking only a matching known value."""
     pending = [(record, 0)]
     seen = set()
     while pending:
@@ -303,15 +332,18 @@ def _decoded_secret(record: str, known: list[str]) -> bool:
             if depth:
                 return True
         if depth >= _DECODE_DEPTH or len(seen) >= _DECODE_LIMIT:
-            return True
+            continue
         if not any(char in value for char in "\"'\\"):
             continue
         try:
             words = _shell_words(value)
         except (ValueError, OverflowError, UnicodeError):
-            if depth == 0:
-                return True
-            words = []
+            try:
+                # Prose punctuation must not prevent decoding a later escaped
+                # value on the same line ("can't connect rr5\\ alpha").
+                words = _shell_words(value, prose=True)
+            except (ValueError, OverflowError, UnicodeError):
+                words = []
         children = [word for word in words if word != value]
         literals = [value] + [match[0] for match in _LITERAL.finditer(value)]
         for literal in literals:
@@ -330,7 +362,7 @@ def _decoded_secret(record: str, known: list[str]) -> bool:
                     item = containers.pop()
                     count += 1
                     if count > _DECODE_LIMIT:
-                        return True
+                        break
                     if isinstance(item, str) and item != value:
                         children.append(item)
                     elif isinstance(item, bytes):
@@ -364,7 +396,9 @@ def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
     # Mask complete multiline matches before splitting them into individual records.
     pending = mask_values(pending, multiline)
     hold = 0
-    for value in multiline:
+    environment_records = [name + '=' + value for name, value in os.environ.items()
+                           if '\n' in value]
+    for value in multiline + environment_records:
         for size in range(min(len(value) - 1, len(pending)), hold, -1):
             if value.startswith(pending[-size:]):
                 hold = size

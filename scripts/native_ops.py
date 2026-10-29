@@ -18,7 +18,7 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
-from safe_exec import TERM_GRACE, run as supervised_run  # noqa: E402
+from safe_exec import ChildEnvironmentError, TERM_GRACE, run as supervised_run  # noqa: E402
 from safe_quote import join_checked, quote_checked  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,6 +116,8 @@ class Lifecycle:
                     worker_now = float(probe.stdout.strip())
                     if probe.returncode or not math.isfinite(worker_now) or worker_now <= 0:
                         raise ValueError('invalid worker clock')
+                except ChildEnvironmentError:
+                    raise
                 except (OSError, ValueError, subprocess.TimeoutExpired) as error:
                     raise OpsError('worker command clock unavailable') from error
                 limit -= time.monotonic() - probe_started
@@ -240,12 +242,17 @@ class Lifecycle:
 
         try:
             health = fetch('/health')
-            models = fetch('/v1/models')
+            # The pinned server exposes only {status: ok} on authenticated
+            # /health, after checking the engine. Keep credentials confined to
+            # serving; rank ownership and preflight asset identities still apply.
+            file_auth = bool(self.env.get('NATIVE_AUTH_FILE'))
+            models = None if file_auth else fetch('/v1/models')
+            models_ready = (file_auth or (isinstance(models, dict) and isinstance(models.get('data'), list)
+                            and any(isinstance(item, dict) and item.get('id') for item in models['data'])))
             return (isinstance(health, dict) and (health.get('ok') is True or health.get('status') in ('ok', 'healthy'))
                     and health.get('ok') is not False and not health.get('fatal')
                     and health.get('status') not in ('stalled', 'draining', 'error')
-                    and isinstance(models, dict) and isinstance(models.get('data'), list)
-                    and any(isinstance(item, dict) and item.get('id') for item in models['data']))
+                    and models_ready)
         except (OSError, ValueError, TimeoutError):
             return False
 

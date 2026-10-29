@@ -62,8 +62,8 @@ def test_benign_quoted_values_are_preserved(record):
     "OPAQUE_SETTING=unfinished\\",
     "tool diagnostic: 'Randy'\\''s\nunfinished",
 ])
-def test_malformed_assignments_fail_closed(record):
-    assert redact_text(record, ["configured credential"]) == MASK
+def test_malformed_assignments_without_known_values_are_preserved(record):
+    assert redact_text(record, ["configured credential"]) == record
 
 
 def test_no_shell_evaluation(tmp_path):
@@ -137,38 +137,36 @@ def test_prose_apostrophe_cannot_absorb_following_encoded_assignment():
     prose = "can't connect\n"
     assignment = "OPAQUE_SETTING=rr5\\ alpha\n"
     text = prose + assignment
-    withheld = MASK + "\n"
-    assert redact_text(text, [secret]) == withheld + MASK + "\n"
-    assert clean(text, [secret]) == withheld + MASK + " environment variable: OPAQUE_SETTING\n"
+    assert redact_text(text, [secret]) == prose + MASK + "\n"
+    assert clean(text, [secret]) == prose + MASK + " environment variable: OPAQUE_SETTING\n"
     output = io.StringIO()
     stream = _Stream(output, [secret])
     stream.write(prose)
-    assert output.getvalue() == withheld
+    assert output.getvalue() == prose
     stream.write(assignment)
     stream.finish()
-    assert output.getvalue() == withheld + MASK + " environment variable: OPAQUE_SETTING\n"
+    assert output.getvalue() == prose + MASK + " environment variable: OPAQUE_SETTING\n"
     filtered = io.StringIO()
     _filter(io.StringIO(text), filtered, [secret])
-    assert filtered.getvalue() == withheld + MASK + "\n"
+    assert filtered.getvalue() == prose + MASK + "\n"
 
 
 def test_ambiguous_prose_with_encoded_value_fails_closed():
     assert redact_text("can't connect rr5\\ alpha\n", ["rr5 alpha"]) == MASK + "\n"
 
 
-def test_malformed_prose_is_withheld_without_consuming_line_separators():
+def test_prose_is_preserved_without_consuming_line_separators():
     text = "can't connect\n\nRandy's ordinary prose\nnext line\n"
     ready, pending = split_safe_records(text, ["unrelated credential"])
     assert ready == text
     assert pending == ""
-    expected = MASK + "\n\n" + MASK + "\nnext line\n"
-    assert redact_text(text, ["unrelated credential"]) == expected
-    assert clean(text, ["unrelated credential"]) == expected
+    assert redact_text(text, ["unrelated credential"]) == text
+    assert clean(text, ["unrelated credential"]) == text
 
 
-def test_ambiguous_word_internal_half_quotes_are_withheld():
+def test_word_internal_half_quotes_without_known_values_are_preserved():
     text = "a'b\nc'\n"
-    assert redact_text(text, ["configured credential"]) == MASK + "\n" + MASK + "\n"
+    assert redact_text(text, ["configured credential"]) == text
 
 
 @pytest.mark.parametrize('encoding', ['utf-8', 'latin-1'])

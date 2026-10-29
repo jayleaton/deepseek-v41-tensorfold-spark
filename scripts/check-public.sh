@@ -16,6 +16,14 @@
 # .check-public.local (git-ignored, one extended regex per line, # comments allowed) or in CHECK_PUBLIC_EXTRA='a|b'.
 # They are matched case-insensitively. Lines of the form  regex<TAB>path-glob  skip that path for that regex
 # (for a known false positive such as a benchmark question).
+# Re-enter with a credential-free environment before any diagnostic child.
+{ set +x; } 2>/dev/null
+check_public_dir=${BASH_SOURCE[0]%/*}
+[[ "$check_public_dir" != "${BASH_SOURCE[0]}" ]] || check_public_dir=.
+if [[ "${TF_SAFE_EXEC_PARENT:-}" != "$PPID" ]]; then
+    exec python3 "$check_public_dir/safe_exec.py" --command "$BASH" "${BASH_SOURCE[0]}" "$@"
+fi
+unset TF_SAFE_EXEC_PARENT
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 SELF="scripts/check-public.sh"

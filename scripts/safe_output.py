@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import builtins
 from contextlib import redirect_stderr, redirect_stdout
 import json
@@ -10,6 +11,7 @@ import re
 from pathlib import Path
 import shlex
 import sys
+import warnings
 
 from redact import (
     MASK,
@@ -22,6 +24,7 @@ from redact import (
     _text_name,
     secret_name,
     split_safe_records,
+    _decoded_secret,
 )
 
 _configured_secrets = []
@@ -31,11 +34,22 @@ def _known():
     return _configured_secrets + known_secrets()
 
 
-def _environment_name(text):
+def _environment_name(text, secrets=(), in_environment=False):
     # Shell set/env/export/declare diagnostics differ in quoting, but their
     # variable record prefix is a structural name, never a value to publish.
     match = re.match(r"^(?:(?:declare|typeset|export)(?:\s+-[A-Za-z-]+)*\s+)?([A-Za-z_][A-Za-z0-9_]*)=", text)
-    return match.group(1) if match else None
+    if not match:
+        return None
+    name = match[1]
+    # An assignment alone can be a progress metric. Recognize actual inherited
+    # names, explicit shell declarations and encoded known credentials instead.
+    declared = not text.startswith(name + "=")
+    if (declared or name in os.environ or secret_name(name)
+            or MASK in text or any(secret and secret in text[match.end():] for secret in secrets)
+            or _decoded_secret(text, list(secrets))
+            or (in_environment and not re.match(r'[-+]?\d+(?:\.\d+)?(?:[: ,]|$)', text[match.end():]))):
+        return name
+    return None
 
 
 def _environment_record(name, secrets):
@@ -48,17 +62,25 @@ def _clean_text(text, secrets):
     for record, terminated in _shell_records(text):
         line = record[:-1] if terminated else record
         ending = "\n" if terminated else ""
-        name = _environment_name(line)
+        name = _environment_name(line, secrets, in_environment)
         if name is not None:
             in_environment = True
             records.append(_environment_record(name, secrets) + ending)
-        elif in_environment:
-            # A dump can contain unquoted multiline values or function bodies.
-            # Once recognized, withhold remaining non-name records fail closed.
-            records.append(MASK + ending)
+        elif in_environment and _function_name(line):
+            records.append(_environment_record(_function_name(line), secrets) + ending)
         else:
-            records.append(redact_text(line, secrets) + ending)
+            in_environment = False
+            value = _container(line)
+            if isinstance(value, (dict, list)):
+                records.append(json.dumps(_value(value, secrets), ensure_ascii=True) + ending)
+            else:
+                records.append(redact_text(line, secrets) + ending)
     return ''.join(records)
+
+
+def _function_name(text):
+    match = re.match(r'([A-Za-z_]\w*)\s*\(\s*\)\s*\{', text)
+    return match[1] if match else None
 
 
 def _environment_names(value, secrets):
@@ -72,20 +94,58 @@ def _environment_names(value, secrets):
             if isinstance(name, str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', name)]
 
 
+def _container(text):
+    """Parse JSON or Python containers inertly, including pprint's adjacent strings."""
+    if not text.lstrip().startswith(("{", "[")):
+        return None
+    for parse in (json.loads, ast.literal_eval):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                value = parse(text)
+        except (ValueError, SyntaxError, TypeError, RecursionError):
+            continue
+        if isinstance(value, (dict, list)):
+            return value
+    return None
+
+
+def _environment_mapping(value, secrets):
+    """A bare environment mapping needs corroborating names or known values."""
+    if not value or not all(isinstance(k, str) and re.fullmatch(r'[A-Za-z_]\w*', k)
+                            and isinstance(v, str) for k, v in value.items()):
+        return False
+    return any((k in os.environ and os.environ[k] == v)
+               or (k.upper() == k and (secret_name(k)
+                   or any(secret and secret in v for secret in secrets)))
+               for k, v in value.items())
+
+
 def _value(value, secrets):
     # Recognize structural fields before redacting their names. A configured
     # value equal to "Env" must not hide the field from environment projection.
     if isinstance(value, dict):
+        if _environment_mapping(value, secrets):
+            return {'EnvNames': _environment_names(value, secrets)}
         result = {}
         for key, child in value.items():
             if isinstance(key, str) and key.lower() in {'env', 'environment'}:
                 result['EnvNames'] = _environment_names(child, secrets)
                 continue
-            name = redact_text(key, secrets) if isinstance(key, str) else key
+            # Python diagnostics permit tuple/bytes keys, whereas JSON permits
+            # scalar keys only. Preserve their sanitized spelling as a string.
+            if isinstance(key, str):
+                name = redact_text(key, secrets)
+            elif key is None or isinstance(key, (bool, int, float)):
+                name = key
+            else:
+                name = redact_text(repr(key), secrets)
             sensitive = (isinstance(key, str) and _text_name(key)
                          and isinstance(child, (str, int, float)) and child != "")
             result[name] = MASK if sensitive else _value(child, secrets)
         return result
+    if isinstance(value, (set, frozenset)):
+        return [_value(item, secrets) for item in sorted(value, key=repr)]
     if isinstance(value, (list, tuple)):
         # Preserve credential flag/value pairing in saved command displays.
         if value and all(isinstance(item, str) for item in value):
@@ -93,16 +153,18 @@ def _value(value, secrets):
         return [_value(item, secrets) for item in value]
     if isinstance(value, str):
         return _clean_text(value, secrets)
-    return redact(value, secrets)
+    if value is None or isinstance(value, (bool, int, float)):
+        return redact(value, secrets)
+    # literal_eval also accepts bytes, complex numbers and Ellipsis. A safe
+    # representation keeps these diagnostics JSON-serializable without another
+    # container parse, which would recurse on the same unsupported object.
+    return redact_text(repr(value), secrets)
 
 
 def clean(text, known=()):
     text = str(text)
     secrets = list(known) + _known()
-    try:
-        value = json.loads(text)
-    except (ValueError, TypeError):
-        value = None
+    value = _container(text)
     if isinstance(value, (dict, list)):
         return json.dumps(_value(value, secrets), ensure_ascii=True)
     return _clean_text(text, secrets)
@@ -148,17 +210,19 @@ class _Stream:
         return len(text)
 
     def _record(self, text, end):
-        name = _environment_name(text)
+        name = _environment_name(text, self.secrets + _known(), self.in_environment)
         if name is not None:
             self.in_environment = True
             self.output.write(_environment_record(name, self.secrets + _known()) + end)
-        elif self.in_environment:
-            self.output.write(MASK + end)
-        elif self.in_key or PEM_BEGIN.search(text):
-            self.in_key = "-----END" not in text
-            self.output.write(MASK + end)
+        elif self.in_environment and _function_name(text):
+            self.output.write(_environment_record(_function_name(text), self.secrets + _known()) + end)
         else:
-            self.output.write(_clean_record(text, self.secrets) + end)
+            self.in_environment = False
+            if self.in_key or PEM_BEGIN.search(text):
+                self.in_key = "-----END" not in text
+                self.output.write(MASK + end)
+            else:
+                self.output.write(_clean_record(text, self.secrets) + end)
 
     def flush(self):
         # Hold partial records so a credential split over writes is never exposed.
@@ -181,10 +245,7 @@ class _Stream:
 
 
 def _clean_record(text, secrets):
-    try:
-        value = json.loads(text)
-    except (ValueError, TypeError):
-        value = None
+    value = _container(text)
     secrets = secrets + _known()
     if isinstance(value, (dict, list)):
         return json.dumps(_value(value, secrets), ensure_ascii=True)
@@ -234,10 +295,25 @@ def _cli_secrets(argv):
     return [value for value in values if value]
 
 
-def cli(main, error_code=1):
+def inherited_known():
+    """Consume the private registry passed only to reviewed supervisor entries."""
+    number = os.environ.pop('TF_SAFE_REGISTRY_FD', None)
+    if number is None:
+        return []
+    fd = int(number)
+    if fd < 3:
+        raise ValueError('invalid private registry descriptor')
+    with os.fdopen(fd, 'rb') as source:
+        raw = source.read(8 * 1024 * 1024 + 1)
+    if len(raw) > 8 * 1024 * 1024:
+        raise ValueError('private registry exceeds limit')
+    return [value.decode('utf-8') for value in raw.split(b'\0') if value]
+
+
+def cli(main, error_code=1, known=()):
     """Cover parsing, setup, worker diagnostics and unhandled errors before any output."""
     global _configured_secrets
-    secrets = _cli_secrets(sys.argv[1:])
+    secrets = list(known) + inherited_known() + _cli_secrets(sys.argv[1:])
     previous, _configured_secrets = _configured_secrets, secrets
     out, err = _Stream(sys.stdout, secrets), _Stream(sys.stderr, secrets)
     try:

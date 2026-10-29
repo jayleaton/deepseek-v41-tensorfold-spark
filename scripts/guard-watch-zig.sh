@@ -15,6 +15,7 @@
 safe_dir=${BASH_SOURCE[0]%/*}
 [[ "$safe_dir" != "${BASH_SOURCE[0]}" ]] || safe_dir=.
 source "$safe_dir/safe_shell.sh"
+[[ -z "${TENSORFOLD_API_KEY:-}" ]] || export TF_NATIVE_REQUIRE_FILE=1
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then safe_main "${BASH_SOURCE[0]}" "$@"; fi
 set -uo pipefail
 unset BASH_ENV ENV
@@ -41,18 +42,8 @@ if [[ -f "$config" ]]; then
     unset BASH_ENV ENV
     set +a
 fi
-# Include credential shell variables set by a sourcing caller without putting any
-# values in argv or printing an environment dump. Python sees variable names only.
-while IFS= read -r watch_key_name; do
-    export "$watch_key_name"
-done < <(compgen -v | safe_capture names python3 -c '
-import sys
-sys.path.insert(0, "scripts")
-from redact import secret_name
-for name in sys.stdin:
-    name = name.strip()
-    if secret_name(name): print(name)
-')
+[[ -z "${TENSORFOLD_API_KEY:-}" ]] || export TF_NATIVE_REQUIRE_FILE=1
+safe_credentials || { return 78 2>/dev/null || exit 78; }
 CONTAINER_PREFIX="${CONTAINER_PREFIX:-tensorfold-zig}"
 NAME="$CONTAINER_PREFIX"
 [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || { echo "invalid CONTAINER_PREFIX" >&2; return 78 2>/dev/null || exit 78; }
@@ -253,6 +244,10 @@ _watch_watch_tick() {
 }
 
 watch_validate_numbers() {
+    if [[ -n "${NATIVE_AUTH_FILE:-}" && "$WATCH_PROBE" != 0 ]]; then
+        printf '%s\n' 'authenticated native watchdog requires WATCH_PROBE=0; serving keys are not diagnostic credentials' >&2
+        return 78
+    fi
     [[ -z "${WATCH_RESTART_CMD:-}" ]] || { printf '%s\n' 'WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv' >&2; return 78; }
     local key value
     for key in WATCH_GRACE WATCH_FAILS WATCH_HEAL WATCH_MIN_HEAL WATCH_FF_MIN_HEAL WATCH_LEASE_MIN WATCH_PROBE WATCH_PROBE_EVERY WATCH_PROBE_TIMEOUT WATCH_PROBE_FAILS WATCH_INTERVAL; do

@@ -55,6 +55,35 @@ neighboring off blocks. Keep both options off until those device gates pass.
 
 ## Native pair lifecycle and watchdog (#58)
 
+For authenticated native serving, put the keys in an operator-owned file outside
+the checkout with mode `0600`, and set `NATIVE_AUTH_FILE=/absolute/path/to/keys`
+in the head's config. Keep key contents out of shell config and environment
+variables. The launcher validates the file without reading its contents, mounts
+it read-only at `/run/tensorfold/auth-keys` on rank 0, and passes that path with
+`--api-key-file`. Rank 1 and AOT diagnostic containers receive no key mount.
+The file may contain one key per line or upstream's labelled/scoped keys; the
+native server validates the contents and refuses an invalid or empty key set.
+The pinned engine supports this through `zig/src/server/cli.zig` and
+`zig/src/server/auth.zig`; no credential environment exception is required.
+Its authentication environment name is `TENSORFOLD_API_KEY`, rather than generic
+`API_KEY` or `TF_DSV41_API_KEY`. A head config containing that supported name
+without `NATIVE_AUTH_FILE` fails with a migration error. The file becomes the
+authentication source when configured; remove the old environment setting.
+
+The mount pins a single file inode. To rotate keys using an atomic file
+replacement, explicitly restart through the lifecycle after replacing the file;
+do not assume the existing mount follows the replacement. Treat file ownership,
+permissions and authentication checks as part of deployment qualification.
+With `NATIVE_AUTH_FILE`, lifecycle readiness uses the public `/health` response
+plus owned/running rank checks and the existing preflight model/asset identity
+comparison. The pinned server checks engine health before returning
+`{"status":"ok"}` and deliberately hides model details with authentication on
+(`zig/src/server/status_routes.zig:13–23`). Lifecycle does not open the key file
+or call authenticated `/v1/models`, so model-list availability is not checked in
+this mode. Check it separately with an authorized client during qualification.
+The optional completion watchdog probe requires `WATCH_PROBE=0` when it addresses
+an authenticated native endpoint directly; it receives no serving credential.
+
 Use `CONFIG=config/prod-zig.env bash scripts/serve.sh preflight` on the head before
 `start`. The config is exported before invoking the native supervisor; set absolute
 `STATE_DIR`, `WORKER_REPO`, `WORKER_CONFIG` and a single `WORKER_SSH` target. Both
@@ -64,7 +93,7 @@ locally before any worker starts. `serve.sh rank N --identity` checks a single r
 `serve.sh build` invokes the pinned native builder.
 
 `start` launches worker then head and waits for both owned containers plus healthy
-`/health` and `/v1/models` responses. Names are `tensorfold-zig-r0` and
+`/health` and, without file authentication, `/v1/models` responses. Names are `tensorfold-zig-r0` and
 `tensorfold-zig-r1`, or `${CONTAINER_PREFIX}-r0/r1` when overridden on both nodes.
 `stop` writes a durable STOP before signalling, then stops only containers with the
 expected name, rank and revision labels, using their inspected IDs. Its timeout
@@ -107,6 +136,16 @@ are filtered as well as child output. Watchdog numeric controls are validated
 before arithmetic. A heal holds ownership until its command finishes; it does not
 detach an unowned restart after the observing tick exits. Image verification runs
 the image's `/opt/tensorfold/share/libproof.sh` through the host wrapper.
+
+Trusted shell config can temporarily export values while it is sourced. The
+wrapper immediately removes credentials and their aliases from its exported
+environment before launching diagnostic commands. Known values remain unexported
+in the wrapper for validation and filtering; only the checked supervisor receives
+that registry over a private pipe, which it closes before starting a child.
+Diagnostic children receive neither that pipe nor credential environment values.
+A credential in an operational control fails with exit 78 rather than selecting
+a default. The initial caller and trusted config-loading shell are outside this
+child-environment guarantee; keep serving keys in `NATIVE_AUTH_FILE` as above.
 
 The optional guard watchdog accepts `WATCH_RESTART_ARGV` as a JSON argv array:
 

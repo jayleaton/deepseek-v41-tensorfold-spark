@@ -41,7 +41,8 @@ try:
     if probe:
         record['parse_valid'] = True
     else:
-        key = os.environ['API_KEY']
+        assert 'API_KEY' not in os.environ
+        key = FIXTURE_VALUE
         record['raw_key'] = any(key in word for word in sys.argv[1:])
         # Decode successive shell layers without evaluation. In particular the
         # bash -c launch payload has been quoted once before the SSH argv join.
@@ -116,6 +117,10 @@ def _observations(marker):
 
 
 def _invoke(env, operation):
+    # The independent observer knows its synthetic value from fixture source,
+    # never from a production diagnostic child's stripped environment.
+    ssh = Path(env['PATH'].split(os.pathsep)[0]) / 'ssh'
+    ssh.write_text(f'#!{sys.executable}\n' + SSH_OBSERVER.replace('FIXTURE_VALUE', repr(env['API_KEY'])))
     life = Lifecycle(env=env, root=ROOT)
     # Also exercise the readiness deadline's clamp of a larger command budget.
     life.deadline = life.clock() + 10
@@ -132,7 +137,8 @@ def _assert_refused(remote, operation, capsys):
     try:
         _invoke(env, operation)
     except (ValueError, OpsError) as error:
-        refused = str(error) == 'credential value refused in command arguments'
+        refused = str(error) in ('credential value refused in command arguments',
+                                 'credential value refused in child configuration')
         error_leaked = env['API_KEY'] in str(error)
     captured = capsys.readouterr()
     stream_leaked = any(env['API_KEY'] in stream for stream in (captured.out, captured.err))

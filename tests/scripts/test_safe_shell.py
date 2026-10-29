@@ -110,11 +110,12 @@ def test_control_projection_masks_only_diagnostics():
     assert value["diagnostic"] == "<redacted>"
 
 
-def test_control_command_sanitizes_stderr_independently():
+def test_control_command_sanitizes_stderr_independently(tmp_path):
+    script = tmp_path / "diagnostic.py"
+    script.write_text('import os,sys; assert "API_KEY" not in os.environ; '
+                      'sys.stdout.write(sys.stdin.read()); sys.stderr.write("200")')
     result = invoke(
-        "--control", "uint", "--command", sys.executable, "-c",
-        'import os,sys; sys.stdout.write(sys.stdin.read()); '
-        'sys.stderr.write(os.environ["API_KEY"])',
+        "--control", "uint", "--command", sys.executable, str(script),
         payload="200\n", key="200",
     )
     assert result.returncode == 0
@@ -247,8 +248,8 @@ def test_main_bootstrap_covers_full_script(bash, tmp_path):
     script.write_text(
         'source ' + shlex.quote(str(SHELL)) + '\n'
         'safe_main "${BASH_SOURCE[0]}" "$@"\n'
-        'printf "%s\\n" "$API_KEY"\n'
-        'printf "%s\\n" "$API_KEY" >&2\n'
+        'printf "%s\\n" "rr2SyntheticBoundaryValue"\n'
+        'printf "%s\\n" "rr2SyntheticBoundaryValue" >&2\n'
         'exit 43\n'
     )
     result = subprocess.run(
@@ -271,7 +272,7 @@ def test_main_bootstrap_preserves_malformed_argument_status(bash, tmp_path, fail
         'fi\n'
         'set -u\n'
         + ('argument=${1:?usage: invalid.sh ARG}\n' if failure == "missing" else
-           'printf "%s\\n" "$API_KEY" >&2; exit 2\n')
+           'printf "%s\\n" "rr2SyntheticBoundaryValue" >&2; exit 2\n')
     )
     baseline = subprocess.run(
         [bash, str(script)], capture_output=True, text=True,

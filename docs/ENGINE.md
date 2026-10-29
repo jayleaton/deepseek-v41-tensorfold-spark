@@ -106,9 +106,22 @@ values with the shared credential rule before encoding shell syntax, including
 nested SSH commands and the worker supervisor path. The checked spawn boundary
 remains in place. The source gate rejects direct quoting outside this adapter.
 
-Diagnostic sinks decode shell quoting (including ANSI-C strings), JSON and repr
-without evaluation before publishing records. Environment dumps retain names
-only; continuation/function records are withheld once a dump is recognized.
+Diagnostic subprocesses use `safe_exec.child_environment`: credential names and
+credential-bearing aliases are absent, and tainted operational controls are
+refused rather than dropped into defaults. Shell configuration keeps known values
+unexported; validators receive them through private descriptors confined to exact reviewed
+supervisor entries. These descriptors are consumed and closed before diagnostic
+children start. Typed process ownership and deadline metadata remain supervisor
+controls, independent of credential-bearing settings. Credentials are never carried in a registry
+environment variable or executable argv. Serving authentication uses the native
+read-only key-file transport described in OPERATIONS.
+
+Literal/known-variant masking and inert decoding remain an output backstop.
+Only records with a matching decoded credential are masked; parse/size limits do
+not turn ordinary prose into a secret. Complete Python containers (including
+pprint's implicit concatenation) are framed before publication. Environment dumps
+retain names only within their finite structural record; ordinary metrics and
+following errors remain readable.
 Docker state evidence uses a typed State allowlist and never captures Config.Env.
 The reference SSH loader also uses the checked argv/quoting supervisor; binary
 model bytes remain a data transport, and failed/unparseable responses are not

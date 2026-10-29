@@ -92,6 +92,7 @@ from redact import (
     redact_argv,
     redact_text,
 )
+from safe_exec import child_environment, run as supervised_run
 
 
 def output_secrets(values):
@@ -299,19 +300,22 @@ def sha256(data: str | bytes) -> str:
     ).hexdigest()
 
 
-def tool_identity() -> dict:
+def tool_identity(known=()) -> dict:
     here = Path(__file__).resolve()
     ident = {"tool": TOOL, "schema": SCHEMA, "sha256": sha256(here.read_bytes())}
     try:
-        rev = subprocess.run(
+        environment = child_environment(secrets=cli_secrets(sys.argv[1:]) + list(known))
+        rev = supervised_run(
             ["git", "-C", str(here.parent), "rev-parse", "HEAD"],
+            env=environment,
             capture_output=True,
             text=True,
             timeout=10,
             check=False,
         )
-        dirty = subprocess.run(
+        dirty = supervised_run(
             ["git", "-C", str(here.parent), "status", "--porcelain", "--", here.name],
+            env=environment,
             capture_output=True,
             text=True,
             timeout=10,
@@ -320,7 +324,7 @@ def tool_identity() -> dict:
         if rev.returncode == 0:
             ident["git"] = rev.stdout.strip()
             ident["dirty"] = bool(dirty.stdout.strip())
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         pass
     return ident
 
@@ -2271,7 +2275,7 @@ def _main(argv: list[str]) -> int:
     doc: dict = {
         "tool": TOOL,
         "schema": SCHEMA,
-        "identity": tool_identity(),
+        "identity": tool_identity(known=[a.api_key] if a.api_key else []),
         "label": a.label,
         "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "python": platform.python_version(),

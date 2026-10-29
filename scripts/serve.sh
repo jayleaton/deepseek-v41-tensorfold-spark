@@ -6,6 +6,7 @@ safe_dir=${BASH_SOURCE[0]%/*}
 source "$safe_dir/safe_shell.sh"
 export CONFIG=${CONFIG:-config/prod-zig.env}
 [[ "$CONFIG" == /* ]] || CONFIG="${safe_exec%/*}/../$CONFIG"
+[[ -z "${TENSORFOLD_API_KEY:-}" ]] || export TF_NATIVE_REQUIRE_FILE=1
 safe_main "${BASH_SOURCE[0]}" "$@"
 set -euo pipefail
 cd "${safe_exec%/*}/.."
@@ -21,4 +22,6 @@ set -a
 source "$CONFIG" >/dev/null 2>&1
 { set +x; } 2>/dev/null
 set +a
+safe_credentials || exit $?
+[[ -z "${TENSORFOLD_API_KEY:-}" ]] || export TF_NATIVE_REQUIRE_FILE=1
 safe_command python3 scripts/native_ops.py "$operation" "$@"

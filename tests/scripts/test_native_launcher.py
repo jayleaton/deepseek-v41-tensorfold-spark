@@ -117,7 +117,124 @@ def test_credential_in_a_native_control_is_refused_without_dropping_the_setting(
     env.update(API_KEY=secret, TF_DSV41_NATIVE_CONTROL=secret)
     result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
                             cwd=ROOT, env=env, text=True, capture_output=True)
-    assert result.returncode == 2
+    assert result.returncode == 78
     leaked = secret in result.stdout + result.stderr
     assert not leaked, "credential reached native-environment refusal"
     assert not argv_file.exists()
+
+
+@pytest.mark.parametrize("rank", [0, 1])
+def test_auth_file_is_mounted_only_for_head_serving(launcher, tmp_path, rank):
+    env, _, _ = launcher
+    key_file = tmp_path / "keys with spaces"
+    secret = "rr6" + "FileOnlyServingCredential"
+    key_file.write_text(secret + "\n")
+    key_file.chmod(0o600)
+    env["NATIVE_AUTH_FILE"] = str(key_file)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", str(rank), "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    argv = shlex.split(result.stdout)
+    mount = str(key_file) + ":/run/tensorfold/auth-keys:ro"
+    assert (mount in argv) == (rank == 0)
+    assert ("--api-key-file" in argv) == (rank == 0)
+    if rank == 0:
+        assert argv[argv.index("--api-key-file") + 1] == "/run/tensorfold/auth-keys"
+    leaked = secret in result.stdout + result.stderr
+    assert not leaked, "file credential reached launcher output"
+    assert "NATIVE_AUTH_FILE" not in argv
+
+
+@pytest.mark.parametrize("rank", [0, 1])
+def test_auth_file_is_not_mounted_for_aot_diagnostics(launcher, tmp_path, rank):
+    env, argv_file, _ = launcher
+    key_file = tmp_path / "keys"
+    # Diagnostics do not even validate/open the serving-only key file.
+    env["NATIVE_AUTH_FILE"] = str(key_file)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", str(rank), "--check-aot"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 44, result.stdout + result.stderr
+    argv = json.loads(argv_file.read_text())["argv"]
+    assert not any("auth-keys" in value or str(key_file) in value for value in argv)
+    assert "--api-key-file" not in argv
+
+
+@pytest.mark.parametrize("kind", ["missing", "empty", "public", "symlink", "directory", "relative"])
+def test_head_refuses_unsafe_auth_file_before_docker(launcher, tmp_path, kind):
+    env, argv_file, _ = launcher
+    key_file = tmp_path / "keys"
+    if kind == "directory":
+        key_file.mkdir(mode=0o600)
+    elif kind != "missing":
+        key_file.write_text("" if kind == "empty" else "rr6FileCredential\n")
+        key_file.chmod(0o644 if kind == "public" else 0o600)
+    if kind == "symlink":
+        link = tmp_path / "link"
+        link.symlink_to(key_file)
+        key_file = link
+    env["NATIVE_AUTH_FILE"] = "keys" if kind == "relative" else str(key_file)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    assert "docker run" not in result.stdout
+    assert not argv_file.exists()
+
+
+@pytest.mark.parametrize("source", ["config", "caller"])
+@pytest.mark.parametrize("entry", ["rank", "pair-wrapper"])
+def test_native_auth_environment_requires_file_migration(launcher, source, entry):
+    env, argv_file, _ = launcher
+    secret = "rr6" + "NativeEnvironmentCredential"
+    if source == "config":
+        with Path(env["CONFIG"]).open("a") as stream:
+            stream.write("TENSORFOLD_API_KEY=" + secret + "\n")
+    else:
+        env["TENSORFOLD_API_KEY"] = secret
+    argv = (["bash", "scripts/run-zig.sh", "0", "--dry-run"] if entry == "rank" else
+            ["bash", "scripts/serve.sh", "rank", "0", "--dry-run"])
+    result = subprocess.run(argv,
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 2
+    assert "NATIVE_AUTH_FILE" in result.stderr
+    leaked = secret in result.stdout + result.stderr
+    assert not leaked, "legacy authentication value reached migration diagnostic"
+    assert not argv_file.exists()
+
+
+def test_caller_native_key_with_config_file_uses_file_transport(launcher, tmp_path):
+    env, _, _ = launcher
+    secret = "rr6" + "CallerNativeCredential"
+    env["TENSORFOLD_API_KEY"] = secret
+    key_file = tmp_path / "keys"
+    key_file.write_text(secret + "\n")
+    key_file.chmod(0o600)
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write("NATIVE_AUTH_FILE=" + str(key_file) + "\n")
+    result = subprocess.run(["bash", "scripts/serve.sh", "rank", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True)
+    assert result.returncode == 0
+    argv = shlex.split(result.stdout)
+    assert "--api-key-file" in argv
+    assert "TENSORFOLD_API_KEY" not in argv
+    leaked = secret in result.stdout + result.stderr
+    assert not leaked, "caller credential reached file-auth launch output"
+
+
+def test_explicit_runner_environment_keeps_registry_for_nested_validation(launcher):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from safe_exec import run as checked_run
+    env, marker, _ = launcher
+    value = "rr6" + "ExplicitEnvironmentCredentialOnly"
+    env["API_KEY"] = value
+    with Path(env["CONFIG"]).open("a") as config:
+        config.write("HOST=" + value + "\n")
+    result = checked_run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                         cwd=ROOT, env=env, timeout=20)
+    code = result.returncode
+    refused = "credential value refused" in result.stderr
+    spawned = marker.exists()
+    leaked = value in result.stdout + result.stderr
+    assert not leaked, "explicit registry value reached output"
+    assert code == 78
+    assert refused
+    assert not spawned

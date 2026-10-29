@@ -22,9 +22,11 @@ import os
 import sys
 from pathlib import Path
 
+controls = {}  # fixture-protocol-controls
 role = Path(sys.argv[0]).name
 args = " ".join(sys.argv[1:])
-key = os.environ.get("AUTH_TOKEN") or os.environ["API_KEY"]
+assert "AUTH_TOKEN" not in os.environ and "API_KEY" not in os.environ
+key = FIXTURE_KEY
 def echoes(label):
     print(label + " opaque " + key)
     print(label + " escaped " + json.dumps(key, ensure_ascii=True))
@@ -32,31 +34,31 @@ def echoes(label):
     print(label + " error " + key, file=sys.stderr)
 
 if role in ("docker", "ssh") and "State.Running" in args:
-    print(os.environ.get("FAKE_RUNNING", "true"))
+    print(controls.get("FAKE_RUNNING", "true"))
 elif role == "docker" and "StartedAt" in args:
     print("started-at diagnostic " + key, file=sys.stderr)
-    print(os.environ.get("FAKE_STARTED") or (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat())
+    print(controls.get("FAKE_STARTED") or (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat())
 elif role in ("docker", "ssh") and "ExitCode" in args:
-    print(os.environ.get("FAKE_EXIT", "0"))
+    print(controls.get("FAKE_EXIT", "0"))
 elif role == "curl":
     if "/chat/completions" in args:
-        print(os.environ.get("FAKE_COMPLETION", '{"choices":[]}'))
-    elif os.environ.get("FAKE_STALE_ONCE") and not Path(os.environ["FAKE_STALE_ONCE"]).exists():
-        Path(os.environ["FAKE_STALE_ONCE"]).touch()
+        print(controls.get("FAKE_COMPLETION", '{"choices":[]}'))
+    elif controls.get("FAKE_STALE_ONCE") and not Path(controls["FAKE_STALE_ONCE"]).exists():
+        Path(controls["FAKE_STALE_ONCE"]).touch()
         print(json.dumps({"ok": False, "errors": 0, "status": "stalled",
                           "stall_reason": "no round for 300 s with work in flight",
                           "oldest_s": 1.5, "rounds": {"last_age_s": 300}, "inflight": 1,
                           "opaque": key}))
         print("503")
         sys.exit(0)
-    elif os.environ.get("FAKE_HEALTHY"):
+    elif controls.get("FAKE_HEALTHY"):
         print(json.dumps({"ok": True, "errors": 0, "inflight": 200,
-                          "requests_running": int(os.environ.get("FAKE_REQUESTS", "200")), "streams": {"max": 200}, "opaque": key}))
+                          "requests_running": int(controls.get("FAKE_REQUESTS", "200")), "streams": {"max": 200}, "opaque": key}))
     else:
         print(json.dumps({"ok": False, "status": "stalled", "opaque": key}))
     print("health stderr " + repr(key), file=sys.stderr)
     if "-w" in sys.argv:
-        print("200" if os.environ.get("FAKE_HEALTHY") else "503")
+        print("200" if controls.get("FAKE_HEALTHY") else "503")
 elif role == "alert-tool":
     Path(os.environ["ALERT_CAPTURE"]).write_text(sys.argv[1])
     echoes("alert-tool")
@@ -74,7 +76,7 @@ def fixture(tmp_path, key):
     bindir.mkdir()
     for name in ("curl", "docker", "ssh", "alert-tool", "heal-tool"):
         path = bindir / name
-        path.write_text(f"#!{sys.executable}\n" + TOOL)
+        path.write_text(f"#!{sys.executable}\n" + TOOL.replace("FIXTURE_KEY", repr(key)))
         path.chmod(0o700)
     # Fake the external native lifecycle Python command, keeping the production
     # reviewed serve.sh and all of its subprocess boundaries unchanged.
@@ -103,8 +105,25 @@ def fixture(tmp_path, key):
 
 
 def run(env, snippet):
+    # Runtime controls are fixture data, independent of process environments.
+    # A numeric credential may equal an HTTP code; exercise typed protocols
+    # without reintroducing that credential into a diagnostic child's env.
+    import re
+    controls = {name: value for name, value in env.items() if name.startswith("FAKE_")}
+    for name in ("docker", "ssh", "curl", "alert-tool", "heal-tool"):
+        path = Path(env["PATH"].split(os.pathsep)[0]) / name
+        if path.is_file():
+            try:
+                source = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            if '# fixture-protocol-controls' in source:
+                source = re.sub(r'^controls = .*  # fixture-protocol-controls$',
+                                lambda _: repr(controls).join(('controls = ', '  # fixture-protocol-controls')),
+                                source, flags=re.M)
+                path.write_text(source)
     return subprocess.run(
-        ["bash", "-c", f'source "{SCRIPT}"; {snippet}'],
+        ["bash", "-c", f'source "{SCRIPT}" || exit $?; {snippet}'],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -212,7 +231,7 @@ def test_health_credentials_never_reach_python_diagnostic_arguments(tmp_path):
     python = tmp_path / "bin/python3"
     python.write_text(
         f"#!{sys.executable}\nimport json,os,sys\nfrom pathlib import Path\n"
-        "key = os.environ.get('API_KEY', '')\n"
+        f"key = {key!r}\n"
         "forms = (key, json.dumps(key)[1:-1], repr(key)[1:-1])\n"
         "if key and any(value in arg for value in forms for arg in sys.argv[1:]):\n"
         " Path(os.environ['ARGV_MARKER']).touch()\n"

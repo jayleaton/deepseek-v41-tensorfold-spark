@@ -8,9 +8,11 @@ import subprocess
 import sys
 import tempfile
 
+from safe_exec import child_environment
+
 
 def git(*args):
-    return subprocess.check_output(['git', *args])
+    return subprocess.check_output(['git', *args], env=child_environment())
 
 
 def main() -> int:
@@ -28,7 +30,7 @@ def main() -> int:
             objects.setdefault(sha.decode(), {}).setdefault(path, commit)
     failed = False
     with tempfile.TemporaryDirectory(prefix='check-public-history-') as scratch:
-        proc = subprocess.Popen(['git', 'cat-file', '--batch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        proc = subprocess.Popen(['git', 'cat-file', '--batch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=child_environment())
         files = []
         try:
             for sha in objects:
@@ -55,7 +57,7 @@ def main() -> int:
             # Chunk argv for large histories; grep retains the exact ERE semantics used by the tree scan.
             for at in range(0, len(files), 200):
                 result = subprocess.run(['grep', '-HnIiE', '--', regex, *files[at:at+200]],
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment())
                 if result.returncode not in (0, 1):
                     raise ValueError('history grep failed: ' + result.stderr.decode(errors='replace'))
                 for line in result.stdout.splitlines():
@@ -63,7 +65,7 @@ def main() -> int:
                     sha = Path(file.decode()).name
                     if name == 'home directories' and subprocess.run(
                             ['grep', '-qiE', '/home/(user|you|<you>|<user>|ubuntu)/'],
-                            input=text, stdout=subprocess.DEVNULL).returncode == 0:
+                            input=text, stdout=subprocess.DEVNULL, env=child_environment()).returncode == 0:
                         continue
                     for path, commit in objects[sha].items():
                         if any(fnmatch.fnmatchcase(path, glob) for glob in exclusions.split()):

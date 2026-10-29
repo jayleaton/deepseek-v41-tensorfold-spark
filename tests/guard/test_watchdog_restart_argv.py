@@ -16,7 +16,8 @@ def observer(tmp_path):
         path = tmp_path / 'bin' / name
         lines = path.read_text().splitlines(keepends=True)
         injected = ('import os,sys\nfrom pathlib import Path\n'
-                    'if any(os.environ["API_KEY"] in arg for arg in sys.argv[1:]):\n'
+                    'assert "API_KEY" not in os.environ\n'
+                    f'if any({KEY!r} in arg for arg in sys.argv[1:]):\n'
                     ' Path(os.environ["ARGV_PROBE"]).touch()\n')
         path.write_text(lines[0] + injected + ''.join(lines[1:]))
     env.update(API_KEY=KEY, WATCH_HEAL='1', WATCH_FAILS='1', ARGV_PROBE=str(marker))
@@ -58,8 +59,14 @@ def test_restart_argv_checks_resolved_values_before_spawn(tmp_path, program, arg
     assert not marker.exists(), 'structured heal reached a process with a credential'
     assert result.returncode != 0
     log = tmp_path / 'state/heal.log'
-    assert log.exists()
-    assert 'credential value refused' in log.read_text()
+    # Literal values may now fail before a heal starts. Environment references
+    # to stripped secret names fail as unavailable at the checked restart.
+    if log.exists():
+        assert ('credential value refused' in log.read_text()
+                or 'restart environment reference unavailable' in log.read_text())
+    else:
+        assert result.returncode == 78
+        assert 'credential value refused' in result.stderr
 
 
 @pytest.mark.parametrize('argv', [

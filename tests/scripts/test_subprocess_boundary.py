@@ -27,7 +27,7 @@ BUILTINS = {'set', 'unset', 'export', 'readonly', 'local', 'declare',
             'return', 'exit', 'printf', 'echo', 'read', 'cd', 'pwd', 'shift', ':',
             'umask', 'compgen', 'wait', 'test', 'true', 'false', 'break', 'continue'}
 ADAPTERS = {'safe_command', 'safe_capture', 'safe_filter', 'safe_shell', 'safe_main', 'safe_check_argv',
-            'safe_quote_argv'}
+            'safe_quote_argv', 'safe_credentials'}
 # These are executable, trusted operator configuration, not arbitrary source
 # targets. Library paths are separately pinned to the audited source tree.
 SOURCES = {
@@ -921,7 +921,10 @@ def test_central_shell_adapter_has_only_supervisor_spawns():
         if name == 'python3':
             assert text.startswith('python3 "$safe_exec" '), 'new direct Python subprocess bypass'
         elif name == 'exec':
-            assert text.startswith('exec python3 "$safe_exec" --command bash '), 'new exec bypass'
+            if text == 'exec':
+                assert node.parent.text.decode().strip() == 'exec 9<&-', 'unreviewed descriptor exec'
+                continue
+            assert text.startswith('exec python3 "$safe_exec" --known-fd 9 --command bash '), 'new exec bypass'
         else:
             assert text == '"$function" "$@"', 'unreviewed central command bypass'
     assert 'declare -F -- "$function"' in source.decode(), 'only in-process functions may enter shell boundary'

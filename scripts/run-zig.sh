@@ -6,6 +6,8 @@ safe_dir=${BASH_SOURCE[0]%/*}
 source "$safe_dir/safe_shell.sh"
 export CONFIG=${CONFIG:-config/prod-zig.env}
 [[ "$CONFIG" == /* ]] || CONFIG="${safe_exec%/*}/../$CONFIG"
+# Carry intent, never the credential, through sanitized nested launchers.
+[[ -z "${TENSORFOLD_API_KEY:-}" ]] || export TF_NATIVE_REQUIRE_FILE=1
 safe_main "${BASH_SOURCE[0]}" "$@"
 set -euo pipefail
 cd "${safe_exec%/*}/.."
@@ -19,6 +21,13 @@ set -a
 source "$config" >/dev/null 2>&1
 { set +x; } 2>/dev/null
 set +a
+safe_credentials || exit $?
+serving=0
+if [[ "$rank" == 0 && "$mode" != --check-aot && "$mode" != --identity ]]; then serving=1; fi
+if [[ "$serving" == 1 && ( -n "${TENSORFOLD_API_KEY:-}" || "${TF_NATIVE_REQUIRE_FILE:-0}" == 1 ) && -z "${NATIVE_AUTH_FILE:-}" ]]; then
+    echo 'native authentication requires NATIVE_AUTH_FILE; move TENSORFOLD_API_KEY out of CONFIG into an owned mode-0600 file' >&2
+    exit 2
+fi
 for key in IMAGE TF_TP_MASTER NCCL_SOCKET_IFNAME NCCL_IB_HCA MODEL_DIR ENGRAM_DIR ASSETS_DIR PREPARED_DIR STATE_DIR CACHE_DIR; do
     [[ -n "${!key:-}" && "${!key}" != *'<'* ]] || { echo "set required native setting $key" >&2; exit 2; }
 done
@@ -28,19 +37,21 @@ export NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
 export NCCL_CUMEM_HOST_ENABLE=${NCCL_CUMEM_HOST_ENABLE:-0}
 envs=()
 # Enumerate names only; never pipe credential values through an environment dump.
-forward_names=$(safe_capture names python3 -c '
-import os, sys
+forward_names=$(compgen -v | safe_capture names python3 -c '
+import sys
 sys.path.insert(0, "scripts")
-from redact import known_secrets, secret_name, secret_variants
-values = secret_variants(known_secrets())
-for name, setting in os.environ.items():
+from redact import secret_name
+for name in sys.stdin:
+    name = name.strip()
     selected = name.startswith(("TF_DSV41_", "GLM53_TF_", "NCCL_", "TF_CUDA_")) or name in ("TF_TP_ROCE_HCA", "TF_EXPERIMENTAL")
     if selected and not secret_name(name):
-        if any(value in setting for value in values):
-            raise SystemExit("credential value refused in native environment")
         print(name)
 ') || exit 2
 while IFS= read -r key; do
+    # Check shell values before the supervisor removes credential aliases from
+    # child environments. A tainted control must fail, not silently disappear.
+    safe_check_argv "${!key}" || exit 2
+    export "$key"
     # TF_TP_ROCE_HCA forwarding contributed by rootsbymenda in #63.
     case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*|TF_TP_ROCE_HCA|TF_EXPERIMENTAL|TF_CUDA_*) envs+=(-e "$key");; esac
 done <<< "$forward_names"
@@ -58,12 +69,35 @@ args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --net
       -e TF_DSV41_ASSETS=/assets -e TF_DSV41_ENGRAM_DIR=/engram
       -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin)
 [[ -z "${CPUSET_CPUS:-}" ]] || args+=(--cpuset-cpus "$CPUSET_CPUS")
+# Authentication belongs to the head server alone. The native engine reads the
+# restricted file itself; neither Docker environment nor argv carries its keys.
+if [[ "$serving" == 1 && -n "${NATIVE_AUTH_FILE:-}" ]]; then
+    safe_command python3 -c '
+import os, stat, sys
+path = sys.argv[1]
+try:
+    if not os.path.isabs(path) or any(c in path for c in ":\r\n"):
+        raise ValueError
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_uid != os.geteuid() or not 0 < info.st_size <= 1048576):
+            raise ValueError
+    finally:
+        os.close(fd)
+except (OSError, ValueError):
+    raise SystemExit("NATIVE_AUTH_FILE must be an owned, nonempty regular file with mode 0600 and an absolute mount-safe path")
+' "$NATIVE_AUTH_FILE" || exit 2
+    args+=(-v "$NATIVE_AUTH_FILE:/run/tensorfold/auth-keys:ro")
+fi
 args+=("$IMAGE")
 if [[ "$rank" == 0 ]]; then
     args+=(tensorfold-dsv41 serve /model --host "${HOST:-localhost}" --port "${PORT:-8000}"
            --parallel "${TF_DSV41_SLOTS:-1}" --context "${TF_DSV41_CONTEXT:-4096}"
            --name DeepSeek-V4.1-Flash-TF --max-tokens 32768)
     [[ "${TF_DSV41_THINKING:-1}" != 0 ]] || args+=(--no-thinking)
+    [[ "$serving" != 1 || -z "${NATIVE_AUTH_FILE:-}" ]] || args+=(--api-key-file /run/tensorfold/auth-keys)
 else
     args+=(tf-dsv41 follow /model /assets)
 fi

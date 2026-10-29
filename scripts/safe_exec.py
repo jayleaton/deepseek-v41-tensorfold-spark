@@ -9,14 +9,15 @@ import math
 import os
 from pathlib import Path
 import selectors
+import tempfile
 import signal
 import subprocess
 import sys
 import threading
 import time
 
-from redact import check_argv as _check_argv, known_secrets
-from safe_output import _cli_secrets, _known, _Stream, cli
+from redact import check_argv as _check_argv, known_secrets, redact_text, secret_name
+from safe_output import _cli_secrets, _known, _Stream, cli, inherited_known
 
 TERM_GRACE = 1.0
 GROUP_ENV = 'TF_SAFE_EXEC_GROUP'
@@ -24,6 +25,56 @@ DEADLINE_ENV = 'TF_SAFE_EXEC_DEADLINE'
 CONTROL_LIMIT = 8 * 1024 * 1024
 OWNER_PID_ENV = 'TF_SAFE_EXEC_OWNER_PID'
 OWNER_START_ENV = 'TF_SAFE_EXEC_OWNER_START'
+
+
+class ChildEnvironmentError(ValueError):
+    """A tainted operational setting cannot safely fall back to a default."""
+
+
+def _internal_control(name, value):
+    if name in {GROUP_ENV, OWNER_PID_ENV, OWNER_START_ENV, 'TF_SAFE_EXEC_PARENT', 'TF_SAFE_REGISTRY_FD'}:
+        return str(value).isascii() and str(value).isdigit() and int(value) > 0
+    if name == DEADLINE_ENV:
+        try:
+            return math.isfinite(float(value)) and float(value) > 0
+        except ValueError:
+            return False
+    return False
+
+
+def child_environment(env=None, secrets=()):
+    """Diagnostic children receive no credential names or credential-bearing aliases.
+
+    Validation/redaction remains in the supervisor. Do not carry a secret registry
+    in a child environment: even an opaque setting can be printed by diagnostics.
+    Serving credentials travel via the separately reviewed server-only transport.
+    """
+    source = dict(os.environ if env is None else env)
+    known = list(secrets) + _known() + known_secrets(source) + _cli_secrets([])
+    if source.get('WATCH_RESTART_CMD'):
+        raise ChildEnvironmentError('WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv')
+    result = {}
+    for name, value in source.items():
+        if secret_name(name):
+            continue
+        if _internal_control(name, value):
+            result[name] = value
+            continue
+        if redact_text(str(value), known, decode=False) != str(value):
+            # Dropping an operational control could select a default and start
+            # work the operator never requested. Refuse such configuration;
+            # ordinary diagnostic aliases are simply absent in the child.
+            if (name.startswith(('WATCH_', 'TF_', 'GLM53_', 'NCCL_', 'WORKER_', 'NATIVE_', 'CHECK_PUBLIC_'))
+                    or name in {'PATH', 'CONFIG', 'CONTAINER_PREFIX', 'IMAGE', 'STATE_DIR',
+                                'MODEL_DIR', 'ENGRAM_DIR', 'ASSETS_DIR', 'PREPARED_DIR',
+                                'CACHE_DIR', 'GUARD_CONFIG', 'STOP_FILE', 'MAINTENANCE_LEASE',
+                                'LIFECYCLE_LOCK', 'READY_TIMEOUT', 'OPS_COMMAND_TIMEOUT',
+                                'STOP_TIMEOUT', 'HTTP_TIMEOUT', 'HEALTH_URL', 'PORT', 'HOST',
+                                'CPUSET_CPUS', 'TENSORFOLD_SOURCE', 'HOME', 'XDG_STATE_HOME'}):
+                raise ChildEnvironmentError('credential value refused in child configuration')
+            continue
+        result[name] = value
+    return result
 
 
 def _process_identity(pid):
@@ -169,29 +220,93 @@ def _finish_group(child, grace=TERM_GRACE):
     child.wait()
 
 
-def _spawn(argv, *, env=None, deadline=None, **kwargs):
+def _reviewed_entry(argv, cwd=None):
+    """Only same-checkout supervisor scripts receive a private known-value registry."""
+    args = list(argv)
+    locked = Path(args[0]).name == 'flock'
+    if locked:
+        if len(args) != 5 or args[1].startswith('-') or args[-1] != '--restart':
+            return False
+        args = args[2:]
+    if Path(args[0]).name == 'env':
+        args = args[1:]
+        while args and '=' in args[0] and args[0].partition('=')[0].isidentifier():
+            args = args[1:]
+    if len(args) < 2 or Path(args[0]).name not in {'bash', 'python3', Path(sys.executable).name}:
+        return False
+    entry = (Path(cwd or os.getcwd()) / args[1]).resolve()
+    root = Path(__file__).resolve().parents[1]
+    entries = {'scripts/' + name for name in ('safe_exec.py', 'native_ops.py', 'serve.sh',
+               'run-zig.sh', 'guard-watch-zig.sh', 'build-native.sh', 'check-zig-image.sh')}
+    entries.update({'scripts/guard/' + name for name in
+                    ('lifecycle.py', 'control.py', 'daemon.py', 'sampler.py', 'profile.py')})
+    entries.add('docker/zig/fetch-source.sh')
+    if locked:
+        return entry == root / 'scripts/safe_exec.py' and args[2:] == ['--restart']
+    return entry in {root / name for name in entries}
+
+
+def _registry_environment(argv, env, cwd=None, secrets=()):
+    result = dict(env)
+    result.pop('TF_SAFE_REGISTRY_FD', None)
+    known = list(secrets) + _known() + _cli_secrets([])
+    if not known or not _reviewed_entry(argv, cwd):
+        return result, None
+    raw = b''.join(value.encode('utf-8') + b'\0' for value in set(known) if value)
+    if len(raw) > CONTROL_LIMIT:
+        raise ChildEnvironmentError('private registry exceeds limit')
+    if hasattr(os, 'memfd_create'):
+        fd = os.memfd_create('checked-supervisor', os.MFD_CLOEXEC)
+    else:
+        with tempfile.TemporaryFile() as stream:
+            fd = os.dup(stream.fileno())
+    try:
+        with os.fdopen(os.dup(fd), 'wb') as stream:
+            stream.write(raw)
+        os.lseek(fd, 0, os.SEEK_SET)
+    except BaseException:
+        os.close(fd)
+        raise
+    result['TF_SAFE_REGISTRY_FD'] = str(fd)
+    return result, fd
+
+
+def _checked_popen(argv, *, env, registry_argv=None, secrets=(), **kwargs):
+    env, registry = _registry_environment(registry_argv or argv, env, kwargs.get('cwd'), secrets)
+    if registry is not None and registry_argv is None:
+        argv = [sys.executable, str(Path(__file__).resolve()), '--group-child', *argv]
+    try:
+        return subprocess.Popen(argv, env=env, pass_fds=() if registry is None else (registry,), **kwargs)
+    finally:
+        if registry is not None:
+            os.close(registry)
+
+
+def _spawn(argv, *, env=None, deadline=None, secrets=(), **kwargs):
     # The bootstrap runs inside the newly created session, so it can publish
     # the *actual* pgid before exec. Nested output wrappers retain that group.
     bootstrap = [sys.executable, str(os.path.abspath(__file__)), '--group-child', *argv]
-    env = dict(os.environ if env is None else env)
+    secrets = list(secrets) + known_secrets(env)
+    env = child_environment(env, secrets)
     owner = _owner()
     if owner is not None:
         env[OWNER_PID_ENV], env[OWNER_START_ENV] = str(owner[0]), owner[1]
     env.pop(DEADLINE_ENV, None)
     if deadline is not None:
         env[DEADLINE_ENV] = str(deadline)
-    return subprocess.Popen(bootstrap, env=env, start_new_session=True, **kwargs)
+    return _checked_popen(bootstrap, registry_argv=argv, env=env, secrets=secrets, start_new_session=True, **kwargs)
 
 
 def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=None, check=False, input=None):
     """subprocess.run-shaped default runner; timeout returns only after teardown."""
     argv = [os.fsdecode(arg) for arg in argv]
-    _check_argv(argv, _cli_secrets(argv) + _known() + known_secrets(env))
+    secrets = _cli_secrets(argv) + _known() + known_secrets(env)
+    _check_argv(argv, secrets)
     if not capture_output:
         raise ValueError('supervised commands require captured output')
     owner = _owner()
     deadline = None if timeout is None else time.monotonic() + timeout
-    child = _spawn(argv, cwd=cwd, env=env, deadline=deadline,
+    child = _spawn(argv, cwd=cwd, env=env, deadline=deadline, secrets=secrets,
                    stdin=subprocess.PIPE if input is not None else None,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text)
     previous = {}
@@ -289,7 +404,16 @@ def main():
         if cutoff is not None and time.monotonic() >= float(cutoff):
             print('command deadline expired <redacted>', file=sys.stderr)
             return 124
-        os.execvpe(argv[1], argv[1:], os.environ)
+        _check_argv(argv[1:], _cli_secrets(argv[1:]) + _known())
+        environment, registry = _registry_environment(argv[1:], child_environment())
+        if registry is not None:
+            if registry != 9:
+                os.dup2(registry, 9, inheritable=True)
+                os.close(registry)
+            else:
+                os.set_inheritable(9, True)
+            environment['TF_SAFE_REGISTRY_FD'] = '9'
+        os.execvpe(argv[1], argv[1:], environment)
     timeout = None
     expires = None
     monotonic_expires = None
@@ -321,6 +445,18 @@ def main():
         if argv:
             raise ValueError('unexpected filter arguments')
         return _filter(control, _cli_secrets([]), owner)
+    if argv == ['--credential-names']:
+        for name in sys.stdin:
+            name = name.strip()
+            if name.isascii() and name.isidentifier() and secret_name(name):
+                sys.stdout.write_sanitized(name + "\n")
+        return 0
+    if argv == ['--removed-environment-names']:
+        retained = child_environment()
+        for name in os.environ:
+            if name not in retained and name.isascii() and name.isidentifier():
+                sys.stdout.write_sanitized(name + "\n")
+        return 0
     if argv and argv[0] == '--quote-argv':
         from safe_quote import join_checked
         sys.stdout.write(join_checked(argv[1:]) + '\n')
@@ -338,8 +474,7 @@ def main():
     if not argv:
         raise ValueError('missing command')
     secrets = _cli_secrets(argv) + _known()
-    if checked:
-        _check_argv(argv, secrets)
+    _check_argv(argv, secrets)
     for cutoff, clock in ((expires, time.time), (monotonic_expires, time.monotonic)):
         if cutoff is None:
             continue
@@ -352,16 +487,16 @@ def main():
     if _joined_group() and os.environ.get(DEADLINE_ENV):
         inherited = float(os.environ[DEADLINE_ENV])
         deadline = inherited if deadline is None else min(deadline, inherited)
-    env = dict(os.environ)
+    env = child_environment(secrets=secrets)
     env['TF_SAFE_EXEC_PARENT'] = str(os.getpid())
     env.pop(DEADLINE_ENV, None)
     if deadline is not None:
         env[DEADLINE_ENV] = str(deadline)
     owned = not _joined_group()
     if owned:
-        child = _spawn(argv, env=env, deadline=deadline, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        child = _spawn(argv, env=env, deadline=deadline, secrets=secrets, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     else:
-        child = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        child = _checked_popen(argv, env=env, secrets=secrets, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     previous = {}
     cancelled = None
     kill_at = None
@@ -453,8 +588,36 @@ def main():
             signal.signal(signum, handler)
 
 
+def _entry():
+    try:
+        return main()
+    except ChildEnvironmentError as error:
+        print(str(error), file=sys.stderr)
+        return 78
+
+
+def _private_registry():
+    # A supervisor may receive known values over an anonymous pipe. The fd is
+    # consumed here and never inherited by a diagnostic child or shown in argv.
+    values = inherited_known()
+    if sys.argv[1:2] != ['--known-fd']:
+        return values
+    fd = int(sys.argv[2])
+    del sys.argv[1:3]
+    with os.fdopen(fd, 'rb') as source:
+        raw = source.read(CONTROL_LIMIT + 1)
+    if len(raw) > CONTROL_LIMIT:
+        raise ValueError('known-value registry exceeds limit')
+    return values + [value.decode('utf-8') for value in raw.split(b'\0') if value]
+
+
 if __name__ == '__main__':
-    code = cli(main)
+    try:
+        private = _private_registry()
+    except Exception:
+        print('invalid private credential registry', file=sys.stderr)
+        sys.exit(78)
+    code = cli(_entry, known=private)
     if code < 0:
         signum = -code
         signal.signal(signum, signal.SIG_DFL)
