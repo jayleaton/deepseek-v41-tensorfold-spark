@@ -31,24 +31,38 @@ LAUNCHER_OWNED = frozenset({
     "TF_TP_WORLD", "TF_TP_RANK", "TF_TP_DEVICE", "TF_TP_MASTER", "TF_TP_PORT", "TF_COMM_BACKEND",
     "TF_DSV41_ASSETS", "TF_DSV41_ENGRAM_DIR", "TF_TP_KERNEL_IMAGE",
 })
-# The pair identity follows the engine's own split. fabric/tp/config.zig Config.digest
-# hashes only these fields; every other transport setting may differ per rank.
+# The pair identity holds everything both ranks must agree on to start. The engine's
+# Config.digest (fabric/tp/config.zig) is only the minimum it checks after connecting;
+# Session.open (tp.zig:46-49) first runs Bootstrap.open, which rank 0 listens and rank 1
+# connects on master:link_port before any digest compare. So a setting is common unless the
+# engine source shows it is per-rank.
 DIGEST_FIELDS = frozenset({"world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast",
                            "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env"})
-# Transport settings feeding those fields (world and backend are launcher-owned), plus
-# the older cuda/roce.zig protocol switches. Both ranks must agree on these.
-TRANSPORT_COMMON = frozenset({"TF_TP_MAILBOX_MAX_KB", "TF_TP_ROCE_CHUNKED_KB", "TF_TP_FAILFAST",
-                              "TF_TP_ROCE_WIRE", "TF_TP_ROCE_FALLBACK", "TF_GRAPH_CACHE",
-                              "TF_ROCE", "TF_ROCE_MAX_KB"})
-# Per-rank settings, forwarded but outside the identity both ranks must share: placement
-# (CPUs, devices, ports), timeouts, the fast-path tuning the engine marks local, and diagnostics.
+# Config fields Bootstrap.open reads (bootstrap.zig:34-53): world, rank and master/port are
+# launcher-owned (master and port are hashed as transport); link_port is TF_TP_PLAN_PORT;
+# connect_timeout_ns is this rank's own deadline (bootstrap.zig:26-30).
+BOOTSTRAP_FIELDS = frozenset({"world", "rank", "master", "link_port", "connect_timeout_ns"})
+TRANSPORT_COMMON = frozenset({
+    # Config.digest inputs (world and backend are launcher-owned)
+    "TF_TP_MAILBOX_MAX_KB", "TF_TP_ROCE_CHUNKED_KB", "TF_TP_FAILFAST", "TF_TP_ROCE_WIRE",
+    "TF_TP_ROCE_FALLBACK", "TF_GRAPH_CACHE",
+    # the bootstrap endpoint: both ranks meet on master:TF_TP_PLAN_PORT before the digest
+    "TF_TP_PLAN_PORT",
+    # not proven per-rank: the HCA stripe count feeds the peer port exchange (roce_pick.zig),
+    # the RoCE traffic class, the cuda/roce.zig protocol switches, test and other-family switches
+    "TF_TP_ROCE_HCAS", "TF_TP_ROCE_TC", "TF_ROCE", "TF_ROCE_MAX_KB",
+    "TF_TP_ALLOW_HOST_ONLY", "TF_TP_LOCAL", "TF_TP_STATS", "TF_TP_TRACE",
+})
+# Per-rank settings, forwarded but not hashed, each shown per-rank by the engine source.
 RANK_LOCAL = frozenset({
-    "TF_TP_PLAN_PORT", "TF_TP_PLAN_TIMEOUT", "TF_TP_PLAN_LINK", "TF_TP_PLAN_SPIN_US", "TF_TP_PLAN_PIN",
-    "TF_TP_MAILBOX_TIMEOUT_S", "TF_TP_FAILFAST_GRACE_S", "TF_TP_PEER_MEM_S",
-    "TF_TP_ROCE_HCA", "TF_TP_ROCE_HCAS", "TF_TP_ROCE_TC", "TF_TP_ROCE_FAST", "TF_TP_ROCE_POLLERS",
-    "TF_TP_ROCE_STAGGER_NS", "TF_TP_ROCE_BLOCKS", "TF_TP_ROCE_CPU", "TF_NCCL_LIB",
-    "TF_TP_ALLOW_HOST_ONLY", "TF_TP_LOCAL", "TF_TP_STATS", "TF_TP_TRACE",  # host-only tests; flashnext only
-    "TF_ROCE_HCA", "TF_ROCE_GID_INDEX",
+    "TF_TP_ROCE_CPU", "TF_TP_PLAN_PIN",  # thread placement on this host (tp.zig:80-81, roce opts .cpu)
+    "TF_TP_PLAN_LINK", "TF_TP_PLAN_SPIN_US",  # only the follower's poll spin (config.zig plan_spin_ns)
+    "TF_TP_ROCE_FAST", "TF_TP_ROCE_POLLERS", "TF_TP_ROCE_STAGGER_NS",  # config.zig: roce_fast is local
+    "TF_TP_ROCE_BLOCKS",  # config.zig: launch shape only, the bytes are the same
+    "TF_TP_ROCE_HCA", "TF_ROCE_HCA", "TF_ROCE_GID_INDEX",  # this host's RDMA device names and GID index
+    "TF_TP_PLAN_TIMEOUT", "TF_TP_MAILBOX_TIMEOUT_S", "TF_TP_FAILFAST_GRACE_S",  # this rank's own waits
+    "TF_TP_PEER_MEM_S",  # rank 1's report period; rank 0 polls with no timeout (fate.zig:237)
+    "TF_NCCL_LIB",  # this host's library path
 })
 # Recipe settings that become engine flags or host behaviour, never container environment.
 RECIPE_NAMES = frozenset({"TF_DSV41_THINKING", "TF_DSV41_DEFAULT_EFFORT", "TF_DSV41_LAUNCH_T0",

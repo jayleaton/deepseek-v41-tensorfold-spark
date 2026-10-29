@@ -82,19 +82,29 @@ hash every large weight/Engram file at each boot. Run --check-aot after every se
 - every other forwarded engine setting (`config/tensorfold-settings.txt`), except `NCCL_*` and the rank-local
   settings below.
 
-Rank-local settings are forwarded with their values but may differ per node. They follow the engine's own
-transport digest (`Config.digest` in `fabric/tp/config.zig`), which hashes only the world size, backend,
-`TF_TP_MAILBOX_MAX_KB`, `TF_TP_ROCE_CHUNKED_KB`, `TF_TP_FAILFAST`, `TF_TP_ROCE_WIRE`, `TF_TP_ROCE_FALLBACK` and
-`TF_GRAPH_CACHE`:
+The engine's own transport digest (`Config.digest` in `fabric/tp/config.zig`: world size, backend,
+`TF_TP_MAILBOX_MAX_KB`, `TF_TP_ROCE_CHUNKED_KB`, `TF_TP_FAILFAST`, `TF_TP_ROCE_WIRE`, `TF_TP_ROCE_FALLBACK`,
+`TF_GRAPH_CACHE`) is only the minimum the ranks agree on after they connect. It is not the full list of what
+must match to start. `Session.open` (`fabric/tp/tp.zig`) first runs `Bootstrap.open`: rank 0 listens on the
+plan port and rank 1 connects to `TF_TP_MASTER` on it (`TF_TP_PLAN_PORT`, default `TF_TP_PORT` + 7). Mismatched
+ports never reach the digest compare; rank 1 just waits out its plan-connect timeout. So the identity treats a
+setting as common, including `TF_TP_PLAN_PORT`, `TF_TP_ROCE_HCAS`, `TF_TP_ROCE_TC` and the test switches
+(`TF_TP_ALLOW_HOST_ONLY`, `TF_TP_LOCAL`, `TF_TP_STATS`, `TF_TP_TRACE`), unless the engine source shows it is
+per-rank.
 
-- **placement:** `TF_TP_ROCE_CPU` (the RoCE proxy thread), `TF_TP_PLAN_PIN`, `TF_TP_ROCE_HCA`, `TF_TP_ROCE_HCAS`,
-  `TF_TP_ROCE_TC`, `TF_ROCE_HCA`, `TF_ROCE_GID_INDEX`, `TF_TP_PLAN_PORT`, `TF_NCCL_LIB`;
+Rank-local settings are forwarded with their values but may differ per node. The engine source shows each is
+per-rank:
+
+- **placement on this host:** `TF_TP_ROCE_CPU` (the RoCE proxy thread), `TF_TP_PLAN_PIN`, `TF_TP_ROCE_HCA`,
+  `TF_ROCE_HCA`, `TF_ROCE_GID_INDEX`, `TF_NCCL_LIB`;
 - **the fast path's local tuning:** `TF_TP_ROCE_FAST`, `TF_TP_ROCE_POLLERS`, `TF_TP_ROCE_STAGGER_NS`,
-  `TF_TP_ROCE_BLOCKS`, `TF_TP_PLAN_LINK`, `TF_TP_PLAN_SPIN_US`;
-- **timeouts:** `TF_TP_PLAN_TIMEOUT`, `TF_TP_MAILBOX_TIMEOUT_S`, `TF_TP_FAILFAST_GRACE_S`, `TF_TP_PEER_MEM_S`;
-- **test and other-family switches:** `TF_TP_ALLOW_HOST_ONLY`, `TF_TP_LOCAL`, `TF_TP_STATS`, `TF_TP_TRACE`.
+  `TF_TP_ROCE_BLOCKS`, and the follower's plan polling `TF_TP_PLAN_LINK` and `TF_TP_PLAN_SPIN_US`;
+- **this rank's own waits:** `TF_TP_PLAN_TIMEOUT` (the bootstrap deadline of each rank), `TF_TP_MAILBOX_TIMEOUT_S`,
+  `TF_TP_FAILFAST_GRACE_S`, and `TF_TP_PEER_MEM_S` (rank 1's report period; rank 0 polls with no timeout).
 
-The list is `RANK_LOCAL` in `scripts/engine_settings.py`; a test checks it against the pinned engine's digest.
+The lists are `TRANSPORT_COMMON` and `RANK_LOCAL` in `scripts/engine_settings.py`. With `TENSORFOLD_SOURCE` set,
+tests check them against the pinned engine: the digest fields, the `Config` fields `Bootstrap.open` reads, and
+that only the bootstrap runs before the digest compare.
 
 ## Start and stop
 

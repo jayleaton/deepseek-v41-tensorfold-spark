@@ -84,7 +84,7 @@ def pair(rank, monkeypatch, first, second):
 @pytest.mark.parametrize('name', RANK_LOCAL)
 def test_rank_local_transport_settings_keep_the_pair_identity(rank, monkeypatch, name):
     # RR10-1: per-node placement (TF_TP_ROCE_CPU=2 on one node, 5 on the other) must not
-    # make preflight refuse the pair; the engine leaves these out of its own digest.
+    # make preflight refuse the pair; the engine source shows each of these is per-rank.
     first, second = pair(rank, monkeypatch, {name: '2'}, {name: '5'})
     assert first == second
 
@@ -93,6 +93,16 @@ def test_rank_local_transport_settings_keep_the_pair_identity(rank, monkeypatch,
 def test_common_transport_settings_change_the_pair_identity(rank, monkeypatch, name):
     first, second = pair(rank, monkeypatch, {name: '1024'}, {name: '512'})
     assert first != second
+
+
+def test_plan_port_mismatch_changes_the_pair_identity(rank, monkeypatch):
+    # RR10b-1: rank 0 listens and rank 1 connects on TF_TP_PLAN_PORT before the engine
+    # compares Config.digest, so a mismatch would hang on the plan-connect timeout.
+    assert 'TF_TP_PLAN_PORT' in assets.engine_settings.TRANSPORT_COMMON
+    first, second = pair(rank, monkeypatch, {'TF_TP_PLAN_PORT': '29579'}, {'TF_TP_PLAN_PORT': '29580'})
+    assert first != second
+    first, second = pair(rank, monkeypatch, {'TF_TP_PLAN_PORT': '29579'}, {'TF_TP_PLAN_PORT': '29579'})
+    assert first == second
 
 
 def test_proxy_cpus_differ_but_mailbox_sizes_must_match(rank, monkeypatch):

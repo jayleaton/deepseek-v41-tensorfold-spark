@@ -52,7 +52,7 @@ def test_every_transport_setting_is_classified_common_or_rank_local():
     assert not common & local
     unclassified = sorted(n for n in settings if TRANSPORT.match(n)
                           and n not in common | local | engine_settings.LAUNCHER_OWNED)
-    assert not unclassified, f"classify against the engine's Config.digest: {unclassified}"
+    assert not unclassified, f"classify as common unless the engine shows it is per-rank: {unclassified}"
 
 
 @pytest.mark.skipif(not os.environ.get("TENSORFOLD_SOURCE", "").startswith("/"),
@@ -68,3 +68,28 @@ def test_rank_local_split_follows_the_engine_transport_digest():
     names = set(re.findall(r'"(TF_[A-Z0-9_]+)"', body))
     classified = engine_settings.TRANSPORT_COMMON | engine_settings.RANK_LOCAL | engine_settings.LAUNCHER_OWNED
     assert names <= classified, sorted(names - classified)
+
+
+def engine_file(path):
+    revision, _ = engine_settings.manifest()
+    return subprocess.run(["git", "-C", os.environ["TENSORFOLD_SOURCE"], "show", f"{revision}:{path}"],
+                          capture_output=True, text=True, timeout=60, check=True).stdout
+
+
+@pytest.mark.skipif(not os.environ.get("TENSORFOLD_SOURCE", "").startswith("/"),
+                    reason="TENSORFOLD_SOURCE (an engine git checkout) not provided")
+def test_bootstrap_settings_before_the_digest_compare_are_common():
+    # RR10b-1: Session.open runs only Bootstrap.open before it agrees on Config.digest.
+    tp = engine_file("zig/src/fabric/tp/tp.zig")
+    session = tp.split("pub fn open(s: *Session", 1)[1].split("b.agree(&cfg.digest()", 1)[0]
+    calls = set(re.findall(r"\b([A-Za-z_][\w.]*)\(", session)) - {"open"}
+    assert "defer b.close();" in session  # runs at scope exit, not before the compare
+    assert calls == {"requested.resolved", "Bootstrap.open", "b.close"}, sorted(calls)
+    bootstrap = engine_file("zig/src/fabric/tp/bootstrap.zig")
+    body = bootstrap.split("pub fn open(cfg: Config)", 1)[1].split("\n    }\n", 1)[0]
+    assert set(re.findall(r"\bcfg\.(\w+)", body)) == engine_settings.BOOTSTRAP_FIELDS
+    # world, rank, master and port are launcher-owned; the plan port must match on both ranks
+    config = engine_file("zig/src/fabric/tp/config.zig").split("\ntest ", 1)[0]
+    assert re.search(r'"TF_TP_PLAN_PORT"', config) and "link_port" in config
+    assert "TF_TP_PLAN_PORT" in engine_settings.TRANSPORT_COMMON
+    assert {"TF_TP_MASTER", "TF_TP_PORT", "TF_TP_WORLD", "TF_TP_RANK"} <= engine_settings.LAUNCHER_OWNED
