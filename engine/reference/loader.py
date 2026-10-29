@@ -29,9 +29,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shlex
 import struct
-import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -47,6 +46,12 @@ from .hc import HcParams
 from .model import DSparkWeights, LayerWeights, ModelWeights
 from .moe import ExpertWeights, MoEWeights
 from .ops import F32, DenseLinear, Exl3Linear, Linear, Numerics, bf16, fp8_e4m3_dequant
+
+# Reference CLIs put the recipe root on sys.path, while the shared adapters use
+# sibling imports from scripts just like the maintained native entry points.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from safe_exec import run as supervised_run  # noqa: E402
+from safe_quote import join_checked  # noqa: E402
 
 DTYPES = {
     "F64": torch.float64, "F32": torch.float32, "F16": torch.float16, "BF16": torch.bfloat16,
@@ -150,7 +155,7 @@ import json, os, sys
 req = json.loads(sys.stdin.readline())
 out = sys.stdout.buffer
 for item in req:
-    fd = os.open(item["path"], os.O_RDONLY)
+    fd = os.open(sys.argv[1], os.O_RDONLY)
     try:
         for off, n in item["ranges"]:
             done = 0
@@ -186,30 +191,41 @@ class RemoteSafetensorsDir(SafetensorsDir):
 
     SSH_OPTS = ("-o", "BatchMode=yes", "-o", "ControlMaster=auto", "-o", "ControlPath=/tmp/dsv41-ref-ssh-%r@%h:%p",
                 "-o", "ControlPersist=120")
+    SSH_TIMEOUT = 300
 
     def __init__(self, host: str, root: str, cache_dir: str | Path, ssh_opts: tuple[str, ...] = SSH_OPTS,
                  cache_experts: bool = False):
+        # Validate raw settings even when cached metadata avoids the SSH call.
+        join_checked([host, root, *ssh_opts])
         self.host, self.remote_root, self.ssh_opts = host, root.rstrip("/"), ssh_opts
         self.cache_experts = cache_experts
         self._mem: dict[str, torch.Tensor] = {}
         self.root = Path(cache_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         meta = self.root / "headers.json"
-        if not meta.exists():
-            raw = self._ssh(["python3", "-c", _REMOTE_HEADERS, self.remote_root])
-            meta.write_bytes(raw)
-        m = json.loads(meta.read_text())
-        self._headers = {f: parse_header(v["header"], f, v["header_len"]) for f, v in m["headers"].items()}
-        if m.get("index"):
-            self.weight_map = m["index"]
-        else:
-            self.weight_map = {n: f for f, h in self._headers.items() for n in h}
+        fetch = not meta.exists()
+        raw = self._ssh(["python3", "-c", _REMOTE_HEADERS, self.remote_root]) if fetch else meta.read_bytes()
+        # Only cache a parsed metadata document, never a diagnostic dump.
+        try:
+            m = json.loads(raw)
+            headers = {f: parse_header(v["header"], f, v["header_len"]) for f, v in m["headers"].items()}
+            index = m.get("index")
+            if index is not None and (not isinstance(index, dict)
+                                      or any(not isinstance(n, str) or not isinstance(f, str)
+                                             for n, f in index.items())):
+                raise ValueError
+            weight_map = index or {n: f for f, h in headers.items() for n in h}
+        except (ValueError, TypeError, KeyError, AttributeError):
+            raise RuntimeError("invalid reference metadata") from None
+        if fetch:
+            meta.write_text(json.dumps({"headers": m["headers"], "index": index}))
+        self._headers, self.weight_map = headers, weight_map
 
     def _ssh(self, argv: list[str], stdin: bytes | None = None) -> bytes:
-        cmd = ["ssh", *self.ssh_opts, self.host, " ".join(shlex.quote(a) for a in argv)]
-        r = subprocess.run(cmd, input=stdin, capture_output=True, check=False)
+        cmd = ["ssh", *self.ssh_opts, self.host, join_checked(argv)]
+        r = supervised_run(cmd, input=stdin, capture_output=True, text=False, check=False, timeout=self.SSH_TIMEOUT)
         if r.returncode != 0:
-            raise RuntimeError(f"ssh {self.host} failed: {r.stderr.decode(errors='replace')[-500:]}")
+            raise RuntimeError(f"reference ssh failed (exit {r.returncode})")
         return r.stdout
 
     def _header(self, file: str) -> dict[str, TensorInfo]:
@@ -218,8 +234,8 @@ class RemoteSafetensorsDir(SafetensorsDir):
     def read_ranges(self, file: str, ranges: list[tuple[int, int]]) -> list[bytes]:
         if not ranges:
             return []
-        req = json.dumps([{"path": f"{self.remote_root}/{file}", "ranges": [list(r) for r in ranges]}]) + "\n"
-        raw = self._ssh(["python3", "-c", _REMOTE_READER], req.encode())
+        req = json.dumps([{"ranges": [list(r) for r in ranges]}]) + "\n"
+        raw = self._ssh(["python3", "-c", _REMOTE_READER, f"{self.remote_root}/{file}"], req.encode())
         out, pos = [], 0
         for _, n in ranges:
             out.append(raw[pos:pos + n])

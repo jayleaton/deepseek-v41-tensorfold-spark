@@ -183,7 +183,7 @@ def _spawn(argv, *, env=None, deadline=None, **kwargs):
     return subprocess.Popen(bootstrap, env=env, start_new_session=True, **kwargs)
 
 
-def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=None, check=False):
+def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=None, check=False, input=None):
     """subprocess.run-shaped default runner; timeout returns only after teardown."""
     argv = [os.fsdecode(arg) for arg in argv]
     _check_argv(argv, _cli_secrets(argv) + _known() + known_secrets(env))
@@ -192,8 +192,10 @@ def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=Non
     owner = _owner()
     deadline = None if timeout is None else time.monotonic() + timeout
     child = _spawn(argv, cwd=cwd, env=env, deadline=deadline,
+                   stdin=subprocess.PIPE if input is not None else None,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=text)
     previous = {}
+    pending_input = input
 
     def interrupted(signum, frame):
         # The lifecycle process itself may be signalled by its outer output
@@ -223,9 +225,10 @@ def run(argv, *, cwd=None, env=None, capture_output=True, text=True, timeout=Non
             if owner is not None:
                 interval = 0.05 if remaining is None else min(0.05, remaining)
             try:
-                out, err = child.communicate(timeout=interval)
+                out, err = child.communicate(input=pending_input, timeout=interval)
                 break
             except subprocess.TimeoutExpired:
+                pending_input = None
                 if owner is not None and (deadline is None or time.monotonic() < deadline):
                     continue
                 _finish_group(child)

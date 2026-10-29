@@ -1,6 +1,8 @@
 """This gate is a guard against accidental bypass in our own code. It is not a sandbox against deliberately obfuscated code."""
 import ast
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -46,7 +48,8 @@ FORWARDING = {
 }
 
 
-def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False):
+def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False, fixture_filename=None,
+                    reference_filename=None):
     """Conservative, scope-insensitive aliases reach a fixpoint; overwrites never erase a possible spawn."""
     try:
         tree = ast.parse(source)
@@ -157,7 +160,10 @@ def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False):
         violations = [(node.lineno, 'unchecked quoting API import') for node in ast.walk(tree)
                       if isinstance(node, ast.ImportFrom) and node.module == 'shlex'
                       and any(alias.name in {'*', 'quote', 'join'} for alias in node.names)]
+        reviewed_nodes = fixture_quote_nodes(tree, fixture_filename)
         for node in ast.walk(tree):
+            if node in reviewed_nodes:
+                continue
             if isinstance(node, ast.Call):
                 violations.extend(interpreter_payload_bypasses(node))
             if isinstance(node, ast.Call) and resolve(node.func) & quote_names:
@@ -198,6 +204,7 @@ def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False):
             violations.append((target.lineno, 'process callable escapes through stored attribute/item'))
     if reviewed_dispatch and len(reviewed_calls) != 1:
         violations.append((0, 'reviewed lifecycle dispatch changed'))
+    reference_calls = scoped_calls(tree, reference_filename, REFERENCE_CALLS)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -206,9 +213,11 @@ def python_bypasses(source, reviewed_dispatch=False, *, quote_only=False):
         reviewed = reviewed_dispatch and len(reviewed_calls) == 1 and node is reviewed_calls[0]
         targets = resolve(node.func)
         violations.extend(interpreter_payload_bypasses(node))
-        if any(forbidden(target) for target in targets) and not reviewed:
+        if any(forbidden(target) and (target != '<dynamic callable>' or node not in reference_calls)
+               for target in targets) and not reviewed:
             violations.append((node.lineno, ast.unparse(node.func)))
-        elif isinstance(node.func, (ast.Call, ast.Subscript)) and not targets and not reviewed:
+        elif (isinstance(node.func, (ast.Call, ast.Subscript)) and not targets
+              and not reviewed and node not in reference_calls):
             violations.append((node.lineno, 'unresolved callable dispatch'))
     return violations
 
@@ -304,19 +313,108 @@ def docker_shell_sources(source):
                 yield payload.encode()
 
 
+# These exact fixture expressions intentionally encode invented inputs before
+# submitting them to the production boundary. New functions/files are audited.
+FIXTURE_QUOTES = {
+    'tests/guard/test_watchdog_shell_boundary.py': {'fixture': {'shlex.quote(sys.executable)'}},
+    'tests/guard/test_watchdog_redaction.py': {
+        'fixture': {'shlex.quote(sys.executable)', 'shlex.quote(key)'},
+        'test_config_cannot_leave_child_shell_tracing_or_startup_hooks_enabled': {'shlex.quote(str(hook))'}},
+    'tests/scripts/test_launcher_security.py': {
+        'launchers': {'shlex.quote(str(value))'},
+        'test_config_diagnostics_redacted_before_output': {'shlex.quote(SECRET)'},
+        'test_config_keeps_errexit_when_failure_precedes_valid_assignments': {'shlex.quote(str(reached))'}},
+    'tests/scripts/test_dryrun_credentials.py': {
+        '_shell_words.ansi_word': {'shlex.quote(value)'}, '_run': {'shlex.quote(value)'},
+        'test_safe_dryrun_preserves_shell_arguments': {'shlex.quote(value)'}},
+    'tests/scripts/test_native_launcher.py': {'launcher': {'shlex.quote(str(value))'}},
+    'tests/scripts/test_encoded_output_sinks.py': {
+        'decoded_strings.ansi_word': {"shlex.quote(raw.decode('utf-8'))"}},
+    'tests/scripts/test_subprocess_boundary.py': {
+        'test_versioned_python_and_shell_interpreter_sources': {'shlex.quote(payload)'}},
+    'tests/scripts/test_safe_shell.py': {
+        'shell': {'shlex.quote(str(SHELL))'},
+        'test_shell_library_can_be_sourced_twice_with_readonly_path': {'shlex.quote(str(SHELL))'},
+        'test_main_bootstrap_covers_full_script': {'shlex.quote(str(SHELL))'},
+        'test_main_bootstrap_preserves_malformed_argument_status': {'shlex.quote(str(SHELL))'},
+        'test_sourced_owner_death_drains_owned_groups': {
+            'shlex.quote(str(client))', 'shlex.quote(address)', 'shlex.quote(str(effect))',
+            'shlex.quote(str(runner))', 'shlex.quote(str(SHELL))'}},
+}
+
+
+# These are reference tensor evaluations, not process dispatch. Only unresolved
+# callable results are admitted; resolved subprocess aliases remain forbidden.
+REFERENCE_CALLS = {
+    'tests/reference/test_real_checkpoint.py': {
+        'test_one_real_block_runs': {
+            'Block(cfg, 0, lw, Numerics.kit())(streams, None, torch.arange(4), CsaState())'}},
+    'tests/reference/test_engram_moe.py': {
+        'test_fp8_rows_and_gate': {
+            '_hasher(cfg)(torch.randint(0, cfg.vocab_size, (5,)))',
+            'e(s, hashes)', 'e(s, hashes, keep=torch.zeros(5, dtype=torch.bool))'}},
+    'tests/reference/test_attention.py': {
+        'test_layers_reuse_their_sources_cache': {
+            '_attn(cfg, 2)(x, pos, state)', '_attn(cfg, 3)(x, pos, state)', '_attn(cfg, 4)(x, pos, state)'}},
+}
+
+
+def scoped_calls(tree, filename, reviewed_files):
+    reviewed = reviewed_files.get(filename, {})
+    reviewed_nodes = set()
+
+    def visit(node, function=''):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            function = f'{function}.{node.name}' if function else node.name
+        if isinstance(node, ast.Call) and ast.unparse(node) in reviewed.get(function, set()):
+            reviewed_nodes.add(node)
+        for child in ast.iter_child_nodes(node):
+            visit(child, function)
+
+    visit(tree)
+    return reviewed_nodes
+
+
+def fixture_quote_nodes(tree, filename):
+    return {child for node in scoped_calls(tree, filename, FIXTURE_QUOTES) for child in ast.walk(node)}
+
+
+# tree-sitter-bash 0.25.1 misparses literal | characters inside ${3:?...}.
+# These reviewed upstream bytes contain no shell-quoting operation. Any change
+# requires normal parsing/review again; the lexical check remains fail-closed.
+SHELL_PARSER_COMPAT = {
+    'engine/zig/tools/zig/dsv41_m4/run_host.sh':
+        '0c5b35e42cc9f4e755faae3fdcff1196e2aa512b17fef4e9fe064a3a97a049a1',
+    'engine/zig/tools/zig/dsv41_vision/spark.sh':
+        'e21cc1d47c79447e7bfb829c838992b77ac8575a011a310e401ac5951638d5c7',
+}
+
+
+def file_shell_quote_bypasses(source, filename):
+    findings = shell_quote_bypasses(source)
+    if (findings == [(0, 'unparsed shell quoting payload')]
+            and hashlib.sha256(source).hexdigest() == SHELL_PARSER_COMPAT.get(filename)
+            and not re.search(rb'%[-+ #0]*\d*(?:\.\d+)?q', source)):
+        return []
+    return findings
+
+
 def quote_boundary_findings(root):
     violations = []
-    for folder in ('scripts', 'bench', 'tools', 'docker'):
-        for path in sorted((root / folder).rglob('*')):
+    for directory, dirs, files in os.walk(root):
+        dirs[:] = sorted(name for name in dirs if name != '.git')
+        for filename in sorted(files):
+            path = Path(directory) / filename
             if not path.is_file():
                 continue
             name = path.relative_to(root).as_posix()
             if name == 'scripts/safe_quote.py':
                 continue  # The sole reviewed raw quote implementation.
             if path.suffix == '.py':
-                findings = python_bypasses(path.read_text(), quote_only=True)
+                source = path.read_text()
+                findings = python_bypasses(source, quote_only=True, fixture_filename=name)
             elif path.suffix == '.sh':
-                findings = shell_quote_bypasses(path.read_bytes())
+                findings = file_shell_quote_bypasses(path.read_bytes(), name)
             elif path.name == 'Dockerfile' or path.name.startswith('Dockerfile.'):
                 findings = [(line, reason) for source in docker_shell_sources(path.read_text())
                             for line, reason in shell_quote_bypasses(source)]
@@ -424,7 +522,8 @@ def test_quote_audit_accepts_nonquoting_formats_and_checked_adapter(source):
     assert not shell_quote_bypasses(source)
 
 
-@pytest.mark.parametrize('folder', ['scripts', 'bench', 'tools', 'docker'])
+@pytest.mark.parametrize('folder', ['scripts', 'bench', 'tools', 'docker', 'engine/reference',
+                                    'tests/reference', 'tests/new', '.hidden', 'engine/zig/tools'])
 @pytest.mark.parametrize('suffix,source', [
     ('.py', 'import shlex as s; encode = s.join; encode(argv)'),
     ('.sh', 'printf "%q" "$value"'),
@@ -460,6 +559,18 @@ def test_quote_helper_exception_is_exact(tmp_path):
     other.parent.mkdir()
     other.write_text(path.read_text())
     assert quote_boundary_findings(tmp_path)
+
+
+def test_fixture_quote_exceptions_are_function_and_expression_scoped(tmp_path):
+    path = tmp_path / 'tests/scripts/test_native_launcher.py'
+    path.parent.mkdir(parents=True)
+    path.write_text('import shlex\ndef launcher():\n    return shlex.quote(str(value))\n')
+    assert not quote_boundary_findings(tmp_path)
+    for source in ('import shlex\ndef other():\n    return shlex.quote(str(value))\n',
+                   'import shlex\ndef launcher():\n    return shlex.quote(secret)\n',
+                   'import shlex\ndef launcher():\n    shlex.quote(str(value)); shlex.join(argv)\n'):
+        path.write_text(source)
+        assert quote_boundary_findings(tmp_path)
 
 
 def enclosing_function(node):
@@ -594,6 +705,32 @@ def test_python_orchestrators_have_no_direct_subprocess_or_exec():
             assert 'ops = Lifecycle()' in source
         forbidden.extend((name, line, reason) for line, reason in python_bypasses(source, reviewed))
     assert not forbidden
+
+
+def test_maintained_reference_entries_have_no_process_bypasses():
+    paths = [*(ROOT / 'engine/reference').rglob('*.py'), *(ROOT / 'tests/reference').rglob('*.py')]
+    assert paths
+    forbidden = [(path.relative_to(ROOT).as_posix(), line, reason) for path in paths
+                 for line, reason in python_bypasses(path.read_text(),
+                                                    reference_filename=path.relative_to(ROOT).as_posix())]
+    assert not forbidden
+
+
+def test_reference_callable_exceptions_do_not_hide_process_aliases():
+    filename = 'tests/reference/test_engram_moe.py'
+    source = 'def test_fp8_rows_and_gate():\n    e(s, hashes)\n'
+    assert not python_bypasses(source, reference_filename=filename)
+    assert python_bypasses('from subprocess import Popen as e\n' + source, reference_filename=filename)
+    assert python_bypasses('e = handlers[operation]\n' + source, reference_filename='tests/reference/other.py')
+
+
+@pytest.mark.parametrize('filename', SHELL_PARSER_COMPAT)
+def test_shell_parser_compatibility_is_hash_and_file_scoped(filename):
+    source = (ROOT / filename).read_bytes()
+    assert not file_shell_quote_bypasses(source, filename)
+    assert file_shell_quote_bypasses(source, 'tools/new.sh')
+    assert file_shell_quote_bypasses(source + b'\n# changed\n', filename)
+    assert file_shell_quote_bypasses(source + b'\nprintf "%q" "$value"\n', filename)
 
 
 @pytest.mark.parametrize('source', [

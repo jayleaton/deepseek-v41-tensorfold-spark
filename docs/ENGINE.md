@@ -105,3 +105,14 @@ All host tooling shell quoting goes through `scripts/safe_quote.py`. It checks r
 values with the shared credential rule before encoding shell syntax, including
 nested SSH commands and the worker supervisor path. The checked spawn boundary
 remains in place. The source gate rejects direct quoting outside this adapter.
+
+Diagnostic sinks decode shell quoting (including ANSI-C strings), JSON and repr
+without evaluation before publishing records. Environment dumps retain names
+only; continuation/function records are withheld once a dump is recognized.
+Docker state evidence uses a typed State allowlist and never captures Config.Env.
+The reference SSH loader also uses the checked argv/quoting supervisor; binary
+model bytes remain a data transport, and failed/unparseable responses are not
+saved as metadata or diagnostics. The copied historical TP transport harness is
+an unavailable stub; use the pinned upstream checkout for qualified transport work.
+The quoting gate discovers executable code across the entire recipe, including
+reference CLIs. Synthetic test quoting has exact, reviewed call-site exceptions.

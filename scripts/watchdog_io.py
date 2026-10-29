@@ -6,7 +6,7 @@ import math
 import re
 
 from safe_output import clean
-from redact import known_secrets
+from redact import known_secrets, check_argv
 
 
 def filter_output(mode, raw, known=()):
@@ -17,6 +17,31 @@ def filter_output(mode, raw, known=()):
         if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in names):
             raise ValueError("invalid environment names")
         return "\n".join(names) + ("\n" if names else "")
+    if mode == "state":
+        # Evidence receives only operational State fields, never Config.Env or
+        # arbitrary diagnostic text returned by a failed Docker/SSH command.
+        try:
+            state = json.loads(raw)
+        except (ValueError, TypeError):
+            state = None
+        if not isinstance(state, dict):
+            return json.dumps({"diagnostic": "<redacted>", "unavailable": True}) + "\n"
+        allowed = {}
+        for name in ('Running', 'Paused', 'Restarting', 'OOMKilled', 'Dead'):
+            if type(state.get(name)) is bool:
+                allowed[name] = state[name]
+        for name in ('Pid', 'ExitCode'):
+            if type(state.get(name)) is int:
+                allowed[name] = state[name]
+        status = state.get('Status')
+        if (isinstance(status, str) and status in {'created', 'running', 'paused', 'restarting', 'exited', 'removing', 'dead'}
+                and clean(status, known) == status):
+            allowed['Status'] = status
+        for name in ('StartedAt', 'FinishedAt'):
+            value = state.get(name)
+            if isinstance(value, str) and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})', value) and clean(value, known) == value:
+                allowed[name] = value
+        return json.dumps(allowed or {"diagnostic": "<redacted>", "unavailable": True}) + "\n"
     if mode == "revision":
         if re.fullmatch(r"[0-9a-f]{40}", value) is None:
             raise ValueError("invalid engine revision")
@@ -29,8 +54,7 @@ def filter_output(mode, raw, known=()):
         # Used only for mktemp-created private scratch; reject control characters.
         if not value.startswith("/") or any(ord(c) < 32 for c in value):
             raise ValueError("invalid temporary directory")
-        if clean(value, known) != value:
-            raise ValueError("credential value refused in temporary directory")
+        check_argv([value], known)
         return value + "\n"
 
     def number(v):

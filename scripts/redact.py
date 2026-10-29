@@ -18,10 +18,13 @@ environment, including short explicit keys, so a tool that echoes $API_KEY in it
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
+import shlex
 import sys
+import warnings
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -158,8 +161,205 @@ def secret_variants(values: Iterable[str]) -> list[str]:
                   key=len, reverse=True)
 
 
+_SHELL_RECORD = re.compile(r"^\s*(?:(?:declare|typeset)\s+-\w+\s+|export\s+)?[A-Za-z_]\w*=")
+_LITERAL = re.compile(r'''(?:[bBuUrR])?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')''', re.DOTALL)
+_DECODE_DEPTH = 6
+_DECODE_LIMIT = 256
+
+
+def _shell_records(text: str):
+    """Frame quoted shell diagnostics across physical newlines; yield (record, terminated)."""
+    start = 0
+    while start < len(text):
+        assignment = bool(_SHELL_RECORD.match(text[start:]))
+        quote = ""
+        escaped = False
+        i = start
+        while i < len(text):
+            char = text[i]
+            continued = escaped
+            if escaped:
+                escaped = False
+            elif char == "\\" and quote != "'":
+                escaped = True
+            elif quote:
+                if char == quote[-1]:
+                    quote = ""
+            elif char in "\"'":
+                prose_apostrophe = (
+                    not assignment and char == "'" and i > start and i + 1 < len(text)
+                    and text[i - 1].isalpha() and text[i + 1].isalpha()
+                )
+                if not prose_apostrophe:
+                    quote = "$'" if char == "'" and i > start and text[i - 1] == "$" else char
+            if char == "\n" and not quote and not escaped and not continued:
+                yield text[start:i + 1], True
+                start = i + 1
+                break
+            i += 1
+        else:
+            yield text[start:], False
+            return
+
+
+def iter_safe_records(text: str):
+    """Iterate complete logical records without splitting quoted diagnostic values."""
+    for record, terminated in _shell_records(text):
+        yield record[:-1] if terminated else record
+
+
+def _ansi_c(text: str, start: int) -> tuple[str, int]:
+    """Decode one Bash ANSI-C string without executing substitutions or shell code."""
+    out = bytearray()
+    i = start
+    escapes = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
+               "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+    while i < len(text):
+        char = text[i]
+        i += 1
+        if char == "'":
+            return out.decode("utf-8", errors="surrogateescape"), i
+        if char != "\\":
+            out.extend(char.encode("utf-8", errors="surrogateescape"))
+            continue
+        if i == len(text):
+            break
+        char = text[i]
+        i += 1
+        if char in escapes:
+            out.extend(escapes[char].encode())
+        elif char in "01234567xuU":
+            octal = char in "01234567"
+            width = 3 if octal else {"x": 2, "u": 4, "U": 8}[char]
+            begin = i - 1 if octal else i
+            digits = re.match(r"[0-7]+" if octal else r"[0-9a-fA-F]+", text[begin:begin + width])
+            if not digits:
+                raise ValueError("invalid ANSI-C escape")
+            i = begin + len(digits[0])
+            value = int(digits[0], 8 if octal else 16)
+            if octal or char == "x":
+                out.append(value % 256)
+            else:
+                out.extend(chr(value).encode("utf-8"))
+        elif char == "c":
+            if i == len(text):
+                raise ValueError("incomplete ANSI-C control escape")
+            if not text[i].isascii():
+                raise ValueError("non-ASCII ANSI-C control escape")
+            out.append(ord(text[i].upper()) ^ 64)
+            i += 1
+        else:
+            out.extend(("\\" + char).encode("utf-8", errors="surrogateescape"))
+    raise ValueError("unterminated ANSI-C string")
+
+
+def _shell_words(text: str) -> list[str]:
+    """Use POSIX shlex concatenation, replacing ANSI-C fragments with opaque placeholders first."""
+    parts, replacements = [], {}
+    quote = ""
+    i = 0
+    marker = "__redact_fragment_"
+    while marker in text:
+        marker += "_"
+    while i < len(text):
+        char = text[i]
+        if not quote and text.startswith("$'", i):
+            value, i = _ansi_c(text, i + 2)
+            placeholder = marker + str(len(replacements)) + "__"
+            replacements[placeholder] = value
+            parts.append(placeholder)
+            continue
+        if quote != "'" and text.startswith("\\\n", i):
+            i += 2
+            continue
+        parts.append(char)
+        i += 1
+        if char == "\\" and quote != "'" and i < len(text):
+            parts.append(text[i])
+            i += 1
+        elif quote:
+            if char == quote:
+                quote = ""
+        elif char in "\"'":
+            quote = char
+    words = shlex.split("".join(parts), comments=False, posix=True)
+    if replacements:
+        fragments = re.compile("|".join(re.escape(key) for key in replacements))
+        words = [fragments.sub(lambda match: replacements[match[0]], word) for word in words]
+    return words
+
+
+def _decoded_secret(record: str, known: list[str]) -> bool:
+    """Inspect bounded shell/JSON/Python string layers; ambiguous encoded records fail closed."""
+    pending = [(record, 0)]
+    seen = set()
+    while pending:
+        value, depth = pending.pop()
+        if value in seen:
+            continue
+        seen.add(value)
+        if any(secret in value for secret in known):
+            # Raw occurrences retain the existing fine-grained masking behavior.
+            if depth:
+                return True
+        if depth >= _DECODE_DEPTH or len(seen) >= _DECODE_LIMIT:
+            return True
+        if not any(char in value for char in "\"'\\"):
+            continue
+        try:
+            words = _shell_words(value)
+        except (ValueError, OverflowError, UnicodeError):
+            if depth == 0:
+                return True
+            words = []
+        children = [word for word in words if word != value]
+        literals = [value] + [match[0] for match in _LITERAL.finditer(value)]
+        for literal in literals:
+            for parse in (json.loads, ast.literal_eval):
+                try:
+                    # Parser warnings can echo untrusted source, bypassing the output boundary.
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        parsed = parse(literal)
+                except (ValueError, SyntaxError, TypeError, RecursionError):
+                    continue
+                # Only traverse strings and containers; numeric JSON protocol keys stay numeric.
+                containers = [parsed]
+                count = 0
+                while containers:
+                    item = containers.pop()
+                    count += 1
+                    if count > _DECODE_LIMIT:
+                        return True
+                    if isinstance(item, str) and item != value:
+                        children.append(item)
+                    elif isinstance(item, bytes):
+                        # A parsed byte diagnostic may use HTTP latin-1 or UTF-8.
+                        # Inspect the decoded data, never another escaped-text spelling.
+                        children.append(item.decode("utf-8", errors="replace"))
+                        children.append(item.decode("latin-1"))
+                    elif isinstance(item, dict):
+                        containers.extend(item.keys())
+                        containers.extend(item.values())
+                    elif isinstance(item, (list, tuple, set)):
+                        containers.extend(item)
+        pending.extend((child, depth + 1) for child in children if child not in seen)
+    return False
+
+
+def _mask_decoded_records(text: str, known: list[str]) -> str:
+    if not known:
+        return text
+    known = [value for secret in known for value in (secret, secret.strip()) if value]
+    return "".join(
+        MASK + ("\n" if record.endswith("\n") else "") if _decoded_secret(record, known) else record
+        for record, _ in _shell_records(text)
+    )
+
+
 def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
     """Release complete lines, retaining suffixes that may continue a known multiline credential."""
+    known = list(known)
     multiline = [value for value in secret_variants(known) if "\n" in value]
     # Mask complete multiline matches before splitting them into individual records.
     pending = mask_values(pending, multiline)
@@ -170,12 +370,21 @@ def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
                 hold = size
                 break
     boundary = pending.rfind("\n", 0, len(pending) - hold) + 1
-    return pending[:boundary], pending[boundary:]
+    # A quoted diagnostic is one logical record, even when its value spans writes/lines.
+    framed = 0
+    for record, terminated in _shell_records(pending):
+        if not terminated or framed + len(record) > boundary:
+            break
+        framed += len(record)
+    return pending[:framed], pending[framed:]
 
 
-def redact_text(text: str, known: Iterable[str] = ()) -> str:
+def redact_text(text: str, known: Iterable[str] = (), *, decode: bool = True) -> str:
     """``text`` with every credential this module recognises replaced by MASK."""
 
+    known = list(known)
+    if decode:
+        text = _mask_decoded_records(text, known)
     text = mask_values(text, secret_variants(known))
     text = PEM_BLOCK.sub(MASK, text)
     for _, pattern in TOKEN_PATTERNS:
@@ -194,7 +403,7 @@ def redact_text(text: str, known: Iterable[str] = ()) -> str:
     )
 
 
-def redact_argv(argv: Iterable[str], known: Iterable[str] = ()) -> list[str]:
+def redact_argv(argv: Iterable[str], known: Iterable[str] = (), *, decode: bool = True) -> list[str]:
     """A command line with the values of credential flags (--api-key X and --api-key=X), credential env assignments
     (API_KEY=X cmd) and credential text inside any argument (-H "Authorization: Bearer X") masked."""
 
@@ -214,13 +423,15 @@ def redact_argv(argv: Iterable[str], known: Iterable[str] = ()) -> list[str]:
         elif eq and re.fullmatch(r"[A-Za-z_]\w*", name) and secret_name(name):
             out.append(name + "=" + MASK)
         else:
-            out.append(redact_text(arg, known))
+            out.append(redact_text(arg, known, decode=decode))
     return out
 
 
 def check_argv(argv, secrets):
     variants = secret_variants(secrets)
-    if redact_argv(argv, secrets) != argv or any(value in arg for value in variants for arg in argv):
+    # Raw argv has not been shell-encoded. Output-only decoding must not mistake
+    # a literal apostrophe in a path for malformed child diagnostics.
+    if redact_argv(argv, secrets, decode=False) != argv or any(value in arg for value in variants for arg in argv):
         raise ValueError('credential value refused in command arguments')
 
 
@@ -298,7 +509,7 @@ def _filter(src, dst, known: list[str]) -> None:
     pending = ""
     for line in src:
         ready, pending = split_safe_records(pending + line, known)
-        for record in ready.split("\n")[:-1]:
+        for record in iter_safe_records(ready):
             emit(record + "\n")
     if pending:
         emit(pending)

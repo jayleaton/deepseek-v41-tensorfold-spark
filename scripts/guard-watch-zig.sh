@@ -177,10 +177,10 @@ _watch_evidence_dump() { # $1 = why. Before a heal: WATCH_STATE_DIR/heal-evidenc
     printf '%s\n' "$1" | watch_redact > "$d/why.txt" || return 1
     watch_capture json curl -s -m 10 "$BASE/health" > "$d/health.json" 2>&1 || true
     watch_run docker logs --timestamps --tail 400 "$NAME-r0" > "$d/r0.log" 2>&1 || true
-    watch_run docker inspect -f '{{json .State}}' "$NAME-r0" > "$d/r0-state.json" 2>&1 || true
+    watch_capture state docker inspect -f '{{json .State}}' "$NAME-r0" > "$d/r0-state.json" 2>&1 || true
     if [[ -n "$WORKER_SSH" ]]; then
         wssh "docker logs --timestamps --tail 400 $NAME-r1 2>&1" > "$d/r1.log" 2>&1 || true
-        wssh "docker inspect -f '{{json .State}}' $NAME-r1" > "$d/r1-state.json" 2>&1 || true
+        wssh_control state "docker inspect -f '{{json .State}}' $NAME-r1" > "$d/r1-state.json" 2>&1 || true
     fi
     log "watch: heal evidence in $d"
 }
