@@ -76,9 +76,11 @@ Every stream and file the recipe writes passes `scripts/redact.py` through the
   or process exit. No line is held for, or masked because of, another line.
 - On each line it masks every known value: configured credential variables, explicit
   key flags and the keys in `NATIVE_AUTH_FILE`. It also masks the value's
-  JSON-escaped, `repr`, bytes-`repr`, single-quoted shell and URL-quoted spellings,
-  plus credential-named assignments, flags and headers, Bearer tokens, URL
-  passwords, PEM private-key lines and common token shapes (`sk-`, `hf_`, `ghp_`, …).
+  JSON-escaped, `repr`, bytes-`repr`, single-quoted shell, double-quoted
+  (`declare -p`) and URL-quoted spellings. Every line of 4 or more characters
+  of a multi-line value counts as known on its own. It also masks
+  credential-named assignments, flags and headers, Bearer tokens, URL passwords,
+  PEM private-key lines and common token shapes (`sk-`, `hf_`, `ghp_`, …).
 - Complete documents (saved JSON files, HTTP bodies, event rows) are masked field
   by field, so numbers and JSON syntax survive. Plain-text documents also get
   whole-text known-value and PEM-block passes.
@@ -87,8 +89,9 @@ Every stream and file the recipe writes passes `scripts/redact.py` through the
 
 **It does not promise to catch:**
 
-- a value split across lines, wrapped, or in any encoding not listed above
-  (base64, `$'…'`, hex, compression);
+- a value a tool splits or wraps at arbitrary points (`pprint` word-wrapping),
+  fragments shorter than 4 characters, or any encoding not listed above (base64,
+  `$'…'` escapes, hex, compression);
 - a credential the head never knew: a worker-only key, or a file a child read on its own;
 - a multi-line PEM body in a live stream.
 

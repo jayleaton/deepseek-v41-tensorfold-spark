@@ -407,3 +407,17 @@ def test_probe_success_requires_actual_choices_array(tmp_path, completion):
     # The message contains the configured credential, masked in place.
     assert "choices" not in result.stderr and "<redacted>" in result.stderr
     assert not (tmp_path / "healed").exists()
+
+
+def test_sourcing_with_exported_removed_restart_command_returns_78(tmp_path):
+    key = "rr8LegacySourcedCredentialOnly"
+    env = fixture(tmp_path, key)
+    marker = tmp_path / "evaluated"
+    env.update(API_KEY=key, WATCH_RESTART_CMD='printf "%s" "$API_KEY"; touch "$LEGACY_MARKER"',
+               LEGACY_MARKER=str(marker))
+    # The source itself refuses; run() propagates its status before any operation.
+    result = run(env, "watch_tick")
+    assert result.returncode == 78
+    assert "WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv" in result.stderr
+    assert not marker.exists()
+    no_disclosure(key, result.stdout, result.stderr)

@@ -273,7 +273,8 @@ def test_stream_releases_complete_lines_even_when_they_match_multiline_prefix():
     stream = safe_output._Stream(output, [key])
     stream.write("ready\n" + prefix)
     stream.flush()
-    assert output.getvalue() == "ready\n" + prefix
+    # Released at once; each line of a multi-line key is itself known.
+    assert output.getvalue() == "ready\n" + MASK + "\n"
     assert stream.pending == ''
     stream.write("different continuation\n")
     stream.flush()

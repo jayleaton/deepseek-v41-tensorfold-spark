@@ -41,6 +41,8 @@ def test_fixed_renderings_are_masked_on_their_line(rendering):
     "R=7 rows=128 progress=50\n",
     "worker said 'ready' and \"steady\"; price $5, café\n",
     "{unfinished container\n",
+    "KeyError: 'MODEL_DIR'\n",
+    "AuthenticationError: worker refused the connection\n",
 ])
 def test_ordinary_lines_are_verbatim_with_a_configured_key(line):
     assert redact_line(line, [SECRET]) == line
@@ -59,15 +61,25 @@ def test_a_line_never_depends_on_another_line():
     assert output.getvalue() == lines[0] + lines[1] + MASK + "\n"
 
 
-def test_value_split_across_lines_is_not_a_backstop_promise():
-    # Documented limit: only complete documents are masked across lines. Streams
-    # rely on the child never holding the value (child_environment).
-    first, second = SECRET[:10], SECRET[10:]
-    assert redact_text(first + "\n" + second + "\n", [first + "\n" + second]) == MASK + "\n"
+def test_each_line_of_a_multiline_value_is_known_on_its_own():
+    value = "rr8'first private line\nsecond private line\nÉ"
+    assert redact_text("opaque " + value + "\n", [value]) == "opaque " + MASK + "\n"
     output = io.StringIO()
-    stream = safe_output._Stream(output, [first + "\n" + second])
-    stream.write(first + "\n" + second + "\n")
-    assert output.getvalue() == first + "\n" + second + "\n"
+    stream = safe_output._Stream(output, [value])
+    stream.write('declare -x OPAQUE="' + value.replace('"', '\\"') + '"\n')
+    stream.finish()
+    # Fragments shorter than MIN_FRAGMENT stay readable rather than mask prose.
+    assert output.getvalue() == 'declare -x OPAQUE="' + MASK + "\n" + MASK + "\n" + 'É"\n'
+
+
+def test_a_tool_wrapping_a_value_mid_line_is_not_a_backstop_promise():
+    # Documented limit: the backstop does not reassemble pieces a tool chose to
+    # split (pprint word-wrapping). Streams rely on the child never holding it.
+    first, second = SECRET[:12], SECRET[12:]
+    output = io.StringIO()
+    stream = safe_output._Stream(output, [SECRET])
+    stream.write(repr(first) + "\n" + repr(second) + "\n")
+    assert output.getvalue() == repr(first) + "\n" + repr(second) + "\n"
 
 
 def test_complete_json_documents_keep_numbers_and_syntax():

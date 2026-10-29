@@ -10,7 +10,8 @@ Every tool that persists argv, env or a third-party tool's output goes through t
 
 A value is masked when its flag or variable name has a part (split on - _ . and case) that names a credential: key,
 token, secret, password, authorization, bearer, auth, credential, cookie (--api-key X, --api-key=X, API_KEY=X,
-{"hf_token": X}); names ending in file / path / dir point at a secret and stay readable. Also masked anywhere in text:
+{"hf_token": X}); names ending in file / path / dir point at a secret and stay readable, as do names ending in
+error / exception (KeyError: 'MODEL_DIR'). Also masked anywhere in text:
 Authorization / x-api-key / Cookie header values, Bearer tokens, URL passwords, PEM private-key markers, the known token
 shapes (sk-, hf_, gh*_, github_pat_, xox*-, AKIA), and the literal value of every credential-named variable in the
 environment, including short explicit keys, so a tool that echoes $API_KEY in its own words is still caught.
@@ -45,6 +46,8 @@ SECRET_WORDS = frozenset(
     ]
 )
 POINTER_WORDS = frozenset({"file", "path", "dir"})
+# a trailing error / exception names a diagnostic (KeyError: 'MODEL_DIR'), never a credential
+DIAGNOSTIC_WORDS = frozenset({"error", "exception"})
 # alone, too common in prose and data to mask in text (a tokenizer's "token")
 GENERIC_WORDS = frozenset({"key", "token", "auth", "cookie"})
 
@@ -94,7 +97,7 @@ def secret_name(name: str) -> bool:
     ]
     return (
         bool(parts)
-        and parts[-1] not in POINTER_WORDS
+        and parts[-1] not in POINTER_WORDS | DIAGNOSTIC_WORDS
         and any(p in SECRET_WORDS for p in parts)
     )
 
@@ -134,6 +137,9 @@ def mask_values(text: str, values: Iterable[str]) -> str:
     return text
 
 
+MIN_FRAGMENT = 4
+
+
 @lru_cache(maxsize=256)
 def _secret_variants(value: str) -> tuple[str, ...]:
     """Known values as tools render them, including copied trailing whitespace and byte diagnostics."""
@@ -150,11 +156,18 @@ def _secret_variants(value: str) -> tuple[str, ...]:
         for v in tuple(variants):
             variants.update((json.dumps(v)[1:-1], json.dumps(v, ensure_ascii=False)[1:-1],
                              repr(v)[1:-1], ascii(v)[1:-1]))
-    # The single-quoted shell spelling (as set -x and shlex print it) and the URL
-    # spelling. The list is fixed on purpose: the output backstop does not decode
-    # arbitrary encodings (docs/SECURITY.md). This builds text to match, never argv.
+    # The single-quoted shell spelling (set -x, shlex), the URL spelling and the
+    # double-quoted inner spelling (declare -p). The list is fixed on purpose: the
+    # backstop does not decode arbitrary encodings (docs/SECURITY.md). This builds
+    # text to match, never argv.
     for v in tuple(variants):
-        variants.update(("'" + v.replace("'", "'\"'\"'") + "'", urllib.parse.quote(v, safe="")))
+        variants.update(("'" + v.replace("'", "'\"'\"'") + "'", urllib.parse.quote(v, safe=""),
+                         re.sub(r'([\\"$`])', r"\\\1", v)))
+    # Lines are redacted one at a time, so each line of a multi-line value is itself
+    # known. Fragments shorter than MIN_FRAGMENT would mask ordinary text instead.
+    for fragment in re.split(r"\r\n|\r|\n", value) if re.search(r"[\r\n]", value) else ():
+        if len(fragment.strip()) >= MIN_FRAGMENT:
+            variants.update(_secret_variants(fragment))
     return tuple(sorted(variants, key=len, reverse=True))
 
 
