@@ -19,16 +19,20 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is the local `dsv41/upgrade-latest` commit `314c7a911`, including
-flash17 `dsq-1` checkpoint admission from `98f2a3896`. It boots the real flash17 pack
-on TP2. It adds DeepSeek-V4.x chat rendering, sampling defaults and tool-schema
-holding, and the Spark stats keys in replies (on by default for DeepSeek;
-`TENSORFOLD_WIRE=native` turns them off). It is not on upstream main yet.
-Use a local checkout or self-contained bundle as described below; upstream fetching
-will work once that exact commit is published. This source support is not a new
-pack/device qualification. Do not edit a pack config to bypass admission checks.
-Native images, structured output, defaults, sessions and sampling still require
-migration qualification; historical production results do not qualify this pin.
+The current pin is the local `dsv41/upgrade-latest` commit `20ad77878` (stable head H). It has
+flash17 `dsq-1` checkpoint admission from `98f2a3896`, and boots the real flash17 pack on TP2. It adds:
+- DeepSeek-V4.x chat rendering, sampling defaults and tool-schema holding;
+- the Spark stats keys in replies (on by default for DeepSeek; `TENSORFOLD_WIRE=native` turns them off);
+- since `314c7a911`: the explicit non-strict tool fallback, pool-growth agreement only on page growth, DSpark statics
+  without a context drain, KV transactions that back up only the ratio-2 carries, and grammar masks staged and sent
+  only for constrained rows. `TF_DSV41_GRAMMAR` is honoured again: unset, empty or `1` (the default) serves
+  structured output, `0` refuses it, and any other value stops the boot.
+
+H is not on upstream main yet. Until those upstream PRs merge, build it from a local checkout or a bundle, as
+described below; upstream fetching will work once that exact commit is published. This source support is not a new
+pack/device qualification. Do not edit a pack config to bypass admission checks. Native images, structured output,
+defaults, sessions and sampling still require migration qualification; historical production results do not
+qualify this pin.
 
 ## Build and checks
 
@@ -45,13 +49,16 @@ TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv
 The script reads the exact revision from the pin file, fetches only that revision's
 history into temporary scratch, and creates a self-contained bundle. It does not
 modify the supplied checkout, use its working-tree edits, or require its HEAD to
-match the pin. For transfer to another builder, create a bundle containing the
-upgrade branch and supply the bundle file instead:
+match the pin. For transfer to another builder, such as a Spark that has no engine checkout, create a bundle
+containing the upgrade branch and supply the bundle file instead:
 
 ```bash
 git -C /absolute/TensorFold bundle create /absolute/tensorfold.bundle dsv41/upgrade-latest
+git -C /absolute/TensorFold bundle verify /absolute/tensorfold.bundle   # must list the pin's history
 TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
 ```
+
+The bundle must contain the pinned commit and all of its history (`git bundle create ... <branch>`, not a range).
 
 Bundle prerequisites and exact commit resolution are verified locally and again in
 the Docker builder. A supplied invalid/incomplete bundle fails without falling back

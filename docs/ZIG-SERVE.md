@@ -10,6 +10,8 @@ the previous deployed engine. Do not bypass checkpoint admission or treat this g
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
+# or, on a builder without an engine checkout (see ENGINE):
+# TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
 scripts/check-zig-image.sh tensorfold-dsv41:local
 docker save tensorfold-dsv41:local -o build-native-image.tar
 ```
@@ -29,6 +31,8 @@ The historic 1M/four-slot profile is a candidate for the new pin; preserve the m
 
 Profiles use the engine's own setting names (`config/tensorfold-settings.txt`); the launcher refuses renamed ones.
 `TF_DSV41_THINKING=0` and `TF_DSV41_DEFAULT_EFFORT` become the head's `--no-thinking` and `--reasoning-effort` flags.
+`TF_DSV41_GRAMMAR=1` (the engine default) builds grammar masks on every rank for `response_format` and
+required or named `tool_choice`; `0` refuses those requests, and any other value stops the boot. Both ranks hash it.
 `TF_TP_ROCE_HCA` selects the rank-local RDMA port when more than one peer is cabled. It is forwarded unchanged,
 including a value supplied from the caller environment. Credit: @rootsbymenda, #63. The launcher also keeps both-rank
 `NCCL_CUMEM_ENABLE=0` / `NCCL_CUMEM_HOST_ENABLE=0` defaults from #41. Set topology only in ignored local config.

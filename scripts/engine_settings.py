@@ -80,7 +80,6 @@ LEGACY = {
     "TF_DSV41_DRAIN_S": "TF_DRAIN_S",
     "TF_DSV41_SSE_KEEPALIVE_S": "TF_SSE_KEEPALIVE_S",
     "TF_DSV41_REQUEST_LOG": "TENSORFOLD_REQUEST_LOG",
-    "TF_DSV41_GRAMMAR": None,  # response_format output is always grammar-held (tools: TENSORFOLD_TOOL_GRAMMAR)
     "TF_DSV41_INDEX_KV": None,  # the CUDA index KV is always FP8
     "TF_DSV41_DISCONNECT": None,  # a client disconnect always cancels its request
 }

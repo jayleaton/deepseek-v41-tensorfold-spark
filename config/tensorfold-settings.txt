@@ -1,7 +1,7 @@
 # Every TF_* / TENSORFOLD_* name the pinned TensorFold reads: string literals in its
 # non-test zig/src. Regenerate on every pin bump:
 #   python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout
-rev 314c7a911913fd67d10bfa01d61eb0a009e1b23c
+rev 20ad77878b14203ff30727054c718c70d36ff6c5
 TENSORFOLD_API_KEY
 TENSORFOLD_BENCHMARK_TOKEN
 TENSORFOLD_CHECKPOINT_SHA256
@@ -131,6 +131,7 @@ TF_DSV41_GEN_STREAMS
 TF_DSV41_GM_GU2
 TF_DSV41_GM_V2
 TF_DSV41_GM_V3
+TF_DSV41_GRAMMAR
 TF_DSV41_GRAMMAR_TOKENIZER
 TF_DSV41_GRAPHS
 TF_DSV41_GRAPHS_MAX
