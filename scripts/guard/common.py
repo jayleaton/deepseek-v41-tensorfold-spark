@@ -143,8 +143,11 @@ def load_config(path):
     if config.get("enabled") is not True or config.get("mode") != "production" or config.get("policy") != POLICY:
         raise ValueError("explicitly enabled exact production policy required")
     config["clock_ladder_mhz"] = list(validate_ladder(config.get("clock_ladder_mhz")))
-    for name in ("state_path", "samples_path", "events_path", "lease_path", "production_config", "control_socket",
-                 "clock_dropin"):
+    paths = ("state_path", "samples_path", "events_path", "lease_path", "production_config", "control_socket",
+             "clock_dropin")
+    if "worker_repo" in config:
+        paths += ("worker_repo",)
+    for name in paths:
         value = Path(config[name])
         if not value.is_absolute() or ".." in value.parts:
             raise ValueError("absolute canonical path required: " + name)

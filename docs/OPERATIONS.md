@@ -15,6 +15,12 @@ profiles are empty, and persistent clock changes are disabled. Previous deployed
 Keep operator configuration and state outside the checkout, for example `~/.config/tf-guard/guard.json`. Start with
 `config/guard.example.json`, review every node path, container prefix, port and ownership field, and qualify the exact
 running profile before enablement. Set the engine's head port separately (for example 8001), with the guard on 8000.
+Set `worker_repo` to the absolute worker recipe checkout containing `scripts/safe_exec.py`.
+This optional guard JSON path defaults to the head checkout's absolute path when both nodes use the same layout.
+Remote diagnostics and telemetry start with an empty environment and a fixed system PATH, then run through
+the worker supervisor. Worker SSH profiles must keep startup diagnostics quiet; configured `RemoteCommand`
+is overridden. The shell watchdog uses `WORKER_REPO` for the same worker boundary.
+
 Do not expose an unguarded alternate port to clients. `scripts/guard/profile.py` snapshots exact image, mounts,
 engine environment and optional CPU sets; `control.py` prepares/authorizes an approved profile. A snapshot alone is
 not qualification. The candidate profile's workspace floor must meet the guard's minimum before it can be approved.

@@ -27,8 +27,6 @@ from safe_output import _Stream, clean, write_text  # noqa: E402
     (r"OPAQUE_SETTING='ab'$'\x27'cd", "ab'cd"),
     (r"OPAQUE_SETTING=$'ab\ccde'", "ab\x03de"),
     (r"OPAQUE_SETTING=$'Randy\047s \342\230\203'", "Randy's ☃"),
-    ("OPAQUE_SETTING='Randy'\\''s\\\ncredential'", "Randy's\\\ncredential"),
-    ("OPAQUE_SETTING=Randy\\'s\\\ncredential", "Randy'scredential"),
 ])
 def test_shell_diagnostics_mask_whole_record(record, secret):
     assert redact_text(record + "\n", [secret]) == MASK + "\n"
@@ -74,21 +72,18 @@ def test_no_shell_evaluation(tmp_path):
 
 
 @pytest.mark.parametrize("prefix", ["OPAQUE_SETTING=", "", "tool diagnostic: "])
-def test_multiline_adjacent_shell_fragments_are_not_released_in_chunks(prefix):
+def test_multiline_shell_syntax_releases_each_complete_physical_line(prefix):
     secret = "Randy's\nsecond fragment"
     record = prefix + "'Randy'\\''s\nsecond fragment'\n"
     pending = ""
     released = ""
     for char in record:
         ready, pending = split_safe_records(pending + char, [secret])
-        if pending:
-            assert ready == ""
         released += ready
+        assert '\n' not in pending
+        assert not ready or ready.endswith('\n')
     assert pending == ""
     assert released == record
-    output = io.StringIO()
-    _filter(io.StringIO(record), output, [secret])
-    assert output.getvalue() == MASK + "\n"
 
 
 def test_benign_multiline_assignment_is_preserved():

@@ -16,7 +16,7 @@ import sys
 import threading
 import time
 
-from redact import check_argv as _check_argv, known_secrets, redact_text, secret_name
+from redact import check_argv as _check_argv, known_secrets, redact_text, secret_name, secret_variants
 from safe_output import _cli_secrets, _known, _Stream, cli, inherited_known
 
 TERM_GRACE = 1.0
@@ -25,6 +25,7 @@ DEADLINE_ENV = 'TF_SAFE_EXEC_DEADLINE'
 CONTROL_LIMIT = 8 * 1024 * 1024
 OWNER_PID_ENV = 'TF_SAFE_EXEC_OWNER_PID'
 OWNER_START_ENV = 'TF_SAFE_EXEC_OWNER_START'
+SHELL_STARTUP_NAMES = frozenset({'BASH_ENV', 'ENV', 'PROMPT_COMMAND', 'SHELLOPTS', 'BASHOPTS', 'PS4'})
 
 
 class ChildEnvironmentError(ValueError):
@@ -53,14 +54,16 @@ def child_environment(env=None, secrets=()):
     known = list(secrets) + _known() + known_secrets(source) + _cli_secrets([])
     if source.get('WATCH_RESTART_CMD'):
         raise ChildEnvironmentError('WATCH_RESTART_CMD is removed; use WATCH_RESTART_ARGV JSON argv')
+    variants = secret_variants(known)
     result = {}
     for name, value in source.items():
-        if secret_name(name):
+        if name in SHELL_STARTUP_NAMES or name.startswith('BASH_FUNC_') or secret_name(name):
             continue
         if _internal_control(name, value):
             result[name] = value
             continue
-        if redact_text(str(value), known, decode=False) != str(value):
+        if (any(part in str(value) for part in variants)
+                or redact_text(str(value), known, decode=False) != str(value)):
             # Dropping an operational control could select a default and start
             # work the operator never requested. Refuse such configuration;
             # ordinary diagnostic aliases are simply absent in the child.
@@ -220,6 +223,21 @@ def _finish_group(child, grace=TERM_GRACE):
     child.wait()
 
 
+def _bash_argv(argv):
+    """Disable implicit startup files for Bash argv controlled by this adapter."""
+    args = list(argv)
+    if args and Path(args[0]).name == 'env':
+        offset = 1
+        if len(args) > offset and args[offset] in {'-i', '--ignore-environment'}:
+            offset += 1
+        while len(args) > offset and '=' in args[offset] and args[offset].partition('=')[0].isidentifier():
+            offset += 1
+        return args[:offset] + _bash_argv(args[offset:])
+    if args and Path(args[0]).name == 'bash' and args[1:3] != ['--norc', '--noprofile']:
+        args[1:1] = ['--norc', '--noprofile']
+    return args
+
+
 def _reviewed_entry(argv, cwd=None):
     """Only same-checkout supervisor scripts receive a private known-value registry."""
     args = list(argv)
@@ -234,6 +252,11 @@ def _reviewed_entry(argv, cwd=None):
             args = args[1:]
     if len(args) < 2 or Path(args[0]).name not in {'bash', 'python3', Path(sys.executable).name}:
         return False
+    if Path(args[0]).name == 'bash':
+        while len(args) > 1 and args[1] in {'--norc', '--noprofile'}:
+            args.pop(1)
+        if len(args) < 2:
+            return False
     entry = (Path(cwd or os.getcwd()) / args[1]).resolve()
     root = Path(__file__).resolve().parents[1]
     entries = {'scripts/' + name for name in ('safe_exec.py', 'native_ops.py', 'serve.sh',
@@ -272,6 +295,7 @@ def _registry_environment(argv, env, cwd=None, secrets=()):
 
 
 def _checked_popen(argv, *, env, registry_argv=None, secrets=(), **kwargs):
+    argv = _bash_argv(argv)
     env, registry = _registry_environment(registry_argv or argv, env, kwargs.get('cwd'), secrets)
     if registry is not None and registry_argv is None:
         argv = [sys.executable, str(Path(__file__).resolve()), '--group-child', *argv]
@@ -285,6 +309,7 @@ def _checked_popen(argv, *, env, registry_argv=None, secrets=(), **kwargs):
 def _spawn(argv, *, env=None, deadline=None, secrets=(), **kwargs):
     # The bootstrap runs inside the newly created session, so it can publish
     # the *actual* pgid before exec. Nested output wrappers retain that group.
+    argv = _bash_argv(argv)
     bootstrap = [sys.executable, str(os.path.abspath(__file__)), '--group-child', *argv]
     secrets = list(secrets) + known_secrets(env)
     env = child_environment(env, secrets)
@@ -413,7 +438,8 @@ def main():
             else:
                 os.set_inheritable(9, True)
             environment['TF_SAFE_REGISTRY_FD'] = '9'
-        os.execvpe(argv[1], argv[1:], environment)
+        command = _bash_argv(argv[1:])
+        os.execvpe(command[0], command, environment)
     timeout = None
     expires = None
     monotonic_expires = None

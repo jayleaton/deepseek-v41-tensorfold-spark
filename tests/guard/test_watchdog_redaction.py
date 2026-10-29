@@ -26,17 +26,20 @@ controls = {}  # fixture-protocol-controls
 role = Path(sys.argv[0]).name
 args = " ".join(sys.argv[1:])
 assert "AUTH_TOKEN" not in os.environ and "API_KEY" not in os.environ
+assert "OPAQUE_SETTING" not in os.environ
 key = FIXTURE_KEY
 def echoes(label):
-    print(label + " opaque " + key)
+    print(label + " diagnostic")
+    print(label + " error diagnostic", file=sys.stderr)
+    print(label + " opaque " + json.dumps(key, ensure_ascii=False))
     print(label + " escaped " + json.dumps(key, ensure_ascii=True))
     print(label + " repr " + repr(key), file=sys.stderr)
-    print(label + " error " + key, file=sys.stderr)
+    print(label + " error " + json.dumps(key, ensure_ascii=False), file=sys.stderr)
 
 if role in ("docker", "ssh") and "State.Running" in args:
     print(controls.get("FAKE_RUNNING", "true"))
 elif role == "docker" and "StartedAt" in args:
-    print("started-at diagnostic " + key, file=sys.stderr)
+    print("started-at diagnostic " + json.dumps(key, ensure_ascii=False), file=sys.stderr)
     print(controls.get("FAKE_STARTED") or (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat())
 elif role in ("docker", "ssh") and "ExitCode" in args:
     print(controls.get("FAKE_EXIT", "0"))
@@ -90,6 +93,7 @@ def fixture(tmp_path, key):
         **os.environ,
         "PATH": f"{bindir}:{os.environ['PATH']}",
         "CONFIG": str(config),
+        "OPAQUE_SETTING": key,
         "WATCH_STATE_DIR": str(tmp_path / "state"),
         "WORKER_SSH": "worker.example.invalid",
         "WATCH_ALERT": str(bindir / "alert-tool"),
@@ -143,7 +147,10 @@ def no_disclosure(key, *outputs):
 @pytest.mark.parametrize("key", KEYS, ids=("plain", "escaped", "short"))
 def test_evidence_redacts_both_ranks_and_both_streams_before_writing(tmp_path, key):
     env = fixture(tmp_path, key)
-    result = run(env, 'evidence_dump "opaque $API_KEY"')
+    # Diagnostic display values use one physical encoded record. Raw multiline
+    # environment values are covered by the child-isolation tests.
+    env['EVIDENCE_REASON'] = json.dumps('opaque ' + key)
+    result = run(env, 'evidence_dump "$EVIDENCE_REASON"')
     assert result.returncode == 0, "evidence collection failed"
     dirs = list((tmp_path / "state/heal-evidence").iterdir())
     assert len(dirs) == 1
@@ -337,8 +344,10 @@ def test_invalid_control_stdout_is_withheld(tmp_path, mode):
     key = KEYS[1]
     env = fixture(tmp_path, key)
     result = run(env, f"watch_capture {mode} heal-tool")
-    assert result.returncode != 0
+    assert result.returncode == 1
     assert not result.stdout
+    assert 'control parse failed; output withheld' in result.stderr
+    assert (tmp_path / 'healed').exists(), 'fixture failed before its invalid diagnostic'
     no_disclosure(key, result.stderr)
 
 

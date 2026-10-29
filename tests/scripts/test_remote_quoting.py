@@ -34,8 +34,12 @@ record = {'clock_probe': False, 'command_started': True, 'parse_valid': False,
 try:
     words = shlex.split(sys.argv[-1])
     record['ssh_options_valid'] = sys.argv[1:-1] == [
-        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'worker.example.invalid']
-    probe = words == ['python3', '-c', 'import time; print(time.monotonic())']
+        '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'RemoteCommand=none', 'worker.example.invalid']
+    assert words[:3] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin']
+    words = words[3:]
+    assert words[:2] == ['/usr/bin/python3', str(Path(os.environ['WORKER_REPO']) / 'scripts/safe_exec.py')]
+    payload = words[words.index('--command') + 1:]
+    probe = payload == ['/usr/bin/python3', '-c', 'import time; print(time.monotonic())']
     record['clock_probe'] = probe
     record['command_started'] = not probe
     if probe:
@@ -59,7 +63,7 @@ try:
         cutoff, budget = float(words[3]), float(words[5])
         now = time.monotonic()
         record['envelope_valid'] = (
-            words[:3] == ['python3', str(Path(os.environ['WORKER_REPO']) /
+            words[:3] == ['/usr/bin/python3', str(Path(os.environ['WORKER_REPO']) /
                                          'scripts/safe_exec.py'), '--monotonic-deadline']
             and words[4] == '--timeout' and words[6] == '--command'
             and math.isfinite(cutoff) and math.isfinite(budget)
@@ -143,6 +147,7 @@ def _assert_refused(remote, operation, capsys):
     captured = capsys.readouterr()
     stream_leaked = any(env['API_KEY'] in stream for stream in (captured.out, captured.err))
     observations = _observations(marker)
+    assert not observations, 'SSH spawned before the requested credential-bearing argv was refused'
     started = any(item['command_started'] for item in observations)
     raw_leaked = any(item['raw_key'] for item in observations)
     recovered = any(item['recovered_key'] for item in observations)

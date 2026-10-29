@@ -12,7 +12,7 @@ import sys
 
 from common import atomic, load_config
 from safe_exec import run as supervised_run
-from safe_quote import quote_checked
+from safe_quote import join_checked
 from safe_output import cli
 
 NODE_SAMPLE = r"""
@@ -55,8 +55,15 @@ def worker_sample(config):
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=2",
+            "-o",
+            "RemoteCommand=none",
             config["worker_ssh"],
-            "python3 -c " + quote_checked(NODE_SAMPLE),
+            join_checked([
+                "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                "/usr/bin/python3",
+                str(Path(config.get("worker_repo", Path(__file__).resolve().parents[2])) / "scripts/safe_exec.py"),
+                "--timeout", "4", "--command", "/usr/bin/python3", "-c", NODE_SAMPLE,
+            ]),
         ],
         capture_output=True,
         text=True,

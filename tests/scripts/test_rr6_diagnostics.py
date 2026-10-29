@@ -63,15 +63,15 @@ def test_ordinary_assignments_and_trailing_errors(text):
 
 
 @pytest.mark.parametrize('sink', ['clean', 'stream', 'file', 'print', 'dump', 'dump-stream', 'filter'])
-def test_pprint_implicit_concatenation_at_sinks(monkeypatch, tmp_path, sink):
+def test_single_line_python_environment_at_sinks(monkeypatch, tmp_path, sink):
     secret = ('rr6 private value with spaces ' * 6) + 'SyntheticOnly'
     ordinary = 'ordinary-environment-value'
     monkeypatch.setenv('API_KEY', secret)
     monkeypatch.setenv('ORDINARY_SETTING', ordinary)
     value = {'API_KEY': secret, 'ORDINARY_SETTING': ordinary}
-    text = pprint.pformat(value, width=45) + '\n'
+    text = pprint.pformat(value, width=1000) + '\n'
     assert ast.literal_eval(text) == value
-    assert secret not in text  # The whole credential is split by pprint.
+    assert secret in text
     output = io.StringIO()
     if sink == 'clean':
         sanitized = safe_output.clean(text)
@@ -110,7 +110,7 @@ def test_pprint_implicit_concatenation_at_sinks(monkeypatch, tmp_path, sink):
         assert MASK in sanitized
 
 
-def test_actual_unquoted_multiline_environment_has_a_finite_boundary(monkeypatch):
+def test_environment_projection_does_not_consume_following_lines(monkeypatch):
     value = "ordinary first line\nsecond line with ' unmatched quote\nlast line"
     monkeypatch.setenv('ACTUAL_ENV_SETTING', value)
     text = 'ACTUAL_ENV_SETTING=' + value + '\nerror: missing aot/kernel.fatbin\n'
@@ -125,12 +125,12 @@ def test_actual_unquoted_multiline_environment_has_a_finite_boundary(monkeypatch
         else:
             result = safe_output.clean(text)
         assert value not in result
-        assert 'second line' not in result
+        assert "second line with ' unmatched quote\nlast line\n" in result
         assert 'ACTUAL_ENV_SETTING' in result
         assert result.endswith('error: missing aot/kernel.fatbin\n')
 
 
-def test_environment_function_body_ends_before_error(monkeypatch):
+def test_environment_assignment_does_not_hide_following_function(monkeypatch):
     monkeypatch.setenv('ACTUAL_ENV_SETTING', 'ordinary-value')
     text = ('ACTUAL_ENV_SETTING=ordinary-value\nhelper () \n{\n'
             '  echo ordinary-function-value\n}\nerror: missing kernel\n')
@@ -139,7 +139,7 @@ def test_environment_function_body_ends_before_error(monkeypatch):
     for char in text:
         stream.write(char)
     stream.finish()
-    assert 'ordinary-function-value' not in output.getvalue()
+    assert 'ordinary-function-value' in output.getvalue()
     assert output.getvalue().endswith('error: missing kernel\n')
 
 

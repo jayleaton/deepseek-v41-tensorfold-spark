@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests/guard"))
 import safe_output  # noqa: E402
+from safe_exec import child_environment  # noqa: E402
 from test_watchdog_redaction import fixture as watchdog_fixture, run as watchdog_run  # noqa: E402
 
 BENIGN = "worker said 'ready' and \"steady\"; price $5, path C:\\work, café"
@@ -197,9 +198,15 @@ def test_seeded_encoded_batch_at_shared_output_sinks(
 ):
     encoding, text = batch
     env = minimal_env(tmp_path, credentials)
+    if encoding == 'set':
+        # Raw multiline shell output is protected at the child boundary. Other
+        # encoders below still exercise masking of the original seeded values.
+        isolated = child_environment(env)
+        assert all(f'API_KEY_{i}' not in isolated and f'OPAQUE_SETTING_{i}' not in isolated
+                   for i in range(len(credentials)))
+        text = raw_batch(isolated, both_streams(encoding)).stdout
     for name, value in env.items():
-        if name.startswith("API_KEY_"):
-            monkeypatch.setenv(name, value)
+        monkeypatch.setenv(name, value)
     if sink == "clean":
         output = safe_output.clean(text)
     elif sink == "stream":
@@ -246,7 +253,14 @@ def test_seeded_batch_through_real_supervisors(tmp_path, credentials, batch, bou
     encoding, _ = batch
     env = minimal_env(tmp_path, credentials)
     script = tmp_path / "emit.sh"
-    script.write_text(both_streams(encoding))
+    # A real child checks inheritance before emitting diagnostics. Exit 99 cannot
+    # be disguised by output masking, including for raw multiline Bash values.
+    isolation_check = (
+        '"$PROBE_PYTHON" -c \'import os,sys; '
+        'sys.exit(99 if any(n.startswith(("API_KEY_", "OPAQUE_SETTING_")) '
+        'for n in os.environ) else 0)\' || exit 99\n'
+    )
+    script.write_text(isolation_check + both_streams(encoding))
     env["DUMP_SCRIPT"] = str(script)
     if boundary == "safe_exec":
         # The CLI publishes child output. The internal run() API captures data

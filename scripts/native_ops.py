@@ -103,13 +103,19 @@ class Lifecycle:
             if limit <= 0:
                 raise OpsError('native pair readiness timed out')
         if rank == 1:
+            # Refuse the requested raw payload before even the clock probe spawns SSH.
+            join_checked(argv, env=self.env)
             if self.runner is supervised_run:
                 # Calibrate in the worker's monotonic clock domain. A slow
                 # response makes the cutoff earlier, never later; no wall-clock
                 # synchronization or clock adjustment assumption is required.
                 probe_started = time.monotonic()
-                probe_argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker,
-                              join_checked(['python3', '-c', 'import time; print(time.monotonic())'], env=self.env)]
+                boundary = str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py')
+                clean = ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', '/usr/bin/python3', boundary]
+                probe_argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+                              '-o', 'RemoteCommand=none', self.worker,
+                              join_checked([*clean, '--timeout', str(limit), '--command',
+                                            '/usr/bin/python3', '-c', 'import time; print(time.monotonic())'], env=self.env)]
                 try:
                     probe = self.runner(probe_argv, cwd=self.root, env=self.env,
                                         capture_output=True, text=True, timeout=limit)
@@ -127,12 +133,17 @@ class Lifecycle:
                 # The worker owns its command tree, even if SSH disconnects.
                 # The cutoff also refuses a queued, late SSH launch. Allow TERM/
                 # KILL to finish before the local timeout permits STOP cleanup.
-                argv = ['python3', str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py'),
+                argv = [*clean,
                         '--monotonic-deadline', str(worker_cutoff), '--timeout', str(limit),
                         '--command', *argv]
                 limit += 2 * TERM_GRACE
                 remote_until = time.monotonic() + limit
-            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self.worker, join_checked(argv, env=self.env)]
+            else:
+                argv = ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin',
+                        '/usr/bin/python3', str(Path(self.env['WORKER_REPO']) / 'scripts/safe_exec.py'),
+                        '--timeout', str(limit), '--command', *argv]
+            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+                    '-o', 'RemoteCommand=none', self.worker, join_checked(argv, env=self.env)]
         try:
             result = self.runner(argv, cwd=self.root, env=self.env, capture_output=True,
                                  text=True, timeout=limit)

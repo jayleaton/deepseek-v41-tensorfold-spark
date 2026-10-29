@@ -174,7 +174,9 @@ def test_default_remote_runner_bounds_worker_before_local_timeout(tmp_path, monk
     life.command(1, ['docker', 'run', 'example'], timeout=20)
     argv, kwargs = captured[1]
     remote = shlex.split(argv[-1])
-    assert remote[:2] == ['python3', '/srv/repo space/scripts/safe_exec.py']
+    assert remote[:3] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin']
+    remote = remote[3:]
+    assert remote[:2] == ['/usr/bin/python3', '/srv/repo space/scripts/safe_exec.py']
     assert remote[2] == '--monotonic-deadline'
     assert 1000 < float(remote[3]) <= 1020
     assert remote[4] == '--timeout'

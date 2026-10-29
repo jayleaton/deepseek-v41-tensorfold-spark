@@ -11,7 +11,7 @@ Every tool that persists argv, env or a third-party tool's output goes through t
 A value is masked when its flag or variable name has a part (split on - _ . and case) that names a credential: key,
 token, secret, password, authorization, bearer, auth, credential, cookie (--api-key X, --api-key=X, API_KEY=X,
 {"hf_token": X}); names ending in file / path / dir point at a secret and stay readable. Also masked anywhere in text:
-Authorization / x-api-key / Cookie header values, Bearer tokens, URL passwords, PEM private keys, the known token
+Authorization / x-api-key / Cookie header values, Bearer tokens, URL passwords, PEM private-key markers, the known token
 shapes (sk-, hf_, gh*_, github_pat_, xox*-, AKIA), and the literal value of every credential-named variable in the
 environment, including short explicit keys, so a tool that echoes $API_KEY in its own words is still caught.
 """
@@ -161,73 +161,23 @@ def secret_variants(values: Iterable[str]) -> list[str]:
                   key=len, reverse=True)
 
 
-_SHELL_RECORD = re.compile(r"^\s*(?:(?:declare|typeset)\s+-\w+\s+|export\s+)?[A-Za-z_]\w*=")
 _LITERAL = re.compile(r'''(?:[bBuUrR])?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')''', re.DOTALL)
 _DECODE_DEPTH = 6
 _DECODE_LIMIT = 256
 
 
 def _shell_records(text: str):
-    """Frame quoted shell diagnostics across physical newlines; yield (record, terminated)."""
+    """Yield physical lines and their newline status, independent of diagnostic syntax."""
     start = 0
-    while start < len(text):
-        raw_assignment = re.match(r"([A-Za-z_]\w*)=", text[start:])
-        if raw_assignment:
-            value = os.environ.get(raw_assignment[1])
-            end = start + raw_assignment.end() + len(value or "")
-            if (value and text.startswith(value, start + raw_assignment.end())
-                    and (end == len(text) or text[end] == "\n")):
-                # `env` writes values verbatim, including newlines and unmatched
-                # quotes. Their exact inherited value gives an unambiguous end.
-                terminated = end < len(text)
-                yield text[start:end + int(terminated)], terminated
-                start = end + int(terminated)
-                continue
-        assignment = bool(_SHELL_RECORD.match(text[start:]))
-        quote = ""
-        # pprint uses adjacent string literals inside a container. Keep the
-        # complete container together so literal_eval can join those strings.
-        function = bool(re.match(r"[A-Za-z_]\w*[ \t]*\([ \t]*\)[ \t]*(?:\n[ \t]*)?(?:\{|\Z)", text[start:]))
-        container = function or text[start:].lstrip().startswith(("{", "[", "("))
-        brackets = []
-        body_started = False
-        escaped = False
-        i = start
-        while i < len(text):
-            char = text[i]
-            continued = escaped
-            if escaped:
-                escaped = False
-            elif char == "\\" and quote != "'":
-                escaped = True
-            elif quote:
-                if char == quote[-1]:
-                    quote = ""
-            elif char in "\"'":
-                prose_apostrophe = (
-                    not assignment and not container and char == "'" and i > start and i + 1 < len(text)
-                    and text[i - 1].isalpha() and text[i + 1].isalpha()
-                )
-                if not prose_apostrophe:
-                    quote = "$'" if char == "'" and i > start and text[i - 1] == "$" else char
-            elif container and char in "{[(":
-                brackets.append(char)
-                body_started = body_started or char == "{"
-            elif container and char in "}])" and brackets:
-                brackets.pop()
-            if (char == "\n" and not quote and not brackets and not escaped and not continued
-                    and (not function or body_started)):
-                yield text[start:i + 1], True
-                start = i + 1
-                break
-            i += 1
-        else:
-            yield text[start:], False
-            return
+    for match in re.finditer("\n", text):
+        yield text[start:match.end()], True
+        start = match.end()
+    if start < len(text):
+        yield text[start:], False
 
 
 def iter_safe_records(text: str):
-    """Iterate complete logical records without splitting quoted diagnostic values."""
+    """Iterate physical lines, without their terminating newline."""
     for record, terminated in _shell_records(text):
         yield record[:-1] if terminated else record
 
@@ -390,33 +340,23 @@ def _mask_decoded_records(text: str, known: list[str]) -> str:
 
 
 def split_safe_records(pending: str, known: Iterable[str]) -> tuple[str, str]:
-    """Release complete lines, retaining suffixes that may continue a known multiline credential."""
-    known = list(known)
-    multiline = [value for value in secret_variants(known) if "\n" in value]
-    # Mask complete multiline matches before splitting them into individual records.
-    pending = mask_values(pending, multiline)
-    hold = 0
-    environment_records = [name + '=' + value for name, value in os.environ.items()
-                           if '\n' in value]
-    for value in multiline + environment_records:
-        for size in range(min(len(value) - 1, len(pending)), hold, -1):
-            if value.startswith(pending[-size:]):
-                hold = size
-                break
-    boundary = pending.rfind("\n", 0, len(pending) - hold) + 1
-    # A quoted diagnostic is one logical record, even when its value spans writes/lines.
-    framed = 0
-    for record, terminated in _shell_records(pending):
-        if not terminated or framed + len(record) > boundary:
-            break
-        framed += len(record)
-    return pending[:framed], pending[framed:]
+    """Release every newline-terminated line; retain only an incomplete final line."""
+    boundary = pending.rfind("\n") + 1
+    return pending[:boundary], pending[boundary:]
 
 
 def redact_text(text: str, known: Iterable[str] = (), *, decode: bool = True) -> str:
     """``text`` with every credential this module recognises replaced by MASK."""
-
     known = list(known)
+    return ''.join(
+        _redact_line(record[:-1] if terminated else record, known, decode)
+        + ('\n' if terminated else '')
+        for record, terminated in _shell_records(text)
+    )
+
+
+def _redact_line(text: str, known: list[str], decode: bool) -> str:
+    """Apply literal, variant and inert decode checks within one physical line."""
     if decode:
         text = _mask_decoded_records(text, known)
     text = mask_values(text, secret_variants(known))
@@ -527,17 +467,10 @@ def scrub(path: Path, known: Iterable[str] = ()) -> int:
 
 
 def _filter(src, dst, known: list[str]) -> None:
-    """Copy src to dst line by line, masked; a PEM private key is masked from its BEGIN line to its END line."""
-
-    in_key = False
+    """Copy src to dst with independent redaction of each physical line."""
 
     def emit(line):
-        nonlocal in_key
-        if in_key or PEM_BEGIN.search(line):
-            in_key = "-----END" not in line
-            dst.write(MASK + "\n")
-        else:
-            dst.write(redact_text(line, known))
+        dst.write(redact_text(line, known))
         dst.flush()
 
     pending = ""

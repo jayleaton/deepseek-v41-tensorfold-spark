@@ -54,9 +54,13 @@ class World:
     def run(self, argv, **kwargs):
         rank = int(argv[0] == 'ssh')
         if rank:
-            assert argv[1:5] == ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
-            assert argv[5] == 'worker.example'
-            argv = shlex.split(argv[6])
+            assert argv[1:7] == ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'RemoteCommand=none']
+            assert argv[7] == 'worker.example'
+            argv = shlex.split(argv[8])
+            assert argv[:5] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin',
+                                '/usr/bin/python3', '/srv/recipe space/scripts/safe_exec.py']
+            assert argv[5] == '--timeout' and float(argv[6]) > 0 and argv[7] == '--command'
+            argv = argv[8:]
         self.calls.append((rank, argv))
         if argv[:2] == ['bash', '-c']:
             command = shlex.split(argv[2])

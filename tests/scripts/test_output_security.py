@@ -223,19 +223,39 @@ def test_pretty_json_cli_keeps_numeric_measurements(monkeypatch, capsys):
     assert doc == {**value, "echo": MASK}
 
 
+@pytest.mark.parametrize('indent', [1, 2, '\t'])
+def test_pretty_json_file_masks_before_serialization(monkeypatch, tmp_path, indent):
+    key = "invented'quoted\\value\nnext café"
+    monkeypatch.setenv('API_KEY', key)
+    value = {'items': [{'reply': key, 'prompt_tokens': 128}], 'accuracy': 1.0,
+             'aliases': [key], 'mapping': {key: 'ordinary'}}
+    path = tmp_path / 'report.json'
+    # Inspect the actual file write, then parse the saved artifact independently.
+    check_writes(monkeypatch, key)
+    safe_output.write_text(path, json.dumps(value, indent=indent) + '\n')
+    saved = path.read_text()
+    assert json.loads(saved) == {
+        'items': [{'reply': MASK, 'prompt_tokens': 128}], 'accuracy': 1.0,
+        'aliases': [MASK], 'mapping': {MASK: 'ordinary'},
+    }
+    assert saved.startswith('{\n' + str(indent if isinstance(indent, str) else ' ' * indent))
+    assert saved.endswith('\n')
+
+
 @pytest.mark.parametrize("split", ["before_newline", "after_newline", "inside_suffix", "whole" ])
-def test_stream_masks_internal_newline_keys_and_flushes_ordinary_records(split):
+def test_stream_masks_encoded_newline_keys_and_flushes_ordinary_records(split):
     key = "rr1" + "FirstLine\nSecondLineCredential"
-    index = {"before_newline": key.index("\n"), "after_newline": key.index("\n") + 1,
-             "inside_suffix": key.index("\n") + 5, "whole": len(key)}[split]
+    encoded = json.dumps(key)
+    index = {"before_newline": encoded.index('\\n'), "after_newline": encoded.index('\\n') + 2,
+             "inside_suffix": encoded.index('\\n') + 5, "whole": len(encoded)}[split]
     output = io.StringIO()
     stream = safe_output._Stream(output, [key])
     stream.write("ready\n")
     stream.flush()
     assert output.getvalue() == "ready\n", "ordinary log waited for process exit"
-    stream.write("tool: " + key[:index])
+    stream.write("tool: " + encoded[:index])
     stream.flush()
-    stream.write(key[index:] + "\n")
+    stream.write(encoded[index:] + "\n")
     stream.flush()
     leaked = contains_secret(output.getvalue(), key)
     assert not leaked, "known key crossed record boundaries"
@@ -246,15 +266,15 @@ def test_stream_masks_internal_newline_keys_and_flushes_ordinary_records(split):
     stream.finish()
 
 
-def test_stream_retains_only_possible_multiline_prefix():
+def test_stream_releases_complete_lines_even_when_they_match_multiline_prefix():
     key = "rr1" + "FirstLine\nSecondLineCredential"
     prefix = key[:key.index("\n") + 1]
     output = io.StringIO()
     stream = safe_output._Stream(output, [key])
     stream.write("ready\n" + prefix)
     stream.flush()
-    assert output.getvalue() == "ready\n"
-    assert len(stream.pending) <= len(key)
+    assert output.getvalue() == "ready\n" + prefix
+    assert stream.pending == ''
     stream.write("different continuation\n")
     stream.flush()
     assert not stream.pending
@@ -265,7 +285,7 @@ def test_shared_cli_filter_handles_known_internal_newline():
     key = "rr1" + "FirstLine\nSecondLineCredential"
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts/redact.py"), "text"],
-        input="ready\nraw: " + key + "\n", text=True,
+        input="ready\nencoded: " + json.dumps(key) + "\n", text=True,
         env=dict(os.environ, API_KEY=key), capture_output=True, timeout=15,
     )
     leaked = contains_secret(result.stdout + result.stderr, key)

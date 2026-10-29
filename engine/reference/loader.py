@@ -222,7 +222,8 @@ class RemoteSafetensorsDir(SafetensorsDir):
         self._headers, self.weight_map = headers, weight_map
 
     def _ssh(self, argv: list[str], stdin: bytes | None = None) -> bytes:
-        cmd = ["ssh", *self.ssh_opts, self.host, join_checked(argv)]
+        cmd = ["ssh", "-o", "RemoteCommand=none", *self.ssh_opts, self.host,
+               join_checked(["/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin", *argv])]
         r = supervised_run(cmd, input=stdin, capture_output=True, text=False, check=False, timeout=self.SSH_TIMEOUT)
         if r.returncode != 0:
             raise RuntimeError(f"reference ssh failed (exit {r.returncode})")

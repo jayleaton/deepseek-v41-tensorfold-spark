@@ -176,25 +176,33 @@ def test_key_loaded_during_failed_config_never_reaches_output(launchers, script,
     assert result.returncode == 43
 
 
-def test_external_private_key_blocks_are_redacted_across_chunks_and_streams(launchers):
+def test_known_private_material_is_redacted_across_chunks_and_streams(launchers):
     root, _, env, _ = launchers
     body = "unlabelled-private-material"
     begin = "-----BEGIN " + "PRIVATE KEY-----"
     end = "-----END " + "PRIVATE KEY-----"
-    # No environment value identifies this key: the PEM protocol itself must be handled.
+    # Known material is isolated from children; the output backstop also masks a
+    # fixture deliberately emitting its own copy in chunks on each stream.
+    env.update(PRIVATE_KEY=body, OPAQUE_PRIVATE_SETTING=body)
     program = ("import os\n" +
+               "assert 'PRIVATE_KEY' not in os.environ\n" +
+               "assert 'OPAQUE_PRIVATE_SETTING' not in os.environ\n" +
                "for fd in (1, 2):\n" +
                f" os.write(fd, {begin.encode()!r} + b'\\n')\n" +
-               f" os.write(fd, {body.encode()!r} + b'\\n')\n" +
-               f" os.write(fd, {end.encode()!r} + b'\\n')\n")
+               f" os.write(fd, {body[:9].encode()!r})\n" +
+               f" os.write(fd, {body[9:].encode()!r} + b'\\n')\n" +
+               f" os.write(fd, {end.encode()!r} + b'\\n')\n" +
+               " os.write(fd, b'ordinary retry diagnostic\\n')\n")
     emitter = root / 'emit-private-block.py'
     emitter.write_text(program)
     result = subprocess.run([sys.executable, str(root / 'scripts/safe_exec.py'),
                              sys.executable, str(emitter)], env=env, capture_output=True, timeout=15)
     leaked = body.encode() in result.stdout + result.stderr
     assert result.returncode == 0 and not leaked, 'private key body reached a process stream'
-    assert result.stdout.count(b'<redacted>') >= 3
-    assert result.stderr.count(b'<redacted>') >= 3
+    for output in (result.stdout, result.stderr):
+        assert output.count(b'<redacted>') >= 2
+        assert output.endswith(b'ordinary retry diagnostic\n')
+        assert end.encode() in output
 
 
 @pytest.mark.parametrize('script', ['run-zig.sh', 'serve.sh'])

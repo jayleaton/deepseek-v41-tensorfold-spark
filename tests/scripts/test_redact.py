@@ -178,7 +178,10 @@ def test_cli_argv_and_text_filter():
         env=env,
         check=True,
     ).stdout
-    assert KEY not in log and "MIIBVQ" not in log
+    assert KEY not in log
+    assert "-----BEGIN " + "PRIVATE KEY-----" not in log
+    # Physical lines are independent; a marker cannot suppress following prose.
+    assert "MIIBVQ\n" in log
 
 
 def test_mask_values_only_masks_given_values():

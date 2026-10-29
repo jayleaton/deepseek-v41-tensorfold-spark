@@ -118,10 +118,11 @@ read-only key-file transport described in OPERATIONS.
 
 Literal/known-variant masking and inert decoding remain an output backstop.
 Only records with a matching decoded credential are masked; parse/size limits do
-not turn ordinary prose into a secret. Complete Python containers (including
-pprint's implicit concatenation) are framed before publication. Environment dumps
-retain names only within their finite structural record; ordinary metrics and
-following errors remain readable.
+not turn ordinary prose into a secret. Output is strictly line-based and stateless: each complete physical line is
+checked and released immediately. Multiline Python containers are not buffered
+or reconstructed. Credential isolation, rather than output framing, protects
+pprint environment dumps. Single-line environment records retain variable names
+only; ordinary metrics and following errors remain readable.
 Docker state evidence uses a typed State allowlist and never captures Config.Env.
 The reference SSH loader also uses the checked argv/quoting supervisor; binary
 model bytes remain a data transport, and failed/unparseable responses are not
@@ -129,3 +130,13 @@ saved as metadata or diagnostics. The copied historical TP transport harness is
 an unavailable stub; use the pinned upstream checkout for qualified transport work.
 The quoting gate discovers executable code across the entire recipe, including
 reference CLIs. Synthetic test quoting has exact, reviewed call-site exceptions.
+
+Checked children also drop shell startup hooks (`BASH_ENV`, `ENV`,
+`PROMPT_COMMAND`, exported Bash functions, `SHELLOPTS`, `BASHOPTS` and `PS4`).
+Controlled Bash children disable profile and rc loading. Explicit operator CONFIG
+loading remains trusted, quiet and separate from implicit shell startup. Remote
+diagnostics run through the worker's checked supervisor under `env -i` with a
+fixed system PATH; SSH configured RemoteCommand is disabled for these commands.
+The worker checkout must contain the same shared boundary scripts. Serving keys
+remain in the separately mounted operator-owned file, never in remote session
+environment or diagnostic arguments.

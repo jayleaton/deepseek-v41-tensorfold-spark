@@ -81,8 +81,15 @@ class Backend:
                 "BatchMode=yes",
                 "-o",
                 "ConnectTimeout=3",
+                "-o",
+                "RemoteCommand=none",
                 self.config["worker_ssh"],
-                join_checked(args),
+                join_checked([
+                    "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                    "/usr/bin/python3",
+                    str(Path(self.config.get("worker_repo", Path(__file__).resolve().parents[2])) / "scripts/safe_exec.py"),
+                    "--timeout", str(timeout), "--command", *args,
+                ]),
             ]
         )
         result = supervised_run(command, capture_output=True, text=True, timeout=timeout, check=True)

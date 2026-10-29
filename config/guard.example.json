@@ -51,5 +51,6 @@
  "profiles": {},
  "qualification": "unqualified; dispatch-cost follow-up requires real one-boot alternating G-off/G1v2 Spark gates",
  "allow_clock_changes": false,
- "container_prefix": "tensorfold-zig"
+ "container_prefix": "tensorfold-zig",
+ "worker_repo": "/srv/tensorfold-recipe"
 }

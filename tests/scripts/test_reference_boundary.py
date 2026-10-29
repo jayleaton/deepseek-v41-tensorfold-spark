@@ -23,6 +23,9 @@ import shlex
 import sys
 
 words = shlex.split(sys.argv[-1])
+assert words[:4] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'python3'] or words[:4] == ['/usr/bin/env', '-i', 'PATH=/usr/sbin:/usr/bin:/sbin:/bin', 'cat']
+assert sys.argv[1:3] == ['-o', 'RemoteCommand=none']
+words = words[3:]
 assert 'API_KEY' not in os.environ
 key = FIXTURE_KEY
 Path(os.environ['REFERENCE_OBSERVER']).write_text(json.dumps({

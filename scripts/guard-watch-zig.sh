@@ -30,9 +30,10 @@ watch_filter() { safe_filter --control "$1"; }
 # always stdin, never a body or credential in Python process arguments.
 watch_predicate() { [[ "$(printf '%s' "$2" | watch_filter "$1")" == 1 ]]; }
 wssh_control() {
-    local mode=$1
+    local mode=$1 remote
     shift
-    watch_capture "$mode" ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_SSH" "$@"
+    remote=$(watch_remote "$mode" "$@") || return $?
+    watch_capture "$mode" ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none "$WORKER_SSH" "$remote"
 }
 # Config is trusted shell code; suppress diagnostics until its keys are known.
 if [[ -f "$config" ]]; then
@@ -71,7 +72,24 @@ _watch_alert() {
     log "ALERT: $message"
     [[ -z "$WATCH_ALERT" ]] || watch_run "$WATCH_ALERT" "$message" || true
 }
-wssh() { watch_run ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$WORKER_SSH" "$@"; }
+_watch_remote() {
+    local mode=$1
+    shift
+    local worker_boundary="${WORKER_REPO:-${safe_exec%/scripts/safe_exec.py}}/scripts/safe_exec.py"
+    if [[ "$mode" == text ]]; then
+        safe_quote_argv /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 \
+            "$worker_boundary" --timeout 30 --command /bin/bash --noprofile --norc -c "$*"
+    else
+        safe_quote_argv /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin /usr/bin/python3 \
+            "$worker_boundary" --timeout 30 --control "$mode" --command /bin/bash --noprofile --norc -c "$*"
+    fi
+}
+watch_remote() { safe_shell text _watch_remote "$@"; }
+wssh() {
+    local remote
+    remote=$(watch_remote text "$@") || return $?
+    watch_run ssh -n -o BatchMode=yes -o ConnectTimeout=5 -o RemoteCommand=none "$WORKER_SSH" "$remote"
+}
 _watch_lease_fresh() {
     watch_validate_numbers || return $?
     [[ -n "$WATCH_LEASE" && -f "$WATCH_LEASE" ]] || return 1

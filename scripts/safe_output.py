@@ -15,14 +15,15 @@ import warnings
 
 from redact import (
     MASK,
-    PEM_BEGIN,
     known_secrets,
+    mask_values,
     _shell_records,
     redact,
     redact_text,
     redact_argv,
     _text_name,
     secret_name,
+    secret_variants,
     split_safe_records,
     _decoded_secret,
 )
@@ -34,7 +35,7 @@ def _known():
     return _configured_secrets + known_secrets()
 
 
-def _environment_name(text, secrets=(), in_environment=False):
+def _environment_name(text, secrets=()):
     # Shell set/env/export/declare diagnostics differ in quoting, but their
     # variable record prefix is a structural name, never a value to publish.
     match = re.match(r"^(?:(?:declare|typeset|export)(?:\s+-[A-Za-z-]+)*\s+)?([A-Za-z_][A-Za-z0-9_]*)=", text)
@@ -46,8 +47,7 @@ def _environment_name(text, secrets=(), in_environment=False):
     declared = not text.startswith(name + "=")
     if (declared or name in os.environ or secret_name(name)
             or MASK in text or any(secret and secret in text[match.end():] for secret in secrets)
-            or _decoded_secret(text, list(secrets))
-            or (in_environment and not re.match(r'[-+]?\d+(?:\.\d+)?(?:[: ,]|$)', text[match.end():]))):
+            or _decoded_secret(text, list(secrets))):
         return name
     return None
 
@@ -58,29 +58,19 @@ def _environment_record(name, secrets):
 
 def _clean_text(text, secrets):
     records = []
-    in_environment = False
     for record, terminated in _shell_records(text):
         line = record[:-1] if terminated else record
         ending = "\n" if terminated else ""
-        name = _environment_name(line, secrets, in_environment)
+        name = _environment_name(line, secrets)
         if name is not None:
-            in_environment = True
             records.append(_environment_record(name, secrets) + ending)
-        elif in_environment and _function_name(line):
-            records.append(_environment_record(_function_name(line), secrets) + ending)
         else:
-            in_environment = False
             value = _container(line)
             if isinstance(value, (dict, list)):
                 records.append(json.dumps(_value(value, secrets), ensure_ascii=True) + ending)
             else:
                 records.append(redact_text(line, secrets) + ending)
     return ''.join(records)
-
-
-def _function_name(text):
-    match = re.match(r'([A-Za-z_]\w*)\s*\(\s*\)\s*\{', text)
-    return match[1] if match else None
 
 
 def _environment_names(value, secrets):
@@ -135,7 +125,7 @@ def _value(value, secrets):
             # Python diagnostics permit tuple/bytes keys, whereas JSON permits
             # scalar keys only. Preserve their sanitized spelling as a string.
             if isinstance(key, str):
-                name = redact_text(key, secrets)
+                name = redact_text(mask_values(key, secret_variants(secrets)), secrets)
             elif key is None or isinstance(key, (bool, int, float)):
                 name = key
             else:
@@ -149,10 +139,11 @@ def _value(value, secrets):
     if isinstance(value, (list, tuple)):
         # Preserve credential flag/value pairing in saved command displays.
         if value and all(isinstance(item, str) for item in value):
-            return [_clean_text(item, secrets) for item in redact_argv(value, secrets)]
+            return [_value(item, secrets) for item in redact_argv(value, secrets)]
         return [_value(item, secrets) for item in value]
     if isinstance(value, str):
-        return _clean_text(value, secrets)
+        # A parsed string is a complete value, including embedded newlines.
+        return _clean_text(mask_values(value, secret_variants(secrets)), secrets)
     if value is None or isinstance(value, (bool, int, float)):
         return redact(value, secrets)
     # literal_eval also accepts bytes, complex numbers and Ellipsis. A safe
@@ -164,9 +155,6 @@ def _value(value, secrets):
 def clean(text, known=()):
     text = str(text)
     secrets = list(known) + _known()
-    value = _container(text)
-    if isinstance(value, (dict, list)):
-        return json.dumps(_value(value, secrets), ensure_ascii=True)
     return _clean_text(text, secrets)
 
 
@@ -192,14 +180,28 @@ def dump(value, stream, **kwargs):
 
 
 def write_text(path, text, **kwargs):
-    return Path(path).write_text(clean(text), **kwargs)
+    """Sanitize a complete JSON document structurally; other text uses independent lines."""
+    text = str(text)
+    try:
+        value = json.loads(text)
+    except (ValueError, TypeError, RecursionError):
+        value = None
+    if isinstance(value, (dict, list)):
+        # A complete file has a structural boundary, unlike a live child stream.
+        # Mask values before serialization so redaction cannot invalidate JSON.
+        indentation = re.search(r'\n([ \t]+)\S', text)
+        sanitized = json.dumps(_value(value, _known()), ensure_ascii=True,
+                               indent=indentation[1] if indentation else None)
+        if text.endswith('\n'):
+            sanitized += '\n'
+    else:
+        sanitized = clean(text)
+    return Path(path).write_text(sanitized, **kwargs)
 
 
 class _Stream:
     def __init__(self, output, secrets):
         self.output, self.secrets, self.pending = output, secrets, ""
-        self.in_key = False
-        self.in_environment = False
 
     def write(self, text):
         ready, self.pending = split_safe_records(
@@ -210,19 +212,7 @@ class _Stream:
         return len(text)
 
     def _record(self, text, end):
-        name = _environment_name(text, self.secrets + _known(), self.in_environment)
-        if name is not None:
-            self.in_environment = True
-            self.output.write(_environment_record(name, self.secrets + _known()) + end)
-        elif self.in_environment and _function_name(text):
-            self.output.write(_environment_record(_function_name(text), self.secrets + _known()) + end)
-        else:
-            self.in_environment = False
-            if self.in_key or PEM_BEGIN.search(text):
-                self.in_key = "-----END" not in text
-                self.output.write(MASK + end)
-            else:
-                self.output.write(_clean_record(text, self.secrets) + end)
+        self.output.write(_clean_text(text, self.secrets + _known()) + end)
 
     def flush(self):
         # Hold partial records so a credential split over writes is never exposed.
@@ -235,21 +225,13 @@ class _Stream:
         self.output.flush()
 
     def write_sanitized(self, text):
-        if self.pending or self.in_key:
+        if self.pending:
             self.write(text)
         else:
             self.output.write(text)
 
     def isatty(self):
         return False
-
-
-def _clean_record(text, secrets):
-    value = _container(text)
-    secrets = secrets + _known()
-    if isinstance(value, (dict, list)):
-        return json.dumps(_value(value, secrets), ensure_ascii=True)
-    return _clean_text(text, secrets)
 
 
 def _cli_secrets(argv):
