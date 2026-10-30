@@ -37,6 +37,7 @@ SOURCES = {
     'scripts/build-native.sh': {'"$safe_dir/safe_shell.sh"'},
     'scripts/check-zig-image.sh': {'"$safe_dir/safe_shell.sh"'},
     'docker/zig/fetch-source.sh': {'"$safe_dir/../../scripts/safe_shell.sh"'},
+    'scripts/fetch-reference.sh': {'"$safe_dir/safe_shell.sh"'},
 }
 # Checked argv forwarding is reviewed at these exact sites. It never permits a
 # raw dynamic command node; that remains exclusive to safe_shell's function adapter.

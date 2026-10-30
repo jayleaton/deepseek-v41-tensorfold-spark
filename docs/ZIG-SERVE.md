@@ -54,11 +54,28 @@ The token map is produced by the pinned upstream `zig/dsv41_token_map.zig` tool.
 support alone does not establish complete asset or serving qualification.
 
 RoPE and family Triton AOT still require Python/Torch/Triton in an isolated generator environment.
-The existing generators under `engine/zig/tools/zig` and `engine/kernels` are retained unchanged;
-their historical reference dependencies remain pending the upstream-equivalence audit. These produce files
-consumed by native code; the serving image contains no Python inference runtime. Keep Triton 3.7.1 and ptxas 13.3.73
-and source/toolchain hashes with the assets. A new kernel generator, including #71, requires separate arithmetic and
-device qualification and regenerated AOT. Do not silently adopt it with a recipe update.
+The generators under `engine/zig/tools/zig` import a build-only Python reference tree, which the pin does not ship.
+`scripts/fetch-reference.sh` rebuilds it exactly: TensorFold 0.6.0 at `c4646171`, plus the recipe's three historical
+patches read from commit `391d677b` and checked against pinned SHA-256 values. Its `sigs.json` equals the pin's own
+`aot-sigs.json` fixture. These produce files consumed by native code; the serving image contains no Python inference
+runtime. Keep Triton 3.7.1 and ptxas 13.3.73 and source/toolchain hashes with the assets. A new kernel generator,
+including #71, requires separate arithmetic and device qualification and regenerated AOT. Do not silently adopt it
+with a recipe update.
+
+```bash
+scripts/fetch-reference.sh build/reference    # new directory; a full clone reads the patches from local history
+export PY_SOURCE="$PWD/build/reference/src"
+set -a; source config/prod-zig.env; set +a    # MODEL_DIR, ASSETS_DIR, STATE_DIR, TF_DSV41_CONTEXT
+(cd engine/zig && python tools/zig/triton_fill.py sigs --py "$PY_SOURCE" --out "$ASSETS_DIR/sigs.json")
+scripts/run-zig.sh 0 --check-aot   # writes STATE_DIR/aot-needs-r0.json; reports the variants still missing
+(cd engine/zig && python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$STATE_DIR/aot-needs-r0.json" \
+  --options tools/zig/dsv41_triton_options.json --arch 121 --have "$ASSETS_DIR/aot" --out "$ASSETS_DIR/aot")
+PYTHONPATH="$PY_SOURCE" python engine/zig/tools/zig/dsv41_rope_tables.py --config "$MODEL_DIR/config.json" \
+  --out "$ASSETS_DIR/rope.bin"   # rows: TF_DSV41_CONTEXT + 2048
+```
+
+`TF_REFERENCE_FETCH=1 pytest tests/scripts/test_reference_source.py` repeats the fetch on a clean host and generates
+`rope.bin` and `sigs.json` from it when Torch and Triton are installed.
 
 Enumerate with the actual native image and serving environment. `scripts/run-zig.sh N --check-aot` runs host-only
 `tf-dsv41 aot-needs SIGS OUT` with no GPU exposed, then checks every specialization against the local AOT manifest
