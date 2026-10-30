@@ -64,6 +64,7 @@ RANK = {OK: 0, INFO: 0, WARN: 1, FAIL: 2}
 ENGRAM_MAGIC = 0x31344E4531565344  # b"DSV41EN1" little-endian
 ENGRAM_HEADER = 4096
 ENGRAM_ROW = 264
+ENGRAM_NAME = re.compile(r"^engram-l(\d+)-r(\d+)of(\d+)\.bin$")
 DEFAULT_LAYERS = (1, 14)  # docs/ZIG-SERVE.md: engram-l{1,14}-r{rank}of2.bin
 NETWORK_FS = {
     "nfs",
@@ -310,7 +311,16 @@ def check_engram(
         else:
             rep.add("engram-fs", OK, where, **m)
     files = sorted(Path(real).glob("engram-l*-r*of*.bin"))
-    ranks = sorted({int(re.search(r"-r(\d+)of", p.name)[1]) for p in files})
+    malformed = [p.name for p in files if not ENGRAM_NAME.match(p.name)]
+    if malformed:
+        rep.add(
+            "engram-files",
+            FAIL,
+            f"{real}: malformed Engram shard name(s) {', '.join(malformed)} "
+            "(want engram-l<layer>-r<rank>of<world>.bin)",
+        )
+        return
+    ranks = sorted({int(ENGRAM_NAME.match(p.name)[2]) for p in files})
     if rank is None:
         if len(ranks) == 1:
             rank = ranks[0]
@@ -810,35 +820,41 @@ def main(argv: list[str] | None = None) -> int:
         else (int(env["TF_TP_RANK"]) if env.get("TF_TP_RANK", "").isdigit() else None)
     )
     rep = Report()
-    rep.add(
-        "settings",
-        INFO,
-        f"from {src}" + (f", rank {rank}" if rank is not None else ""),
-        **{k: v for k, v in env.items()},
-    )
-    check_engram(
-        rep,
-        env.get("ENGRAM_DIR"),
-        rank,
-        a.world,
-        env.get("MODEL_DIR"),
-        a.mountinfo,
-        0 if a.no_probe else a.probe,
-        a.latency_warn_us,
-        a.seed,
-    )
     try:
-        mem = meminfo(a.meminfo)
-    except OSError as exc:
-        mem = {}
-        rep.add("memory", FAIL, f"{a.meminfo}: {exc}")
-    if mem:
-        check_memory(rep, env, mem, a.shm, a.world, a.min_avail_gib, a.after_boot)
-    if a.after_boot:
-        container = a.container or f"tensorfold-zig-r{rank if rank is not None else 0}"
-        check_pool(rep, env, mem, rank, a.boot_log, container, a.margin_gib)
-        if a.url:
-            check_health(rep, a.url)
+        rep.add(
+            "settings",
+            INFO,
+            f"from {src}" + (f", rank {rank}" if rank is not None else ""),
+            **{k: v for k, v in env.items()},
+        )
+        check_engram(
+            rep,
+            env.get("ENGRAM_DIR"),
+            rank,
+            a.world,
+            env.get("MODEL_DIR"),
+            a.mountinfo,
+            0 if a.no_probe else a.probe,
+            a.latency_warn_us,
+            a.seed,
+        )
+        try:
+            mem = meminfo(a.meminfo)
+        except OSError as exc:
+            mem = {}
+            rep.add("memory", FAIL, f"{a.meminfo}: {exc}")
+        if mem:
+            check_memory(rep, env, mem, a.shm, a.world, a.min_avail_gib, a.after_boot)
+        if a.after_boot:
+            container = (
+                a.container or f"tensorfold-zig-r{rank if rank is not None else 0}"
+            )
+            check_pool(rep, env, mem, rank, a.boot_log, container, a.margin_gib)
+            if a.url:
+                check_health(rep, a.url)
+    # an internal fault must fail the start gate, never read as a warning
+    except Exception as exc:  # noqa: BLE001
+        rep.add("preflight", FAIL, f"unexpected {type(exc).__name__}: {exc}")
     if a.json:
         print(json.dumps({"exit": rep.code, "checks": rep.checks}, indent=1))
     else:

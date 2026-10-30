@@ -740,10 +740,16 @@ class Run:
         self.tpu: dict[str, float] = {}
         self.sizing: dict[str, str] = {}
         self.notes: list[str] = []
+        # the same values the saved document masks: environment credentials and the explicit CLI key
+        self.secrets = known_secrets() + ([a.api_key] if len(a.api_key) >= 4 else [])
 
     def log(self, msg: str) -> None:
         if not self.a.quiet:
-            print(msg, flush=True)
+            print(self.masked(msg), flush=True)
+
+    def masked(self, text: str) -> str:
+        """``text`` with the run's credentials masked: the same values the saved document masks."""
+        return redact_text(text, self.secrets)
 
     def tokens_per_unit(self, family: str) -> float:
         """Filler tokens a unit, measured once with /tokenize (an estimate when the server has none)."""
@@ -1588,8 +1594,20 @@ def exact_key(r: dict) -> tuple[str, str]:
     return "text", r.get("text_sha256", "")
 
 
+def exact_pair(a: dict, b: dict) -> tuple[str, bool]:
+    """Whether two exact rows agree, by the strongest hash both carry: token ids, server token hash, then text."""
+    for by, field in (
+        ("token ids", "tokens_sha256"),
+        ("server token hash", "server_token_sha"),
+        ("text", "text_sha256"),
+    ):
+        if a.get(field) and b.get(field):
+            return by, a[field] == b[field]
+    return "text", a.get("text_sha256", "") == b.get("text_sha256", "")
+
+
 def exact_check(rows: list[dict], ref_doc: dict) -> dict:
-    """Each case against the reference run's: equal / different / missing, by token-id hash when both have one."""
+    """Each case against the reference run's: equal / different / missing, by the strongest hash both runs carry."""
     ref = {r["case"]: r for r in (ref_doc.get("runs") or {}).get("exact", [])}
     if not ref:
         raise SystemExit(
@@ -1605,12 +1623,7 @@ def exact_check(rows: list[dict], ref_doc: dict) -> dict:
         elif x.get("prompt_sha256") != r.get("prompt_sha256"):
             res[r["case"]] = "different prompt (another prompt-set version)"
         else:
-            if r.get("tokens_sha256") and x.get("tokens_sha256"):
-                same = r["tokens_sha256"] == x["tokens_sha256"]
-                by = "token ids"
-            else:
-                same = r.get("text_sha256") == x.get("text_sha256")
-                by = "text"
+            by, same = exact_pair(r, x)
             res[r["case"]] = ("equal" if same else "DIFFERENT") + f" ({by})"
     return res
 
@@ -2233,11 +2246,11 @@ def main(argv: list[str] | None = None) -> int:
     if a.out:
         os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
         # argv and the URL are masked above; this catches the key echoed anywhere else (a server error, a snapshot)
-        secrets = known_secrets() + ([a.api_key] if len(a.api_key) >= 4 else [])
         with open(a.out, "w") as f:
             f.write(
                 mask_values(
-                    json.dumps(doc, indent=1), [json.dumps(s)[1:-1] for s in secrets]
+                    json.dumps(doc, indent=1),
+                    [json.dumps(s)[1:-1] for s in run.secrets],
                 )
             )
         run.log(f"wrote {a.out}")
@@ -2254,22 +2267,26 @@ def metrics_text(client: Client) -> str:
 def report(doc: dict, run: Run) -> None:
     if run.a.quiet:
         return
-    print("\nsummary (medians):")
+
+    def say(line: str = "") -> None:
+        print(run.masked(line))
+
+    say("\nsummary (medians):")
     for k, v in doc["summary"].items():
-        print(f"  {k:44s} {fmt(v)}")
+        say(f"  {k:44s} {fmt(v)}")
     for line in needle_grid(doc["runs"].get("needle", [])):
-        print(line)
+        say(line)
     if doc.get("health_delta"):
-        print(
+        say(
             "health deltas: "
             + ", ".join(f"{k} {v}" for k, v in doc["health_delta"].items())
         )
     if doc.get("exact_check"):
-        print(f"exact vs {doc['exact_ref']}:")
+        say(f"exact vs {doc['exact_ref']}:")
         for k, v in doc["exact_check"].items():
-            print(f"  {k:16s} {v}")
+            say(f"  {k:16s} {v}")
     for n in dict.fromkeys(doc.get("notes") or []):
-        print("note: " + n)
+        say("note: " + n)
 
 
 if __name__ == "__main__":

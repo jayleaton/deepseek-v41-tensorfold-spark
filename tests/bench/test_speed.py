@@ -38,6 +38,7 @@ class Fake:
         self.cache = True
         self.cached_counter = True
         self.perturb = ""
+        self.reject = False  # answer a chat request 401 with the received Authorization header in the body
         self.free = threading.Event()
         self.free.set()
         self.lock = threading.Lock()
@@ -126,6 +127,11 @@ def make_handler(fake: Fake):
             body = json.loads(
                 self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}"
             )
+            if fake.reject and self.path == "/v1/chat/completions":
+                return self.send_json(
+                    401,
+                    {"error": "rejected " + (self.headers.get("Authorization") or "")},
+                )
             with fake.lock:
                 fake.inflight += 1
                 fake.totals["requests_total"] += 1
@@ -602,6 +608,39 @@ def test_exact_record_and_check(server, tmp_path):
     assert rc == 1 and doc["exact_check"]["code"].startswith("DIFFERENT")
 
 
+def test_exact_ref_compares_server_token_hash():
+    """Equal text with differing tensorfold.token_sha values is DIFFERENT, not equal (text)."""
+    ref = {
+        "runs": {
+            "exact": [
+                {
+                    "case": "x",
+                    "prompt_sha256": "p",
+                    "text_sha256": "same",
+                    "server_token_sha": "OLD",
+                }
+            ]
+        }
+    }
+    row = {
+        "case": "x",
+        "prompt_sha256": "p",
+        "text_sha256": "same",
+        "server_token_sha": "NEW",
+    }
+    assert speed.exact_check([row], ref) == {"x": "DIFFERENT (server token hash)"}
+    row["server_token_sha"] = "OLD"
+    assert speed.exact_check([row], ref) == {"x": "equal (server token hash)"}
+    # token ids stay the strongest comparison when both runs carry them
+    ref["runs"]["exact"][0]["tokens_sha256"] = "a"
+    row["tokens_sha256"] = "b"
+    assert speed.exact_check([row], ref) == {"x": "DIFFERENT (token ids)"}
+    # text is the last resort when one side has no hash the other has
+    ref["runs"]["exact"][0].pop("server_token_sha")
+    row.pop("tokens_sha256")
+    assert speed.exact_check([row], ref) == {"x": "equal (text)"}
+
+
 def test_reuse_ok_fail_unmeasured(server, tmp_path):
     args = ["--suite", "reuse", "--reuse-system", "100", "--reuse-history", "4000"]
     rc, doc = run(server, tmp_path, *args)
@@ -818,4 +857,32 @@ def test_api_key_never_saved(server, tmp_path, monkeypatch, capsys):
         assert doc["argv"][-len(base) - len(masked) :] == base + masked
     assert server.auth and all(h == "Bearer " + key for h in server.auth)
     printed = capsys.readouterr()
+    assert key not in printed.out + printed.err
+
+
+def test_api_key_masked_in_echoed_error(server, tmp_path, capsys):
+    """A 401 that echoes the Authorization header must not print the key: every log line goes through the mask."""
+    key = "DUMMY" + "-echo-" + "5b2c9f1a7e33"
+    server.reject = True
+    rc = speed.main(
+        [
+            "--url",
+            server.url,
+            "--suite",
+            "decode",
+            "--reps",
+            "1",
+            "--prompts",
+            "code",
+            "--tokens",
+            "4",
+            "--api-key",
+            key,
+            "--out",
+            str(tmp_path / "e.json"),
+        ]
+    )
+    printed = capsys.readouterr()
+    assert rc == 1
+    assert "ERROR" in printed.out and "<redacted>" in printed.out
     assert key not in printed.out + printed.err

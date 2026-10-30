@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import struct
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -300,3 +301,86 @@ def test_text_report(tmp_path, capsys):
     assert pf.main(args + ["--rank", "0", "--no-probe"]) == 0
     out = capsys.readouterr().out
     assert "[OK  ] engram-fs" in out and "preflight: ok (exit 0)" in out
+
+
+def test_malformed_shard_name_is_a_clear_failure(tmp_path, capsys):
+    """A name the launcher's glob accepts but the parser cannot read is a FAIL, not a traceback."""
+    args, engram, _ = setup(tmp_path)
+    for p in engram.glob("*.bin"):
+        p.unlink()
+    (engram / "engram-lbad-rbadof2.bin").write_bytes(b"")
+    assert pf.main(args + ["--rank", "0", "--no-probe"]) == 2
+    c, code = checks(capsys)
+    assert code == 2
+    assert c["engram-files"]["status"] == "fail"
+    assert "engram-lbad-rbadof2.bin" in c["engram-files"]["detail"]
+    assert "malformed" in c["engram-files"]["detail"]
+
+
+def test_unexpected_exception_is_a_failure(tmp_path, capsys, monkeypatch):
+    """An internal fault must exit 2 (failure), never 1 (the documented warning code)."""
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    args, _, _ = setup(tmp_path)
+    monkeypatch.setattr(pf, "check_engram", boom)
+    assert pf.main(args + ["--rank", "0", "--no-probe"]) == 2
+    c, _ = checks(capsys)
+    assert c["preflight"]["status"] == "fail"
+    assert "RuntimeError: boom" in c["preflight"]["detail"]
+
+
+def test_launcher_does_not_start_docker_after_a_preflight_failure(tmp_path):
+    """scripts/run-zig.sh stops on an unexpected preflight exit; a stub docker proves it never ran."""
+    for name in ("model", "engram", "assets", "prepared", "state", "cache", "bin"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "assets" / "aot").mkdir()
+    (tmp_path / "assets" / "engram-host.bin").write_bytes(b"")
+    (tmp_path / "assets" / "rope.bin").write_bytes(
+        b"DSV41RP1" + struct.pack("<I", 4096 + 2048)
+    )
+    (tmp_path / "engram" / "engram-lbad-rbadof2.bin").write_bytes(b"")
+    stub = tmp_path / "bin" / "docker"
+    stub.write_text("#!/bin/sh\necho stub_docker_started\n")
+    stub.chmod(0o755)
+    cfg = tmp_path / "profile.env"
+    cfg.write_text(
+        "\n".join(
+            [
+                f'{k}="{tmp_path / v}"'
+                for k, v in {
+                    "MODEL_DIR": "model",
+                    "ENGRAM_DIR": "engram",
+                    "ASSETS_DIR": "assets",
+                    "PREPARED_DIR": "prepared",
+                    "STATE_DIR": "state",
+                    "CACHE_DIR": "cache",
+                }.items()
+            ]
+            + [
+                "IMAGE=stub",
+                "TF_TP_MASTER=127.0.0.1",
+                "NCCL_SOCKET_IFNAME=lo",
+                "NCCL_IB_HCA=none",
+                "PREFLIGHT=1",
+            ]
+        )
+        + "\n"
+    )
+    env = {
+        **os.environ,
+        "CONFIG": str(cfg),
+        "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+    }
+    r = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "run-zig.sh"), "1"],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 2
+    assert "stub_docker_started" not in r.stdout
+    assert "preflight failed (exit 2)" in r.stderr

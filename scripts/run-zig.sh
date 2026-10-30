@@ -84,7 +84,7 @@ if [[ "${PREFLIGHT:-0}" == 1 ]]; then
     rc=0
     read -r -a pf_args <<< "${PREFLIGHT_ARGS:-}"
     python3 scripts/preflight.py --rank "$rank" "${pf_args[@]}" || rc=$?
-    if (( rc >= 2 )); then echo "rank $rank: preflight failed (exit $rc); fix the above or unset PREFLIGHT" >&2; exit 2; fi
+    if (( rc != 0 && rc != 1 )); then echo "rank $rank: preflight failed (exit $rc); fix the above or unset PREFLIGHT" >&2; exit 2; fi
 fi
 mkdir -p "$PREPARED_DIR" "$STATE_DIR/sessions"
 exec "${args[@]}"
