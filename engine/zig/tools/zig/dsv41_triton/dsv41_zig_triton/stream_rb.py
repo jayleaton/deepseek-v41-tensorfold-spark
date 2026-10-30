@@ -1,37 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Jay Leaton. The DeepSeek-V4.1-Flash family of TensorFold (Apache-2.0): see THIRD_PARTY_NOTICES.md.
-"""Row-blocked streaming top-k (TF_DSV41_STREAM_RB): csa2/stream_topk.py's `_stream` in positions mode with RB
-prompt rows a program instead of one, for the Zig prefill's long-context indexer (layers 2 / 8 / 14 past 4,096 visible
-keys).
-
-`_stream` scores a (row, split) program's key split tile by tile: every 64-key tile is a serial chain (the keys' L2
-load, the fp8 dequant, a [32, 128] x [128, 64] dot, the head sum across 8 warps, the threshold count, the scan, the
-append, a barrier), one row a program, nothing overlapped across tiles: per-tile latency, far from the tensor rate or
-the key bytes. Here a program holds RB consecutive rows of one split: each tile's keys are loaded and dequantized once
-for the RB rows (under the union of their masks), and the RB rows' chains interleave.
-
-Bits: each row's scores are `score_tile`'s expression on the same operands - the same q [32, 128] and w, the same key
-tile values (a key column a row cannot see is replaced by -inf after the dot, as `score_tile`'s `where`; a dot output
-element depends on its own column only), the same dot shape and warps (`SCORE_WARPS` fixes the head sum's tree) - so
-the same fp32 scores - provided each dot gets `_stream`'s MMA layout: Triton's MMAv2 warps-per-tile heuristic
-(AccelerateMatmul) switches to a chained-dots warp split ([1, 8] instead of `_stream`'s [2, 4]) when a dot's slice in
-its own region reaches another dot, which the shared key tile does, and that split reorders the head sum (1 ulp: Spark
-an earlier GPU A/B). So every row after the first runs in its own `if r < R` region (the ragged block's guard anyway): no
-dot sees another, every dot is `_stream`'s [2, 4]. Each row keeps its own buffer, count and threshold and offers its
-own keys tile by tile in the same tile order; tiles past a row's visible end (the block's later rows see one more key
-every RATIO positions) offer nothing (every key masked: no append, no compaction). Keys are unique, so a row's
-selected set is `_stream`'s, and its split buffer is `_stream`'s slot for slot. `merge` is unchanged.
-
-`_stream_rb4` (TF_DSV41_STREAM_RB=4) is not a per-row twin: it trades the per-row dots for throughput. The block's four
-queries form one [4 H, D] operand, loaded once, and each step is ONE [4 H, D] x [D, 2 BP] dot over two key tiles (an
-MMA M of 128 instead of 32), then the head sums per row and each row's offers as above; 4 warps instead of 8 (the
-offers' per-tile counts are cross-warp reductions: half the warps, cheaper barriers). Per-tile latency was the limit
-(module doc above), so fewer, larger steps pay: on GB10, `tf-dsv41-test stream-rb` at prod's shapes gives 1.60-1.84x
-`_stream` (300 / 2,047 / 2,048 rows at starts 32,768 and 129,024), and at 300K / 480K keys (2,048 rows) 1.87-1.89x.
-Its bits are not argued from the layout (`check_stream_rb.py` checks only pf / rb2's): they are established by the GPU
-A/B, which compares every row's split buffer slot for slot with `_stream`'s and passed on every case, and on a TP=2
-pair by identical replies (304K and 320K-token prompts, greedy) with and without it.
-"""
+"""Row-blocked streaming top-k; pf/rb2 retain row arithmetic, rb4 requires the FP64 score and GPU selection gates."""
 
 from __future__ import annotations
 
@@ -121,10 +90,7 @@ def _stream_rb2(QI, W, w_stride, IK, POS, R, BUF, nsplit, RATIO: tl.constexpr, H
 def _stream_rb4(QI, W, w_stride, IK, POS, R, BUF, nsplit, RATIO: tl.constexpr, H: tl.constexpr, D: tl.constexpr,
                 BP: tl.constexpr, WS: tl.constexpr, SCALE: tl.constexpr, SPLIT: tl.constexpr, K: tl.constexpr,
                 CAP: tl.constexpr, PT=None, PSH: tl.constexpr = 0, KFP8: tl.constexpr = False):
-    """Program (row block b of 4 rows, split c): `_stream` MODE 0 for rows 4b .. 4b + 3 (< R) of split c. The four
-    rows' queries are loaded once as one [4 H, D] block and scored by ONE [4 H, D] x [D, 2 BP] dot a step (two key
-    tiles), each row's scores then offered to its own buffer in key order, as `_stream` does. Built with num_warps 4,
-    num_stages 1 (dsv41_triton_options.json). See the module doc for what fixes its bits."""
+    """Score four prompt rows with one multi-row dot and offer each row's keys to its own split buffer."""
 
     b = tl.program_id(0)
     c = tl.program_id(1)
