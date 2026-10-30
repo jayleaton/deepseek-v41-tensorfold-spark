@@ -111,13 +111,14 @@ class Front(http.server.BaseHTTPRequestHandler):
         ):
             raise ValueError("ambiguous request framing")
         if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
-            blocks, total = [], 0
+            # One growing buffer bounded by payload bytes: a list of tiny chunks would cost ~60x the payload.
+            body = bytearray()
             while True:
                 line = self.rfile.readline(128)
                 if not line.endswith(b"\n"):
                     raise ValueError("invalid chunk line")
                 size = int(line.split(b";")[0], 16)
-                if size < 0 or total + size > limit:
+                if size < 0 or len(body) + size > limit:
                     raise ValueError("body exceeds bound")
                 if size == 0:
                     trailers = 0
@@ -127,11 +128,11 @@ class Front(http.server.BaseHTTPRequestHandler):
                         if trailers > 8192:
                             raise ValueError("trailers exceed bound")
                         if trailer in (b"\r\n", b"\n", b""):
-                            return b"".join(blocks)
-                blocks.append(self.rfile.read(size))
-                total += size
-                if len(blocks[-1]) != size or self.rfile.read(2) != b"\r\n":
+                            return bytes(body)
+                chunk = self.rfile.read(size)
+                if len(chunk) != size or self.rfile.read(2) != b"\r\n":
                     raise ValueError("invalid chunk framing")
+                body += chunk
         size = int(self.headers.get("Content-Length", 0))
         if not 0 <= size <= limit:
             raise ValueError("body exceeds bound")
@@ -573,5 +574,3 @@ class Server(http.server.ThreadingHTTPServer):
             super().process_request_thread(request, client_address)
         finally:
             self.connections.release()
-
-

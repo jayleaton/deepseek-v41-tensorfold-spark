@@ -386,3 +386,43 @@ test "TF_DSV41_GM_GU2: 0 / 1, and a 4,096-row segment's gate / up at GU2 over it
         try testing.expectEqual(layers.len, dn);
     }
 }
+
+test "4K workspace covers index positions at intermediate starts and ragged segments" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const cfg: Config = .{};
+    const w = try widths(a);
+    var layers: [25]u32 = undefined;
+    for (&layers, 0..) |*l, i| l.* = @intCast(i);
+    const o: block.Options = .{ .gm_v2 = .one, .limit = 299008, .rope_rows = 301056, .index_budget = 64 << 20, .taps = true };
+    var f = @import("forward.zig").Forward.init(a, &cfg, &w, o, undefined, undefined);
+    f.layers = &layers;
+    f.prefill_state.mode = .replay;
+    f.prefill_state.k4 = true;
+    var plan: buffers.Plan = .{ .a = a };
+    try fp.plan(&f, &plan, 2048);
+    // Exercise both sharing modes, without mutating process environment.
+    for ([_]bool{ false, true }) |shared| {
+        var wp: buffers.Plan = .{ .a = a };
+        const original = &f.prefill_state.k4ws.plan.?;
+        for (original.sizes.keys(), original.sizes.values()) |k, v| try wp.sizes.put(a, k, v);
+        var keep: bp.Keep = .empty;
+        if (shared) try fp.k4Trim(a, &wp, &plan, &keep);
+        for ([_]i64{ 2049, 3072, 4095, 4096 }) |n| {
+            for ([_]i64{ 0, 2048, 4096, 8192, 12288, 16384, 24576, 32768, 65536, 131072, 290816 }) |start| {
+                var tmp = std.heap.ArenaAllocator.init(testing.allocator);
+                defer tmp.deinit();
+                const ta = tmp.allocator();
+                const cs = try bp.ownCallsKeep(ta, try bp.emitReplay(ta, &cfg, &w, fp.k4Options(o), layers[0..21], n, start, .encoder), fp.K4.tag, if (shared) &keep else null);
+                var need: buffers.Plan = .{ .a = ta };
+                try need.add(cs);
+                for (need.sizes.keys(), need.sizes.values()) |role, bytes| {
+                    const have = if (std.mem.indexOf(u8, role, fp.K4.tag) != null) wp.sizes.get(role) orelse 0 else plan.sizes.get(role) orelse 0;
+                    if (have < bytes) std.debug.print("unplanned role={s} rows={d} start={d} shared={} need={d} have={d}\n", .{ role, n, start, shared, bytes, have });
+                    try testing.expect(have >= bytes);
+                }
+            }
+        }
+    }
+}
