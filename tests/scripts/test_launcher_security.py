@@ -66,7 +66,8 @@ from pathlib import Path
 if sys.argv[1] == 'image':
     fmt = sys.argv[4]
     print(os.environ['FIXTURE_REV'] if 'org.tensorfold.revision' in fmt else
-          ('linux/arm64' if 'Architecture' in fmt else 'sha256:fixture'))
+          ('linux/arm64' if 'Architecture' in fmt else
+           'sha256:' + 'f' * 64 if 'RootFS.Layers' in fmt else 'sha256:fixture'))
     sys.exit(0)
 Path(os.environ['DOCKER_CALLED']).write_text('called')
 ''' + OUTPUT)

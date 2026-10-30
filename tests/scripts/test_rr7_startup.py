@@ -65,7 +65,7 @@ def test_native_aot_config_cannot_restore_startup_only_key(tmp_path):
     revision = (ROOT / 'config/tensorfold.rev').read_text().strip()
     docker = bindir / 'docker'
     docker.write_text('#!/bin/bash\nif [[ "$1" == image ]]; then\n'
-                      f' if [[ "$4" == *revision* ]]; then echo {revision}; else echo sha256:fixture; fi\n'
+                      f' if [[ "$4" == *revision* ]]; then echo {revision}; else echo sha256:{"f" * 64}; fi\n'
                       'else\n'
                       ' if [[ -n "${API_KEY:-}" ]]; then echo true > "$OBSERVATION"; else echo false > "$OBSERVATION"; fi\n'
                       ' printf "diagnostic: %s\\n" "${API_KEY:-absent}"\n'
