@@ -16,7 +16,7 @@ do not use the retired Python serving image to fetch them or substitute another 
 If the variable names a folder without the tensors, `scripts/run-zig.sh` refuses to start (the engine would fail its
 boot). Unset it to serve images with the text bias; the boot log then says the image routing bias is missing.
 Turning images on adds the image segments' Triton variants to the AOT set: run `scripts/run-zig.sh N --check-aot`
-on each node after changing either variable (see [ZIG-SERVE](ZIG-SERVE.md#changing-serving-settings)).
+on each node after changing either variable (see [ZIG-SERVE](ZIG-SERVE.md#generate-runtime-assets)).
 
 ### Zig measurements
 

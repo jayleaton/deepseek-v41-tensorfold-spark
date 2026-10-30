@@ -74,7 +74,8 @@ there are no new vLLM measurements for the Zig path here.
 Two DGX Sparks (GB10, 128 GB each, one QSFP cable, RoCE), weights
 [`dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw`](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw).
 Baseline: [MiaAI-Lab's 2x DGX Spark vLLM kit](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks) on
-the same pair and weights, measured 2026-10-01. Ours: [`config/prod.env.example`](../config/prod.env.example) on
+the same pair and weights, measured 2026-10-01. Ours:
+[`config/prod.env.example` at 391d677](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/blob/391d677b300d9b53e64f4265a261c0b329ea58e0/config/prod.env.example) on
 engine `7bd2d67` (G19), 2026-10-05. No newer matched vLLM gate is available; these historical values are retained.
 
 ### Speed (tok/s)

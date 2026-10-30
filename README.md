@@ -25,7 +25,7 @@ until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
-was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-102930). Full engine/pack/device
+was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-10-2930). Full engine/pack/device
 qualification is still pending, and the historical production results below do not qualify this pin.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
