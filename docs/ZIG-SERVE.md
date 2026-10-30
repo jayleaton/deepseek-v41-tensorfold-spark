@@ -16,8 +16,10 @@ scripts/check-zig-image.sh tensorfold-dsv41:local
 docker save tensorfold-dsv41:local -o build-native-image.tar
 ```
 
-Transfer the image to the worker and `docker load -i build-native-image.tar`. Both nodes must have the same image ID
-and `org.tensorfold.revision` label matching `config/tensorfold.rev`. Build on ARM64 with Docker/NVIDIA build tools.
+Transfer the image to the worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
+content (`docker image inspect -f '{{json .RootFS.Layers}}'`) and an `org.tensorfold.revision` label matching
+`config/tensorfold.rev`. The image ID is not compared: Docker's containerd image store reports the manifest digest and
+overlay2 the config digest, so one loaded image has two IDs on a mixed pair. Build on ARM64 with Docker/NVIDIA build tools.
 `--build-arg ZIG_URL=<compiler-url>` selects an exact compiler archive if the default URL is unavailable.
 The runtime retains the library/NEEDED-chain and mlx5-provider check; that check must also pass on a loaded image.
 
@@ -79,7 +81,7 @@ hash every large weight/Engram file at each boot. Run --check-aot after every se
 
 `--identity` must print the same hash on both ranks; `serve.sh` preflight refuses the pair otherwise. Its inputs:
 
-- the engine revision and image ID;
+- the engine revision and the image's layer digests;
 - the model config, tokenizer and weight index, and the common assets (`rope.bin`, `engram-token-map.bin`,
   `sigs.json`, `aot/aot.json`); each rank's own Engram shards are checked, but not hashed;
 - `TF_COMM_BACKEND`, `TF_TP_MASTER` and `TF_TP_PORT`;

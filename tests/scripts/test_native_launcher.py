@@ -22,6 +22,8 @@ def launcher(tmp_path):
         "import json, os, sys\n"
         "from pathlib import Path\n"
         "if sys.argv[1] == 'image':\n"
+        "    with open(os.environ['LAUNCHER_TEST_ARGV'] + '.inspect', 'a') as log:\n"
+        "        log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "    print(os.environ['LAUNCHER_TEST_REV'] if 'org.tensorfold.revision' in sys.argv[4] else 'sha256:fixture')\n"
         "else:\n"
         "    record = {'argv': sys.argv[1:], 'forwarded': {name: os.environ.get(name) "
@@ -371,3 +373,13 @@ def test_default_effort_becomes_the_head_flag(launcher, effort, code):
         argv = shlex.split(result.stdout)
         assert argv[argv.index("--reasoning-effort") + 1] == "high"
         assert "TF_DSV41_DEFAULT_EFFORT" not in forwarded_names(argv)
+
+
+def test_pair_identity_uses_the_image_layers_not_the_store_specific_id(launcher):
+    # A loaded image keeps its layers on every node, but its .Id is the manifest digest under Docker's containerd
+    # store and the config digest under overlay2, so identical images on a mixed pair would refuse each other.
+    env, argv_file, _ = launcher
+    subprocess.run(["bash", "scripts/run-zig.sh", "0", "--identity"], cwd=ROOT, env=env, text=True, capture_output=True)
+    formats = [call[call.index("-f") + 1] for call in map(json.loads, Path(str(argv_file) + ".inspect").read_text().splitlines())]
+    assert "{{json .RootFS.Layers}}" in formats, formats
+    assert "{{.Id}}" not in formats, formats
