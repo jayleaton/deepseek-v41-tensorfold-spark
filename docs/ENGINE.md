@@ -39,6 +39,14 @@ qualify this pin.
 [`scripts/build-native.sh`](../scripts/build-native.sh) supplies the pin to [`docker/zig/Dockerfile`](../docker/zig/Dockerfile).
 The builder uses Zig 0.17.0, CUDA 13 and real sm_121 images; the runtime keeps NCCL, verbs/mlx5 and pinned cuBLAS
 library verification. A host compile with empty or synthetic GPU images is insufficient for serving.
+The image also builds the three libraries the engine loads from `lib/` beside `bin/` (upstream
+`packaging/RUNTIME.md`). Each is from a pinned source, and each is checked for the engine's entry points and its version:
+- `libtfgrammar.so` (`zig build grammar` over xgrammar v0.2.8 at its tag commit) for structured output and required
+  or named tool calls; without it those requests get HTTP 400;
+- libjpeg-turbo 3.1.4.1 and libwebp 1.6.0 decoders (by tarball sha256) for JPEG and WebP image input.
+
+The image's library proof refuses any other library name the binaries can open, except HIP RCCL and FFmpeg video,
+which this image does not request.
 
 Until the commit is available upstream, supply a checkout containing the pin:
 

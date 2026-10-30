@@ -8,3 +8,9 @@ The native Docker image uses NVIDIA CUDA images and libraries under NVIDIA's ter
 Historical third-party attributions remain in NOTICE even where the associated Python runtime code was removed.
 The complete earlier source and notices remain available in public release 60b6688. This branch no longer builds
 or installs the Python inference runtime or its xgrammar pip deployment.
+
+The native image also ships three libraries the engine loads from `/opt/tensorfold/lib`, each built from a pinned
+source in the image build: TensorFold's `libtfgrammar` over xgrammar v0.2.8 (Apache-2.0, with dlpack, Apache-2.0,
+and picojson, BSD-2-Clause), libjpeg-turbo 3.1.4.1's `libturbojpeg` (IJG, BSD-3-Clause and zlib licenses) and
+libwebp 1.6.0's `libwebpdecoder` (BSD-3-Clause, with its patent grant). Their notices are in
+`/opt/tensorfold/licenses/runtime-deps/`.
