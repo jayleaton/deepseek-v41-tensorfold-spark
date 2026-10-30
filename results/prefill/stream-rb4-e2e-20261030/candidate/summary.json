@@ -1,0 +1,62 @@
+{
+  "ready_s": 70.115,
+  "health": {
+    "ok": true,
+    "mode": "basic",
+    "uptime_s": 484.1,
+    "inflight": 0,
+    "oldest_s": 0.0,
+    "idle_s": 0.0,
+    "requests": 24,
+    "errors": 0,
+    "backend": "tensorfold",
+    "busy": false,
+    "requests_running": 0,
+    "requests_total": 24,
+    "prompt_tokens_total": 1171066,
+    "completion_tokens_total": 361,
+    "prefill_seconds_total": 473.100586,
+    "decode_seconds_total": 7.356354,
+    "cached_tokens_total": 0,
+    "rounds_total": 202,
+    "drafted_total": 253,
+    "accepted_total": 167,
+    "streams": {
+      "decoding": 0,
+      "prefilling": 0,
+      "max": 4
+    },
+    "context_length": 1048576,
+    "queued": 0,
+    "oldest_queued_s": 0.0,
+    "graphs": {
+      "row graphs": {
+        "held": 48,
+        "captured": 48,
+        "replayed": 362,
+        "eager": 0,
+        "floor_hits": 0,
+        "under_floor": false
+      },
+      "draft passes": {
+        "held": 4,
+        "captured": 4,
+        "replayed": 96,
+        "eager": 0,
+        "floor_hits": 0,
+        "under_floor": false
+      }
+    },
+    "rounds": {
+      "last_age_s": 0.0,
+      "last_s": 0.055,
+      "decode_s": 0.0371,
+      "decode_base_s": 0.0343,
+      "prefill_rows_s": 1492.3,
+      "prefill_base_rows_s": 289.7,
+      "slow_s": 0.0
+    }
+  },
+  "cases": 24,
+  "rb": 4
+}

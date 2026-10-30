@@ -2,17 +2,20 @@
 
 import concurrent.futures
 import copy
+import email.message
 import http.client
+import io
 import json
 import threading
 import time
+import tracemalloc
 import unittest
 from pathlib import PosixPath
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from backend import CLOCK_PROGRAM, Backend
-from front import GeneratedTokenProbe
+from front import Front, GeneratedTokenProbe
 from guard_fixtures import LADDER3, LadderFixture, Native, TransportFixture, backend_config
 from lifecycle import decision
 from guard_fixtures import ScenarioPolicy as Policy
@@ -284,6 +287,32 @@ class StabilityTests(LadderFixture, unittest.TestCase):
         self.assertFalse(probe.feed(b"data: " + b"x" * 65536))
         self.assertTrue(probe.disabled)
         self.assertFalse(probe.feed(b'\n\ndata: {"choices":[{"delta":{"content":"x"}}]}\n\n'))
+
+
+class ChunkedBodyTests(unittest.TestCase):
+    def read(self, wire, limit):
+        front = object.__new__(Front)
+        front.server = SimpleNamespace(config={"limits": {"max_body_bytes": limit}})
+        front.headers = email.message.Message()
+        front.headers["Transfer-Encoding"] = "chunked"
+        front.rfile = io.BytesIO(wire)
+        return front.read_body()
+
+    def test_tiny_chunks_cost_bytes_not_one_object_per_chunk(self):
+        n = 200_000
+        wire = b"2\r\nab\r\n" * n + b"0\r\n\r\n"
+        tracemalloc.start()
+        try:
+            body = self.read(wire, 2 * n)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(body, b"ab" * n)
+        self.assertLess(peak, 4 * len(body))
+
+    def test_payload_bytes_over_limit_rejected(self):
+        with self.assertRaisesRegex(ValueError, "exceeds bound"):
+            self.read(b"2\r\nab\r\n" * 3 + b"0\r\n\r\n", 5)
 
 
 class AdmissionTransportTests(TransportFixture, unittest.TestCase):

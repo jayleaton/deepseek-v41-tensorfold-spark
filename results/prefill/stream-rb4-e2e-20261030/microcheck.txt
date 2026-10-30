@@ -1,0 +1,26 @@
+stream-rb: H 32, D 128, BP 64, ratio 2, SPLIT 16384, K 512, CAP 1024, FP8 keys paged (PSH 7), 5 reps (median), aot /assets/aot
+start 32768, rows 2048: 17408 keys, 2 splits
+  _stream 13.985 ms
+  bits rb4: PASS
+  _stream_rb4 7.804 ms (x1.79)
+start 32768, rows 2047: 17407 keys, 2 splits
+  _stream 14.126 ms
+  bits rb4: PASS
+  _stream_rb4 7.806 ms (x1.81)
+start 32768, rows 300: 16534 keys, 2 splits
+  _stream 2.291 ms
+  bits rb4: PASS
+  _stream_rb4 1.404 ms (x1.63)
+start 129024, rows 2048: 65536 keys, 4 splits
+  _stream 54.083 ms
+  bits rb4: PASS
+  _stream_rb4 29.030 ms (x1.86)
+start 129024, rows 2047: 65535 keys, 4 splits
+  _stream 54.015 ms
+  bits rb4: PASS
+  _stream_rb4 29.379 ms (x1.84)
+start 129024, rows 300: 64662 keys, 4 splits
+  _stream 7.914 ms
+  bits rb4: PASS
+  _stream_rb4 4.997 ms (x1.58)
+stream-rb: PASS

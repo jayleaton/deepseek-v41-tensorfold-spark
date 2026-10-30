@@ -1,0 +1,51 @@
+{
+  "case": "needle-500000",
+  "arm": "candidate",
+  "draft": true,
+  "wall_s": 216.06514172197785,
+  "response": {
+    "id": "cmpl-3c3310b314fb6495620f6d59",
+    "object": "text_completion",
+    "created": 1793353635,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "text": "COPPER-LANTERN-8315",
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 500000,
+      "completion_tokens": 10,
+      "total_tokens": 500010,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "tensorfold": {
+      "prompt": 500000,
+      "cached": 0,
+      "ttft_s": 215.9193,
+      "finish": "done",
+      "completion": 10,
+      "prefill_s": 215.8617,
+      "decode_s": 0.171,
+      "rounds": 3,
+      "drafted": 10,
+      "accepted": 8,
+      "token_ids": [
+        5055,
+        10124,
+        1647,
+        8023,
+        2551,
+        116067,
+        15,
+        31707,
+        23,
+        1
+      ]
+    }
+  }
+}

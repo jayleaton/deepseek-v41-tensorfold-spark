@@ -1,0 +1,43 @@
+{
+  "case": "short-math-plain",
+  "arm": "candidate",
+  "draft": false,
+  "wall_s": 0.22657965193502605,
+  "response": {
+    "id": "cmpl-fe37f173f79258a403045778",
+    "object": "text_completion",
+    "created": 1793353851,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "text": "391",
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 18,
+      "completion_tokens": 2,
+      "total_tokens": 20,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "tensorfold": {
+      "prompt": 18,
+      "cached": 0,
+      "ttft_s": 0.2253,
+      "finish": "done",
+      "completion": 2,
+      "prefill_s": 0.1645,
+      "decode_s": 0.0327,
+      "rounds": 1,
+      "drafted": 0,
+      "accepted": 0,
+      "token_ids": [
+        23005,
+        1
+      ]
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "setup_failures_before_inference": 2,
+  "preflight_refusals_before_window": 1,
+  "valid_window": {
+    "baseline": {
+      "requests": 24,
+      "engine_errors": 0,
+      "engine_ok": true,
+      "ranks_alive_at_end": true,
+      "cached_tokens_total": 0,
+      "error_log_lines_by_rank": [
+        0,
+        0
+      ]
+    },
+    "candidate": {
+      "requests": 24,
+      "engine_errors": 0,
+      "engine_ok": true,
+      "ranks_alive_at_end": true,
+      "cached_tokens_total": 0,
+      "error_log_lines_by_rank": [
+        0,
+        0
+      ]
+    }
+  },
+  "restoration": {
+    "restored": true,
+    "original_container_ids_unchanged": true,
+    "ready_s": 70.007,
+    "engine_ok": true,
+    "gateway_ok": true,
+    "engine_errors": 0,
+    "test_containers_running": false
+  },
+  "strict_runner_failure": {
+    "type": "AssertionError",
+    "error": "A/B mismatch: short-prose-concurrent"
+  }
+}

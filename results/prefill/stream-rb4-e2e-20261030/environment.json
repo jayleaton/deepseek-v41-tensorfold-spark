@@ -1,0 +1,83 @@
+{
+  "gpu": "NVIDIA GB10",
+  "gpu_count": 2,
+  "os": "Linux",
+  "native_version": "1.0.2",
+  "engine_source": "9131e10a with existing PR65/PR78 packaging",
+  "engine_sha256": "81682ec2f0cb942801189c1c77b7f158c48929373d7de71d22f19fc32d1b38f8",
+  "checkpoint_config_sha256": {
+    "config.json": "8716a12d34f798e991bcc8e6689b25c006dd8a9675de5653e685094503c5d864",
+    "tokenizer.json": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+    "tokenizer_config.json": "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547",
+    "model.safetensors.index.json": "1bb234f451a63d0640bd700ba11168c4b7697ea23afdd5d120da0c614fadf8ad"
+  },
+  "quantization": {
+    "quant_method": "exl3",
+    "version": "dsq-1 (exllamav3 1.5.4 quantize_exl3)",
+    "avg_bits": 2.8003,
+    "head_bits": 6.0,
+    "mtp_bits": 4.0,
+    "codebook": "mul1",
+    "out_scales": "always",
+    "calibration": {
+      "name": "calib-v4",
+      "sequences": 1239,
+      "tokens": 1215188,
+      "sha256": "88d99cb882d1627f992ae2d18ec43b23279aa8310d95689127c64ab6f67719e9"
+    },
+    "original_quantization_config": {
+      "quant_method": "fp8",
+      "activation_scheme": "dynamic",
+      "weight_block_size": [
+        32,
+        32
+      ],
+      "scale_fmt": "ue8m0",
+      "expert_dtype": "fp4"
+    },
+    "plan": "flash17"
+  },
+  "changes_between_arms": {
+    "TF_DSV41_STREAM_RB": [
+      0,
+      4
+    ]
+  },
+  "shared_test_overrides": {
+    "TF_DSV41_SESSIONS": "0",
+    "TF_DSV41_PREPARED_WRITE": "0",
+    "prompt_cache_gib": 0
+  },
+  "settings": {
+    "context": 1048576,
+    "parallel": 4,
+    "TP": 2,
+    "temperature": 0,
+    "max_tokens": 128,
+    "thinking": false,
+    "draft": true,
+    "prefill_chunk": 4096,
+    "index_kv": "fp8"
+  },
+  "original_model_revision": "1bae0e1088993b9b82de08f59de5be5a34e42170",
+  "container_image_ids": [
+    "sha256:1025d6643eb2021a7cb745c3b8030c9a11601c7063d5fa432b447b1bba8ba1ae",
+    "sha256:11c5e78ffb8f011818b944d6b92bd3ec61b9ad81c8968e1177e4493799dacdc5"
+  ],
+  "aot_toolchain": {
+    "triton": "3.7.1",
+    "ptxas": "13.3.73"
+  },
+  "measured_order": [
+    "baseline",
+    "candidate"
+  ],
+  "repetitions_per_request": 1,
+  "memory_class": "128 GB unified memory per device",
+  "reported_memtotal_mib_per_node": [
+    124608,
+    124608
+  ],
+  "compatibility_driver_version": "610.43.02",
+  "host_driver_version": "580.178.04"
+}

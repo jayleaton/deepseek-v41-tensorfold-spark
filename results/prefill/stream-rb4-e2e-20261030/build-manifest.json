@@ -1,0 +1,836 @@
+{
+  "candidate_commit": "2be9759fb09da9ced3ee266fc7e2464c6669fba2",
+  "compiled": 8,
+  "failed": 0,
+  "stream_rb_source_sha256": "95e23aececd0267e9d36b3a5e105a7fd9a286525bac8dbdd8f1af8affdce2aad",
+  "candidate_cubins": [
+    {
+      "fn": "_stream_rb4",
+      "hash": "8a64dfb66ec86c6cba587a36d55763a72bea0b431bbabe34d7fbca4433f481f4",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "nsplit": {
+          "int": 1
+        },
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "6193382b09e1727c9bbcb6db337f5409b4294bb5e800e8e7abdf523ea52fc298"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "596db41aa1683f18cdde63f095ace20bb08f015db76e1fe9f27738eca1efeaca",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "229ed48e10999ec07db06067a394682e6107143eb6841062e5b84adb2ef255ff"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "800a749052705897ba3412854cb8e10419bd01a91467859f59912f72d25ebd83",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "229ed48e10999ec07db06067a394682e6107143eb6841062e5b84adb2ef255ff"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "adcf4924c2a019125e61488cd3c1dc8f3c2ddc551e09c249588eb007c28cc250",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "229ed48e10999ec07db06067a394682e6107143eb6841062e5b84adb2ef255ff"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "8a26b21ee2933052d78044e0f4617935e19eceb44ef391265692663e309c238a",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "R": {
+          "int": 1
+        },
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "bd6f70c2259222c0380a1ac8a69635bafb4c1a678c56e9a55e20606eb0c3f1dc"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "b40a35fa8577d39588af504cd73f9b3e7e7d739be0d504e728d1049e3210cb0e",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "nsplit": {
+          "int": 1
+        },
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "6193382b09e1727c9bbcb6db337f5409b4294bb5e800e8e7abdf523ea52fc298"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "95919d82f17b6780ef19bd7b75c5837cdc72d9bc932c0f48fbadb253ffbaf735",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "R",
+          "type": "i32",
+          "div16": false,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "229ed48e10999ec07db06067a394682e6107143eb6841062e5b84adb2ef255ff"
+    },
+    {
+      "fn": "_stream_rb4",
+      "hash": "a0de1f978317bd5e3061474090666902572ebf2343cad502f698d6b2f47669de",
+      "name": "_stream_rb4",
+      "num_warps": 4,
+      "num_ctas": 1,
+      "shared": 40960,
+      "global_scratch": 0,
+      "global_align": 1,
+      "profile_scratch": 0,
+      "pdl": false,
+      "params": [
+        {
+          "name": "QI",
+          "type": "*bf16",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "W",
+          "type": "*fp32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "w_stride",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "IK",
+          "type": "*u8",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "POS",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "BUF",
+          "type": "*i64",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "nsplit",
+          "type": "i32",
+          "div16": true,
+          "nospec": false
+        },
+        {
+          "name": "PT",
+          "type": "*i32",
+          "div16": true,
+          "nospec": false
+        }
+      ],
+      "consts": {
+        "R": {
+          "int": 1
+        },
+        "RATIO": {
+          "int": 2
+        },
+        "H": {
+          "int": 32
+        },
+        "D": {
+          "int": 128
+        },
+        "BP": {
+          "int": 64
+        },
+        "WS": {
+          "f32": 1043662067
+        },
+        "SCALE": {
+          "f32": 1035273459
+        },
+        "SPLIT": {
+          "int": 16384
+        },
+        "K": {
+          "int": 512
+        },
+        "CAP": {
+          "int": 1024
+        },
+        "PSH": {
+          "int": 7
+        },
+        "KFP8": {
+          "int": 1
+        }
+      },
+      "filled": true,
+      "cubin_sha256": "bd6f70c2259222c0380a1ac8a69635bafb4c1a678c56e9a55e20606eb0c3f1dc"
+    }
+  ]
+}

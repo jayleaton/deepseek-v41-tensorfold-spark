@@ -1,0 +1,61 @@
+{
+  "case": "short-summary-plain",
+  "arm": "baseline",
+  "draft": false,
+  "wall_s": 0.6616046619601548,
+  "response": {
+    "id": "cmpl-9e65b77b6db12fd491f1fc99",
+    "object": "text_completion",
+    "created": 1793353291,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "text": "The release introduces a faster optional kernel, and validation compares numerical errors and generated tokens before deployment.",
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 28,
+      "completion_tokens": 20,
+      "total_tokens": 48,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "tensorfold": {
+      "prompt": 28,
+      "cached": 0,
+      "ttft_s": 0.2448,
+      "finish": "done",
+      "completion": 20,
+      "prefill_s": 0.2116,
+      "decode_s": 0.4488,
+      "rounds": 19,
+      "drafted": 0,
+      "accepted": 0,
+      "token_ids": [
+        671,
+        7917,
+        31896,
+        260,
+        13058,
+        28895,
+        29009,
+        14,
+        305,
+        22891,
+        43138,
+        19026,
+        12123,
+        305,
+        9846,
+        35977,
+        1936,
+        30269,
+        16,
+        1
+      ]
+    }
+  }
+}

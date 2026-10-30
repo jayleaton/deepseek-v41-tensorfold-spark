@@ -43,6 +43,21 @@ CPU tests use isolated fake runtimes, HTTP servers and clocks. Actual native hea
 thermal behavior, memory floors and mixed-concurrency gates remain unrun. No guard default or performance promotion
 is implied by including the source.
 
+### Short-prompt admission, sampler period and request bodies (#48)
+
+- **Short-prompt admission (off by default).** Set `decode_admission_max_prompt_tokens` in `limits` (1..2048; absent
+  or 0 is off) to let short text prompts start together. The guard then counts each generation request's prompt with
+  the engine's `/tokenize` (3 s timeout) before admission. A prompt at or under the limit does not take the prefill
+  lane and does not make later requests wait for a post-token sample. FIFO order, the in-flight limit, the admission
+  cooldown, fresh telemetry, the memory margin, its own reservation, the health check and STOP all still apply.
+  Images, other routes, a failed or slow count and watchdog probes take the normal path. Keep the limit at or below
+  the smaller of `TF_DSV41_PREFILL_CHUNK` and `TF_DSV41_PREFILL_ROWS`, so such a prompt is one prefill segment.
+- **Sampler period.** `sampler_period_s` (2.0; 0.25..2.0) sets the sampler's interval. A shorter period shortens the
+  post-token wait between long requests; each sample still opens one SSH connection to rank 1. The 6 s freshness
+  window and the per-node sample timeout do not change.
+- **Request bodies.** A chunked body is read into one buffer bounded by its payload bytes (`max_body_bytes`), so many
+  tiny chunks cost their bytes, not one object each.
+
 ### Dispatch-cost options (#66)
 
 The follow-up from @jayleaton adds `generation_verify_cache_s` (0–5 seconds) and
