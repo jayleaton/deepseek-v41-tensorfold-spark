@@ -34,6 +34,42 @@ pack/device qualification. Do not edit a pack config to bypass admission checks.
 defaults, sessions and sampling still require migration qualification; historical production results do not
 qualify this pin.
 
+## Results at this pin (2026-10-29/30)
+
+These are measured on one pair of Sparks against reference A, the engine export of public recipe `60b6688`. They are
+paired spot checks, not a full qualification.
+
+- **A/C correctness** (phase 2, C = engine `314c7a911`, two quiet ABBA pairs):
+  - 97/97 gates in every selected job.
+  - The cross-arm token differences were only in forced `tool_choice` cells. For named, C renders only the named
+    tool. For required, the prompt is the same; the token path differs and the calls are the same.
+- **H on TP2** (the benchmark harness's real-pack boot):
+  - ready, smoke "391", canary pass, strict tools pass;
+  - 2048-token greedy decode in 52.5 s;
+  - no missing Triton variant on either rank.
+- **H spot ABBA vs A** (two pairs, all four jobs CPU-quiet): 18/18 gates in every job, and 77 token comparisons per
+  pair, 0 different.
+- **This recipe's launcher at H on TP2** (`scripts/serve.sh`, the flash17 profile, image built from a bundle with
+  key-file authentication):
+  - both effective profiles carry `TF_TP_ROCE_FAST=1`, `TF_TP_MAILBOX_MAX_KB=1024`, `TF_TP_PLAN_LINK=rdma` and
+    `TF_DSV41_GRAMMAR=1`, and the running engines' environments have the same values;
+  - `--check-aot` passes on both ranks, and preflight passes;
+  - each rank logs `roce fast on`, a 1024 KiB mailbox region (`len 4202496`) and its plan link pinned to a CPU;
+  - ready in 335 s (319 s on a second boot);
+  - 401 without the key, smoke "391", and one strict required tool call with schema-valid arguments;
+  - a clean `serve.sh stop`, and the key appears in none of the receipts.
+
+| arm/A (higher is better) | C at `314c7a911` | H, pair 1 | H, pair 2 | H, median |
+| --- | ---: | ---: | ---: | ---: |
+| prefill 8K tok/s | 0.864 | 1.057 | 1.069 | **1.063** |
+| native decode, code T0, 1 stream | 0.975 | 0.992 | 1.017 | **1.004** |
+| native decode, code T0, 2 streams | 0.959 | 0.991 | 0.990 | **0.991** |
+| native decode, code T0, 4 streams | 0.958 | 0.968 | 0.977 | **0.973** |
+| tools auto, 1 stream, per stream | 0.881 | 1.058 | 0.987 | **1.022** |
+
+Still open at H: 4-stream decode is 2.7% behind A. Auto-tool calls still pay for a synchronous grammar fill on rank 0
+and whole-mask messages to the peer, which needs a lane-core redesign.
+
 ## Build and checks
 
 [`scripts/build-native.sh`](../scripts/build-native.sh) supplies the pin to [`docker/zig/Dockerfile`](../docker/zig/Dockerfile).

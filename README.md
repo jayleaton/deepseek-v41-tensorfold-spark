@@ -18,9 +18,15 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
 
-This branch migrates the recipe to upstream native serving. The pin includes flash17’s `dsq-1` admission support.
-The engine/pack/device qualification is pending; the historical production results below do not qualify this pin.
-See [ENGINE](docs/ENGINE.md) for the local checkout/bundle build route and single-pin update procedure.
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `20ad77878`, the stable
+DeepSeek head (H) of the `dsv41/upgrade-latest` branch. It includes flash17’s `dsq-1` admission support. H is not
+on upstream main yet, so build it from a local TensorFold checkout or bundle until the upstream PRs merge; see
+[ENGINE](docs/ENGINE.md).
+
+On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
+differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
+was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-102930). Full engine/pack/device
+qualification is still pending, and the historical production results below do not qualify this pin.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
 > relying on it.
