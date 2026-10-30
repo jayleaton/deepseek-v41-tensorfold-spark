@@ -21,7 +21,7 @@ def source(tmp_path):
     repo.mkdir()
     git(repo, 'init', '-q')
     git(repo, 'config', 'user.name', 'JJ Eaton')
-    git(repo, 'config', 'user.email', '58495321+jayleaton@users.noreply.github.com')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
     (repo / 'value').write_text('pinned\n')
     git(repo, 'add', 'value')
     git(repo, 'commit', '-qm', 'fixture pin')
