@@ -1,9 +1,9 @@
 """Inspect the real launcher's Docker boundary without starting a container."""
 
-import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -27,9 +27,9 @@ def launcher(tmp_path):
         "        log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "    if 'org.tensorfold.revision' in sys.argv[4]:\n"
         "        print(os.environ['LAUNCHER_TEST_REV'])\n"
-        "    elif sys.argv[4] == '{{range .RootFS.Layers}}{{println .}}{{end}}':\n"
-        "        print('sha256:' + '1' * 64)\n"
-        "        print('sha256:' + '2' * 64)\n"
+        "    elif sys.argv[4].startswith('{\"config\":'):\n"
+        "        print(json.dumps({'config': {'Env': ['PATH=/usr/bin'], 'Cmd': ['bash']}, 'layers': ['sha256:' + '1' * 64,\n"
+        "                          'sha256:' + '2' * 64], 'os': 'linux', 'architecture': 'arm64', 'variant': ''}))\n"
         "    else:\n"
         "        print('sha256:fixture')\n"
         "else:\n"
@@ -398,9 +398,9 @@ def test_default_effort_becomes_the_head_flag(launcher, effort, code):
         assert "TF_DSV41_DEFAULT_EFFORT" not in forwarded_names(argv)
 
 
-def test_pair_identity_uses_the_image_layers_not_the_store_specific_id(launcher):
-    # A loaded image keeps its layers on every node, but its .Id is the manifest digest under Docker's containerd
-    # store and the config digest under overlay2, so identical images on a mixed pair would refuse each other.
+def test_pair_identity_uses_the_image_content_not_the_store_specific_id(launcher):
+    # A loaded image keeps its config and layers on every node, but its .Id is the manifest digest under Docker's
+    # containerd store and the config digest under overlay2, so identical images on a mixed pair would refuse each other.
     env, argv_file, values = launcher
     for key in ("MODEL_DIR", "ENGRAM_DIR", "CACHE_DIR"):
         Path(values[key]).mkdir()
@@ -410,20 +410,60 @@ def test_pair_identity_uses_the_image_layers_not_the_store_specific_id(launcher)
     assert "control parse failed" not in result.stderr
     assert result.stderr.startswith("native asset check:"), result.stderr
     formats = [call[call.index("-f") + 1] for call in map(json.loads, Path(str(argv_file) + ".inspect").read_text().splitlines())]
-    assert "{{range .RootFS.Layers}}{{println .}}{{end}}" in formats, formats
+    identity = [f for f in formats if f.startswith('{"config":')]
+    assert identity and all(part in identity[0] for part in ("{{json .Config}}", "{{json .RootFS.Layers}}", "{{json .Architecture}}"))
     assert "{{.Id}}" not in formats, formats
 
 
-def test_image_layers_control_digests_the_ordered_layer_list():
-    sys.path.insert(0, str(ROOT / "scripts"))
-    from watchdog_io import filter_output
-    layers = "sha256:" + "1" * 64 + "\n" + "sha256:" + "2" * 64
-    assert filter_output("image_layers", layers + "\n") == "sha256:" + hashlib.sha256(layers.encode()).hexdigest() + "\n"
+LAYERS = ["sha256:" + "1" * 64, "sha256:" + "2" * 64]
 
 
-@pytest.mark.parametrize("raw", ["", "sha256:fixture\n", "sha256:" + "1" * 64 + " sha256:" + "2" * 64, '["sha256:' + "1" * 64 + '"]'])
-def test_image_layers_control_refuses_anything_but_one_digest_per_line(raw):
+def image(config, layers=LAYERS, **platform):
+    return json.dumps({"config": config, "layers": layers, "os": "linux", "architecture": "arm64", "variant": "",
+                       **platform})
+
+
+def identity(raw):
     sys.path.insert(0, str(ROOT / "scripts"))
     from watchdog_io import filter_output
+    return filter_output("image_identity", raw + "\n")
+
+
+RUNTIME = {"Env": ["PATH=/usr/bin", "TF_IMAGE_DEFAULT=1"], "Cmd": ["bash"], "WorkingDir": "/opt/tensorfold",
+           "Labels": {"org.tensorfold.revision": "a" * 40}}
+
+
+def test_image_identity_agrees_across_the_two_store_representations():
+    # overlay2 renders the legacy container fields and unset values as null or empty; the containerd store omits them.
+    legacy = {"Hostname": "", "Domainname": "", "User": "", "AttachStdin": False, "Tty": False, "Image": "sha256:" + "9" * 64,
+              "Entrypoint": None, "Volumes": None, "OnBuild": None, "ExposedPorts": {}, **RUNTIME}
+    assert identity(image(legacy)) == identity(image(RUNTIME, variant=None))
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}\n", identity(image(RUNTIME)))
+
+
+@pytest.mark.parametrize("change", [
+    {"Env": RUNTIME["Env"] + ["TF_DSV41_BAKED=1"]},
+    {"Entrypoint": ["/bin/sh", "-c"]},
+    {"User": "nobody"},
+    {"WorkingDir": "/"},
+])
+def test_image_identity_disagrees_on_equal_layers_with_a_different_runtime_config(change):
+    assert identity(image({**RUNTIME, **change})) != identity(image(RUNTIME))
+
+
+def test_image_identity_disagrees_on_layer_order_and_platform():
+    assert identity(image(RUNTIME, layers=LAYERS[::-1])) != identity(image(RUNTIME))
+    assert identity(image(RUNTIME, architecture="amd64")) != identity(image(RUNTIME))
+
+
+def test_image_identity_prints_only_the_digest():
+    env_value = "invented-image-env-value-7f3a"
+    out = identity(image({**RUNTIME, "Env": ["TF_PROBE=" + env_value]}))
+    assert env_value not in out and re.fullmatch(r"sha256:[0-9a-f]{64}\n", out)
+
+
+@pytest.mark.parametrize("raw", ["", "sha256:fixture", "[]", image(RUNTIME, layers=[]), image(RUNTIME, layers=["sha256:fixture"]),
+                                 image({"Env": "PATH=/usr/bin"}), image({"Entrypoint": [1]}), json.dumps({"layers": LAYERS})])
+def test_image_identity_control_refuses_anything_else(raw):
     with pytest.raises(ValueError):
-        filter_output("image_layers", raw)
+        identity(raw)

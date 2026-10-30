@@ -10,6 +10,43 @@ from safe_output import clean, clean_document
 from redact import known_secrets, check_argv
 
 
+# The image settings that change what a container runs or how it starts. Store-specific fields (.Id, RepoDigests,
+# Created, the legacy container fields) stay out, so the same image agrees across Docker's image stores.
+IMAGE_RUNTIME_CONFIG = {
+    "Env": list, "Entrypoint": list, "Cmd": list, "Shell": list, "User": str, "WorkingDir": str,
+    "StopSignal": str, "Volumes": dict, "ExposedPorts": dict, "Healthcheck": dict, "Labels": dict,
+}
+
+
+def image_identity(raw):
+    """Digest of an image's runtime config, platform and ordered layers; only the digest leaves this function."""
+    try:
+        image = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ValueError("invalid image identity") from None
+    if not isinstance(image, dict) or not isinstance(image.get("config"), dict):
+        raise ValueError("invalid image identity")
+    layers = image.get("layers")
+    if not isinstance(layers, list) or not layers or not all(
+            isinstance(layer, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", layer) for layer in layers):
+        raise ValueError("invalid image layers")
+    config = {}
+    for name, kind in IMAGE_RUNTIME_CONFIG.items():
+        item = image["config"].get(name)
+        # Stores render an unset field as absent, null or empty; all three mean unset.
+        if item is None or item == kind():
+            continue
+        if not isinstance(item, kind) or (kind is list and not all(isinstance(x, str) for x in item)):
+            raise ValueError("invalid image config")
+        config[name] = item
+    platform = [image.get(name) or "" for name in ("os", "architecture", "variant")]
+    if not all(isinstance(x, str) for x in platform):
+        raise ValueError("invalid image platform")
+    canonical = json.dumps({"config": config, "layers": layers, "platform": platform},
+                           sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
+
 def filter_output(mode, raw, known=()):
     known = list(known) + known_secrets()
     value = raw.strip()
@@ -51,12 +88,8 @@ def filter_output(mode, raw, known=()):
         if re.fullmatch(r"sha256:[A-Za-z0-9]+", value) is None:
             raise ValueError("invalid image identity")
         return value + "\n"
-    if mode == "image_layers":
-        # One layer digest per line; the image's identity is the digest of that ordered list.
-        layers = value.splitlines()
-        if not layers or not all(re.fullmatch(r"sha256:[0-9a-f]{64}", layer) for layer in layers):
-            raise ValueError("invalid image layers")
-        return "sha256:" + hashlib.sha256("\n".join(layers).encode()).hexdigest() + "\n"
+    if mode == "image_identity":
+        return image_identity(value) + "\n"
     if mode == "path":
         # Used only for mktemp-created private scratch; reject control characters.
         if not value.startswith("/") or any(ord(c) < 32 for c in value):
