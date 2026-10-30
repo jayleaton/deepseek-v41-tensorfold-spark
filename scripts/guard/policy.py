@@ -214,7 +214,11 @@ class Policy:
             for rank, row in sorted(valid.items()):
                 if row["max_zone_c"] >= thermal["hard_c"]:
                     start = self.hard_episodes.setdefault(rank, now)
-                    if now - start >= thermal["hard_seconds"]:
+                    # A fresh reading at the immediate limit stops at once; the sustained limit must hold.
+                    if row["max_zone_c"] >= thermal["immediate_hard_c"]:
+                        condition = f"temperature>={thermal['immediate_hard_c']}"
+                        fired.append({"condition": condition, "rank": rank, "value": row["max_zone_c"]})
+                    elif now - start >= thermal["hard_seconds"]:
                         condition = f"temperature>={thermal['hard_c']}"
                         fired.append({"condition": condition, "rank": rank, "value": row["max_zone_c"]})
                 if row["available_gib"] < 4:
@@ -233,7 +237,7 @@ class Policy:
                     }),
                     parse_constant=str,
                 )
-                self.terminal("sustained hard temperature or memory<4GiB", now, hard=True, stop_evidence=evidence)
+                self.terminal("hard temperature or memory<4GiB", now, hard=True, stop_evidence=evidence)
             if now - old_update > 6 or now < old_update:
                 self.data["episodes"] = {"0": None, "1": None}
             if not self.data["terminal_stop"]:

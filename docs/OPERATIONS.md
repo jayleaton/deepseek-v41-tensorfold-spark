@@ -25,9 +25,10 @@ Do not expose an unguarded alternate port to clients. `scripts/guard/profile.py`
 engine environment and optional CPU sets; `control.py` prepares/authorizes an approved profile. A snapshot alone is
 not qualification. The candidate profile's workspace floor must meet the guard's minimum before it can be approved.
 
-The default owner window is pause 92°C, resume 86°C and hard STOP at 93°C held for 30 seconds, with a 2100 MHz starting
-cap. Preserve the actual owner policy and existing cap on each host. Review the optional clock-service template and
-its drop-in before any installation; this recipe update installs or enables no service and changes no host clock.
+The default owner window is pause 92°C, resume 86°C and hard STOP at 93°C held for 30 seconds or at once on a fresh
+94°C reading, with a 2100 MHz starting cap. Preserve the actual owner policy and existing cap on each host. Review the
+optional clock-service template and its drop-in before any installation; this recipe update installs or enables no
+service and changes no host clock.
 
 When configured, `GUARD_CONFIG=<local JSON>` makes the native launcher obey `scripts/guard/lifecycle.py`: exit 75 is
 a hold and 78 is durable STOP/invalid state. It must never be overridden by automatic recovery. STOP is durable before

@@ -45,6 +45,16 @@ class NativeIntegrationTests(unittest.TestCase):
                 self.sample(1037)
                 self.assertFalse(self.policy.data["hard_stop"])
 
+    def test_immediate_temperature_stops_without_waiting(self):
+        self.sample(1001, temperature=93.9)
+        self.assertFalse(self.policy.data["hard_stop"])
+        self.sample(1002, temperature=100)
+        self.assertTrue(self.policy.data["hard_stop"])
+        fired = self.policy.data["stop_evidence"]["fired"]
+        self.assertEqual(fired, [{"condition": "temperature>=94", "rank": "0", "value": 100}])
+        self.assertTrue(json.loads((self.root / "state").read_text())["hard_stop"])
+        self.assertEqual(POLICY["immediate_hard_c"], 94)
+
     def test_memory_floor_still_stops_immediately(self):
         self.sample(1001, temperature=80, memory=3.99)
         self.assertTrue(self.policy.data["hard_stop"])

@@ -10,7 +10,8 @@
   "pause_limit": 3,
   "hard_c": 93,
   "memory_floor_gib": 4,
-  "hard_seconds": 30
+  "hard_seconds": 30,
+  "immediate_hard_c": 94
  },
  "clock_ladder_mhz": [
   2100,

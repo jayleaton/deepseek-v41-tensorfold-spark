@@ -24,6 +24,7 @@ POLICY = {
     "pause_limit": 3,
     "hard_c": 93,
     "hard_seconds": 30,
+    "immediate_hard_c": 94,
     "memory_floor_gib": 4,
 }
 # Admission keeps this much above the 4 GiB hard floor before any per-request reservation.
