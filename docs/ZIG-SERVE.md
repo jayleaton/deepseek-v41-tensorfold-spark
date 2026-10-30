@@ -154,7 +154,7 @@ for patch_file in patches/*.patch; do
   patch -d build/python-source -p1 < "$patch_file"
 done
 export PY_SOURCE="$PWD/build/python-source/src"
-export PACK=/srv/models/flash17
+export MODEL_PATH=/srv/models/flash17   # the served pack's model folder
 export ASSETS=/srv/assets/rank-0
 mkdir -p "$ASSETS"
 # Run the following in the build image/environment, from engine/zig.
@@ -171,9 +171,9 @@ python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$ASSETS/needs
   --options tools/zig/dsv41_triton_options.json --arch 121 --out "$ASSETS/aot"
 # rows default to TF_DSV41_CONTEXT + 2048 from the sourced env (1,050,624 at the 1M context)
 PYTHONPATH="$PY_SOURCE" python tools/zig/dsv41_rope_tables.py \
-  --config "$PACK/config.json" --out "$ASSETS/rope.bin"
-python tools/zig/dsv41_engram_host.py --py-src "$PY_SOURCE" --config "$PACK/config.json" \
-  --tokenizer "$PACK/tokenizer.json" --out "$ASSETS/engram-host.bin"
+  --config "$MODEL_PATH/config.json" --out "$ASSETS/rope.bin"
+python tools/zig/dsv41_engram_host.py --py-src "$PY_SOURCE" --config "$MODEL_PATH/config.json" \
+  --tokenizer "$MODEL_PATH/tokenizer.json" --out "$ASSETS/engram-host.bin"
 ```
 
 For the asset environment, build the builder stage with `docker build --target build -f docker/zig/Dockerfile
@@ -329,6 +329,11 @@ upstream TensorFold settings.
 
 `IMAGE`, `MODEL_DIR`, `ENGRAM_DIR`, `ASSETS_DIR`, `PREPARED_DIR`, `STATE_DIR`, and `CACHE_DIR` are required
 launcher inputs, not engine knobs. `HOST=localhost` and `PORT=8000` are launcher defaults for the HTTP listener.
+`PACK` selects the served pack's profile: unset or `flash17` reads `config/prod-zig.env` (unchanged), another id reads
+`config/prod-zig-<id>.env` (`PACK=eaq scripts/run-zig.sh 1`; [PACKS](PACKS.md)), and `CONFIG=<file>` still wins. A
+profile that sets `PACK=<id>` itself must agree with the selection and claims its new or empty `STATE_DIR` for that
+pack (`STATE_DIR/pack-id`); a start with another pack's state folder, or a used folder marked for no pack, is refused
+([PACKS](PACKS.md)). The launcher also refuses any engine setting still holding a `<placeholder>`.
 The maximum reply is 32768 tokens and the served model ID is `DeepSeek-V4.1-Flash-TF` in this small launcher.
 
 ### 4K prefill and its fallback
@@ -370,3 +375,10 @@ drop `KV_SPLIT` and `KV_SPLIT_COMPACT` and set `POOL_TOKENS=1400000`.
 `PREFILL_PIECES=1`, replay mode and the multi-segment AOT programs `aot-needs` lists under them.
 Do not equate the serving profile with enabling every experimental knob: the engine has more default-off paths
 than the profile uses.
+
+### Low memory headroom
+
+A larger pack (EAQ: 3.18 GiB a rank more than flash17, [PACKS](PACKS.md)), a larger pool or other software on a node
+lowers the boot check's maximum pool, sends 4K prefill pieces to 2K segments and can stop new decode CUDA graphs from
+capturing (they run eagerly while under the floor). How to see each one in `/health` and the logs, and the
+`TF_DSV41_GRAPH_FLOOR_GIB` trade-off: [KNOWN-ISSUES, low memory headroom](KNOWN-ISSUES.md#low-memory-headroom).

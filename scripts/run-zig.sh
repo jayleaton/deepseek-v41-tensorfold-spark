@@ -4,19 +4,74 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 rank=${1:?usage: run-zig.sh 0|1 [--dry-run|--check-aot]}
 [[ "$rank" == 0 || "$rank" == 1 ]] || { echo 'rank must be 0 or 1' >&2; exit 2; }
-config=${CONFIG:-config/prod-zig.env}
-[[ -f "$config" ]] || { echo "missing $config; copy config/prod-zig.env.example first" >&2; exit 2; }
+# PACK picks the served weight pack's config (docs/PACKS.md): unset or flash17 reads config/prod-zig.env (the
+# recommended flash17 profile copied there), any other id reads config/prod-zig-<id>.env (eaq:
+# config/prod-zig-eaq.env from config/prod-zig-eaq.env.example). CONFIG names a file directly and wins.
+selected=${PACK:-}
+[[ -z "$selected" || "$selected" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "PACK=$selected: use a pack id such as eaq" >&2; exit 2; }
+if [[ -z "$selected" || "$selected" == flash17 ]]; then default_config=config/prod-zig.env
+else default_config=config/prod-zig-$selected.env; fi
+config=${CONFIG:-$default_config}
+[[ -f "$config" ]] || { echo "missing $config; copy its config/*.env.example first (docs/PACKS.md)" >&2; exit 2; }
+unset PACK
 set -a
 source "$config"
 set +a
+# A config may name its pack (PACK=<id>); a selected PACK must agree with it.
+declared=${PACK:-}
+if [[ -n "$selected" && -n "$declared" && "$selected" != "$declared" ]]; then
+    echo "PACK=$selected selected, but $config is the profile of pack $declared" >&2; exit 2
+fi
 for key in IMAGE TF_TP_MASTER NCCL_SOCKET_IFNAME NCCL_IB_HCA MODEL_DIR ENGRAM_DIR ASSETS_DIR PREPARED_DIR STATE_DIR CACHE_DIR; do
     [[ -n "${!key:-}" && "${!key}" != *'<'* ]] || { echo "set $key in $config" >&2; exit 2; }
 done
-# Pass values by environment name, preserving spaces in values.
+# Pass values by environment name, preserving spaces in values. A value still holding a <placeholder> stops here:
+# some engine knobs fall back to their default on a value they cannot parse.
 envs=()
 while IFS='=' read -r key value; do
-    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*|TF_TP_ROCE_HCA) envs+=(-e "$key");; esac
+    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*|TF_TP_ROCE_HCA)
+        [[ "$value" != *'<'* ]] || { echo "set $key in $config (still the placeholder $value)" >&2; exit 2; }
+        envs+=(-e "$key");;
+    esac
 done < <(env)
+# STATE_DIR ownership, settled before anything is written into STATE_DIR (--check-aot writes aot-needs-r*.json, a
+# start makes sessions/). The draft calibration under it (calib-zig) is not keyed by pack at engine 9131e10a, so one
+# pack must never start on another pack's state. A config that names its pack claims the folder (STATE_DIR/pack-id)
+# only while it is new or empty; a used folder without pack-id (it served flash17 or q28-v2 before packs were
+# marked) is refused, never adopted. A config that names no pack (the default config/prod-zig.env) claims nothing but
+# is refused a folder marked for any pack other than the selected one (flash17 when PACK is unset).
+claim_state() {
+    local pack=${declared:-${selected:-flash17}} owner_file="$STATE_DIR/pack-id" owner tmp
+    [[ "$pack" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo "PACK=$pack in $config: use a pack id such as eaq" >&2; exit 2; }
+    mkdir -p "$STATE_DIR"
+    if [[ -n "$declared" && ! -e "$owner_file" && ! -L "$owner_file" ]]; then
+        # Empty but for another launcher's claim in flight (.pack-id.*): claim with a complete temp file hard-linked
+        # into place. ln never replaces an existing pack-id, so of racing launchers exactly one claims.
+        if [[ -z "$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 ! -name '.pack-id.*' -print -quit)" ]]; then
+            tmp=$(mktemp "$STATE_DIR/.pack-id.XXXXXX")
+            printf '%s\n' "$declared" > "$tmp"
+            ln "$tmp" "$owner_file" 2> /dev/null || true
+            rm -f "$tmp"
+        elif [[ ! -e "$owner_file" ]]; then
+            echo "STATE_DIR $STATE_DIR is in use but marked for no pack; refusing to claim it for pack $declared." >&2
+            echo "  Its draft calibration may be another pack's (docs/PACKS.md). Give $declared its own new STATE_DIR, or," >&2
+            echo "  only if this folder served $declared alone: printf '%s\\n' $declared > $owner_file" >&2
+            exit 2
+        fi
+        [[ -e "$owner_file" ]] || { echo "could not create $owner_file" >&2; exit 2; }
+    fi
+    if [[ -e "$owner_file" || -L "$owner_file" ]]; then
+        [[ -f "$owner_file" && ! -L "$owner_file" ]] || { echo "$owner_file is not a regular file" >&2; exit 2; }
+        owner=$(< "$owner_file")
+        [[ "$owner" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || {
+            echo "$owner_file holds no pack id; fix or remove it only once you know which pack used $STATE_DIR" >&2
+            exit 2; }
+        [[ "$owner" == "$pack" ]] || {
+            echo "STATE_DIR $STATE_DIR belongs to pack $owner ($owner_file), not $pack: give each pack its own" >&2
+            exit 2; }
+    fi
+}
+if [[ "${2:-}" != --dry-run ]]; then claim_state; fi
 # --check-aot: every Triton variant this env launches, checked against this rank's aot/ (host only, no GPU work).
 # Run it before the first start and after any serving-setting change; it needs the fill's sigs.json in ASSETS_DIR.
 if [[ "${2:-}" == --check-aot ]]; then

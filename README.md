@@ -75,6 +75,17 @@ scripts/run-zig.sh 1 --check-aot && scripts/run-zig.sh 1   # rank 1 node; then t
 - We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
 - Check the answer to `What is 17 * 23?` is 391 before serving traffic.
 
+## Optional second pack: EAQ
+
+flash17 stays the default. Mia's AI Lab's experimental
+[DeepSeek-V4.1-Flash-1017 EXL3 EAQ v1 2.9 bpw](https://huggingface.co/Mia-AiLab/DeepSeek-V4.1-Flash-1017-EXL3-EAQ-v1-2.9-bpw)
+pack (MIT; quality not measured by its authors) can be served as a second profile:
+`scripts/check_pack.py`, `scripts/widen_pack.py`, [`config/prod-zig-eaq.env.example`](config/prod-zig-eaq.env.example)
+and `PACK=eaq scripts/run-zig.sh`. It is 3.18 GiB a rank larger than flash17: on 2x Spark it matches flash17's
+code decode (86.5 vs 86.6 tok/s) and scores 316/356 vs 320/356 on our fixed suite (paired -1.12 pp, 95% CI
+[-4.47, +2.28]), but its KV pool is ~170K tokens (flash17: 2.1M) and it needs eager decode for stability, ~18% slower:
+[PACKS](docs/PACKS.md#results-on-2x-spark).
+
 ## Rollback to q28-v2
 
 The previous pack, q28-v2
@@ -92,6 +103,7 @@ in [INSTALL](docs/INSTALL.md).
 | | |
 | --- | --- |
 | [FLASH-1017](docs/FLASH-1017.md) | the flash17 pack: profile, memory, task results, retention, rollback |
+| [PACKS](docs/PACKS.md) | weight packs: selecting one with `PACK`, the optional EAQ pack, checking and widening a pack |
 | [ZIG-SERVE](docs/ZIG-SERVE.md) / [ZIG-RESULTS](docs/ZIG-RESULTS.md) | Zig build, TP=2 launch, exact settings, q28-v2 comparisons |
 | [PREVIOUS-RESULTS](docs/PREVIOUS-RESULTS.md) | q28-v2 kit results and the historical 2.9 bpw Python vs vLLM tables |
 | [INSTALL](docs/INSTALL.md) | requirements, weights, Engram shards, the Python recipe, watchdog |
