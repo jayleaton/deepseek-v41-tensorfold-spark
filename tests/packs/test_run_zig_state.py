@@ -1,7 +1,7 @@
 """scripts/run-zig.sh: who may use a STATE_DIR (STATE_DIR/pack-id), run for real against a stub docker.
 
 The launcher runs unchanged with CONFIG pointing at a throwaway profile; `docker` on PATH is a stub that records its
-arguments, so nothing starts and no GPU, image or network is needed.
+arguments and environment, so nothing starts and no GPU, image or network is needed.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import pytest
 from conftest import ROOT
 
 LAUNCHER = ROOT / "scripts" / "run-zig.sh"
-DOCKER = '#!/bin/sh\nprintf "%s\\n" "$@" > "$DOCKER_LOG.$$"\n'
+# Records its argv and the environment it inherited (a name-only -e forwards from there), then exits.
+DOCKER = '#!/bin/sh\nprintf "%s\\n" "$@" > "$DOCKER_LOG.$$"\nenv > "$DOCKER_LOG.env.$$"\n'
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def node(tmp_path):
     docker.chmod(0o755)
     state = tmp_path / "state"
 
-    def run(pack: str | None, *args: str, select: str | None = None):
+    def run(pack: str | None, *args: str, select: str | None = None, extra_env: dict | None = None):
         config = tmp_path / f"prod-zig-{pack or 'default'}.env"
         lines = [] if pack is None else [f"PACK={pack}"]
         lines += [f'{key}="{tmp_path / name}"' for key, name in KEYS.items()]
@@ -51,10 +52,22 @@ def node(tmp_path):
         }
         if select is not None:
             env["PACK"] = select
+        env.update(extra_env or {})
         return subprocess.run(["bash", str(LAUNCHER), "1", *args], check=False, env=env, capture_output=True, text=True)
 
+    def docker_args() -> list[str]:
+        (log,) = tmp_path.glob("docker.[0-9]*")
+        return log.read_text().splitlines()
+
+    def docker_env() -> dict:
+        (log,) = tmp_path.glob("docker.env.*")
+        pairs = (line.split("=", 1) for line in log.read_text().splitlines() if "=" in line)
+        return dict(pairs)
+
     run.state = state
-    run.ran = lambda: sorted(p.name for p in tmp_path.glob("docker.*"))
+    run.ran = lambda: sorted(p.name for p in tmp_path.glob("docker.[0-9]*"))
+    run.docker_args = docker_args
+    run.docker_env = docker_env
     return run
 
 
@@ -198,3 +211,20 @@ def test_racing_launchers_of_two_packs_leave_exactly_one_owner(node):
         assert r.returncode == (0 if f"{pack}\n" == owner else 2), (pack, r.stderr)
     assert len(node.ran()) == packs.count(owner.strip())
     assert not [p for p in os.listdir(node.state) if p.startswith(".pack-id.")]
+
+
+def test_roce_hca_reaches_the_docker_command(node):
+    """main's TF_TP_ROCE_HCA forwarding (#63) survives the pack-selection rewrite of the same loop."""
+    r = node("eaq", extra_env={"TF_TP_ROCE_HCA": "rocep1s0f0,roceP2p1s0f0"})
+    assert r.returncode == 0, r.stderr
+    args = node.docker_args()
+    i = args.index("TF_TP_ROCE_HCA")
+    assert args[i - 1] == "-e"  # a name-only -e, so docker reads it from the environment it inherits
+    assert node.docker_env()["TF_TP_ROCE_HCA"] == "rocep1s0f0,roceP2p1s0f0"
+
+
+def test_roce_hca_reaches_the_dry_run_command(node):
+    r = node("eaq", "--dry-run", extra_env={"TF_TP_ROCE_HCA": "rocep1s0f0"})
+    assert r.returncode == 0, r.stderr
+    words = r.stdout.split()
+    assert words[words.index("TF_TP_ROCE_HCA") - 1] == "-e"
