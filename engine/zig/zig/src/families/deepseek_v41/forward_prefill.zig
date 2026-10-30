@@ -134,6 +134,7 @@ fn planPrograms(f: *Forward, p: *buffers.Plan, rows: u32, layers: []const u32) !
         }
     }
     if (f.prefill_state.mode == .replay) try planReplay(f, p, rows, layers);
+    try planIndexScratch(p, rows, f.opts, f.cfg, "");
     // the multi-segment runs (TF_DSV41_PIECE_RUNS / _REPLAY_RUNS): their own roles and their rows' at `rows`
     var ra = std.heap.ArenaAllocator.init(f.gpa);
     defer ra.deinit();
@@ -195,6 +196,7 @@ fn planWorkspace(f: *Forward, wp: *buffers.Plan, rows: u32, layers: []const u32)
             const cs = try block_prefill.emitReplay(ka.allocator(), f.cfg, f.widths, o4, enc, K4.rows, start, .encoder);
             try wp.add(try block_prefill.ownCalls(ka.allocator(), cs, K4.tag));
         }
+        try planIndexScratch(wp, K4.rows, f.opts, f.cfg, K4.tag);
     }
     if (replay and f.opts.pf_tbo and rows >= 2 * block_prefill.tbo_min) {
         const enc = try encoderLayers(f, layers);
@@ -208,7 +210,44 @@ fn planWorkspace(f: *Forward, wp: *buffers.Plan, rows: u32, layers: []const u32)
             const cs = try block_prefill.emitTbo(ta.allocator(), f.cfg, f.widths, op, enc, seg, seg, start);
             try wp.add(try wsPair(ta.allocator(), cs, k4));
         }
+        try planIndexScratch(wp, seg, f.opts, f.cfg, K4.tag ++ "b~");
     }
+}
+
+/// Bound index scratch across intermediate starts and ragged segments; endpoint programs miss these maxima.
+fn planIndexScratch(p: *buffers.Plan, rows: u32, o: block.Options, cfg: *const @import("config.zig").Config, comptime tag: []const u8) !void {
+    // Ratio 1 and limit+rows conservatively bound keys for every compressed layer.
+    const keys = @max(1, o.limit + rows);
+    const topk: i64 = cfg.index_topk;
+    const step = @min(@as(i64, 16), longpf.plan(rows, keys, topk));
+    const count: usize = @intCast(@divFloor(@as(i64, rows) + step - 1, step));
+    for (0..count) |j| {
+        var name: [96]u8 = undefined;
+        const role = try std.fmt.bufPrint(&name, "L." ++ tag ++ "ix.pos{d}", .{j});
+        const g = try p.sizes.getOrPut(p.a, role);
+        if (!g.found_existing) {
+            g.key_ptr.* = try p.a.dupe(u8, role);
+            g.value_ptr.* = 4;
+        } else g.value_ptr.* = @max(g.value_ptr.*, 4);
+    }
+    const nk = @max(keys, @as(i64, cfg.candidate_blocks) * cfg.candidate_block_size);
+    // Materialised blocks use budget/12 elements, except the minimum 16-row block.
+    const elements = @max(@divFloor(o.index_budget, 12), 16 * nk);
+    // Reindex adds 4-byte candidate keys and uses budget/16.
+    const candidate_elements = @max(@divFloor(o.index_budget, 16), 16 * @as(i64, cfg.candidate_blocks) * cfg.candidate_block_size);
+    // Streaming stores 2*K int64 values per split and row, with at least one row per block.
+    const stream_bytes = @max(longpf.budget, longpf.splits(keys) * 2 * topk * 8);
+    const sizes = [_]struct { []const u8, i64 }{
+        .{ "L." ++ tag ++ "ix.scores", elements * 4 },
+        .{ "L." ++ tag ++ "ix.keys", @max(elements * 8, @divFloor(stream_bytes, 2)) },
+        .{ "L." ++ tag ++ "ix.ckeys", candidate_elements * 4 },
+        .{ "L." ++ tag ++ "ix.bkeys", (@divFloor(elements, cfg.candidate_block_size) + rows) * 8 },
+        .{ "L." ++ tag ++ "ix.stream", stream_bytes },
+    };
+    // Only enlarge roles the sampled programs actually use (no unused branch allocations).
+    for (sizes) |entry| if (p.sizes.getPtr(entry[0])) |size| {
+        size.* = @max(size.*, @as(u64, @intCast(entry[1])));
+    };
 }
 
 /// The bytes the workspace allocates at a long prompt (its roles in the namespace, 256-aligned as k4Acquire lays them
