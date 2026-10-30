@@ -1,18 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Jay Leaton. The DeepSeek-V4.1-Flash family of TensorFold (Apache-2.0): see THIRD_PARTY_NOTICES.md.
-"""Offline bit-shape check of the STREAM_RB twins against `_stream` (no GPU): compiles `_stream` (positions mode) and
-`_stream_pf` / `_stream_rb2` / `_stream_rb4` for sm_121 with the fill's options and the served constants, and checks what fixes a
-score's bits:
-
-- every dot's MMA layout (TTGIR `#mma`, warpsPerCTA: the head sum's split across the 8 warps) is `_stream`'s;
-- the score path's float ops (mma, the head-sum shuffles, fma / add / max) are `_stream`'s RB times over, and each
-  row's shuffle offsets are `_stream`'s.
-
-The interpreter cannot prove the bits (bf16), the GPU A/B is `tf-dsv41-test stream-rb` (on the GPU); this catches the
-layout drift that broke an earlier GPU A/B ([1, 8] vs [2, 4], 1 ulp). Run with the fill's venv and ptxas:
-
-    TRITON_PTXAS_PATH=<ptxas> TRITON_PTXAS_BLACKWELL_PATH=<ptxas> python check_stream_rb.py --src <tensorfold src>
-"""
+"""Offline STREAM_RB layout/build checks; run check_stream_rb_scores.py separately for the FP64 device gate."""
 
 from __future__ import annotations
 
@@ -61,7 +49,7 @@ def main() -> int:
     sig = {"QI": "*bf16", "W": "*fp32", "w_stride": "i32", "IK": "*u8", "POS": "*i32", "R": "i32", "BUF": "*i64",
            "nsplit": "i32", "PT": "*i32"}
     bad = 0
-    for n, fn in ((1, rb._stream_pf), (2, rb._stream_rb2), (4, rb._stream_rb4)):
+    for n, fn in ((1, rb._stream_pf), (2, rb._stream_rb2)):
         ttgir, ptx = comp(fn, sig, dict(common))
         checks = {
             "mma layout": (set(MMA.findall(ttgir)), ref_mma),
@@ -73,6 +61,11 @@ def main() -> int:
             ok = got == want
             bad += not ok
             print(f"{'pf' if n == 1 else f'rb{n}'} {what}: {'ok' if ok else f'FAIL {got} != {want}'}")
+    # rb4 has a different layout; its arithmetic gate is check_stream_rb_scores.py on the device.
+    k = triton.compile(ASTSource(fn=rb._stream_rb4, signature=dict(sig, **{n_: "constexpr" for n_ in common}),
+                                 constexprs=dict(common)), target=tgt,
+                       options={"num_warps": 4, "num_stages": 1, "enable_fp_fusion": True})
+    print(f"rb4 build (multi-row dot, num_warps 4): ok, {k.asm['ttgir'].count('tt.dot ')} dot(s); FP64 gate: check_stream_rb_scores.py")
     print("PASS" if bad == 0 else f"FAIL ({bad})")
     return 1 if bad else 0
 

@@ -165,8 +165,8 @@
    "launch_cooperative_grid": false,
    "launch_pdl": false,
    "num_ctas": 1,
-   "num_stages": 3,
-   "num_warps": 8
+   "num_stages": 1,
+   "num_warps": 4
   },
   "dsv41_zig_triton.scores_b._scores_b": {
    "enable_fp_fusion": true,

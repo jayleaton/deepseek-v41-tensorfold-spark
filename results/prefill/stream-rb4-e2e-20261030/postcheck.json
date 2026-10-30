@@ -1,0 +1,63 @@
+{
+  "rank_checks": [
+    {
+      "rank": 0,
+      "same_container": true,
+      "running": true,
+      "same_environment": true,
+      "same_command": true,
+      "same_mounts": true
+    },
+    {
+      "rank": 1,
+      "same_container": true,
+      "running": true,
+      "same_environment": true,
+      "same_command": true,
+      "same_mounts": true
+    }
+  ],
+  "watchdog_state_restored": true,
+  "gateway_ok": true,
+  "engine_errors": 0,
+  "smoke_response": {
+    "id": "chatcmpl-2c1d81fffcbf59864c8c5409",
+    "object": "chat.completion",
+    "created": 1793354050,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "OK"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 11,
+      "completion_tokens": 2,
+      "total_tokens": 13,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "tensorfold": {
+      "prompt": 11,
+      "cached": 0,
+      "ttft_s": 0.1564,
+      "finish": "done",
+      "completion": 2,
+      "prefill_s": 0.1128,
+      "decode_s": 0.0435,
+      "rounds": 1,
+      "drafted": 5,
+      "accepted": 2,
+      "token_ids": [
+        11932,
+        1
+      ]
+    }
+  }
+}
