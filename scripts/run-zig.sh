@@ -29,7 +29,7 @@ done
 # some engine knobs fall back to their default on a value they cannot parse.
 envs=()
 while IFS='=' read -r key value; do
-    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*)
+    case "$key" in TF_DSV41_*|GLM53_TF_*|NCCL_*|TF_TP_ROCE_HCA)
         [[ "$value" != *'<'* ]] || { echo "set $key in $config (still the placeholder $value)" >&2; exit 2; }
         envs+=(-e "$key");;
     esac
