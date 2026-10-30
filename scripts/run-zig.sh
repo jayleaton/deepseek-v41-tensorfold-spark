@@ -70,6 +70,8 @@ args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --net
 # Authentication belongs to the head server alone. The native engine reads the
 # restricted file itself; neither Docker environment nor argv carries its keys.
 if [[ "$serving" == 1 && -n "${NATIVE_AUTH_FILE:-}" ]]; then
+    # Its last check: a file named like a credential label (api-key, secret) makes the mount argument
+    # "<path>:/run/...:ro" read as "name: value", which the argument check refuses; name it here instead.
     safe_command python3 -c '
 import os, stat, sys
 path, shared = sys.argv[1], [os.path.realpath(d) for d in sys.argv[2:] if d]
@@ -87,6 +89,11 @@ try:
         raise ValueError
 except (OSError, ValueError):
     raise SystemExit("NATIVE_AUTH_FILE must be a nonempty regular file with mode 0600, owned by you or root, at an absolute symlink-free path outside the checkout and the model, engram, assets, prepared, state and cache directories")
+sys.path.insert(0, "scripts")
+from redact import redact_argv
+mount = "%s:/run/tensorfold/auth-keys:ro" % path
+if redact_argv(["-v", mount]) != ["-v", mount]:
+    raise SystemExit("NATIVE_AUTH_FILE has a file name that reads as a credential label, so its mount argument would be refused; rename the file, for example to keys")
 ' "$NATIVE_AUTH_FILE" "$PWD" "$MODEL_DIR" "$ENGRAM_DIR" "$ASSETS_DIR" "$PREPARED_DIR" "$STATE_DIR" "$CACHE_DIR" || exit 2
     args+=(-v "$NATIVE_AUTH_FILE:/run/tensorfold/auth-keys:ro")
 fi

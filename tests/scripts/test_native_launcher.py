@@ -189,6 +189,22 @@ def test_head_refuses_unsafe_auth_file_before_docker(launcher, tmp_path, kind):
     assert not argv_file.exists()
 
 
+@pytest.mark.parametrize("name", ["api-key", "secret", "auth-keys"])
+def test_head_names_a_credential_like_auth_file_name_before_docker(launcher, tmp_path, name):
+    # The mount argument "<path>:/run/...:ro" reads as "name: value" to the argument check for these names.
+    env, argv_file, _ = launcher
+    key_file = tmp_path / name
+    key_file.write_text("rr6FileCredential\n")
+    key_file.chmod(0o600)
+    env["NATIVE_AUTH_FILE"] = str(key_file)
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+    assert result.returncode == 2
+    assert "reads as a credential label" in result.stderr
+    assert "rr6FileCredential" not in result.stdout + result.stderr
+    assert not argv_file.exists()
+
+
 @pytest.mark.parametrize("shared", ["state", "cache", "model", "checkout"])
 def test_head_refuses_auth_file_inside_a_shared_directory(launcher, tmp_path, shared):
     # Every other container mounts these directories, and diagnostics read them.
