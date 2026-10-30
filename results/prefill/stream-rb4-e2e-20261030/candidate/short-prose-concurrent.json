@@ -1,0 +1,90 @@
+{
+  "case": "short-prose-concurrent",
+  "arm": "candidate",
+  "draft": true,
+  "wall_s": 1.7731215909589082,
+  "response": {
+    "id": "cmpl-2eb18eeb50529c4763ab21ef",
+    "object": "text_completion",
+    "created": 1793353902,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "text": "A cache stores frequently accessed data closer to the requester, so future requests for that data are served faster without repeating expensive computation or remote fetches. This reduces the average time per request by avoiding slower backend or network operations on cache hits.",
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 16,
+      "completion_tokens": 49,
+      "total_tokens": 65,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "tensorfold": {
+      "prompt": 16,
+      "cached": 0,
+      "ttft_s": 0.7852,
+      "finish": "done",
+      "completion": 49,
+      "prefill_s": 0.449,
+      "decode_s": 1.1032,
+      "rounds": 27,
+      "drafted": 53,
+      "accepted": 23,
+      "token_ids": [
+        35,
+        23809,
+        16765,
+        11477,
+        28619,
+        1499,
+        12721,
+        304,
+        270,
+        1578,
+        7848,
+        14,
+        832,
+        3988,
+        16649,
+        362,
+        396,
+        1499,
+        477,
+        10367,
+        13058,
+        2503,
+        42486,
+        14738,
+        29285,
+        469,
+        13629,
+        32106,
+        2990,
+        16,
+        1162,
+        18749,
+        270,
+        5004,
+        1014,
+        716,
+        5118,
+        513,
+        26776,
+        33034,
+        66097,
+        469,
+        4854,
+        7574,
+        377,
+        23809,
+        23404,
+        16,
+        1
+      ]
+    }
+  }
+}
