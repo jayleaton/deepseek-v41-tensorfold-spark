@@ -1,5 +1,6 @@
 """Inspect the real launcher's Docker boundary without starting a container."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,7 +25,13 @@ def launcher(tmp_path):
         "if sys.argv[1] == 'image':\n"
         "    with open(os.environ['LAUNCHER_TEST_ARGV'] + '.inspect', 'a') as log:\n"
         "        log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-        "    print(os.environ['LAUNCHER_TEST_REV'] if 'org.tensorfold.revision' in sys.argv[4] else 'sha256:fixture')\n"
+        "    if 'org.tensorfold.revision' in sys.argv[4]:\n"
+        "        print(os.environ['LAUNCHER_TEST_REV'])\n"
+        "    elif sys.argv[4] == '{{range .RootFS.Layers}}{{println .}}{{end}}':\n"
+        "        print('sha256:' + '1' * 64)\n"
+        "        print('sha256:' + '2' * 64)\n"
+        "    else:\n"
+        "        print('sha256:fixture')\n"
         "else:\n"
         "    record = {'argv': sys.argv[1:], 'forwarded': {name: os.environ.get(name) "
         "for name in ('TF_EXPERIMENTAL', 'TF_TP_ROCE_HCA')}}\n"
@@ -378,8 +385,29 @@ def test_default_effort_becomes_the_head_flag(launcher, effort, code):
 def test_pair_identity_uses_the_image_layers_not_the_store_specific_id(launcher):
     # A loaded image keeps its layers on every node, but its .Id is the manifest digest under Docker's containerd
     # store and the config digest under overlay2, so identical images on a mixed pair would refuse each other.
-    env, argv_file, _ = launcher
-    subprocess.run(["bash", "scripts/run-zig.sh", "0", "--identity"], cwd=ROOT, env=env, text=True, capture_output=True)
+    env, argv_file, values = launcher
+    for key in ("MODEL_DIR", "ENGRAM_DIR", "CACHE_DIR"):
+        Path(values[key]).mkdir()
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--identity"], cwd=ROOT, env=env, text=True,
+                            capture_output=True, check=False)
+    # The fixture has no pack, so the asset check is the first refusal after the image's identity was captured.
+    assert "control parse failed" not in result.stderr
+    assert result.stderr.startswith("native asset check:"), result.stderr
     formats = [call[call.index("-f") + 1] for call in map(json.loads, Path(str(argv_file) + ".inspect").read_text().splitlines())]
-    assert "{{json .RootFS.Layers}}" in formats, formats
+    assert "{{range .RootFS.Layers}}{{println .}}{{end}}" in formats, formats
     assert "{{.Id}}" not in formats, formats
+
+
+def test_image_layers_control_digests_the_ordered_layer_list():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from watchdog_io import filter_output
+    layers = "sha256:" + "1" * 64 + "\n" + "sha256:" + "2" * 64
+    assert filter_output("image_layers", layers + "\n") == "sha256:" + hashlib.sha256(layers.encode()).hexdigest() + "\n"
+
+
+@pytest.mark.parametrize("raw", ["", "sha256:fixture\n", "sha256:" + "1" * 64 + " sha256:" + "2" * 64, '["sha256:' + "1" * 64 + '"]'])
+def test_image_layers_control_refuses_anything_but_one_digest_per_line(raw):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from watchdog_io import filter_output
+    with pytest.raises(ValueError):
+        filter_output("image_layers", raw)

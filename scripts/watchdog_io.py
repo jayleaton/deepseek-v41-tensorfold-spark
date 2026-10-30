@@ -1,6 +1,7 @@
 """Typed watchdog control projection, shared by the sanitizing command boundary."""
 
 import datetime
+import hashlib
 import json
 import math
 import re
@@ -50,6 +51,12 @@ def filter_output(mode, raw, known=()):
         if re.fullmatch(r"sha256:[A-Za-z0-9]+", value) is None:
             raise ValueError("invalid image identity")
         return value + "\n"
+    if mode == "image_layers":
+        # One layer digest per line; the image's identity is the digest of that ordered list.
+        layers = value.splitlines()
+        if not layers or not all(re.fullmatch(r"sha256:[0-9a-f]{64}", layer) for layer in layers):
+            raise ValueError("invalid image layers")
+        return "sha256:" + hashlib.sha256("\n".join(layers).encode()).hexdigest() + "\n"
     if mode == "path":
         # Used only for mktemp-created private scratch; reject control characters.
         if not value.startswith("/") or any(ord(c) < 32 for c in value):

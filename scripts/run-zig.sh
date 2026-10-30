@@ -114,7 +114,7 @@ image_rev=$(safe_capture revision docker image inspect -f '{{index .Config.Label
 [[ "$image_rev" == "$rev" ]] || { echo "image engine revision differs from config/tensorfold.rev" >&2; exit 2; }
 # The image's content (its layer digests), not its .Id: that is the manifest digest under Docker's containerd image
 # store and the config digest under overlay2, so the same loaded image has two IDs on a mixed pair.
-image_id=$(safe_capture image_id docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE")
+image_id=$(safe_capture image_layers docker image inspect -f '{{range .RootFS.Layers}}{{println .}}{{end}}' "$IMAGE")
 if [[ "$mode" == --check-aot ]]; then
     [[ -f "$ASSETS_DIR/sigs.json" ]] || { echo 'missing assets/sigs.json; see docs/ZIG-SERVE.md' >&2; exit 2; }
     safe_command mkdir -p "$STATE_DIR"
