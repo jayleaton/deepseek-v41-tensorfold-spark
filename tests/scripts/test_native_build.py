@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import os
+import re
 import shutil
 import subprocess
 
@@ -70,6 +71,7 @@ sys.exit(int(os.environ['DOCKER_EXIT']))
     assert result.returncode == docker_exit, result.stderr
     call = json.loads((capture / 'call.json').read_text())
     assert f'TENSORFOLD_REV={pin}' in call['argv']
+    assert 'TENSORFOLD_REPO=https://github.com/ashhart/TensorFold.git' in call['argv']
     assert not Path(call['context']).parent.exists()
     assert sorted(p.relative_to(capture).as_posix() for p in capture.rglob('*') if p.is_file()) == [
         'call.json', 'docker/zig/Dockerfile', 'docker/zig/fetch-source.sh',
@@ -102,3 +104,47 @@ def test_supplied_bundle_fails_without_network_fallback(tmp_path, source, kind):
                             capture_output=True, text=True, timeout=10)
     assert result.returncode != 0
     assert 'github.com' not in result.stderr
+
+
+def _build_recipe(tmp_path, pin):
+    recipe = tmp_path / 'recipe'
+    for name in ('scripts/build-native.sh', 'scripts/safe_exec.py', 'scripts/safe_output.py',
+                 'scripts/redact.py', 'scripts/safe_quote.py', 'scripts/safe_shell.sh', 'scripts/watchdog_io.py',
+                 'docker/zig/Dockerfile', 'docker/zig/fetch-source.sh'):
+        target = recipe / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, target)
+    (recipe / 'config').mkdir()
+    (recipe / 'config/tensorfold.rev').write_text(pin + '\n')
+    tools = tmp_path / 'tools'
+    tools.mkdir()
+    docker = tools / 'docker'
+    docker.write_text('#!/usr/bin/env python3\nimport json,os,sys\n'
+                      "open(os.environ['DOCKER_ARGV'],'w').write(json.dumps(sys.argv[1:]))\n")
+    docker.chmod(0o700)
+    return recipe, tools
+
+
+@pytest.mark.parametrize(('repo', 'code'), [('https://github.com/example/TensorFold.git', 0),
+                                            ('https://github.com/example/TensorFold.git --upload-pack=x', 2),
+                                            ('ssh://example.invalid/TensorFold.git', 2)])
+def test_build_fetches_the_pin_from_the_configured_repository(tmp_path, repo, code):
+    recipe, tools = _build_recipe(tmp_path, 'a' * 40)
+    (recipe / 'config/tensorfold.repo').write_text(repo + '\n')
+    argv = tmp_path / 'argv.json'
+    env = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'], DOCKER_ARGV=str(argv))
+    env.pop('TENSORFOLD_SOURCE', None)
+    result = subprocess.run(['bash', 'scripts/build-native.sh', '-t', 'fixture:local'], cwd=recipe, env=env,
+                            capture_output=True, text=True, timeout=30, check=False)
+    assert result.returncode == code, result.stderr
+    if code == 0:
+        assert f'TENSORFOLD_REPO={repo}' in json.loads(argv.read_text())
+    else:
+        assert not argv.exists()
+
+
+def test_recipe_pins_a_public_repository_and_the_image_fetches_from_it():
+    repo = (ROOT / 'config/tensorfold.repo').read_text().strip()
+    assert re.fullmatch(r'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git', repo)
+    dockerfile = (ROOT / 'docker/zig/Dockerfile').read_text()
+    assert 'fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle "$TENSORFOLD_REPO"' in dockerfile

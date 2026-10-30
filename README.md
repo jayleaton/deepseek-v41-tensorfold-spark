@@ -20,8 +20,8 @@ the previously deployed engine and profile.
 
 This branch migrates the recipe to upstream native serving. The pin is TensorFold `20ad77878`, the stable
 DeepSeek head (H) of the `dsv41/upgrade-latest` branch. It includes flash17’s `dsq-1` admission support. H is not
-on upstream main yet, so build it from a local TensorFold checkout or bundle until the upstream PRs merge; see
-[ENGINE](docs/ENGINE.md).
+on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
+until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode

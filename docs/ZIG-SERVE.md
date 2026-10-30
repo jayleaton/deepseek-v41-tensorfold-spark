@@ -9,8 +9,9 @@ the previous deployed engine. Do not bypass checkpoint admission or treat this g
 ```bash
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
-TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
-# or, on a builder without an engine checkout (see ENGINE):
+scripts/build-native.sh -t tensorfold-dsv41:local   # fetches config/tensorfold.rev from config/tensorfold.repo
+# or, from a local engine checkout or bundle instead of the network (see ENGINE):
+# TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
 # TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
 scripts/check-zig-image.sh tensorfold-dsv41:local
 docker save tensorfold-dsv41:local -o build-native-image.tar

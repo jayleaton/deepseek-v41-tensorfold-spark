@@ -9,6 +9,10 @@ set -euo pipefail
 cd "${safe_exec%/*}/.."
 rev=$(safe_capture revision cat config/tensorfold.rev)
 [[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo 'invalid config/tensorfold.rev' >&2; exit 2; }
+# The repository that publishes the pin; a supplied checkout or bundle replaces the network fetch.
+repo=https://github.com/ashhart/TensorFold.git
+[[ ! -f config/tensorfold.repo ]] || { read -r repo || [[ -n "$repo" ]]; } < config/tensorfold.repo
+[[ "$repo" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$ ]] || { echo 'invalid config/tensorfold.repo' >&2; exit 2; }
 scratch=$(safe_capture path mktemp -d)
 trap 'safe_command python3 -c "import shutil,sys; shutil.rmtree(sys.argv[1])" "$scratch"' EXIT
 context="$scratch/context"
@@ -29,6 +33,6 @@ if [[ -n "${TENSORFOLD_SOURCE:-}" ]]; then
         echo 'TENSORFOLD_SOURCE must be a Git checkout or bundle' >&2; exit 2
     fi
     # Validate before handing the context to Docker, including missing prerequisites.
-    safe_command bash docker/zig/fetch-source.sh "$rev" "$scratch/verified" "$context/docker/zig/source/engine.bundle"
+    safe_command bash docker/zig/fetch-source.sh "$rev" "$scratch/verified" "$context/docker/zig/source/engine.bundle" "$repo"
 fi
-safe_command docker build -f docker/zig/Dockerfile --build-arg "TENSORFOLD_REV=$rev" "$@" "$context"
+safe_command docker build -f docker/zig/Dockerfile --build-arg "TENSORFOLD_REV=$rev" --build-arg "TENSORFOLD_REPO=$repo" "$@" "$context"

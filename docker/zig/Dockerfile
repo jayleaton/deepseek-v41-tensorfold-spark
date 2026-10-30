@@ -1,8 +1,9 @@
-# Build from the upstream commit in config/tensorfold.rev, supplied by scripts/build-native.sh.
+# Build the commit in config/tensorfold.rev from the repository in config/tensorfold.repo, supplied by scripts/build-native.sh.
 ARG CUDA_DEVEL=nvcr.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 ARG CUDA_RUNTIME=nvcr.io/nvidia/cuda:13.0.1-base-ubuntu24.04
 FROM ${CUDA_DEVEL} AS build
 ARG TENSORFOLD_REV
+ARG TENSORFOLD_REPO=https://github.com/ashhart/TensorFold.git
 ARG ZIG_VERSION=0.17.0
 ARG ZIG_URL=
 ARG ZIG_TARGET=aarch64-linux-gnu
@@ -18,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 COPY docker/zig/fetch-source.sh /ctx/recipe/docker/zig/fetch-source.sh
 COPY scripts/safe_exec.py scripts/safe_quote.py scripts/safe_output.py scripts/redact.py scripts/safe_shell.sh scripts/watchdog_io.py /ctx/recipe/scripts/
 COPY docker/zig/source/ /engine-source/
-RUN bash /ctx/recipe/docker/zig/fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle
+RUN bash /ctx/recipe/docker/zig/fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle "$TENSORFOLD_REPO"
 RUN set -eu; url="${ZIG_URL:-https://ziglang.org/download/${ZIG_VERSION}/zig-aarch64-linux-${ZIG_VERSION}.tar.xz}"; \
     mkdir -p /opt/zig && curl -fsSL "$url" | tar -xJ -C /opt/zig --strip-components=1; \
     test "$(/opt/zig/zig version)" = "$ZIG_VERSION"
