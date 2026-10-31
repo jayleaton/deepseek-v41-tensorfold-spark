@@ -1,10 +1,10 @@
 [Unit]
-Description=TensorFold Zig watchdog, every minute
+Description=Observe native TensorFold pair every minute
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=1min
-AccuracySec=10s
+OnBootSec=60
+OnUnitInactiveSec=60
+Unit=tf-zig-watchdog.service
 
 [Install]
 WantedBy=timers.target

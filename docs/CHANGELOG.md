@@ -77,3 +77,8 @@ The dense-prefill tile table (G17's sweep on GB10, 10 shapes): best 68-78 TFLOP/
 [`config/pfdense-table.json`](../config/pfdense-table.json) and `results/campaign/G17-20261004/sweep.txt`.
 
 **Still open:** the items under [What is not solved](KNOWN-ISSUES.md).
+
+## Recipe tooling from #61
+
+Speed suites and optional preflight are adapted with stdout/error and JSON credential masking. Credit @jayleaton,
+MiaAI-Lab, Coinupbtc and Eduardo Florencio / eduffd. Native-server qualification remains pending.

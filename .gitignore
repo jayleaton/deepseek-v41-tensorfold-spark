@@ -4,17 +4,17 @@ __pycache__/
 .pytest_cache/
 .venv/
 
-# run output (scripts/serve.sh run, bench clients)
+# local benchmark output
 results/run-*/
 results/tooleval/
 *.log
 *.out
 
-# local config: cp config/prod.env.example config/prod.env and fill it in
+# local config: copy a native config/prod-zig*.env.example and fill it in
 config/*.env
 .env
 
-# build context exports (docker TF_SRC=build/...)
+# native build exports
 build/
 
 # private names for scripts/check-public.sh

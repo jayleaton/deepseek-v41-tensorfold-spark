@@ -69,7 +69,7 @@ def test_shards_and_tables_io(real, tmp_path):
 
 
 def test_prefetch_lands_the_files_bytes(tmp_path):
-    from engine.serving import engram as E
+    from engine.reference import engram_io as E
 
     cfg = tiny_config()
     tmap = np.arange(cfg.vocab_size) % cfg.engram_compressed_vocab_size

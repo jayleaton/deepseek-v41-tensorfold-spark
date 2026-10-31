@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from backend import Backend
-from common import FLOOR_KEY, PLAN_KEY, POLICY, POOL_KEY, SCHEDULE_KEY, load_config, validate_ladder, validate_profiles
+from common import FLOOR_ENV, PLAN_ENV, POLICY, POOL_ENV, SCHEDULE_ENV, load_config, validate_ladder, validate_profiles
 from guard_fixtures import CPU_SETS, make_profile, make_profiles, production_config, synthetic_sha, write_config
 
 
@@ -38,7 +38,7 @@ class ProfileTests(unittest.TestCase):
     def test_valid_profile_accepted_with_and_without_cpu_sets(self):
         self.check(make_profile())
         self.check(make_profile(cpu_sets=CPU_SETS))
-        self.check(make_profile(**{FLOOR_KEY: "4"}))
+        self.check(make_profile(**{FLOOR_ENV: "4"}))
         validate_profiles(make_profiles(*map(str, range(32))))
 
     def test_profile_count_and_key_shape(self):
@@ -61,11 +61,11 @@ class ProfileTests(unittest.TestCase):
     def test_workspace_floor_below_hard_floor_rejected(self):
         for floor in ("3.99", "3.5", "0", "-4", "nan", "inf", "-inf", "four"):
             with self.subTest(floor=floor):
-                self.rejected(lambda p, value=floor: [env.update({FLOOR_KEY: value})
+                self.rejected(lambda p, value=floor: [env.update({FLOOR_ENV: value})
                                                       for env in p["inference_environment"].values()], "floor")
 
     def test_rank_mismatched_knobs_rejected(self):
-        for key, value in ((POOL_KEY, "1500000"), (FLOOR_KEY, "5.0"), (SCHEDULE_KEY, "spin")):
+        for key, value in ((POOL_ENV, "1500000"), (FLOOR_ENV, "5.0"), (SCHEDULE_ENV, "spin")):
             with self.subTest(key=key):
                 self.rejected(lambda p, k=key, v=value: p["inference_environment"]["1"].update({k: v}),
                               "both ranks")
@@ -74,21 +74,21 @@ class ProfileTests(unittest.TestCase):
     def test_bad_cuda_schedule_rejected(self):
         for value in ("blocking ", "BLOCKING", "busy", ""):
             with self.subTest(value=value):
-                self.rejected(lambda p, v=value: [env.update({SCHEDULE_KEY: v})
+                self.rejected(lambda p, v=value: [env.update({SCHEDULE_ENV: v})
                                                   for env in p["inference_environment"].values()], "TF_CUDA_SCHED")
         for value in ("auto", "spin", "yield", "blocking"):
             with self.subTest(value=value):
-                self.check(make_profile(**{SCHEDULE_KEY: value}))
+                self.check(make_profile(**{SCHEDULE_ENV: value}))
 
     def test_plan_pin_outside_cpu_set_rejected(self):
         for value in ("0", "1", "6", "4095"):
             with self.subTest(value=value):
-                self.rejected(lambda p, v=value: p["inference_environment"]["1"].update({PLAN_KEY: v}),
+                self.rejected(lambda p, v=value: p["inference_environment"]["1"].update({PLAN_ENV: v}),
                               "inside the rank")
         for value in ("2", "5"):
-            self.check(make_profile(cpu_sets=CPU_SETS, **{PLAN_KEY: value}))
+            self.check(make_profile(cpu_sets=CPU_SETS, **{PLAN_ENV: value}))
         # Without a host set the pin only has to be a canonical local index.
-        self.check(make_profile(**{PLAN_KEY: "4095"}))
+        self.check(make_profile(**{PLAN_ENV: "4095"}))
 
 
 class ConfigTests(unittest.TestCase):
@@ -166,14 +166,19 @@ class ConfigTests(unittest.TestCase):
 
     def test_invalid_profile_fails_the_whole_config(self):
         self.refused(lambda c: next(iter(c["profiles"].values()))["inference_environment"]["0"]
-                     .update({FLOOR_KEY: "3.5"}))
+                     .update({FLOOR_ENV: "3.5"}))
         self.refused(lambda c: c.update(profiles={}))
 
-    def test_example_config_needs_only_a_snapshotted_profile(self):
+    def test_example_config_requires_explicit_enablement_and_a_snapshotted_profile(self):
         example = Path(__file__).resolve().parents[2] / "config" / "guard.example.json"
         if not example.exists():
             self.skipTest("no config/guard.example.json")
         config = json.loads(example.read_text())
+        self.assertFalse(config["enabled"])
+        self.assertFalse(config["allow_clock_changes"])
+        with self.assertRaisesRegex(ValueError, "enabled"):
+            self.load(config)
+        config["enabled"] = True
         with self.assertRaisesRegex(ValueError, "profiles"):
             self.load(config)
         config["profiles"] = make_profiles("snapshot")

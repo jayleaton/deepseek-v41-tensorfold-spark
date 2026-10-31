@@ -12,11 +12,11 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from backend import Backend
-from common import FLOOR_KEY
+from common import FLOOR_ENV
 from daemon import Manager
 from guard_fixtures import CPU_SETS, backend_config, make_profile, production_config, synthetic_sha
 from lifecycle import decision
-from policy import Policy
+from guard_fixtures import ScenarioPolicy as Policy
 
 GUARD = Path(__file__).resolve().parents[2] / "scripts" / "guard"
 
@@ -77,13 +77,13 @@ class LeaseTests(unittest.TestCase):
         self.lease.write_text("")
         with self.assertRaisesRegex(ValueError, "operator_lease"):
             self.backend.identity("0", "p")
-        with patch("backend.subprocess.run") as run, self.assertRaisesRegex(ValueError, "ownership changed"):
+        with patch("backend.supervised_run") as run, self.assertRaisesRegex(ValueError, "ownership changed"):
             self.backend.hold_heals("p")
         run.assert_not_called()
 
     def test_hold_heals_stops_configured_timers_or_nothing(self):
         self.backend.profile = lambda: ("p", make_profile())
-        with patch("backend.subprocess.run") as run:
+        with patch("backend.supervised_run") as run:
             self.backend.hold_heals("p")
             run.assert_not_called()
             self.backend.config["watchdog_units"] = ["a.timer", "b.timer"]
@@ -180,7 +180,7 @@ class SnapshotTests(unittest.TestCase):
                 sha, profile = profile_module.snapshot(config, backend)
                 self.assertEqual(sha, hashlib.sha256(env_file.read_bytes()).hexdigest())
                 self.assertEqual(profile, expected)
-            low = make_profile(**{FLOOR_KEY: "3.5"})
+            low = make_profile(**{FLOOR_ENV: "3.5"})
             backend = SimpleNamespace(run=lambda rank, _: json.dumps(self.inspect(low, rank)))
             with self.assertRaisesRegex(ValueError, "floor"):
                 profile_module.snapshot(config, backend)

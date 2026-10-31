@@ -5,7 +5,7 @@ import json
 import unittest
 
 from backend import Backend
-from common import SCHEDULE_KEY, validate_profiles
+from common import SCHEDULE_ENV, validate_profiles
 from guard_fixtures import backend_config, make_profile, synthetic_sha
 
 SHA = synthetic_sha("host-wait")
@@ -13,24 +13,24 @@ SHA = synthetic_sha("host-wait")
 
 class HostWaitTests(unittest.TestCase):
     def test_schedule_is_exact_and_agreed_on_both_ranks(self):
-        profile = make_profile(**{SCHEDULE_KEY: "blocking"})
+        profile = make_profile(**{SCHEDULE_ENV: "blocking"})
         validate_profiles({SHA: profile})
         for value in ("spin", "yield", "blocking ", "auto"):
             changed = copy.deepcopy(profile)
-            changed["inference_environment"]["1"][SCHEDULE_KEY] = value
+            changed["inference_environment"]["1"][SCHEDULE_ENV] = value
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_profiles({SHA: changed})
         changed = copy.deepcopy(profile)
-        changed["inference_environment"]["1"].pop(SCHEDULE_KEY)
+        changed["inference_environment"]["1"].pop(SCHEDULE_ENV)
         with self.assertRaises(ValueError):
             validate_profiles({SHA: changed})
         for env in changed["inference_environment"].values():
-            env.pop(SCHEDULE_KEY, None)
+            env.pop(SCHEDULE_ENV, None)
         validate_profiles({SHA: changed})
 
     def test_identity_covers_global_cuda_schedule_and_forwarded_roce_knob(self):
         backend = Backend(backend_config(containers={"0": "r0"}))
-        env = {"TF_DSV41_POOL_TOKENS": "2100000", SCHEDULE_KEY: "blocking"}
+        env = {"TF_DSV41_POOL_TOKENS": "2100000", SCHEDULE_ENV: "blocking"}
         profile = {"image_ids": {"0": "image"}, "mounts": {"0": {"/model": "/weights"}},
                    "inference_environment": {"0": env}}
         backend.ownership = lambda: (True, "owned")
@@ -42,10 +42,10 @@ class HostWaitTests(unittest.TestCase):
                            + ["PATH=/usr/bin", "TF_DSV41_LAUNCH_T0=123"]}}
         backend.run = lambda *_: json.dumps([item])
         self.assertEqual(backend.identity("0", "p")["id"], "native")
-        item["Config"]["Env"][1] = SCHEDULE_KEY + "=spin"
+        item["Config"]["Env"][1] = SCHEDULE_ENV + "=spin"
         with self.assertRaisesRegex(ValueError, "inference environment"):
             backend.identity("0", "p")
-        item["Config"]["Env"][1] = SCHEDULE_KEY + "=blocking"
+        item["Config"]["Env"][1] = SCHEDULE_ENV + "=blocking"
         item["Config"]["Env"].append("TF_TP_ROCE_VAR_KB=1")
         with self.assertRaisesRegex(ValueError, "inference environment"):
             backend.identity("0", "p")

@@ -5,11 +5,15 @@ import concurrent.futures
 import glob
 import json
 import re
-import subprocess
 import time
 from pathlib import Path
 
+import sys
+
 from common import atomic, load_config
+from safe_exec import run as supervised_run
+from safe_quote import join_checked
+from safe_output import cli
 
 NODE_SAMPLE = r"""
 import glob,json,re,time
@@ -43,9 +47,7 @@ def local_sample():
 
 
 def worker_sample(config):
-    import shlex
-
-    result = subprocess.run(
+    result = supervised_run(
         [
             "ssh",
             "-n",
@@ -53,8 +55,17 @@ def worker_sample(config):
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=2",
+            "-o",
+            "RemoteCommand=none",
+            "-o",
+            "ForwardAgent=no",
             config["worker_ssh"],
-            "python3 -c " + shlex.quote(NODE_SAMPLE),
+            join_checked([
+                "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                "/usr/bin/python3",
+                str(Path(config.get("worker_repo", Path(__file__).resolve().parents[2])) / "scripts/safe_exec.py"),
+                "--timeout", "4", "--command", "/usr/bin/python3", "-c", NODE_SAMPLE,
+            ]),
         ],
         capture_output=True,
         text=True,
@@ -87,4 +98,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

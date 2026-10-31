@@ -5,7 +5,7 @@ import json
 import unittest
 
 from backend import Backend
-from common import PLAN_KEY, validate_profiles
+from common import PLAN_ENV, validate_profiles
 from guard_fixtures import CPU_SETS, backend_config, make_profile, synthetic_sha
 
 SHA = synthetic_sha("pinned")
@@ -16,7 +16,7 @@ class CpuSetTests(unittest.TestCase):
         validate_profiles({SHA: profile})
 
     def test_optional_sets_and_plan_pin_inside(self):
-        profile = make_profile(cpu_sets=CPU_SETS, **{PLAN_KEY: "3"})
+        profile = make_profile(cpu_sets=CPU_SETS, **{PLAN_ENV: "3"})
         self.validate(profile)
         profile.pop("cpu_sets")
         self.validate(profile)

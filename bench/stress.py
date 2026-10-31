@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Memory stress / cold-boot admission client (stdlib only) for a running `tensorfold serve` (scripts/serve.sh).
+"""Memory stress / cold-boot admission client (stdlib only) for the native `tensorfold-dsv41 serve` endpoint (docs/ZIG-SERVE.md).
 
   stress.py stress --base URL --long 299000 --dctx 65536 --decode 2048 --out stress.json
       one stream prefills ``--long`` tokens (the 300K prefill) while three streams prefill ``--dctx`` tokens and then
@@ -22,9 +22,14 @@ import argparse
 import json
 import random
 import sys
+from pathlib import Path
 import threading
 import time
 import urllib.request
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
 
 
 def _model(base: str) -> str:
@@ -121,7 +126,7 @@ def stress(a) -> int:
     print(json.dumps(brief), flush=True)
     if a.out:
         with open(a.out, "w") as f:
-            json.dump(rep, f, indent=1)
+            safe_dump(rep, f, indent=1)
     return 0 if rep["ok"] else 1
 
 
@@ -156,4 +161,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main))

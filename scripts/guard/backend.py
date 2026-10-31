@@ -5,14 +5,14 @@ import http.client
 import json
 import os
 import re
-import shlex
 import stat
-import subprocess
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from common import RANKS
+from common import RANKS, container_names, inference_environment
+from safe_exec import run as supervised_run
+from safe_quote import join_checked
 
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time
@@ -36,7 +36,7 @@ raw=dropin.read_text();assert not dropin.is_symlink()
 expected=(f'[Unit]\nDescription=GPU SM clock cap (300-{source} MHz)\n'
           f'[Service]\nExecStart=\nExecStart=/usr/bin/nvidia-smi -lgc 300,{source}\n')
 assert raw==expected
-thermal_before=heat();assert thermal_before['max_zone_c']<=88
+thermal_before=heat();assert thermal_before['max_zone_c']<=86
 updated=raw.replace(f'300-{source}',f'300-{target}').replace(f'300,{source}',f'300,{target}')
 tmp=dropin.with_name(dropin.name+'.thermal-tmp')
 fd=os.open(tmp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,dropin.stat().st_mode&0o777)
@@ -66,7 +66,7 @@ def regular(path):
 
 class Backend:
     def __init__(self, config):
-        self.config = config
+        self.config = {**config, "containers": container_names(config)}
         self.upstream = urlsplit(config["upstream"])
         self.ladder = tuple(config["clock_ladder_mhz"])
 
@@ -81,11 +81,20 @@ class Backend:
                 "BatchMode=yes",
                 "-o",
                 "ConnectTimeout=3",
+                "-o",
+                "RemoteCommand=none",
+                "-o",
+                "ForwardAgent=no",
                 self.config["worker_ssh"],
-                shlex.join(args),
+                join_checked([
+                    "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+                    "/usr/bin/python3",
+                    str(Path(self.config.get("worker_repo", Path(__file__).resolve().parents[2])) / "scripts/safe_exec.py"),
+                    "--timeout", str(timeout), "--command", *args,
+                ]),
             ]
         )
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
+        result = supervised_run(command, capture_output=True, text=True, timeout=timeout, check=True)
         return result.stdout + result.stderr if args[:2] == ["docker", "logs"] else result.stdout
 
     def profile(self):
@@ -124,13 +133,7 @@ class Backend:
         model = [m for m in item["Mounts"] if m["Destination"] == "/model"]
         if len(model) != 1 or model[0]["RW"] is not False:
             raise ValueError("model mount must be read only")
-        env = dict(
-            value.split("=", 1)
-            for value in item["Config"]["Env"]
-            if (value.split("=", 1)[0].startswith(("TF_DSV41_", "GLM53_TF_"))
-                or value.split("=", 1)[0] in ("TF_CUDA_SCHED", "TF_TP_ROCE_VAR_KB"))
-        )
-        env.pop("TF_DSV41_LAUNCH_T0", None)
+        env = inference_environment(item)
         if env != profile["inference_environment"][rank]:
             raise ValueError("inference environment changed")
         return {"id": item["Id"], "image": item["Image"], "profile": sha, "lease_mode": mode}
@@ -233,6 +236,8 @@ class Backend:
         return caps[0]
 
     def lower(self, expected_sha, permit):
+        if not self.config.get("allow_clock_changes", False):
+            raise ValueError("persistent clock changes require explicit operator approval")
         source = self.actual_clock()
         if source not in self.ladder[:-1]:
             raise ValueError("no ladder step below the floor cap")
@@ -275,7 +280,7 @@ class Backend:
         units = self.config.get("watchdog_units", [])
         if not units:
             return
-        subprocess.run(
+        supervised_run(
             ["systemctl", "--user", "stop", *units],
             capture_output=True,
             timeout=5,

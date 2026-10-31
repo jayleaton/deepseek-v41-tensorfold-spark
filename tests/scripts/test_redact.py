@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import io
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from redact import (
     MASK,
+    _filter,
     known_secrets,
     mask_values,
     redact,
@@ -135,7 +141,7 @@ def test_text_masks_credentials_keeps_placeholders():
 
 def test_known_values_and_scrub(tmp_path):
     known = known_secrets({"API_KEY": KEY, "SHORT_TOKEN": "1", "MODEL": "x" * 20})
-    assert known == [KEY]
+    assert known == [KEY, "1"]
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "report.json").write_text(
         '{"echo": "the tool said ' + KEY + '"}'
@@ -172,7 +178,10 @@ def test_cli_argv_and_text_filter():
         env=env,
         check=True,
     ).stdout
-    assert KEY not in log and "MIIBVQ" not in log
+    assert KEY not in log
+    assert "-----BEGIN " + "PRIVATE KEY-----" not in log
+    # Physical lines are independent; a marker cannot suppress following prose.
+    assert "MIIBVQ\n" in log
 
 
 def test_mask_values_only_masks_given_values():
@@ -181,3 +190,97 @@ def test_mask_values_only_masks_given_values():
         mask_values(text, [KEY, ""])
         == '{"reply": "password: hunter22", "echo": "' + MASK + '"}'
     )
+
+
+def render_known(value, rendering):
+    if rendering == "raw":
+        return value
+    if rendering == "repr":
+        return repr(value)[1:-1]
+    if rendering == "ascii":
+        return ascii(value)[1:-1]
+    if rendering == "json":
+        return json.dumps(value)[1:-1]
+    if rendering == "unicode_json":
+        return json.dumps(value, ensure_ascii=False)[1:-1]
+    if rendering == "nested_json":
+        return json.dumps(json.dumps(value)[1:-1])[1:-1]
+    if rendering == "nested_repr":
+        return repr(repr(value)[1:-1])[1:-1]
+    return repr(value.encode("utf-8"))[2:-1]
+
+
+@pytest.mark.parametrize("suffix", ["", "\n", "\r\n", "\u00e9", "\u2603", "\U0001f512"],
+                         ids=["plain", "newline", "crlf", "latin1", "nonlatin1", "nonbmp"])
+@pytest.mark.parametrize("rendering", [
+    "raw", "repr", "ascii", "json", "unicode_json", "nested_json", "nested_repr", "bytes",
+])
+@pytest.mark.parametrize("trimmed", [False, True], ids=["original", "trimmed"])
+def test_shared_known_secret_renderings(suffix, rendering, trimmed):
+    key = KEY + '"quote\\' + suffix
+    echoed = key.strip() if trimmed else key
+    rendered = render_known(echoed, rendering)
+    text = "tool diagnostic: " + rendered + " end"
+    out = redact_text(text, known=[key])
+    leaked = rendered in out
+    masked = MASK in out
+    assert not leaked, "known credential rendering survived redaction"
+    assert masked, "known credential rendering was not masked"
+
+
+def test_line_filter_handles_trimmed_and_escaped_copied_keys():
+    key = KEY + '"quote\\\u2603\n'
+    forms = [render_known(key, name) for name in ("repr", "json", "nested_json", "bytes")]
+    forms.append(key.strip())
+    out = io.StringIO()
+    _filter(io.StringIO("\n".join("tool: " + v for v in forms) + "\n"), out, [key])
+    leaked = any(v in out.getvalue() for v in forms)
+    assert not leaked, "line filter disclosed a known credential"
+    assert out.getvalue().count(MASK) == len(forms)
+
+
+def test_cli_text_filter_expands_known_environment_key():
+    key = KEY + '"quote\\\u2603\n'
+    forms = [render_known(key, name) for name in ("repr", "json", "nested_json", "bytes")]
+    forms.append(key.strip())
+    env = dict(os.environ, API_KEY=key)
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/redact.py"), "text"],
+        input="\n".join("tool: " + v for v in forms) + "\n",
+        capture_output=True, text=True, env=env, timeout=15,
+    )
+    leaked = any(v in result.stdout or v in result.stderr for v in forms)
+    ok = result.returncode == 0
+    assert ok, "CLI filter failed"
+    assert not leaked, "CLI filter disclosed a known credential"
+    assert result.stdout.count(MASK) == len(forms)
+
+
+def test_structured_and_scrub_boundaries_expand_known_values(tmp_path):
+    key = KEY + '"quote\\\u2603\n'
+    escaped = render_known(key, "nested_json")
+    doc = redact({"message": escaped}, known=[key])
+    env = redact_env({"DIAGNOSTIC": escaped}, known=[key])
+    argv = redact_argv(["tool", escaped], known=[key])
+    masked = all(MASK in v for v in (doc["message"], env["DIAGNOSTIC"], argv[1]))
+    assert masked, "structured boundaries did not use shared expansion"
+    path = tmp_path / "diagnostic.txt"
+    path.write_text("tool: " + escaped)
+    changed = scrub(path, known=[key])
+    assert changed == 1
+    leaked = escaped in path.read_text()
+    assert not leaked, "scrub disclosed a known credential"
+
+
+@pytest.mark.parametrize('name', ['AUTH_TOKEN', 'API_TOKEN', 'HF_TOKEN', 'ACCESS_TOKEN', 'SESSION_TOKEN', 'TOKEN', 'SHORT_TOKEN', 'OAUTH_TOKEN', 'JWT_TOKEN'])
+def test_explicit_numeric_token_credentials_are_known(name):
+    values = known_secrets({name: '200', 'TF_DSV41_POOL_TOKENS': '200'})
+    assert values == ['200']
+    assert redact_text('opaque 200', values) == 'opaque <redacted>'
+    assert not known_secrets({'TF_DSV41_POOL_TOKENS': '200'})
+
+
+def test_token_size_measurements_are_not_credentials():
+    value = {'bytes_a_token': 1060, 'bytes_per_token': 1060, 'bits_per_token': 2.5}
+    assert redact(value) == value
+    assert all(not secret_name(name) for name in value)

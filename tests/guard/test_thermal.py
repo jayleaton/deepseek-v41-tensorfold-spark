@@ -16,7 +16,7 @@ from control import wait_control
 from daemon import Manager
 from guard_fixtures import Native, TransportFixture, backend_config, synthetic_sha
 from lifecycle import decision
-from policy import Policy
+from guard_fixtures import ScenarioPolicy as Policy
 
 CURRENT, NEXT = synthetic_sha("current"), synthetic_sha("next")
 
@@ -320,7 +320,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_docker_logs_includes_stderr_only_for_logs(self):
         backend = Backend(backend_config())
-        with patch("backend.subprocess.run", return_value=SimpleNamespace(stdout="out", stderr="err")):
+        with patch("backend.supervised_run", return_value=SimpleNamespace(stdout="out", stderr="err")):
             self.assertEqual(backend.run("0", ["docker", "logs", "x"]), "outerr")
             self.assertEqual(backend.run("0", ["docker", "inspect", "x"]), "out")
 

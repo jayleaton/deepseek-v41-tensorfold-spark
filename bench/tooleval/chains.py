@@ -19,10 +19,15 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 import time
 import urllib.request
 
 LEAK = re.compile(r"｜DSML｜|</?think>|<｜[A-Za-z▁]+｜>|</?arg_(key|value)>|</?tool_call>")
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
 
 
 def fn(name: str, desc: str, props: dict, required: list[str]) -> dict:
@@ -232,9 +237,9 @@ def main(argv=None) -> int:
           f"{'PASS' if out['pass'] else 'FAIL'}", flush=True)
     if a.out:
         with open(a.out, "w") as f:
-            json.dump(out, f, indent=1)
+            safe_dump(out, f, indent=1)
     return 0 if out["pass"] else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main))

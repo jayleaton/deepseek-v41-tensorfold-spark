@@ -1,104 +1,83 @@
-# Install and run
+# Install and run the native recipe
 
-For the recommended q28-v2 pack and CUDA Zig path, see [ZIG-SERVE](ZIG-SERVE.md). The instructions below retain the published Python 0.6.0 recipe and its compatible 2.9 bpw pack.
+The recommended pack is flash17. Read [ENGINE](ENGINE.md) first: the pin includes
+`dsq-1` admission support but is still local, and this migration has no new pack/device
+qualification. Follow [ZIG-SERVE](ZIG-SERVE.md) for native rank assets and launch.
+Use matching model and release-specific Engram tables on both nodes; q28-v2 keeps
+its separate rollback profile. `serve.sh start` now invokes only the native pair
+supervisor. It cannot accidentally enter the retired Python builder that asserted
+uniform expert widths (#57). Native per-expert planning is source support, not a
+receipt that this pin has loaded the recommended weights. Start with an
+empty prepared directory for cold-start qualification; do not reuse prepared blobs
+as a substitute for actual pack admission and width-class coverage on both ranks.
 
-Requirements:
+## Engram source setup (#68)
 
-- two DGX Sparks with their CX7 ports cabled and addressed (one link subnet), Docker with the NVIDIA runtime on both,
-  and passwordless ssh from the head to the worker over the link;
-- on each node's local NVMe: ~100 GB for the weights, ~95 GB for the Engram shards, ~95 GB for the prepared
-  folders, and room for the session tier (`TF_DSV41_SESSION_DISK_GIB`, 128 GB by default);
-- nothing else on the GPUs: the stack plans for a 4-5 GiB MemAvailable floor out of 128 GB a node.
+EXL3 packs do not carry the Engram tables (layers 1 and 14, about 101 GB each).
+Use DeepSeek's original checkpoint from the **same model release**. Download its
+index first, then discover and download exactly the repository-relative paths it
+names. `--list` needs only Python's standard library; packing/checking also needs
+NumPy. Install those tools in your isolated build environment, not in the runtime.
 
-**1. Clone and configure** (on the head):
-
-```bash
-git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
-cd deepseek-v41-tensorfold-spark
-cp config/prod.env.example config/prod.env
-$EDITOR config/prod.env      # every <placeholder>: WORKER_SSH, HEAD_IP, the paths on each node; check the NIC names
-```
-
-Copy the example whole and change only the placeholders. The engine's own defaults are the conservative ones, with
-the draft settings off; the example is the measured configuration. A single-stream decode near 43 tok/s means drafting
-is not paying: in #5 an env with only the paths plus `CONTEXT` / `PARALLEL` / `KV_DTYPE` decoded 43 tok/s, and the full
-example (`TF_DSV41_SPEC_DRAFT=1` and the rest) moved the same prompt to 72. The same holds for the Zig path: copy
-`config/prod-zig.env.example` whole, since `TF_DSV41_DRAFTS`, `TF_DSV41_SPEC_DRAFT` and the other draft settings are
-off in the engine. To check that drafting runs on the Zig server, read each reply's `tensorfold.drafted` and
-`tensorfold.rounds`, or `/health`'s `drafted_total` and `rounds_total`: with drafting off, drafted stays 0 and rounds
-about equal the generated tokens. The serving line's `drafts: on` only means `--no-drafts` was not given.
-
-**2. Weights** (on both nodes, byte-identical):
+For the 1017 source inspected for this update, the index is pinned below. Replace
+the example directories with absolute paths and run in a shell on the packing host:
 
 ```bash
-hf download dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw --local-dir <HEAD_MODEL>    # and <WORKER_MODEL>
+SOURCE_REPO=deepseek-ai/DeepSeek-V4.1-Flash-1017
+SOURCE_REV=1bae0e1088993b9b82de08f59de5be5a34e42170
+SRC=/absolute/source-1017
+MODEL=/absolute/flash17-model
+HEAD_ENGRAM=/absolute/engram-r0
+RANK1_OUTPUT=/absolute/engram-r1-staging
+mkdir -p "$SRC"
+hf download "$SOURCE_REPO" model.safetensors.index.json --revision "$SOURCE_REV" --local-dir "$SRC"
+printf '%s  %s\n' 74b0686a3d2891980d5e303251b075a3bccae2c2ff650747db2620a649b98fa8 "$SRC/model.safetensors.index.json" | sha256sum -c -
+python3 scripts/pack_engram.py --src "$SRC" --list > "$SRC/engram-files.txt"
+while IFS= read -r shard; do
+    hf download "$SOURCE_REPO" "$shard" --revision "$SOURCE_REV" --local-dir "$SRC"
+done < "$SRC/engram-files.txt"
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --out "$HEAD_ENGRAM" --rank 0
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --out "$RANK1_OUTPUT" --rank 1
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --check "$HEAD_ENGRAM" --rank 0
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --check "$RANK1_OUTPUT" --rank 1
 ```
 
-**3. Engram shards.** The EXL3 packs do not carry the Engram tables (layers 1 and 14, ~101 GB each). They come from
-DeepSeek's original checkpoint; each rank keeps its half of the hash heads (~47 GiB a layer) on local NVMe:
+The pinned index names `model-00047-of-00048.safetensors` and
+`model-00048-of-00048.safetensors` at the repository root. Do not prepend `shards/`:
+other release indexes may already include a directory, and discovery preserves it.
+Missing indexes produce an actionable error before packing. The paths above were
+verified against the pinned repository; no full source download or production pack
+was performed for this migration. For another release, pin its own source/index
+and inspect its output rather than reusing this index or its shard numbers.
+
+Each rank keeps its half of the hash heads on local NVMe (about 47 GiB per layer,
+94 GiB per node). The packer writes `engram-l{1,14}-r{rank}of2.bin` from raw source
+bytes. `--check` verifies headers and sampled rows; it is not an exhaustive hash of
+all source bytes. Synthetic tests cover both ranks and corruption detection. The
+historical measured runs used the MiaAI-Lab kit's equivalent format; they do not
+qualify a newly generated full checkpoint. Copy the rank-1 output to the worker's
+`ENGRAM_DIR`, then perform native preflight and the actual model canary only when
+the engine/pack migration is ready. This task performs no GPU or TP2 run.
+
+## Pack rank 1 on the head, then copy the output (#69)
+
+Both `--rank 0` and `--rank 1` commands above run on the **head/packing host**, against
+its local source checkpoint and model config. Check rank 1 there before transfer:
 
 ```bash
-mkdir -p <src> && hf download deepseek-ai/DeepSeek-V4.1-Flash model.safetensors.index.json --local-dir <src>
-python3 scripts/pack_engram.py --src <src> --list                 # the shard files that hold the tables
-hf download deepseek-ai/DeepSeek-V4.1-Flash <those files> --local-dir <src>
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --out <HEAD_ENGRAM> --rank 0
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --out <dir> --rank 1   # copy to <WORKER_ENGRAM> on the worker
-python3 scripts/pack_engram.py --src <src> --config <HEAD_MODEL>/config.json --check <HEAD_ENGRAM> --rank 0
+python3 scripts/pack_engram.py --src "$SRC" --config "$MODEL/config.json" --check "$RANK1_OUTPUT" --rank 1
+WORKER_SSH=user@worker.example
+WORKER_ENGRAM=/absolute/worker-engram
+ssh "$WORKER_SSH" "mkdir -p '$WORKER_ENGRAM'"
+scp "$RANK1_OUTPUT"/engram-l*-r1of2.bin "$WORKER_SSH:$WORKER_ENGRAM/"
 ```
 
-`pack_engram.py` writes the format the engine reads (`engram-l{1,14}-r{rank}of2.bin`) from the source tensors'
-raw bytes; it is tested against the engine's reader on synthetic tables. The measured runs used shards packed by
-the MiaAI-Lab kit (`./start.sh pack`), which writes the same format; `--check` compares either with the source.
-
-**4. Build, check, start:**
-
-```bash
-scripts/serve.sh build        # docker/Dockerfile: TensorFold v0.6.0 + patches/, shipped to the worker, then prebuild
-scripts/serve.sh preflight    # image on both nodes, weights, Engram shards, RoCE ports, free ports, idle GPUs
-scripts/serve.sh start        # memory gate, rank 1 then rank 0, /v1/models, slot check, canary
-```
-
-`build` ends with `scripts/serve.sh prebuild`: the CUDA extensions (18, the G13-G17 kernels included) are compiled
-into the `CACHE_VOL` volume on both nodes with no weights loaded, so no extension is built beside the weights. It then
-copies the measured dense-prefill tuning table (`config/pfdense-table.json`) into the volume and, for native image
-input, fetches the image routing bias the EXL3 packs dropped (66 KB of `deepseek-ai/DeepSeek-V4.1-Flash` by HTTP range
-requests: both nodes need network access once; `scripts/serve.sh cache` repeats this step alone). Run it again after
-clearing the volume. The first start compiles the Triton kernels and writes the prepared rank folders
-(`TF_DSV41_PREPARED_WRITE=1`, ~95 GB a node, several minutes); later starts read them back in ~40 s. Then:
-
-```bash
-curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{"model": "DeepSeek-V4.1-Flash-TF",
-  "messages": [{"role": "user", "content": "What is 17 * 23?"}], "reasoning_effort": "low"}'
-scripts/serve.sh status | logs [0|1] | canary | stop | restart
-```
-
-**The 1017 release.** [deepseek-ai/DeepSeek-V4.1-Flash-1017](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017)
-has the same architecture and config as V4.1-Flash, with new weights. These steps serve it unchanged, with four
-differences:
-
-- The pack is [LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw](https://huggingface.co/LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw),
-  whose tensors match Mia-AiLab's 2.9 bpw pack.
-- Its Engram tables changed. Pack them from the 1017 repo's shards 47 and 48 (`pack_engram.py --list` names them).
-- It ships no chat template, and the server stops without one. `encoding/encoding.py` is byte-identical in the two
-  releases, so Mia-AiLab's `chat_template.jinja` applies: copy it into the pack on both nodes.
-- `serve.sh cache` fetches the image routing bias from the older release when none is there. Fetch the 1017 one first:
-  `python -m tensorfold.families.deepseek_v41.cuda.bias_vl_fetch $TF_DSV41_BIAS_VL --repo deepseek-ai/DeepSeek-V4.1-Flash-1017`
-  in the image, on both nodes.
-
-On two Sparks it measured 100.6 tok/s on code at one stream and 155.8 at four (recipe defaults), with
-[BobClawblaw/deepseek-v41-flash-1017-2x-dgx-sparks](https://github.com/BobClawblaw/deepseek-v41-flash-1017-2x-dgx-sparks)
-scripting these steps.
-
-**5. Run it unattended** (optional): a watchdog tick every minute (heals after 3 bad ticks, at most every 30 min; a
-fail-fast exit, code 70, heals on the first tick, at most every 2 min) and a start at boot.
-
-```bash
-mkdir -p ~/.config/systemd/user && cp scripts/systemd/dsv41-* ~/.config/systemd/user/
-$EDITOR ~/.config/systemd/user/dsv41-*.service        # WorkingDirectory= this checkout
-loginctl enable-linger "$USER"
-systemctl --user daemon-reload && systemctl --user enable --now dsv41-tf-watchdog.timer && systemctl --user enable dsv41-boot-start.service
-```
-
-`scripts/serve.sh` drops the page cache on both nodes around a start (`DROP_CACHES=1`: needs `sudo -n` or root for
-`/proc/sys/vm/drop_caches`; otherwise it logs and continues). [`docs/OPERATIONS.md`](OPERATIONS.md) covers the
-knobs, the memory gates, the watchdog, and how to turn each lever off.
+Set the worker's `ENGRAM_DIR` to that destination. Only the generated rank-1 Engram
+files are transferred by this step. The worker needs neither the original DeepSeek
+source checkpoint nor a recipe checkout **for packing**. Native serving still needs
+its own matching model, image, native assets, writable state/prepared directories
+and configured launcher checkout for head-driven lifecycle commands. Do not copy
+rank-0 tables into the worker's Engram directory. An independent worker-side pack
+is optional and requires its own source/index and packer setup. The copy procedure
+is documented and covered by synthetic rank-format tests; a complete public install
+and transfer with the full checkpoint remain unrun in this CPU-only task.

@@ -12,14 +12,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from common import FLOOR_KEY, PLAN_KEY, POLICY, POOL_KEY, SCHEDULE_KEY
+from common import FLOOR_ENV, PLAN_ENV, POLICY, POOL_ENV, SCHEDULE_ENV
 from front import Front, Server
-from policy import Policy
+from policy import Policy as NativePolicy
+
+
+class ScenarioPolicy(NativePolicy):
+    """Synthetic instantaneous thermal boundary used by the imported PR48 regression scenarios."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("thermal_policy", {**POLICY, "hard_c": 94, "hard_seconds": 0, "resume_c": 88})
+        super().__init__(*args, **kwargs)
+
+
+Policy = ScenarioPolicy
 
 RANKS = ("0", "1")
 LADDER3 = (2200, 2100, 2000)
 CPU_SETS = {"0": "2-5", "1": "2-5"}
-FIXTURE_KEY = "TF_DSV41_FIXTURE"
+FIXTURE_ENV = "TF_DSV41_FIXTURE"
 
 
 def synthetic_sha(label):
@@ -33,7 +44,7 @@ def image_id(label):
 
 def make_profile(label="base", cpu_sets=None, **env):
     """A valid two-rank profile; keyword arguments override the inference environment on both ranks."""
-    base = {POOL_KEY: "2100000", FLOOR_KEY: "4.75", SCHEDULE_KEY: "blocking", PLAN_KEY: "auto", FIXTURE_KEY: "1"}
+    base = {POOL_ENV: "2100000", FLOOR_ENV: "4.75", SCHEDULE_ENV: "blocking", PLAN_ENV: "auto", FIXTURE_ENV: "1"}
     base.update(env)
     profile = {
         "image_ids": {rank: image_id(label + rank) for rank in RANKS},
@@ -56,6 +67,7 @@ def backend_config(**extra):
         "upstream": "http://127.0.0.1:8001",
         "containers": {"0": "native-r0", "1": "native-r1"},
         "clock_ladder_mhz": [2100, 2000],
+        "allow_clock_changes": True,
         "clock_service": "gpu-clock-cap.service",
         "clock_dropin": "/etc/systemd/system/gpu-clock-cap.service.d/cap.conf",
         "limits": {"max_inflight": 4},
@@ -72,6 +84,7 @@ def production_config(root, **overrides):
         "mode": "production",
         "policy": copy.deepcopy(POLICY),
         "clock_ladder_mhz": list(LADDER3),
+        "allow_clock_changes": True,
         "clock_service": "gpu-clock-cap.service",
         "clock_dropin": str(root / "cap.conf"),
         "watchdog_units": ["native-watch.timer"],

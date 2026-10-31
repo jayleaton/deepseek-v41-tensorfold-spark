@@ -64,14 +64,14 @@ not a claim about model quality in general.
 One pair of nodes, one night, three repetitions a cell, no confidence intervals. A later fresh-boot pair with one warm
 repetition each gave Zig +3.0 / +3.8 % on code ×1 / ×4, so treat differences of a few percent as indicative. These runs
 served with `TF_DSV41_IMAGES=placeholder`; the profile now serves images natively (see
-[IMAGES](IMAGES.md#the-zig-serving-path)). The final run's raw records are not part of this export; the numbers above
+[IMAGES](IMAGES.md#native-image-input)). The final run's raw records are not part of this export; the numbers above
 are copied from the run log. The files in [`results/zig-q28-v2`](../results/zig-q28-v2/README.md) hold the earlier
 2026-10-09 comparison (single Zig runs, 2K prefill), which this page replaces.
 
 ## Split KV and the 3.0M pool
 
 The tables above were measured with the replicated 1.4M pool. The profile now serves split KV with a 3.0M pool
-([split KV and the pool](ZIG-SERVE.md#split-kv-and-the-pool)). Its measurements are pending:
+([split KV and the pool](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/blob/391d677b300d9b53e64f4265a261c0b329ea58e0/docs/ZIG-SERVE.md#split-kv-and-the-pool)). Its measurements are pending:
 
 | Check | Replicated, 1.4M | Split, 3.0M |
 | --- | --- | --- |

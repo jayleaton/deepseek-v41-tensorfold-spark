@@ -13,7 +13,7 @@ need no request option: on this server a stream names its usage on its last chun
 
 A DeepSeek added token quoted inside a chat request (`</think>`, `<think>`, `<｜User｜>`, `<｜Assistant｜>`,
 `<｜end▁of▁sentence｜>`, `<｜DSML｜>`, the tool-call markers; 59 literals read from `tokenizer.json` at start) is
-text to the model, never the token (`patches/0003`): a tool result or a pasted log that contains `</think>` cannot end
+text to the model, never a control token on the native path: a tool result or a pasted log that contains `</think>` cannot end
 the reasoning or inject a turn boundary. The literals are hidden before the chat template renders, so the template's
 own tokens are untouched; the `/v1/completions` route sends what it is given.
 

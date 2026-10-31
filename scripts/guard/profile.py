@@ -6,24 +6,16 @@ import json
 from pathlib import Path
 
 from backend import Backend
-from common import RANKS, SCHEDULE_KEY, atomic, validate_profiles
+import sys
 
-ENV_KEYS = ("TF_DSV41_", "GLM53_TF_")
-EXTRA_KEYS = (SCHEDULE_KEY, "TF_TP_ROCE_VAR_KB")
-
-
-def inference_environment(item):
-    env = dict(value.split("=", 1) for value in item["Config"]["Env"] if "=" in value)
-    env = {key: value for key, value in env.items() if key.startswith(ENV_KEYS) or key in EXTRA_KEYS}
-    env.pop("TF_DSV41_LAUNCH_T0", None)
-    return env
-
+from common import RANKS, atomic, container_names, inference_environment, validate_profiles
+from safe_output import cli, safe_print as print
 
 def snapshot(config, backend):
     sha = hashlib.sha256(Path(config["production_config"]).read_bytes()).hexdigest()
     profile = {"image_ids": {}, "mounts": {}, "inference_environment": {}, "cpu_sets": {}}
     for rank in RANKS:
-        item = json.loads(backend.run(rank, ["docker", "inspect", config["containers"][rank]]))[0]
+        item = json.loads(backend.run(rank, ["docker", "inspect", container_names(config)[rank]]))[0]
         if item["State"]["Running"] is not True:
             raise ValueError("rank " + rank + " is not running; snapshot a qualified, running pair")
         profile["image_ids"][rank] = item["Image"]
@@ -51,4 +43,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

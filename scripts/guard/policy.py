@@ -8,12 +8,16 @@ import uuid
 from pathlib import Path
 
 from common import MEMORY_MARGIN_GIB, POLICY, atomic
+from safe_output import sanitize
 
 
 class Policy:
-    def __init__(self, path, events_path, ladder=(2100, 2000), initial_clock=None, initial_profile=None, now=None):
+    def __init__(self, path, events_path, ladder=(2100, 2000), initial_clock=None, initial_profile=None,
+                 now=None, thermal_policy=None):
         self.path, self.events_path = Path(path), Path(events_path)
         self.ladder = tuple(ladder)
+        self.thermal_policy = dict(POLICY if thermal_policy is None else thermal_policy)
+        thermal = self.thermal_policy
         self.lock = threading.Condition()
         self.inflight = 0
         self.active = {}
@@ -27,12 +31,13 @@ class Policy:
         self.transient_reserve_gib = 0.5
         self.unresolved_requests = set()
         self.admission_waiters = {}
+        self.native_generation = 0  # Bumped on any native doubt; keys the optional generation-verify cache.
         self.fresh = self.owned = False
         self.samples = {}
         now = time.time() if now is None else now
         if self.path.exists():
             self.data = json.loads(self.path.read_bytes())
-            if self.data.get("version") != 1 or self.data.get("policy") != POLICY:
+            if self.data.get("version") != 1 or self.data.get("policy") != thermal:
                 raise ValueError("invalid durable policy; no automatic reset")
             if self.data.get("clock_ladder_mhz") != list(self.ladder):
                 raise ValueError("durable clock ladder differs from the config; no automatic reset")
@@ -42,7 +47,7 @@ class Policy:
                 raise ValueError("new state requires an idle start on a configured ladder cap")
             self.data = {
                 "version": 1,
-                "policy": POLICY,
+                "policy": thermal,
                 "clock_ladder_mhz": list(self.ladder),
                 "clock_mhz": initial_clock,
                 "profile": initial_profile,
@@ -60,6 +65,8 @@ class Policy:
                 "lease_mode": "unknown",
             }
             self.save()
+
+        self.hard_episodes = self.data.setdefault("hard_episodes", {})
 
     def configure_admission(self, limits):
         with self.lock:
@@ -119,7 +126,7 @@ class Policy:
                     older.replace(newer)
             self.events_path.replace(Path(str(self.events_path) + ".1"))
         with self.events_path.open("a") as output:
-            output.write(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n")
+            output.write(json.dumps(sanitize(row), separators=(",", ":"), allow_nan=False) + "\n")
             output.flush()
         return row
 
@@ -135,6 +142,7 @@ class Policy:
         if self.data["terminal_stop"] and (not hard or self.data["hard_stop"]):
             return
         self.data.update(terminal_stop=True, paused=True, hard_stop=hard or self.data["hard_stop"])
+        self.native_changed()
         self.data["stop_reason"] = reason
         if hard:
             self.data["pending_action"] = "stop_owned"
@@ -146,6 +154,11 @@ class Policy:
         evidence = {"stop_evidence": self.data["stop_evidence"]} if "stop_evidence" in self.data else {}
         self.event("HARD_STOP" if hard else "FLOOR_STOP", now, reason=reason, inflight=self.inflight, **evidence)
         self.lock.notify_all()
+
+    def native_changed(self):
+        """A failed health read, a native error or an unverified completion: a cached identity is no longer trusted."""
+        with self.lock:
+            self.native_generation += 1
 
     def condition(self, token, reason, now):
         if token in self.data["consumed"] or self.data["terminal_stop"]:
@@ -184,16 +197,30 @@ class Policy:
             self.fresh = set(valid) == {"0", "1"}
             self.data["global_pauses"] = [row for row in self.data["global_pauses"] if row["epoch"] >= now - 1800]
             if not owned:
+                self.hard_episodes.clear()
                 self.data["episodes"] = {"0": None, "1": None}
                 self.data["fresh"] = self.fresh
                 self.update_admission_cooldown(now)
                 self.save()
                 self.lock.notify_all()
                 return
+            thermal = self.thermal_policy
+            if now - old_update > 6 or now < old_update:
+                self.hard_episodes.clear()
+            for rank in tuple(self.hard_episodes):
+                if rank not in valid or valid[rank]["max_zone_c"] < thermal["hard_c"]:
+                    self.hard_episodes.pop(rank)
             fired = []
             for rank, row in sorted(valid.items()):
-                if row["max_zone_c"] >= 94:
-                    fired.append({"condition": "temperature>=94", "rank": rank, "value": row["max_zone_c"]})
+                if row["max_zone_c"] >= thermal["hard_c"]:
+                    start = self.hard_episodes.setdefault(rank, now)
+                    # A fresh reading at the immediate limit stops at once; the sustained limit must hold.
+                    if row["max_zone_c"] >= thermal["immediate_hard_c"]:
+                        condition = f"temperature>={thermal['immediate_hard_c']}"
+                        fired.append({"condition": condition, "rank": rank, "value": row["max_zone_c"]})
+                    elif now - start >= thermal["hard_seconds"]:
+                        condition = f"temperature>={thermal['hard_c']}"
+                        fired.append({"condition": condition, "rank": rank, "value": row["max_zone_c"]})
                 if row["available_gib"] < 4:
                     fired.append({"condition": "memory<4GiB", "rank": rank, "value": row["available_gib"]})
             if fired:
@@ -210,11 +237,12 @@ class Policy:
                     }),
                     parse_constant=str,
                 )
-                self.terminal("fresh temperature>=94 or memory<4GiB", now, hard=True, stop_evidence=evidence)
+                self.terminal("hard temperature or memory<4GiB", now, hard=True, stop_evidence=evidence)
             if now - old_update > 6 or now < old_update:
                 self.data["episodes"] = {"0": None, "1": None}
             if not self.data["terminal_stop"]:
-                if valid and max(row["max_zone_c"] for row in valid.values()) >= 92 and not self.data["paused"]:
+                if (valid and max(row["max_zone_c"] for row in valid.values()) >= thermal["pause_c"]
+                        and not self.data["paused"]):
                     pause = {"id": uuid.uuid4().hex, "epoch": now}
                     self.data["global_pauses"].append(pause)
                     self.data["paused"] = True
@@ -236,7 +264,7 @@ class Policy:
                     self.fresh
                     and self.data["paused"]
                     and not self.data["transitioning"]
-                    and max(row["max_zone_c"] for row in valid.values()) <= 88
+                    and max(row["max_zone_c"] for row in valid.values()) <= thermal["resume_c"]
                 ):
                     self.data["paused"] = False
                     self.event("RESUME", now, samples=valid)

@@ -20,7 +20,7 @@ from backend import Backend
 from common import load_config
 from front import Front, Server
 from guard_fixtures import RANKS, Native, ProbeFixture, backend_config, health_idle, production_config, write_config
-from policy import Policy
+from guard_fixtures import ScenarioPolicy as Policy
 
 SHORT = b'{"messages":[{"role":"user","content":"hi"}],"max_tokens":8}'
 IMAGE = b'{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:,"}}]}]}'

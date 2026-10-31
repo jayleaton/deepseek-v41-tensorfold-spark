@@ -42,7 +42,7 @@ What it needs beyond the general Zig setup ([ZIG-SERVE](ZIG-SERVE.md)):
 ## Recommended serving profile
 
 [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example) is the q28-v2 serving profile with
-only these changes, served behind the thermal and memory guard. Engine Zig `9131e10a` (the exported [`engine/zig`](../engine/zig)), TP=2, four slots, 1M context,
+only these changes. Engine Zig `9131e10a` (the exported [`engine/zig`](../engine/zig)), TP=2, four slots, 1M context,
 split + compact KV, expert top-p 0.85 / min 3, native images, 4K prefill, floors 5 / 4 GiB and the 3.0 GiB serving dip
 are all unchanged.
 
@@ -55,16 +55,15 @@ are all unchanged.
 | `TF_DSV41_POOL_TOKENS` | 3000000 | **2100000** | memory headroom ([below](#memory-the-21m-pool)) |
 | `TF_DSV41_PF_WS_FLOOR_GIB` | 3.5 | **4.75** | a planned 4K workspace stays above the 4 GiB floor |
 | `TF_CUDA_SCHED` | unset | **`blocking`** | the host sleeps instead of spinning while it waits for the GPU |
-| `TF_DSV41_PLAN_PIN` | `auto` | **`1`**, inside `CPUSET_CPUS` | plan thread on a chosen host CPU |
-| `CPUSET_CPUS` | unset | **host CPUs from your topology** | [host CPU affinity](OPERATIONS.md#zig-serving-thermal-and-memory-guard) |
-| `PORT` | 8000 | **8001** | the guard serves 8000 and forwards to the engine |
+| `CPUSET_CPUS` | unset | optional, **host CPUs from your topology** | keeps a numeric `TF_TP_PLAN_PIN` and the engine on chosen CPUs |
 
 We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
 
-The full profile, with the guard, was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with
-RAM resume, 322 requests, no errors. Setup, the guard and the watchdog are in
-[OPERATIONS](OPERATIONS.md#zig-serving-thermal-and-memory-guard); qualify your own machines before you rely on it
-([Qualifying your own setup](OPERATIONS.md#qualifying-your-own-setup)).
+On the exported engine, this profile with the #48 guard (engine on 8001, guard on 8000, the plan thread pinned to
+one CPU inside `CPUSET_CPUS`) was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM
+resume, 322 requests, no errors. That soak does not qualify the current pin. Here the guard is optional
+([OPERATIONS](OPERATIONS.md#optional-native-guard-48)), so the example serves on 8000 with `TF_TP_PLAN_PIN=auto`;
+qualify your own machines and traffic before you rely on it.
 
 Each path key is set per node, so beyond the settings above the profile changes model, prepared, Engram and state
 folders on each of the two nodes, plus `TF_DSV41_BIAS_VL`.
@@ -98,10 +97,10 @@ about every 1.4-2 s, not continuous.
 
 **The 4K prefill workspace, not the pack, sets the low point.** Each long prompt allocates a transient 2,268 MiB
 (~2.27 GB) 4K prefill workspace on both ranks and releases it after the prompt. The engine admits it when current
-MemAvailable minus the workspace stays above `TF_DSV41_PF_WS_FLOOR_GIB`, which the profile sets to 3.5 GiB, below
-the 4 GiB hard floor; it does not reserve the 3.0 GiB serving dip on top. `TF_DSV41_PF_4K_MEMORY_OK=1` acknowledges
-that cost; it does not bypass the check. So a boot that passes the guard can still go under 4 GiB on the head during
-the first long prompt: at 3.0M a reboot passed at 4.42 GiB modelled and fell to 3.558 GiB on a 9,891-token prompt;
+MemAvailable minus the workspace stays above `TF_DSV41_PF_WS_FLOOR_GIB`, which the profile now sets to 4.75 GiB, above
+the 4 GiB hard floor. The measurements below were taken at 3.5 GiB, below that floor. The check does not reserve the
+3.0 GiB serving dip on top. `TF_DSV41_PF_4K_MEMORY_OK=1` acknowledges that cost; it does not bypass the check. So at
+3.5 a boot that passed the guard could still go under 4 GiB on the head during the first long prompt: at 3.0M a reboot passed at 4.42 GiB modelled and fell to 3.558 GiB on a 9,891-token prompt;
 its logs show the head recover from 3.41 to 5.64 GiB when the workspace was released. The engine's boot guard warned
 that the workspace would leave 2.15 / 2.37 GiB at the modelled worst point; that warning does not block requests.
 This mechanism is shared with q28-v2's profile, which has not had the same mixed load as a control.

@@ -6,7 +6,10 @@ import time
 from pathlib import Path
 
 from backend import Backend
+import sys
+
 from common import load_config
+from safe_output import cli, safe_print as print
 
 
 def decision(config, state, operation, backend, now=None):
@@ -53,4 +56,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

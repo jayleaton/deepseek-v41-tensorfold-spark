@@ -1,3 +1,0 @@
-[submodule "vendor/TensorFold"]
-	path = vendor/TensorFold
-	url = https://github.com/ashhart/TensorFold.git

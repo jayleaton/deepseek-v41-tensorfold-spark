@@ -12,7 +12,10 @@ import time
 from pathlib import Path
 
 from backend import Backend
+import sys
+
 from common import RANKS, atomic, daemon_lock, load_config
+from safe_output import cli
 from front import Front, Server
 from policy import Policy
 
@@ -37,6 +40,8 @@ class Manager:
         self.check_clock()
         self.last_action = 0
         self.boot_lock = threading.Lock()
+        self.verify_lock = threading.Lock()
+        self.verified = None  # (key, monotonic expiry, identities) when limits.generation_verify_cache_s is on.
 
     def check_clock(self):
         try:
@@ -78,10 +83,10 @@ class Manager:
                 or state["terminal_stop"]
                 or state["inflight"] != 0
                 or set(state["samples"]) != {"0", "1"}
-                or max(row["max_zone_c"] for row in state["samples"].values()) > 88
+                or max(row["max_zone_c"] for row in state["samples"].values()) > self.policy.thermal_policy["resume_c"]
                 or any(time.time() - row["epoch"] > 6 for row in state["samples"].values())
             ):
-                raise ValueError("clock step requires paused, owned, both fresh<=88 and local0")
+                raise ValueError("clock step requires paused, owned, both fresh<=86 and local0")
         state["native_idle"] = self.backend.idle()
         return state
 
@@ -110,6 +115,8 @@ class Manager:
             self.last_action = time.time()
             self.backend.hold_heals(expected)
         elif state["pending_action"] == "lower_clock":
+            if not self.config.get("allow_clock_changes", False):
+                return
             try:
                 self.permit_clock()
             except Exception:
@@ -148,6 +155,34 @@ class Manager:
         state = self.policy.snapshot()
         if not state["ready"]:
             raise ValueError("guard state changed before upstream")
+        ttl = self.config.get("limits", {}).get("generation_verify_cache_s", 0)
+        if not ttl:
+            return self.verify_identities(state)
+        # Single flight: concurrent requests share one container inspection. Ownership and the serving-profile SHA
+        # are local reads and are rechecked on every request; a hit also needs the same profile, the same verified
+        # container IDs and no native doubt (policy.native_changed) since the inspection began.
+        with self.verify_lock:
+            state = self.policy.snapshot()
+            if not state["ready"]:
+                self.verified = None
+                raise ValueError("guard state changed during verification")
+            owned, _ = self.backend.ownership()
+            sha, _ = self.backend.profile()
+            with self.policy.lock:
+                key = (state["profile"], self.policy.native_generation, str(self.policy.data.get("boot_verified_ids")))
+            cached = self.verified
+            if owned and sha == state["profile"] and cached and cached[0] == key and time.monotonic() < cached[1]:
+                return cached[2]
+            self.verified = None
+            started = time.monotonic()
+            identities = self.verify_identities(state)
+            with self.policy.lock:
+                # A doubt raised during the inspection keeps the old generation in the key, so the next call misses.
+                key = (key[0], key[1], str(self.policy.data.get("boot_verified_ids")))
+            self.verified = (key, started + ttl, identities)
+            return identities
+
+    def verify_identities(self, state):
         identities = {rank: self.backend.identity(rank, state["profile"]) for rank in RANKS}
         current_ids = {rank: value["id"] for rank, value in identities.items()}
         with self.boot_lock:
@@ -168,10 +203,11 @@ class Manager:
             not state["fresh"]
             or state["inflight"]
             or len(state["samples"]) != 2
-            or max(row["max_zone_c"] for row in state["samples"].values()) > 88
+            or max(row["max_zone_c"] for row in state["samples"].values()) > self.policy.thermal_policy["resume_c"]
             or any(time.time() - row["epoch"] > 6 for row in state["samples"].values())
         ):
-            raise ValueError("operator transition requires both fresh<=88 and no local work")
+            threshold = self.policy.thermal_policy["resume_c"]
+            raise ValueError(f"operator transition requires both fresh<={threshold} and no local work")
         try:
             return self.backend.idle()
         except Exception:
@@ -322,4 +358,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli(main))

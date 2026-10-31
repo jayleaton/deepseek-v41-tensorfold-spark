@@ -19,8 +19,16 @@
 #      TEB_TIMEOUT (off: 300, thinking: 900 s between streamed chunks).
 # Each run writes <OUT>/<date>-<bench>-<mode>[-label]/ with the bench's own reports, the server's /health and
 # /v1/models before and after, and the exact command line. API_KEY never reaches a saved file or the terminal: the
-# command lines and logs go through scripts/redact.py, which also scrubs the bench's own reports when the run ends.
+# command lines, snapshots and logs are sanitized before writing. Third-party evaluators need an audited
+# adapter for their direct report/dump writes and are refused until that boundary is available.
+{ set +x; } 2>/dev/null
+safe_exec="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/safe_exec.py"
+if [[ "${TF_SAFE_EXEC_PARENT:-}" != "$PPID" ]]; then
+    exec python3 "$safe_exec" bash "${BASH_SOURCE[0]}" "$@"
+fi
+unset TF_SAFE_EXEC_PARENT
 set -euo pipefail
+umask 077
 
 CACHE=${TOOLEVAL_CACHE:-$HOME/.cache/tooleval}
 TEB_REPO=https://github.com/SeraphimSerapis/tool-eval-bench.git
@@ -34,6 +42,9 @@ OUT=${OUT:-$ROOT/results/tooleval}
 
 die() { echo "run.sh: $*" >&2; exit 1; }
 redact() { python3 -u "$ROOT/scripts/redact.py" "$@"; }
+redact_snapshot() {
+    python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from safe_output import clean; sys.stdout.write(clean(sys.stdin.read()))' "$ROOT/scripts"
+}
 
 # curl with the key as a header read from a file descriptor, never in argv (ps) or a saved command
 api() {
@@ -70,8 +81,8 @@ kwargs_for() {
 
 snapshot() {       # $1 = dir, $2 = tag: what the server was (patch knobs show in the log, not here)
     local host=${BASE_URL%/v1}
-    api -fsS -m 10 "$host/health" -o "$1/health-$2.json" 2>/dev/null || echo '{"unreachable": true}' > "$1/health-$2.json"
-    api -fsS -m 10 "$BASE_URL/models" -o "$1/models-$2.json" 2>/dev/null || true
+    api -fsS -m 10 "$host/health" 2> >(redact text >&2) | redact_snapshot > "$1/health-$2.json" || echo '{"unreachable": true}' > "$1/health-$2.json"
+    api -fsS -m 10 "$BASE_URL/models" 2> >(redact text >&2) | redact_snapshot > "$1/models-$2.json" || true
 }
 
 preflight() {
@@ -79,67 +90,26 @@ preflight() {
     api -fsS -m 10 "$BASE_URL/models" | grep -q "\"$MODEL\"" || die "$BASE_URL/models does not list $MODEL"
 }
 
-run_teb() {        # $1 = mode, $2 = dir, $3.. = extra args (scenario / category filters)
-    local mode=$1 dir=$2; shift 2
-    local bin=$CACHE/tool-eval-bench/.venv/bin/tool-eval-bench
-    [[ -x $bin ]] || die "tool-eval-bench not installed: bench/tooleval/run.sh setup"
-    local args=(--base-url "$BASE_URL" --model "$MODEL" --no-live --temperature "${TEB_TEMP:-0.0}"
-                --output-dir "$dir/teb" --json-file "$dir/teb.json")
-    [[ -n ${API_KEY:-} ]] && args+=(--api-key "$API_KEY")
-    if [[ $mode == off ]]; then
-        args+=(--no-think --timeout "${TEB_TIMEOUT:-300}")
-    else
-        # max_tokens: the bench's 16384 for thinking; config/prod.env.example's MAX_TOKENS is 32768
-        args+=(--timeout "${TEB_TIMEOUT:-900}"
-               --backend-kwargs "{\"chat_template_kwargs\": $(kwargs_for "$mode"), \"reasoning_effort\": \"$mode\"}")
-    fi
-    # shellcheck disable=SC2206
-    args+=("$@" ${TEB_ARGS:-})
-    redact argv -- "$bin" "${args[@]}" > "$dir/teb.cmd"
-    "$bin" "${args[@]}" 2>&1 | redact text | tee "$dir/teb.log"
-}
-
-run_sb() {         # $1 = mode, $2 = dir, $3.. = extra args
-    local mode=$1 dir=$2; shift 2
-    mkdir -p "$dir/sb-dump"   # spark-bench opens raw_dump.jsonl in it and silently skips the dump if the dir is missing
-    [[ -x $CACHE/spark-bench/.venv/bin/python ]] || die "spark-bench not installed: bench/tooleval/run.sh setup"
-    local args=(eval --endpoint "$BASE_URL" --model "$MODEL" --label "DSV41-TF-$mode${LABEL:+-$LABEL}"
-                --out-dir "$dir/sb" --repeats "${SB_REPEATS:-2}" --temperature "${SB_TEMP:-0.3}"
-                --uncapped --timeout 0 --tier all --skip-throughput)
-    local extra
-    if [[ $mode == off ]]; then
-        args+=(--thinking off)
-        extra=""
-    else
-        # the bench's --thinking on sends chat_template_kwargs {enable_thinking, thinking_mode}; SPARK_BENCH_EXTRA_BODY
-        # replaces that dict (shallow update), so it carries enable_thinking and the effort itself
-        args+=(--thinking on)
-        extra="{\"chat_template_kwargs\": $(kwargs_for "$mode"), \"reasoning_effort\": \"$mode\"}"
-    fi
-    # shellcheck disable=SC2206
-    args+=("$@" ${SB_ARGS:-})
-    redact argv -- ${extra:+"SPARK_BENCH_EXTRA_BODY=$extra"} .venv/bin/python spark_bench.py "${args[@]}" > "$dir/sb.cmd"
-    (cd "$CACHE/spark-bench" && SPARK_BENCH_EXTRA_BODY="$extra" SPARK_BENCH_API_KEY="${API_KEY:-}" \
-        SPARK_BENCH_DUMP_DIR="$dir/sb-dump" .venv/bin/python spark_bench.py "${args[@]}") 2>&1 | redact text | tee "$dir/sb.log"
+# These pinned tools own additional direct-to-disk reports, request dumps and native/browser outputs.
+# An stdout pipe or an EXIT scrub cannot guarantee that a credential never reaches a file.
+# Keep setup available, but refuse execution until an audited pre-write adapter covers those paths.
+third_party_unavailable() {
+    echo "run.sh: third-party report/dump pre-write sanitization is unavailable; use 'own' or add an audited adapter" >&2
+    exit 78
 }
 
 cmd=${1:-}; mode=${2:-}; LABEL=${3:-}
 case $cmd in
     setup) setup; exit 0 ;;
-    teb|sb|both|chains|own) kwargs_for "$mode" >/dev/null ;;
+    teb|sb|both|chains) third_party_unavailable ;;
+    own) kwargs_for "$mode" >/dev/null ;;
     *) sed -n '2,21p' "$0"; exit 2 ;;
 esac
 preflight
 dir=$OUT/$(date +%Y%m%d-%H%M)-$cmd-$mode${LABEL:+-$LABEL}
 mkdir -p "$dir"
-trap 'redact scrub "$dir"' EXIT    # the benches' own reports and dumps (spark-bench's raw request dump, for one)
 snapshot "$dir" before
 case $cmd in
-    teb)    run_teb "$mode" "$dir" ;;
-    sb)     run_sb "$mode" "$dir" ;;
-    both)   run_teb "$mode" "$dir"; run_sb "$mode" "$dir" ;;
-    chains) run_teb "$mode" "$dir" --categories C
-            SB_REPEATS=${SB_REPEATS:-3} run_sb "$mode" "$dir" --domains agentic ;;
     own)    python3 "$ROOT/bench/tooleval/chains.py" --base "${BASE_URL%/v1}" --model "$MODEL" --mode "$mode" \
                 --out "$dir/chains.json" 2>&1 | redact text | tee "$dir/chains.log" ;;
 esac

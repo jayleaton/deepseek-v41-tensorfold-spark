@@ -18,7 +18,7 @@ from backend import CLOCK_PROGRAM, Backend
 from front import Front, GeneratedTokenProbe
 from guard_fixtures import LADDER3, LadderFixture, Native, TransportFixture, backend_config
 from lifecycle import decision
-from policy import Policy
+from guard_fixtures import ScenarioPolicy as Policy
 
 
 def props(cap):

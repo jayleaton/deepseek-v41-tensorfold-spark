@@ -23,6 +23,7 @@ import concurrent.futures as cf
 import json
 import re
 import sys
+from pathlib import Path
 import time
 import urllib.request
 from typing import Any
@@ -63,6 +64,10 @@ TOOLS = [
                     "additionalProperties": False}}},
 ]
 TOOL_BY_NAME = {t["function"]["name"]: t["function"]["parameters"] for t in TOOLS}
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from safe_output import cli, dump as safe_dump, safe_print as print  # noqa: E402
 
 
 def post(base: str, body: dict, timeout: float = 900.0) -> dict:
@@ -253,9 +258,9 @@ def main(argv=None) -> int:
     out["pass"], out["wall_s"] = not bad, round(time.time() - t0, 1)
     if a.out:
         with open(a.out, "w") as f:
-            json.dump(out, f, indent=1)
+            safe_dump(out, f, indent=1)
     return 1 if bad else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main))

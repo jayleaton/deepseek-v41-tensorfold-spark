@@ -1,4 +1,4 @@
-"""scripts/watch-zig.sh: idle-only probes and the bounded startup-503 retry, against fake curl / docker / ssh."""
+"""scripts/guard-watch-zig.sh: idle-only probes and the bounded startup-503 retry, against fake curl / docker / ssh."""
 
 import json
 import os
@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "watch-zig.sh"
+SCRIPT = ROOT / "scripts" / "guard-watch-zig.sh"
 FAKE_CURL = """#!/usr/bin/env bash
 n=$(cat "$FAKE/n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE/n"
 echo "$*" >> "$FAKE/calls"
@@ -108,21 +108,38 @@ class WatchZigTests(unittest.TestCase):
 
     def test_tick_resolved_false_stall_is_healthy(self):
         self.respond((json.dumps(STALE), 503), (json.dumps(HEALTHY), 200), ('{"choices":[]}', 200))
-        result = self.bash("watch_tick")
+        result = self.bash("guard_permit() { return 0; }; watch_tick")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("resolved by actual healthy 200", result.stderr)
         self.assertEqual((self.state / "fails").read_text().strip(), "0")
 
     def test_tick_unresolved_stall_is_bad_on_the_first_tick_without_healing_by_default(self):
         self.respond((json.dumps(STALE), 503))
-        result = self.bash("watch_tick")
+        result = self.bash("guard_permit() { return 0; }; watch_tick")
         self.assertEqual(result.returncode, 1)
         self.assertIn("bad tick 1 of 1", result.stderr)
         self.assertIn("not restarting", result.stderr)
 
+    def test_missing_guard_config_prevents_healing(self):
+        result = self.bash("watch_tick", WATCH_HEAL="1", WATCH_RESTART_ARGV=json.dumps(["bash", "scripts/serve.sh", "watch", "--once"]))
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("guard lifecycle holds", result.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_native_operator_stop_holds_even_if_guard_would_permit(self):
+        (self.bin / "python3").write_text("#!/bin/sh\nexit 0\n")
+        (self.bin / "python3").chmod(0o755)
+        native = self.root / "native-state"
+        (native / "native-ops").mkdir(parents=True)
+        env = {"STATE_DIR": str(native), "GUARD_CONFIG": "unused-by-fake"}
+        self.assertEqual(self.bash("guard_permit start", **env).returncode, 0)
+        (native / "native-ops/STOP").touch()
+        self.assertEqual(self.bash("guard_permit start", **env).returncode, 78)
+        self.assertEqual(self.calls(), [])
+
     def test_stop_marker_stands_down(self):
         (self.state / "stopped").touch()
-        result = self.bash("watch_tick")
+        result = self.bash("guard_permit() { return 0; }; watch_tick")
         self.assertEqual(result.returncode, 0)
         self.assertEqual(self.calls(), [])
 

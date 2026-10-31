@@ -7,17 +7,26 @@ Support me here: https://buymeacoffee.com/jayleaton
 ![flash17: DeepSeek-V4.1-Flash-1017, EXL3 2.8 bpw, now available](assets/flash17-now-available.png)
 
 A recipe for serving DeepSeek-V4.1-Flash-1017 on two NVIDIA DGX Sparks behind an OpenAI-compatible API. It ships
-our EXL3 pack (**flash17**) and the TensorFold Zig engine that serves it, with the exact serving profile we measured.
+our EXL3 pack (**flash17**) and a pinned upstream TensorFold native build. The measurements below describe
+the previously deployed engine and profile.
 
 | | |
 | --- | --- |
 | Model | [`deepseek-ai/DeepSeek-V4.1-Flash-1017`](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) |
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
-| Engine | TensorFold Zig, CUDA port `9131e10a` (source in [`engine/zig`](engine/zig)) |
+| Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
 
-flash17 is serving as the production default on our two Sparks (model ID `DeepSeek-V4.1-Flash-TF`).
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `20ad77878`, the stable
+DeepSeek head (H) of the `dsv41/upgrade-latest` branch. It includes flash17’s `dsq-1` admission support. H is not
+on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
+until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
+
+On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
+differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
+was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-10-2930). Full engine/pack/device
+qualification is still pending, and the historical production results below do not qualify this pin.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
 > relying on it.
@@ -59,24 +68,20 @@ session passed (7 valid tool calls, normal stop).
 The full guide is [ZIG-SERVE](docs/ZIG-SERVE.md). Build the image and the per-rank assets as it describes, then:
 
 ```bash
-git clone --recurse-submodules https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
+git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
-scripts/run-zig.sh 1 --check-aot && scripts/run-zig.sh 1   # rank 1 node; then the same with 0 on rank 0
+scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting
 ```
 
 - Fill in the node paths and link settings from
   [`config/prod-zig-flash17.env.example`](config/prod-zig-flash17.env.example) and keep its engine settings. It needs
   the **2.1M-token pool** (`TF_DSV41_POOL_TOKENS=2100000`). With q28-v2's 3.0M pool this pack goes under the 4 GiB
   memory floor during 4K prefills ([why](docs/FLASH-1017.md#memory-the-21m-pool)).
-- Pack the **1017 Engram shards** with `scripts/pack_engram.py` ([INSTALL step 3](docs/INSTALL.md), with
+- Pack the **1017 Engram shards** with `scripts/pack_engram.py` ([Engram setup](docs/INSTALL.md#engram-source-setup-68), with
   `deepseek-ai/DeepSeek-V4.1-Flash-1017` as the source); the September shards do not match this pack.
 - We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
-- Serve it behind the thermal and memory guard, with the profile's 4.75 GiB workspace floor, blocking host waits and a
-  host CPU set chosen from your own topology: [OPERATIONS](docs/OPERATIONS.md#zig-serving-thermal-and-memory-guard).
-  The full profile was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM resume,
-  322 requests, no errors; [qualify your own setup](docs/OPERATIONS.md#qualifying-your-own-setup) before relying on it.
 - Check the answer to `What is 17 * 23?` is 391 before serving traffic.
 
 ## Rollback to q28-v2
@@ -88,9 +93,6 @@ keeps its own unchanged profile, [`config/prod-zig.env.example`](config/prod-zig
 [FLASH-1017, rollback](docs/FLASH-1017.md#rollback-to-q28-v2). Its measurements are in
 [PREVIOUS-RESULTS](docs/PREVIOUS-RESULTS.md).
 
-The earlier Python recipe (TensorFold 0.6.0 plus three patches, with its original 2.9 bpw pack) is still documented
-in [INSTALL](docs/INSTALL.md).
-
 ## Documentation
 
 | | |
@@ -98,9 +100,10 @@ in [INSTALL](docs/INSTALL.md).
 | [FLASH-1017](docs/FLASH-1017.md) | the flash17 pack: profile, memory, task results, retention, rollback |
 | [ZIG-SERVE](docs/ZIG-SERVE.md) / [ZIG-RESULTS](docs/ZIG-RESULTS.md) | Zig build, TP=2 launch, exact settings, q28-v2 comparisons |
 | [PREVIOUS-RESULTS](docs/PREVIOUS-RESULTS.md) | q28-v2 kit results and the historical 2.9 bpw Python vs vLLM tables |
-| [INSTALL](docs/INSTALL.md) | requirements, weights, Engram shards, the Python recipe, watchdog |
+| [INSTALL](docs/INSTALL.md) | native requirements, weights and Engram shards |
 | [API](docs/API.md) / [IMAGES](docs/IMAGES.md) | endpoints, thinking and effort, image input |
-| [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, the thermal and memory guard, the Zig watchdog |
+| [OPERATIONS](docs/OPERATIONS.md) | settings, memory gates, the optional thermal and memory guard, turning each lever off |
+| [SECURITY](docs/SECURITY.md) | where keys live, which processes hold them, what the output filter promises |
 | [METHOD](docs/METHOD.md) / [RESULTS](docs/RESULTS.md) / [BENCHMARKS](docs/BENCHMARKS.md) | how it was measured, every table, how to rerun |
 | [CHANGELOG](docs/CHANGELOG.md) | bug fixes and new levers since G13 |
 | [KNOWN-ISSUES](docs/KNOWN-ISSUES.md) | what is not solved |
@@ -121,3 +124,5 @@ is credited in [CREDITS](docs/CREDITS.md).
 This project's code, patches, scripts, benchmarks and docs: **Apache License 2.0** ([`LICENSE`](LICENSE),
 [`NOTICE`](NOTICE)). TensorFold, the added files, the adapted kernels, the base image and the model weights each keep
 their own terms: [`docs/LICENSING.md`](docs/LICENSING.md).
+
+HTTP tooling: [bench/speed.py](bench/speed.py) and [scripts/preflight.py](scripts/preflight.py); see [BENCHMARKS](docs/BENCHMARKS.md).

@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from backend import Backend
 from daemon import Manager
 from guard_fixtures import Native, TransportFixture, backend_config, synthetic_sha
-from policy import Policy
+from guard_fixtures import ScenarioPolicy as Policy
 
 
 class StopAttributionBackendTests(unittest.TestCase):

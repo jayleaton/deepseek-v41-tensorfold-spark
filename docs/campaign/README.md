@@ -6,8 +6,9 @@ describe the work in the order it happened, so later windows correct earlier pla
 [`../RESULTS.md`](../RESULTS.md), [`../DECODE.md`](../DECODE.md) and [`../ARCHITECTURE.md`](../ARCHITECTURE.md) are
 the current picture. Raw files: [`../../results/campaign/`](../../results/campaign/). Paths such as
 `scripts/windows/*.sh` and `config/prod.env` refer to the development harness, which is not published (it managed
-the private test windows and the switch with another production service); `scripts/serve.sh` and
-`config/prod.env.example` are its public form.
+the private test windows and the switch with another production service). Their old public counterparts are preserved
+at [60b6688](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/tree/60b66888a1a379fb38bf85c232b27ec60b007373);
+use [INSTALL](../INSTALL.md) and [OPERATIONS](../OPERATIONS.md) for current native setup.
 
 | document | what |
 | --- | --- |

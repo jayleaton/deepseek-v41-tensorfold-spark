@@ -10,7 +10,7 @@ contiguous row range, from a file on its local NVMe:
                                  the layer's total rows, row bytes 264), then rows lo .. hi - 1,
                                  each row = 256 weight bytes followed by 8 scale bytes
 
-(the engine's ``engram_host.read_header`` / ``ShardRows`` and its test fixture ``write_engram`` define the format;
+(the native shard reader defines this format;
 this script writes it from the source tensors' raw bytes, nothing is converted). Head h of order n reads rows
 [offset, offset + prime); the primes are the next unused primes above engram_vocab_size - 1 in (layer, order, head)
 order, and rank r owns heads [12 r, 12 r + 12) of every layer.
@@ -41,7 +41,10 @@ import struct
 import sys
 from pathlib import Path
 
-import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from safe_output import cli, safe_print as print  # noqa: E402
+
 
 MAGIC = 0x31344E4531565344          # b"DSV41EN1" little-endian
 HEADER = 4096
@@ -112,7 +115,8 @@ class Tensor:
         self.row_bytes = (hi - lo) // self.shape[0]
         self.fd = os.open(path, os.O_RDONLY)
 
-    def rows(self, lo: int, hi: int) -> np.ndarray:
+    def rows(self, lo: int, hi: int):
+        import numpy as np
         off, length = self.start + lo * self.row_bytes, (hi - lo) * self.row_bytes
         buf = os.pread(self.fd, length, off)
         if len(buf) != length:
@@ -122,8 +126,21 @@ class Tensor:
         return np.frombuffer(buf, dtype=np.uint8).reshape(hi - lo, self.row_bytes)
 
 
+def read_index(src: Path) -> dict:
+    path = src / 'model.safetensors.index.json'
+    if not path.is_file():
+        raise ValueError(f'{path}: download model.safetensors.index.json into --src before --list or packing')
+    wmap = json.loads(path.read_text())['weight_map']
+    if not isinstance(wmap, dict) or not wmap:
+        raise ValueError('source index weight_map must be a nonempty object')
+    for value in wmap.values():
+        if not isinstance(value, str) or not value or Path(value).is_absolute() or '..' in Path(value).parts:
+            raise ValueError('source index contains an unsafe shard path')
+    return wmap
+
+
 def sources(src: Path, layer: int) -> tuple[Tensor, Tensor]:
-    wmap = json.loads((src / "model.safetensors.index.json").read_text())["weight_map"]
+    wmap = read_index(src)
     names = [f"layers.{layer}.engram.embed.weight", f"layers.{layer}.engram.embed.scale"]
     missing = [n for n in names if n not in wmap]
     if missing:
@@ -135,7 +152,8 @@ def sources(src: Path, layer: int) -> tuple[Tensor, Tensor]:
     return w, s
 
 
-def records(w: Tensor, s: Tensor, lo: int, hi: int) -> np.ndarray:
+def records(w: Tensor, s: Tensor, lo: int, hi: int):
+    import numpy as np
     out = np.empty((hi - lo, ROW), dtype=np.uint8)
     out[:, :VALUES] = w.rows(lo, hi)
     out[:, VALUES:] = s.rows(lo, hi)
@@ -215,12 +233,16 @@ def main() -> int:
     ap.add_argument("--samples", type=int, default=256)
     a = ap.parse_args()
     if a.list:
-        wmap = json.loads((a.src / "model.safetensors.index.json").read_text())["weight_map"]
+        wmap = read_index(a.src)
         files = sorted({v for k, v in wmap.items() if ".engram.embed." in k})
+        if not files:
+            ap.error("source index has no Engram embedding tensors")
         print("\n".join(files))
         return 0
     cfg = json.loads((a.config or a.src / "config.json").read_text())
     cfg = {**cfg, **(cfg.get("text_config") or {})}      # the EXL3 packs nest the text model's keys
+    if a.world != 2 or a.rank not in ('0', '1', 'all') or a.samples < 1:
+        ap.error('native recipe requires --world 2, --rank 0|1|all and positive --samples')
     ranks = list(range(a.world)) if a.rank == "all" else [int(a.rank)]
     if a.check:
         return check(a.src, cfg, a.check, ranks, a.world, a.samples)
@@ -231,4 +253,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(cli(main, error_code=2))
+    except (OSError, ValueError, KeyError) as exc:
+        print(f'pack_engram: {exc}', file=sys.stderr)
+        sys.exit(2)
