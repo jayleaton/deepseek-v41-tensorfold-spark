@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from common import MEMORY_MARGIN_GIB, POLICY, atomic
+from common import MEMORY_MARGIN_GIB, atomic, thermal_policy as host_thermal_policy
 from safe_output import sanitize
 
 
@@ -16,7 +16,7 @@ class Policy:
                  now=None, thermal_policy=None):
         self.path, self.events_path = Path(path), Path(events_path)
         self.ladder = tuple(ladder)
-        self.thermal_policy = dict(POLICY if thermal_policy is None else thermal_policy)
+        self.thermal_policy = dict(host_thermal_policy() if thermal_policy is None else thermal_policy)
         thermal = self.thermal_policy
         self.lock = threading.Condition()
         self.inflight = 0

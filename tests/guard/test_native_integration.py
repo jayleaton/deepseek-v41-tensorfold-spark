@@ -55,6 +55,18 @@ class NativeIntegrationTests(unittest.TestCase):
         self.assertTrue(json.loads((self.root / "state").read_text())["hard_stop"])
         self.assertEqual(POLICY["immediate_hard_c"], 94)
 
+    def test_one_fresh_sample_at_94_latches_stop_and_aborts_active_work(self):
+        # The production policy, not the instantaneous ScenarioPolicy: the 93 C hold does not delay the 94 C stop.
+        aborted = []
+        self.policy.active["request"] = type("Connection", (), {"shutdown": lambda _, how: aborted.append(how)})()
+        self.sample(1001, temperature=94)
+        state = json.loads((self.root / "state").read_text())
+        self.assertTrue(state["hard_stop"] and state["terminal_stop"])
+        self.assertEqual(state["pending_action"], "stop_owned")
+        self.assertEqual(aborted, [2])
+        self.sample(1002, temperature=70)
+        self.assertTrue(self.policy.data["hard_stop"])  # Durable: cooling does not clear it.
+
     def test_memory_floor_still_stops_immediately(self):
         self.sample(1001, temperature=80, memory=3.99)
         self.assertTrue(self.policy.data["hard_stop"])

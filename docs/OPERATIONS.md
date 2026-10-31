@@ -26,9 +26,12 @@ engine environment and optional CPU sets; `control.py` prepares/authorizes an ap
 not qualification. The candidate profile's workspace floor must meet the guard's minimum before it can be approved.
 
 The default owner window is pause 92°C, resume 86°C and hard STOP at 93°C held for 30 seconds or at once on a fresh
-94°C reading, with a 2100 MHz starting cap. Preserve the actual owner policy and existing cap on each host. Review the
-optional clock-service template and its drop-in before any installation; this recipe update installs or enables no
-service and changes no host clock.
+94°C reading, with a 2100 MHz starting cap. Either STOP is durable, cancels active requests and stops the owned
+ranks. When `/etc/spark/thermal.env` exists, its `GUARD_PAUSE_C`, `GUARD_RESUME_C`, `GUARD_KILL_C`,
+`GUARD_KILL_HOLD_S` and optional `GUARD_IMMEDIATE_C` replace these defaults, and the config's `policy` must equal the
+result; a malformed or disordered file is refused. Preserve the actual owner policy and existing cap on each host.
+Review the optional clock-service template and its drop-in before any installation; this recipe update installs or
+enables no service and changes no host clock.
 
 When configured, `GUARD_CONFIG=<local JSON>` makes the native launcher obey `scripts/guard/lifecycle.py`: exit 75 is
 a hold and 78 is durable STOP/invalid state. It must never be overridden by automatic recovery. STOP is durable before
