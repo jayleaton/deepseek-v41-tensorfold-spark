@@ -18,8 +18,10 @@ docker save tensorfold-dsv41:local -o build-native-image.tar
 ```
 
 Transfer the image to the worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
-content (`docker image inspect -f '{{json .RootFS.Layers}}'`) and an `org.tensorfold.revision` label matching
-`config/tensorfold.rev`. The image ID is not compared: Docker's containerd image store reports the manifest digest and
+content and runtime config, and an `org.tensorfold.revision` label matching `config/tensorfold.rev`. The pair identity
+hashes the image's ordered layer digests, platform and runtime config (`Env`, `Entrypoint`, `Cmd`, `Shell`, `User`,
+`WorkingDir`, `StopSignal`, `Volumes`, `ExposedPorts`, `Healthcheck`, `Labels`), so an image that differs only by a
+baked-in `ENV` or entrypoint is refused; only the digest is printed. The image ID is not compared: Docker's containerd image store reports the manifest digest and
 overlay2 the config digest, so one loaded image has two IDs on a mixed pair. Build on ARM64 with Docker/NVIDIA build tools.
 `--build-arg ZIG_URL=<compiler-url>` selects an exact compiler archive if the default URL is unavailable.
 The runtime retains the library/NEEDED-chain and mlx5-provider check; that check must also pass on a loaded image.

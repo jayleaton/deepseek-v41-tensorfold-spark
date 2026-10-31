@@ -14,7 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from redact import secret_name  # noqa: E402
 from safe_output import dump as safe_dump  # noqa: E402
 
-# Approved STOP / pause thresholds; enabling requires the exact policy and operator qualification.
+# Approved STOP / pause defaults; enabling requires the exact effective policy and operator qualification. Two
+# independent hard stops: hard_c held for hard_seconds, and one fresh sample at or above immediate_hard_c.
 POLICY = {
     "step_c": 90,
     "step_seconds": 600,
@@ -27,6 +28,31 @@ POLICY = {
     "immediate_hard_c": 94,
     "memory_floor_gib": 4,
 }
+# The host's shared device limits, when present, replace the defaults above (systemd EnvironmentFile syntax).
+THERMAL_ENV = Path("/etc/spark/thermal.env")
+THERMAL_KEYS = {"GUARD_PAUSE_C": "pause_c", "GUARD_RESUME_C": "resume_c", "GUARD_KILL_C": "hard_c",
+                "GUARD_KILL_HOLD_S": "hard_seconds", "GUARD_IMMEDIATE_C": "immediate_hard_c"}
+
+
+def thermal_policy(path=None):
+    """POLICY with the host's GUARD_* limits applied; refuses a malformed or disordered file."""
+    path = THERMAL_ENV if path is None else Path(path)
+    policy = dict(POLICY)
+    if not path.is_file():
+        return policy
+    for line in path.read_text().splitlines():
+        name, _, value = line.strip().partition("=")
+        value = value.strip().strip("\"'")
+        if name in THERMAL_KEYS:
+            if not re.fullmatch(r"[0-9]{1,3}", value):
+                raise ValueError(f"{path}: {name} must be a whole number")
+            policy[THERMAL_KEYS[name]] = int(value)
+    if not (50 <= policy["resume_c"] < policy["pause_c"] <= policy["hard_c"] <= policy["immediate_hard_c"] <= 110
+            and 0 <= policy["hard_seconds"] <= 600):
+        raise ValueError(f"{path}: need resume < pause <= kill <= immediate within 50..110 C and a 0..600 s hold")
+    return policy
+
+
 # Admission keeps this much above the 4 GiB hard floor before any per-request reservation.
 MEMORY_MARGIN_GIB = 4.25
 POOL_ENV = "TF_DSV41_POOL_TOKENS"
@@ -141,8 +167,9 @@ def container_names(config):
 
 def load_config(path):
     config = json.loads(Path(path).read_bytes())
-    if config.get("enabled") is not True or config.get("mode") != "production" or config.get("policy") != POLICY:
-        raise ValueError("explicitly enabled exact production policy required")
+    if (config.get("enabled") is not True or config.get("mode") != "production"
+            or config.get("policy") != thermal_policy()):
+        raise ValueError("explicitly enabled exact production policy required (defaults with the host's GUARD_* limits)")
     config["clock_ladder_mhz"] = list(validate_ladder(config.get("clock_ladder_mhz")))
     paths = ("state_path", "samples_path", "events_path", "lease_path", "production_config", "control_socket",
              "clock_dropin")

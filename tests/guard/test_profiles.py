@@ -130,6 +130,18 @@ class ConfigTests(unittest.TestCase):
         self.refused(lambda c: c["policy"].update(floor_mhz=2000))
         self.assertNotIn("floor_mhz", POLICY)
 
+    def test_policy_follows_the_hosts_thermal_limits(self):
+        import common
+        common.THERMAL_ENV.write_text('# device limits\nGUARD_PAUSE_C=91\nGUARD_RESUME_C="85"\nGUARD_KILL_C=92\n'
+                                      "GUARD_KILL_HOLD_S=20\nSPARK_CLOCK_MAX_MHZ=2100\n")
+        self.refused(lambda c: None)  # The built-in defaults no longer match this host.
+        host = {**POLICY, "pause_c": 91, "resume_c": 85, "hard_c": 92, "hard_seconds": 20}
+        self.assertEqual(self.load({**copy.deepcopy(self.config), "policy": host})["policy"], host)
+        for bad in ("GUARD_KILL_C=95\n", "GUARD_RESUME_C=93\n", "GUARD_KILL_C=hot\n", "GUARD_IMMEDIATE_C=-1\n"):
+            common.THERMAL_ENV.write_text(bad)
+            with self.assertRaises(ValueError):
+                common.thermal_policy()
+
     def test_clock_settings(self):
         self.refused(lambda c: c.pop("clock_ladder_mhz"))
         self.refused(lambda c: c.update(clock_ladder_mhz=[2000, 2100]))
