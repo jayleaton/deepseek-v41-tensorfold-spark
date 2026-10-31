@@ -148,3 +148,9 @@ def test_recipe_pins_a_public_repository_and_the_image_fetches_from_it():
     assert re.fullmatch(r'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git', repo)
     dockerfile = (ROOT / 'docker/zig/Dockerfile').read_text()
     assert 'fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle "$TENSORFOLD_REPO"' in dockerfile
+
+
+def test_runtime_image_carries_the_compute_lane_interpreter():
+    runtime = (ROOT / 'docker/zig/Dockerfile').read_text().split('FROM ${CUDA_RUNTIME}', 1)[1]
+    install = runtime.split('RUN apt-get update', 1)[1].split('&& apt-mark', 1)[0]
+    assert ' python3 ' in install.replace('\\\n', ' ')

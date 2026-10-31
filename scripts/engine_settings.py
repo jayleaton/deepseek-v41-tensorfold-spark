@@ -2,7 +2,8 @@
 """The engine settings the launcher forwards, from the pinned TensorFold source.
 
 config/tensorfold-settings.txt lists every TF_* / TENSORFOLD_* name the pinned engine
-reads (string literals in its non-test zig/src). The launcher forwards exactly those
+reads (string literals in its non-test zig/src, and the `prefix ++ "_SUFFIX"` names of a
+knob group its callers parse under a literal prefix). The launcher forwards exactly those
 names that are set, plus NCCL_*. It never forwards credential names, or names it sets
 itself. It refuses renamed or removed settings, so an old profile cannot silently fall
 back to an engine default.
@@ -35,9 +36,10 @@ LAUNCHER_OWNED = frozenset({
 # Config.digest (fabric/tp/config.zig) is only the minimum it checks after connecting;
 # Session.open (tp.zig:46-49) first runs Bootstrap.open, which rank 0 listens and rank 1
 # connects on master:link_port before any digest compare. So a setting is common unless the
-# engine source shows it is per-rank.
+# engine source shows it is per-rank. `family` is a family's own agreement bytes (DeepSeek-V4.1:
+# TF_DSV41_IDX_SPLIT, cuda_model.zig), a forwarded setting the pair identity already shares.
 DIGEST_FIELDS = frozenset({"world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast",
-                           "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env"})
+                           "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env", "family"})
 # Config fields Bootstrap.open reads (bootstrap.zig:34-53): world, rank and master/port are
 # launcher-owned (master and port are hashed as transport); link_port is TF_TP_PLAN_PORT;
 # connect_timeout_ns is this rank's own deadline (bootstrap.zig:26-30).
@@ -175,19 +177,47 @@ def profile_command(argv):
     return 0
 
 
-def engine_names(source, revision):
+SOURCE = ("zig/src/*.zig", ":!*_test.zig")
+# A knob group parsed under a `comptime prefix` reads `prefix ++ "_SUFFIX"`, and its caller passes the literal prefix
+# (`compute_lane.Config.parse(&env, "TF_DSV41_COMPUTE_LANE")` reads TF_DSV41_COMPUTE_LANE_WORKERS and the rest).
+SUFFIX = re.compile(r'\bprefix \+\+ "(_[A-Z0-9_]+)"')
+PREFIXED_CALL = re.compile(r'\b([a-z0-9_]+)\.(?:[A-Za-z0-9_]+\.)?parse\(.*?"((?:TF|TENSORFOLD)_[A-Z0-9_]+)"\)')
+
+
+def _grep(source, revision, *args):
     sys.path.insert(0, str(ROOT / "scripts"))
     from safe_exec import run
-    result = run(["git", "-C", str(source), "grep", "-h", "-o", "-E", r'"(TF|TENSORFOLD)_[A-Z0-9_]+"',
-                  revision, "--", "zig/src/*.zig", ":!*_test.zig"], timeout=120)
-    if result.returncode != 0:
+    result = run(["git", "-C", str(source), "grep", *args, revision, "--", *SOURCE], timeout=120)
+    if result.returncode not in (0, 1):
         raise SystemExit("cannot read the engine source at " + revision)
-    return sorted({line.strip().strip('"') for line in result.stdout.splitlines() if line.strip()})
+    return result.stdout.splitlines()
+
+
+def composed_names(lines):
+    """`REV:path:text` grep lines -> the names a prefix-parsed knob group reads through its literal-prefix callers."""
+    suffixes, prefixes = {}, set()
+    for line in lines:
+        _, path, text = (line.split(":", 2) + ["", ""])[:3]
+        module = Path(path).stem
+        for suffix in SUFFIX.findall(text):
+            suffixes.setdefault(module, set()).add(suffix)
+        prefixes.update(PREFIXED_CALL.findall(text))
+    return {prefix + suffix for module, prefix in prefixes for suffix in suffixes.get(module, ())}
+
+
+def engine_names(source, revision):
+    literal = _grep(source, revision, "-h", "-o", "-E", r'"(TF|TENSORFOLD)_[A-Z0-9_]+"')
+    if not literal:
+        raise SystemExit("cannot read the engine source at " + revision)
+    names = {line.strip().strip('"') for line in literal if line.strip()}
+    grouped = _grep(source, revision, "-E", r'prefix \+\+ "_[A-Z0-9_]+"|\.parse\(.*"(TF|TENSORFOLD)_')
+    return sorted(names | composed_names(grouped))
 
 
 def render(revision, names):
     return ("# Every TF_* / TENSORFOLD_* name the pinned TensorFold reads: string literals in its\n"
-            "# non-test zig/src. Regenerate on every pin bump:\n"
+            "# non-test zig/src, plus the prefix ++ \"_SUFFIX\" names of knob groups parsed under a literal prefix.\n"
+            "# Regenerate on every pin bump:\n"
             "#   python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout\n"
             f"rev {revision}\n" + "".join(name + "\n" for name in names))
 

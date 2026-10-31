@@ -39,6 +39,22 @@ What it needs beyond the general Zig setup ([ZIG-SERVE](ZIG-SERVE.md)):
   in both releases, so it is not a 1017 change. Zig `9131e10a`'s encoder predates that fix, for both packs alike; it
   only affects continuations that carry tool results without declaring `tools`.
 
+### The K6 MTP variant
+
+The release candidate G measurements ([BENCHMARKS](BENCHMARKS.md#release-candidate-g)) used a variant of this pack.
+In it, all 46 dense stored MTP projections are re-encoded at EXL3 K6 (6 trellis bits, the mul1 codebook) from the
+official FP8 release. The other 4,612 parts are byte-identical to the pack above. The 46-projection allocation follows
+[LibertAIDAI's 2.9 bpw pack card](https://huggingface.co/LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw/blob/afc7aa0aab98ee735c0f54e0a122019af1ac08f1/README.md),
+and bertholomus's pack card allocates K6 to attention and the shared MTP independently.
+
+| | SHA-256 |
+| --- | --- |
+| variant manifest | `2ce73475703aebc01e7aa9c4bd0f491bf87e491fc469121b581fb13528c9b0cf` |
+| `head-mtp.safetensors` | `968d98bc36b0b3d56bc33a2698f891649112a2bafc8a99131ad54cdd54ff4a42` |
+
+The variant is not published yet, and the tools that build it are not in this recipe. Until both are, serve the pack
+above. A variant is a different pack, so it needs its own `PREPARED_DIR` (about 96 GB) and `STATE_DIR`.
+
 ## Recommended serving profile
 
 [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example) is the q28-v2 serving profile with
@@ -58,6 +74,24 @@ are all unchanged.
 | `CPUSET_CPUS` | unset | optional, **host CPUs from your topology** | keeps a numeric `TF_TP_PLAN_PIN` and the engine on chosen CPUs |
 
 We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
+
+With release candidate G, the profile also sets nine engine settings. Each one is off in the engine unless set. They
+were measured together on F and G ([BENCHMARKS](BENCHMARKS.md#release-candidate-g)); the profile comments say what
+each one does.
+
+| Setting | Value | From |
+| --- | --- | --- |
+| `TF_DSV41_KV_MIRROR` | `4096` | bertholomus |
+| `TF_DSV41_ROT_FOLD` | `3` (both folds) | bertholomus |
+| `TF_DSV41_IDX_IOTA` | `1` | bertholomus |
+| `TF_DSV41_DEPTH_OVERHEAD_MS` | `0` | bertholomus |
+| `TF_DSV41_IDX_SPLIT` | `1` | Mia |
+| `TF_DSV41_ENGRAM_VALIDATE` | `1` | Mia (D4) |
+| `TF_DSV41_NO_COPIES` | `1` | |
+| `TF_DSV41_TOKENIZER_MESSAGE_MEMO` | `1` | |
+| `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
+
+The compute lane (`TF_DSV41_COMPUTE_LANE`) stays off; see [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-off).
 
 On the exported engine, this profile with the #48 guard (engine on 8001, guard on 8000, the plan thread pinned to
 one CPU inside `CPUSET_CPUS`) was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM

@@ -80,8 +80,9 @@ ARG TENSORFOLD_REV
 # libnccl2 from the CUDA apt repo the nvidia images ship configured; libibverbs + the mlx5 provider for RoCE; cuBLAS /
 # cuBLASLt pinned at 13.6.0.2 (libcublas-13-3, the same repo): the build the vision tower's bit-exact proof ran on, dlopened
 # only with TF_DSV41_IMAGES=native. Its directory goes on the loader path (the base image's points at its own CUDA).
+# python3 is the compute lane's interpreter (TF_DSV41_COMPUTE_LANE, off by default; it runs /usr/bin/python3).
 RUN apt-get update && apt-get install -y --no-install-recommends libnccl2 libibverbs1 ibverbs-providers rdma-core \
-        curl ca-certificates libcublas-13-3=13.6.0.2-1 \
+        curl ca-certificates python3 libcublas-13-3=13.6.0.2-1 \
     && apt-mark hold libcublas-13-3 \
     && dirname "$(dpkg -L libcublas-13-3 | grep '/libcublas\.so\.13$')" > /etc/ld.so.conf.d/990_cublas-13-3.conf && ldconfig \
     && rm -rf /var/lib/apt/lists/*

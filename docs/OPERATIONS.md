@@ -78,6 +78,34 @@ required one-boot alternating G-off/G1v2 Spark comparison remains unrun: start s
 must be at most 0.3 seconds, and memory minima no more than 0.25 GiB below both
 neighboring off blocks. Keep both options off until those device gates pass.
 
+## Compute lane (`TF_DSV41_COMPUTE_LANE`, off)
+
+Release candidate G adds an opt-in compute lane. With `TF_DSV41_COMPUTE_LANE=1`, a request that lists
+`{"type": "code_interpreter"}` in `tools` gets a `python(code)` tool that the engine runs itself and answers inside the
+same reply, so the client makes no tool round trip. Requests without that entry are unchanged, and the lane is not
+armed for requests with stop strings. The lane's calls are not returned as `tool_calls`: they are reported in a
+non-standard `compute` field (`message.compute` in a chat reply). Clients that do not read it see only the answer.
+
+Each call runs `/usr/bin/python3` (the runtime image installs it) in a sandbox: it drops to `nobody`, sets rlimits and
+nice 10, sets `no_new_privs`, applies Landlock (ABI 6 or later: read and execute only under the interpreter's roots, no
+network or signals) and seccomp (no fork, no sockets). Docker's default seccomp profile allows this setup inside the
+container. A host without Landlock ABI 6 cannot run the lane.
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| `TF_DSV41_COMPUTE_LANE` | off | `1` on; unset, empty or `0` off; anything else stops the boot |
+| `TF_DSV41_COMPUTE_LANE_WORKERS` | 2 | 1-64 concurrent sandboxes |
+| `TF_DSV41_COMPUTE_LANE_MAX_MS` | 10000 | wall limit per call, 1 ms to 1 h |
+| `TF_DSV41_COMPUTE_LANE_MAX_CALLS` | 8 | built-in calls per reply |
+| `TF_DSV41_COMPUTE_LANE_MAX_RESULT_TOKENS` | 512 | result size inserted into the reply |
+| `TF_DSV41_COMPUTE_LANE_MEM_MB` | 1024 | address-space limit, at least 64 |
+| `TF_DSV41_COMPUTE_LANE_CPUS` | unset | CPU affinity list such as `16-19` |
+| `TF_DSV41_COMPUTE_LANE_PYTHON` | `/usr/bin/python3` | an absolute path |
+
+The lane runs model-written code on the serving host, so keep it off unless you need it. The measured G boots served
+the same tokens with the lane on and off, and a lane smoke (`2**100`) ran in 14 ms. The MBPP measurement in
+[BENCHMARKS](BENCHMARKS.md#release-candidate-g) was taken on the lane commit over an earlier candidate, not on G itself.
+
 ## Native pair lifecycle and watchdog (#58)
 
 For authenticated native serving, put the keys in a file with mode `0600`, owned by
