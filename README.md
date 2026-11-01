@@ -18,9 +18,9 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `20ad77878`, the stable
-DeepSeek head (H) of the `dsv41/upgrade-latest` branch. It includes flash17’s `dsq-1` admission support. H is not
-on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `58bece1d3`, release candidate
+G of the `dsv41/candidate-g` branch (fallback F, `56200688d`). It descends from the stable DeepSeek head H
+(`20ad77878`) and includes flash17’s `dsq-1` admission support. G is not on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
 until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token

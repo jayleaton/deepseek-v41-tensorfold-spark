@@ -30,6 +30,24 @@ def test_manifest_matches_the_engine_source_at_the_pin():
     assert result.returncode == 0, result.stderr
 
 
+def test_prefix_parsed_knob_groups_list_their_composed_names():
+    lines = [
+        'r:zig/src/core/compute_lane.zig:        c.workers = try knob(u8, get, prefix ++ "_WORKERS", c.workers, 1, 64);',
+        'r:zig/src/core/compute_lane.zig:        if (get(prefix ++ "_PYTHON")) |p| if (p.len > 0) {',
+        'r:zig/src/families/x/serve.zig:    c = try api.compute_lane.Config.parse(&@import("knobs.zig").env, "TF_X_LANE");',
+        # A suffix in another module, and a parse call naming no prefix-parsed module, compose nothing.
+        'r:zig/src/core/other.zig:    get(prefix ++ "_DEPTH")',
+        'r:zig/src/families/x/serve.zig:    v = try std.json.parse(bytes, "TF_X_JSON")',
+    ]
+    assert engine_settings.composed_names(lines) == {"TF_X_LANE_WORKERS", "TF_X_LANE_PYTHON"}
+
+
+def test_manifest_lists_the_compute_lane_knob_group():
+    _, settings = engine_settings.manifest()
+    assert {"TF_DSV41_COMPUTE_LANE"} | {"TF_DSV41_COMPUTE_LANE_" + s for s in (
+        "WORKERS", "MAX_MS", "MAX_RESULT_TOKENS", "MAX_CALLS", "MEM_MB", "PYTHON", "CPUS")} <= settings
+
+
 @pytest.mark.parametrize("profile", PROFILES)
 def test_example_profiles_set_only_settings_the_pinned_engine_reads(profile):
     _, settings = engine_settings.manifest()
@@ -79,12 +97,18 @@ def engine_file(path):
 @pytest.mark.skipif(not os.environ.get("TENSORFOLD_SOURCE", "").startswith("/"),
                     reason="TENSORFOLD_SOURCE (an engine git checkout) not provided")
 def test_bootstrap_settings_before_the_digest_compare_are_common():
-    # RR10b-1: Session.open runs only Bootstrap.open before it agrees on Config.digest.
+    # RR10b-1: Session.open runs only Bootstrap.open before openBootstrapped agrees on Config.digest.
     tp = engine_file("zig/src/fabric/tp/tp.zig")
-    session = tp.split("pub fn open(s: *Session", 1)[1].split("b.agree(&cfg.digest()", 1)[0]
+    session = tp.split("pub fn open(s: *Session", 1)[1].split("pub fn openBootstrapped(", 1)[0]
     calls = set(re.findall(r"\b([A-Za-z_][\w.]*)\(", session)) - {"open"}
     assert "defer b.close();" in session  # runs at scope exit, not before the compare
-    assert calls == {"requested.resolved", "Bootstrap.open", "b.close"}, sorted(calls)
+    assert calls == {"requested.resolved", "Bootstrap.open", "b.close", "s.openBootstrapped"}, sorted(calls)
+    agreed = tp.split("pub fn openBootstrapped(", 1)[1].split("b.agree(&cfg.digest()", 1)[0]
+    assert set(re.findall(r"\b([A-Za-z_][\w.]*)\(", agreed)) == {"requested.resolved"}
+    # The DeepSeek-V4.1 Engram preflight opens the bootstrap earlier; what it reads is shared by the pair identity.
+    preflight = engine_file("zig/src/families/deepseek_v41/engram_preflight.zig").split("\ntest ", 1)[0]
+    read = set(re.findall(r'"(TF_[A-Z0-9_]+)"', preflight))
+    assert read == {"TF_DSV41_ENGRAM_VALIDATE", "TF_DSV41_ENGRAM_DIR"} and not read & engine_settings.RANK_LOCAL
     bootstrap = engine_file("zig/src/fabric/tp/bootstrap.zig")
     body = bootstrap.split("pub fn open(cfg: Config)", 1)[1].split("\n    }\n", 1)[0]
     assert set(re.findall(r"\bcfg\.(\w+)", body)) == engine_settings.BOOTSTRAP_FIELDS

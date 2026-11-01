@@ -39,6 +39,37 @@ error text is credential-masked before stdout and JSON output. Unknown native he
 Set `PREFLIGHT=1` for the optional launcher hook: warnings continue, failures stop the start. The helper does not
 certify the checkpoint or justify a pool increase; native HTTP/SSE qualification remains required.
 
+## Release candidate G
+
+These numbers come from the paired bench boots behind the pin to G (`58bece1d3`). They used the flash17 K6 MTP variant
+([FLASH-1017](FLASH-1017.md#the-k6-mtp-variant)), TP2 on two Sparks, greedy decoding, and the nine settings in
+`config/prod-zig-flash17.env.example`. Each boot ran two cells: coding (200 output tokens) and set-b code (384). Each
+row is one boot and one run per cell. These are speed ratios between engines on the same pack and settings, not
+quality results.
+
+**G vs F** (one window, alternating F, G, G, F):
+
+| Boot | coding tok/s | set-b tok/s |
+| --- | ---: | ---: |
+| F | 105.17 | 90.28 |
+| G | 105.75 | 90.39 |
+| G | 107.25 | 89.49 |
+| F | 105.31 | 89.96 |
+
+The G/F pairs are 1.006 and 1.018 on coding, and 1.001 and 0.995 on set-b. Their geometric mean is **1.005**. All
+rows produced the same tokens, including a fifth G boot with the compute lane on.
+
+**F vs H** (one window): coding **1.051** (F 107.3 and 106.3 tok/s, H 102.4 and 100.7), set-b **1.000**, same tokens.
+Turning `TF_DSV41_KV_MIRROR=4096` off and on in the same window (the P1 spot) measured **+3.3 %** on coding (45.69 to
+44.30 ms a round) and **+3.9 %** on set-b.
+
+**Compute lane on MBPP.** 40 MBPP-sanitized tasks (ids 11-92), greedy, at most 8,192 tokens. The engine was the lane
+commit over an earlier candidate, not G. Compared to the client running the same `python` tool itself (one HTTP round
+trip per call), the lane cut wall time per solved task by **19 %** at one stream (9.24 vs 11.47 s) and **22 %** at
+four (6.36 vs 8.17 s). It also used 10 % fewer completion tokens, one request per task instead of 1.52, and a fifth
+of the request bytes. Both arms solved 38 of 40 tasks, the ceiling here. The run was not done in a quiet window, so
+host noise may be in the wall times.
+
 ## Credential-safe output
 
 Host launchers and recipe clients sanitize stdout, stderr, snapshots and report

@@ -16,6 +16,11 @@
   [2.9 bpw EXL3 pack](https://huggingface.co/Mia-AiLab/DeepSeek-V4.1-Flash-EXL3-2.9bpw) on Hugging Face
   ([Mia-AiLab](https://huggingface.co/Mia-AiLab)); their GLM-5.3 kit's fat-expert MoE design also lives on in
   `patches/0001`.
+  Two settings in the release candidate G profile come from Mia's work: the indexer row split
+  (`TF_DSV41_IDX_SPLIT`), from their recipe, and the D4 port of patch 0035's check for a too-short Engram table in
+  their [1017 kit](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks/tree/0e7d421eb4797d98dc781dad764b8f86d34118ae)
+  at `0e7d421`. The engine adapts that check to packed per-rank shards as `TF_DSV41_ENGRAM_VALIDATE`, which validates
+  before CUDA and TP start.
 - [dealignai](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw): the uncensored 2.9 bpw
   variant measured here.
 - [turboderp / ExLlamaV3](https://github.com/turboderp-org/exllamav3): the EXL3 format.
@@ -38,6 +43,15 @@
   (Apache-2.0): ideas we re-implemented (no code copied): geometric context buckets for the CUDA graphs (ours: 1.25x
   past 32K), an allocator ceiling (its `_memory_ceiling`; ours `TF_DSV41_ALLOC_CEIL_GIB`, shipped off), the GIL
   switch-interval knob (`TF_DSV41_SWITCH_MS`) and failing fast across both ranks.
+  The release candidate G profile turns on four more, re-implemented in the engine from the `families/dsv41` family on
+  branch `deepseek-v41-zig-tp2` at
+  [`a57deb9d4`](https://github.com/bertholomus/TensorFold/tree/a57deb9d470b27e1e3fab2a9494915a0049415aa) (no code
+  copied; the engine's commits name bertholomus as co-author): the KV mirror (`TF_DSV41_KV_MIRROR`, from its replicated
+  compressed-KV plane), both rotation folds (`TF_DSV41_ROT_FOLD` bit 0 from its grouped linear's `RotOut`, bit 1
+  from its attention merge's `Rot`), `TF_DSV41_IDX_IOTA` and `TF_DSV41_DEPTH_OVERHEAD_MS`. The bertholomus pack card's K6
+  attention and shared-MTP allocation independently supports the [K6 MTP variant](FLASH-1017.md#the-k6-mtp-variant).
+- [LibertAIDAI](https://huggingface.co/LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw/blob/afc7aa0aab98ee735c0f54e0a122019af1ac08f1/README.md):
+  the 46-projection K6 MTP allocation the [K6 MTP variant](FLASH-1017.md#the-k6-mtp-variant) follows.
 - Issue and pull-request authors on this repository: **WireLLM** (#3, the host memory growth), **ZackO2o** (#4, the
   missing `csa2` kernel sources) and **flashosophy** (#6, the four-Spark work that surfaced the `xgrammar` and
   `text_config` build bugs); see [Changes since G13](CHANGELOG.md).
