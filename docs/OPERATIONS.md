@@ -78,22 +78,25 @@ required one-boot alternating G-off/G1v2 Spark comparison remains unrun: start s
 must be at most 0.3 seconds, and memory minima no more than 0.25 GiB below both
 neighboring off blocks. Keep both options off until those device gates pass.
 
-## Compute lane (`TF_DSV41_COMPUTE_LANE`, off)
+## Compute lane (`TF_DSV41_COMPUTE_LANE`, on in the flash17 profile)
 
-Release candidate G adds an opt-in compute lane. With `TF_DSV41_COMPUTE_LANE=1`, a request that lists
-`{"type": "code_interpreter"}` in `tools` gets a `python(code)` tool that the engine runs itself and answers inside the
-same reply, so the client makes no tool round trip. Requests without that entry are unchanged, and the lane is not
-armed for requests with stop strings. The lane's calls are not returned as `tool_calls`: they are reported in a
-non-standard `compute` field (`message.compute` in a chat reply). Clients that do not read it see only the answer.
+The flash17 profile turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`); the engine's own default is off, and the
+q28-v2 rollback profile leaves it off. A request that lists `{"type": "code_interpreter"}` in `tools` gets a
+`python(code)` tool that the engine runs itself and answers inside the same reply, so the client makes no tool round
+trip. Requests without that entry are unchanged, and the lane is not armed for requests with stop strings. The lane's
+calls are not returned as `tool_calls`: they are reported in a non-standard `compute` field (`message.compute` in a
+chat reply). Clients that do not read it see only the answer.
 
 Each call runs `/usr/bin/python3` (the runtime image installs it) in a sandbox: it drops to `nobody`, sets rlimits and
 nice 10, sets `no_new_privs`, applies Landlock (ABI 6 or later: read and execute only under the interpreter's roots, no
 network or signals) and seccomp (no fork, no sockets). Docker's default seccomp profile allows this setup inside the
-container. A host without Landlock ABI 6 cannot run the lane.
+container. At boot the engine runs `print(1+1)` in the sandbox; if that fails (for example on a kernel without Landlock
+ABI 6, Linux 6.12 or later), the boot stops with `compute lane: the sandbox self-test failed`. The log line
+`compute lane: /usr/bin/python3 in a sandbox, 2 at a time, ...` confirms it is on.
 
 | Setting | Default | Range |
 | --- | --- | --- |
-| `TF_DSV41_COMPUTE_LANE` | off | `1` on; unset, empty or `0` off; anything else stops the boot |
+| `TF_DSV41_COMPUTE_LANE` | off (`1` in the flash17 profile) | `1` on; unset, empty or `0` off; anything else stops the boot |
 | `TF_DSV41_COMPUTE_LANE_WORKERS` | 2 | 1-64 concurrent sandboxes |
 | `TF_DSV41_COMPUTE_LANE_MAX_MS` | 10000 | wall limit per call, 1 ms to 1 h |
 | `TF_DSV41_COMPUTE_LANE_MAX_CALLS` | 8 | built-in calls per reply |
@@ -102,9 +105,24 @@ container. A host without Landlock ABI 6 cannot run the lane.
 | `TF_DSV41_COMPUTE_LANE_CPUS` | unset | CPU affinity list such as `16-19` |
 | `TF_DSV41_COMPUTE_LANE_PYTHON` | `/usr/bin/python3` | an absolute path |
 
-The lane runs model-written code on the serving host, so keep it off unless you need it. The measured G boots served
-the same tokens with the lane on and off, and a lane smoke (`2**100`) ran in 14 ms. The MBPP measurement in
-[BENCHMARKS](BENCHMARKS.md#release-candidate-g) was taken on the lane commit over an earlier candidate, not on G itself.
+The profile keeps every limit at its default: two sandboxes at a time, 10 s and 1 GiB per call, 8 calls and 512
+inserted tokens per reply.
+
+**Turning it off.** Set `TF_DSV41_COMPUTE_LANE=0` (or delete the line) in `config/prod-zig.env` on both nodes and
+restart the pair. Nothing else changes: the lane-off rows in the measurement below served the same tokens. The lane
+runs model-written code on the serving host inside the sandbox above; turn it off if no client sends
+`code_interpreter` or if that is not acceptable for your host.
+
+**Measured on G (`58bece1d3`), 2026-11-01** (TP2, flash17 K6 MTP, the bench settings of
+[BENCHMARKS](BENCHMARKS.md#release-candidate-g); the only change between arms is `TF_DSV41_COMPUTE_LANE`):
+- Tokens: greedy 2K and 8K outputs, draft off and on, were identical in all five boots (two lane off, three on).
+- Plain serving without tool calls, lane on vs off over two ABBA pairs: coding **0.980** (about 2 % slower),
+  set-b **0.999**. The two lane-off rows differed by 2.2 % from each other, so treat these as about ±1.5 %.
+- MBPP-40 (40 MBPP-sanitized tasks, greedy, at most 8,192 tokens, each cell in a quiet window), lane vs the client
+  running the same `python` tool itself: **14 %** less wall time per solved task at one stream (9.67 vs 11.24 s) and
+  **16 %** less at four (6.70 vs 8.01 s); 645 vs 715 completion tokens per task; 1 request per task instead of 1.53.
+  All arms solved 38 of 40. Against no tools at all, the lane was 2.7 % faster at one stream and 5.5 % slower at four,
+  where only two sandboxes run at a time (`TF_DSV41_COMPUTE_LANE_WORKERS`).
 
 ## Stalled-engine exit (`TF_DSV41_STALL_EXIT_S`, off)
 

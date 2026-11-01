@@ -91,7 +91,9 @@ each one does.
 | `TF_DSV41_TOKENIZER_MESSAGE_MEMO` | `1` | |
 | `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
 
-The compute lane (`TF_DSV41_COMPUTE_LANE`) stays off; see [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-off).
+The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`): a built-in, sandboxed Python tool for requests
+that ask for `code_interpreter`. It costs plain coding about 2 %; see
+[OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it off.
 
 On the exported engine, this profile with the #48 guard (engine on 8001, guard on 8000, the plan thread pinned to
 one CPU inside `CPUSET_CPUS`) was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM
