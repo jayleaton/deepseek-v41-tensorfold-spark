@@ -106,6 +106,26 @@ The lane runs model-written code on the serving host, so keep it off unless you 
 the same tokens with the lane on and off, and a lane smoke (`2**100`) ran in 14 ms. The MBPP measurement in
 [BENCHMARKS](BENCHMARKS.md#release-candidate-g) was taken on the lane commit over an earlier candidate, not on G itself.
 
+## Stalled-engine exit (`TF_DSV41_STALL_EXIT_S`, off)
+
+The pinned engine watches its own work: a round, a session snapshot, the KV union sync and each operation a follower
+runs from the leader. Every issued GPU call counts as progress. If work is in flight and nothing has progressed for
+`TF_DSV41_STALL_EXIT_S` seconds, that rank logs `no progress in <phase>`, withdraws readiness and exits. The other
+rank then fails fast through the pair's fate channel, so both containers stop instead of wedging with requests
+queued (#38, #59, #64). An idle engine, or a rank waiting for its next operation, never trips it.
+
+| Setting | Default | Values |
+|---|---|---|
+| `TF_DSV41_STALL_EXIT_S` | off | whole seconds; unset or `0` off; anything else stops the boot |
+
+It is off by default, and the example profiles leave it unset. For unattended TP2 serving, set
+`TF_DSV41_STALL_EXIT_S=300` in both ranks' config, and run a supervisor that restarts the pair: the `serve.sh` watch
+with `WATCH_HEAL=1` (below) or your own. Without a supervisor the pair stays down after the exit.
+Five minutes is far above the longest single GPU wait in normal serving (a 4K-row prefill segment takes seconds, even
+at deep context), and the wedges reported in #64 lasted hours. Lower values save little and risk exiting during a
+slow first-use kernel load. This exit has not yet been triggered on the pair. Its tests block the actual
+synchronization calls on the host (engine commits `53033f7ee`, `aee501160`, `d6dbc870a`).
+
 ## Native pair lifecycle and watchdog (#58)
 
 For authenticated native serving, put the keys in a file with mode `0600`, owned by

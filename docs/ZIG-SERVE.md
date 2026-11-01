@@ -41,6 +41,8 @@ required or named `tool_choice`; `0` refuses those requests, and any other value
 `TF_TP_ROCE_HCA` selects the rank-local RDMA port when more than one peer is cabled. It is forwarded unchanged,
 including a value supplied from the caller environment. Credit: @rootsbymenda, #63. The launcher also keeps both-rank
 `NCCL_CUMEM_ENABLE=0` / `NCCL_CUMEM_HOST_ENABLE=0` defaults from #41. Set topology only in ignored local config.
+`TF_DSV41_STALL_EXIT_S` (off by default; 300 recommended for unattended TP2) makes a stalled pair exit instead of
+wedging; see [OPERATIONS](OPERATIONS.md#stalled-engine-exit-tf_dsv41_stall_exit_s-off).
 
 ## Generate runtime assets
 
