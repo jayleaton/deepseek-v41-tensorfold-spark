@@ -74,9 +74,9 @@ three runs per cell, no tool calls in these prompts):
 | L04 | off | 104.89 | 89.44 |
 
 On/off is 0.973 and 0.988 on coding, and 0.989 and 1.010 on set-b. The geometric means are **0.980** and **0.999**:
-plain coding costs about 2 % with the lane on. The two lane-off boots differ by 2.2 %, so expect about ±1.5 % on these
-ratios. Greedy 2K and 8K outputs (draft off and on) were identical in all five boots of the window, the four above
-plus L05 (lane on), which ran MBPP.
+in this window, coding measured about 2 % lower with the lane on. The two lane-off boots differ by 2.2 %, so treat
+these ratios as about ±1.5 % on one run, not a fixed cost. Greedy 2K and 8K outputs (draft off and on) were identical
+in all five boots of the window, the four above plus L05 (lane on), which ran MBPP.
 
 **Compute lane on MBPP** (2026-11-01, L05, lane on). 40 MBPP-sanitized tasks (ids 11-92), greedy, at most 8,192
 tokens, client off-node, each cell in its own quiet window. Arms: (a) no tools, (b) the client runs the same
