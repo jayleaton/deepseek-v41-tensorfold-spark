@@ -48,6 +48,18 @@ def test_ignored_local_excluded_but_tracked_stays_in_scope(tmp_path):
     assert scan(root).returncode == 1
 
 
+def test_local_agent_tooling_is_ignored_and_refused_if_forced(tmp_path):
+    root = checkout(tmp_path)
+    shutil.copyfile(ROOT / ".gitignore", root / ".gitignore")
+    skill = root / ".claude" / "skills" / "verify" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("ordinary content\n")
+    assert scan(root).returncode == 0
+    subprocess.run(["git", "add", "-f", str(skill.relative_to(root))], cwd=root, check=True)
+    result = scan(root)
+    assert result.returncode == 1 and ".claude/skills/verify/SKILL.md" in result.stdout
+
+
 
 def test_history_keeps_all_alias_paths_and_removed_data(tmp_path):
     root = checkout(tmp_path)

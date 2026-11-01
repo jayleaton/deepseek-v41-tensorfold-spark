@@ -20,6 +20,9 @@ build/
 # private names for scripts/check-public.sh
 .check-public.local
 
+# local agent tooling (skills, settings): machine-local, may name lab hosts (#52)
+.claude/
+
 # editors / OS
 .vscode/
 .idea/

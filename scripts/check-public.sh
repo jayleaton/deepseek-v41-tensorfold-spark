@@ -118,9 +118,9 @@ emails=$(grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2
          grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
 
-# files that should never be published
+# files that should never be published (.claude/ is local agent tooling, #52)
 # run logs are published only under results/campaign/ (sanitized engine / client output of the development windows)
-bad=$(printf '%s\n' "${FILES[@]}" | grep -E '\.(log|out|pem|key)$|(^|/)\.env$|^config/[^/]+\.env$|id_(rsa|ed25519)' |
+bad=$(printf '%s\n' "${FILES[@]}" | grep -E '\.(log|out|pem|key)$|(^|/)\.env$|^config/[^/]+\.env$|id_(rsa|ed25519)|^\.claude/' |
       grep -vE '^results/campaign/.*\.(log|out)$' || true)
 if [[ -n "$bad" ]]; then fail=1; echo "== files that should not be published"; echo "$bad"; fi
 
