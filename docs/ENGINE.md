@@ -22,7 +22,7 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
 The current pin is release candidate G, `58bece1d3` on `dsv41/candidate-g`. G is candidate F (`56200688d`, the
-fallback pin) plus the compute lane (`TF_DSV41_COMPUTE_LANE`, off by default; [OPERATIONS](OPERATIONS.md)) and its
+fallback pin) plus the compute lane (`TF_DSV41_COMPUTE_LANE`, off in the engine, on in the flash17 profile; [OPERATIONS](OPERATIONS.md)) and its
 executor. F carries the opt-in settings the flash17 profile turns on (the KV mirror, both rotation folds, the indexer
 row split, Engram shard validation and five others; [FLASH-1017](FLASH-1017.md)). Both descend from stable head H
 (`20ad77878`, the previous pin), which has flash17 `dsq-1` checkpoint admission from `98f2a3896` and boots the real

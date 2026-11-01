@@ -28,12 +28,14 @@ def test_example_profile_describes_known_pin_state(profile):
     assert "historical measurements do not qualify this pin" in comments
 
 
-@pytest.mark.parametrize(
-    "profile", ["prod-zig.env.example", "prod-zig-flash17.env.example"]
-)
-def test_example_profile_leaves_the_compute_lane_off(profile):
-    lines = (ROOT / "config" / profile).read_text().splitlines()
+def test_rollback_profile_leaves_the_compute_lane_off():
+    lines = (ROOT / "config/prod-zig.env.example").read_text().splitlines()
     assert not [line for line in lines if line.startswith("TF_DSV41_COMPUTE_LANE")]
+
+
+def test_flash17_profile_turns_the_compute_lane_on_with_default_limits():
+    lines = (ROOT / "config/prod-zig-flash17.env.example").read_text().splitlines()
+    assert [line for line in lines if line.startswith("TF_DSV41_COMPUTE_LANE")] == ["TF_DSV41_COMPUTE_LANE=1"]
 
 
 def test_flash17_profile_sets_the_release_candidate_settings():

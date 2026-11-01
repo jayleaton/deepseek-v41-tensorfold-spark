@@ -63,12 +63,39 @@ rows produced the same tokens, including a fifth G boot with the compute lane on
 Turning `TF_DSV41_KV_MIRROR=4096` off and on in the same window (the P1 spot) measured **+3.3 %** on coding (45.69 to
 44.30 ms a round) and **+3.9 %** on set-b.
 
-**Compute lane on MBPP.** 40 MBPP-sanitized tasks (ids 11-92), greedy, at most 8,192 tokens. The engine was the lane
-commit over an earlier candidate, not G. Compared to the client running the same `python` tool itself (one HTTP round
-trip per call), the lane cut wall time per solved task by **19 %** at one stream (9.24 vs 11.47 s) and **22 %** at
-four (6.36 vs 8.17 s). It also used 10 % fewer completion tokens, one request per task instead of 1.52, and a fifth
-of the request bytes. Both arms solved 38 of 40 tasks, the ceiling here. The run was not done in a quiet window, so
-host noise may be in the wall times.
+**Compute lane on and off** (2026-11-01, one window on G, ABBA; the only change is `TF_DSV41_COMPUTE_LANE`; median of
+three runs per cell, no tool calls in these prompts):
+
+| Boot | Lane | coding tok/s | set-b tok/s |
+| --- | --- | ---: | ---: |
+| L01 | off | 107.20 | 90.47 |
+| L02 | on | 104.27 | 89.44 |
+| L03 | on | 103.62 | 90.35 |
+| L04 | off | 104.89 | 89.44 |
+
+On/off is 0.973 and 0.988 on coding, and 0.989 and 1.010 on set-b. The geometric means are **0.980** and **0.999**:
+in this window, coding measured about 2 % lower with the lane on. The two lane-off boots differ by 2.2 %, so treat
+these ratios as about ±1.5 % on one run, not a fixed cost. Greedy 2K and 8K outputs (draft off and on) were identical
+in all five boots of the window, the four above plus L05 (lane on), which ran MBPP.
+
+**Compute lane on MBPP** (2026-11-01, L05, lane on). 40 MBPP-sanitized tasks (ids 11-92), greedy, at most 8,192
+tokens, client off-node, each cell in its own quiet window. Arms: (a) no tools, (b) the client runs the same
+`python` tool itself (one HTTP round trip per call), (c) the lane.
+
+| Arm | Streams | Solved | Wall s / solved | Completion tokens / task | Requests / task |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| (a) no tools | 1 | 38 / 40 | 9.94 | 636 | 1.00 |
+| (b) client round trip | 1 | 38 / 40 | 11.24 | 715 | 1.53 |
+| (c) lane | 1 | 38 / 40 | **9.67** | 645 | 1.00 |
+| (a) no tools | 4 | 38 / 40 | 6.35 | 636 | 1.00 |
+| (b) client round trip | 4 | 38 / 40 | 8.01 | 715 | 1.53 |
+| (c) lane | 4 | 38 / 40 | **6.70** | 645 | 1.00 |
+
+Against the client round trip, the lane cut wall time per solved task by **14 %** at one stream and **16 %** at four,
+with 10 % fewer completion tokens, one request per task instead of 1.53 and about a fifth of the request bytes. Against
+no tools it was 2.7 % faster at one stream and 5.5 % slower at four, where only two sandboxes run at a time. All arms
+solved 38 of 40. These numbers replace the earlier MBPP run, which used the lane commit over an earlier candidate
+and was not in a quiet window.
 
 ## Credential-safe output
 

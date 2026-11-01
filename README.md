@@ -16,7 +16,7 @@ the previously deployed engine and profile.
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
-| Serving | 1M context, four slots, vision (native image input), tool calling, structured output |
+| Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
 This branch migrates the recipe to upstream native serving. The pin is TensorFold `58bece1d3`, release candidate
 G of the `dsv41/candidate-g` branch (fallback F, `56200688d`). It descends from the stable DeepSeek head H
