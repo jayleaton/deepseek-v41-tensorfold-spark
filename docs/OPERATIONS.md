@@ -117,6 +117,14 @@ The profile keeps every limit at its default: two sandboxes at a time, 10 s and 
 with 512 result-body tokens each. The cap applies per call, so a reply with several calls can insert several capped
 results plus truncation notes, bounded by the request's output-token budget.
 
+At the current pin (`07106059c`) a client function named `python` that is byte-equal to the built-in definition
+also arms the lane (any other `python` function next to `code_interpreter` is refused), and a request may set
+`deadline_s` (seconds, more than 0 and at most 1000000): at the deadline the reply ends with `finish_reason:
+"deadline"` and keeps its tokens and usage. The flash17 profile also sets the in-model runner and its options off
+explicitly (`TF_DSV41_RUNNER=0`, `TF_DSV41_COMPUTE_LANE_RUNNER=0` and the rest), which is how the compute-lane studies
+ran; the runner is experimental. The studies, their exact configurations, results and how to rerun them are in
+[compute lane](compute-lane.md).
+
 **Turning it off.** Set `TF_DSV41_COMPUTE_LANE=0` (or delete the line) in `config/prod-zig.env` on both nodes and
 restart the pair. Nothing else changes: the lane-off rows in the measurement below served the same tokens. The lane
 runs model-written code on the serving host inside the sandbox above; turn it off if no client sends

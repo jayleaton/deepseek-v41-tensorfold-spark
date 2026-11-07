@@ -97,6 +97,11 @@ no tools it was 2.7 % faster at one stream and 5.5 % slower at four, where only 
 solved 38 of 40. These numbers replace the earlier MBPP run, which used the lane commit over an earlier candidate
 and was not in a quiet window.
 
+**Compute-lane studies at the current pin** (2026-11-04 to 2026-11-07): generated computation-heavy tasks, a
+final-answer wording retest, a declaration control on GSM8K / MATH-500 / HumanEval subsets and the AB3 runner
+comparison, each with an independent adjudication. Their configurations, results in the adjudicators' wording and
+kits are in [compute lane](compute-lane.md) and [`bench/compute-lane/`](../bench/compute-lane/README.md).
+
 ## Credential-safe output
 
 Host launchers and recipe clients sanitize stdout, stderr, snapshots and report

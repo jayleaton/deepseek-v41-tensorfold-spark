@@ -70,7 +70,7 @@ are all unchanged.
 | `TF_DSV41_BIAS_VL` | `/cache/dsv41-bias-vl` | **`/model`** | the 1017 learned image biases |
 | `TF_DSV41_POOL_TOKENS` | 3000000 | **2100000** | memory headroom ([below](#memory-the-21m-pool)) |
 | `TF_DSV41_PF_WS_FLOOR_GIB` | 3.5 | **4.75** | a planned 4K workspace stays above the 4 GiB floor |
-| `TF_CUDA_SCHED` | unset | **`blocking`** | the host sleeps instead of spinning while it waits for the GPU |
+| `TF_CUDA_SCHED` | unset | unset (`blocking` optional) | `blocking` makes the host sleep instead of spinning while it waits for the GPU; the compute-lane studies ([compute lane](compute-lane.md)) ran unset, so the profile keeps it unset |
 | `CPUSET_CPUS` | unset | optional, **host CPUs from your topology** | keeps a numeric `TF_TP_PLAN_PIN` and the engine on chosen CPUs |
 
 We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.

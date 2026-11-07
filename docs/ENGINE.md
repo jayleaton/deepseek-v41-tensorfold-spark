@@ -21,7 +21,14 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is release candidate G, `58bece1d3` on `dsv41/candidate-g`. G is candidate F (`56200688d`, the
+The current pin is `07106059c` on `dsv41/compute-lane-release`: the exact engine source of the compute-lane studies
+([compute lane](compute-lane.md)). Its tree is byte-identical to the measured source `3a429d6f1` (tree `c3636e6da`),
+with the same history re-recorded under one author. It is G plus `deadline_s`, the engine-held compute lane with its
+sandbox, and the experimental in-model runner, which stays off unless its settings are set (off in the flash17
+profile). [compute lane](compute-lane.md) lists the measured G commits' counterparts on this branch.
+
+The previous pin is release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,
+the same tree). G is candidate F (`56200688d`, the
 fallback pin) plus the compute lane (`TF_DSV41_COMPUTE_LANE`, off in the engine, on in the flash17 profile; [OPERATIONS](OPERATIONS.md)) and its
 executor. F carries the opt-in settings the flash17 profile turns on (the KV mirror, both rotation folds, the indexer
 row split, Engram shard validation and five others; [FLASH-1017](FLASH-1017.md)). Both descend from stable head H
@@ -34,9 +41,11 @@ flash17 pack on TP2. H added:
   only for constrained rows. `TF_DSV41_GRAMMAR` is honoured again: unset, empty or `1` (the default) serves
   structured output, `0` refuses it, and any other value stops the boot.
 
-G is not on upstream main yet, so `config/tensorfold.repo` points at JJ's public fork
-(`jayleaton/TensorFold`, branch `dsv41/candidate-g`), where the commit is published. To fall back to F, put
-`56200688d52af54062fadbab12de36e95165ad72` (an ancestor of G on the same branch) in `config/tensorfold.rev`, unset
+The pin is not on upstream main yet, so `config/tensorfold.repo` points at JJ's public fork
+(`jayleaton/TensorFold`, branch `dsv41/compute-lane-release`), where the commit is published. To fall back to G, put
+`58bece1d3184269059fd3f7f755c52f4f295113d` (branch `dsv41/candidate-g`) in `config/tensorfold.rev` and regenerate
+the settings list; G does not read the profile's runner lines, so the launcher warns and does not forward them. To fall back to F, put
+`56200688d52af54062fadbab12de36e95165ad72` (an ancestor of G on that branch) in `config/tensorfold.rev`, also unset
 `TF_DSV41_COMPUTE_LANE` and regenerate the settings list. Once the upstream PRs merge
 and the pin is on `ashhart/TensorFold`, the file points back there. A local checkout or a bundle remains the
 fallback, as described below. This source support is not a new
