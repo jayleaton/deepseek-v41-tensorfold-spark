@@ -18,9 +18,10 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `e5172c4a2` on
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `75d774470` on
 `dsv41/compute-lane-release`: the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
-byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT`. That is release candidate G (`58bece1d3`, fallback; F
+byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-up (a client's own `python` function keeps the name;
+`compute_executed` counts only runs). That is release candidate G (`58bece1d3`, fallback; F
 `56200688d` before it) plus `deadline_s`, the engine-held compute lane and the experimental in-model runner. The
 flash17 profile's default is the in-thinking "tool-full" profile, run for every chat whatever the client sends; it
 needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block.

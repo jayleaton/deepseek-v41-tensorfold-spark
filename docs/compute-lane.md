@@ -20,12 +20,13 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `e5172c4a2e73a01d6812d16cd1f57ec908e8f8bf`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
+| Pin | `75d7744706d4880147069ee1492915692289bc37`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
-The pin is `07106059c` plus one commit, `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
-chat](#compute-in-every-chat)); with that setting unset it renders and serves requests exactly as `07106059c` does.
+The pin is `07106059c` plus two commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
+chat](#compute-in-every-chat)) and `75d774470` refines it (a client's own `python`, the `compute_executed` count). With
+that setting unset it renders and serves requests exactly as `07106059c` does.
 Below it, the release branch holds the same 303 commits over upstream `0d51120a8` as the measured branch, with the
 same trees, messages and dates, re-recorded under one author. Counterparts of commits named in this recipe's docs:
 
@@ -196,17 +197,22 @@ The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_
 stops the boot) makes the engine read every chat request as the tool-full request, whatever the client sends:
 
 - `tools` gets the built-in `{"type": "code_interpreter"}` entry once. A client that lists it, or sends a byte-equal
-  copy of the built-in `python` function, still gets one declaration; a different function named `python` is
-  refused. A `tool_choice` of `"none"` keeps the built-in tool; `"required"` or a named function leave it out, as
-  they do for a request that opts in.
+  copy of the built-in `python` function, still gets one declaration. A client that offers its own, different
+  function named `python` keeps it: for that request the built-in tool is left out (the prompt is the client's own and
+  its `python` calls go back to it), while the runner's in-thinking cells and guide stay on. A model's call carries
+  only the tool's name, so two tools named `python` cannot both be offered. Only a request that lists
+  `code_interpreter` next to its own different `python` is refused (HTTP 400), as with the default off. A
+  `tool_choice` of `"none"` keeps the built-in tool; `"required"` or a named function leave it out, as they do for a
+  request that opts in.
 - The runner's guide is the boot's (`TF_DSV41_RUNNER_GUIDE`, or AB3's trust guide when unset, sha256 `53ed328f…`); a
   request's own `runner_guide` is ignored.
 - The client's own function tools are kept and their calls go back to the client as usual. Only built-in calls and
   the runner's in-thinking cells run in the engine.
 - No request field turns it off.
 
-Each reply's `tensorfold` object then carries `compute_executed`: `calls` (built-in calls run), `runner_cells`
-(runner cells the engine wrote a value for, all forms) and `total`, 0 when nothing ran. With the setting unset no
+Each reply's `tensorfold` object then carries `compute_executed`: `calls` (built-in calls the circuit ran to its halt
+or the sandbox started; a call with no code, or past `TF_DSV41_COMPUTE_LANE_MAX_CALLS`, stays a report but is not
+counted), `runner_cells` (runner cells the engine wrote a value for, all forms) and `total`, 0 when nothing ran. With the setting unset no
 reply carries it and requests are rendered exactly as before.
 
 ## Runner image
