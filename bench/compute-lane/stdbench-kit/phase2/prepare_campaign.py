@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Bind the qualified rank1-host source freeze to identical rank0-host files; no GPU/API."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 root=Path('<rank0-work>/stdbench/phase2')
 def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 receipt=json.loads((root/'cpu-final-v3/verification.json').read_text())

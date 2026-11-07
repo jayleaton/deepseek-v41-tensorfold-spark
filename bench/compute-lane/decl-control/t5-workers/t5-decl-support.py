@@ -1,4 +1,11 @@
+
+import sys as _archive_sys
 import pathlib,json,sys,hashlib,collections,math
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 H=pathlib.Path.home();B=H/'work/stdbench/decl-control';T=B/'dispatch-high';O=pathlib.Path(sys.argv[1]);J=lambda p:json.loads(p.read_text());L=lambda p:[json.loads(x) for x in p.read_text().splitlines() if x.strip()];sha=lambda b:hashlib.sha256(b).hexdigest()
 proof=J(T/'dispatch-proof.json');cpu=J(B/'cpu-final-a1-v2/verification.json');assert sha((T/'dispatch-proof.json').read_bytes())==cpu['dispatch_proof_sha256']
 for rel,h in proof['sha256'].items():assert sha((T/rel).read_bytes())==h,rel

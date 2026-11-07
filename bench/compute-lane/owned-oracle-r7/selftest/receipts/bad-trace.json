@@ -1,0 +1,11 @@
+{
+ "reasoning": "[exact: 2^10 = 1000]\nOk.\n",
+ "content": "",
+ "tensorfold": {
+  "runner": {
+   "trace": {
+    "owned": 1
+   }
+  }
+ }
+}

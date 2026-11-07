@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """CPU dry-run against the node's real original adapter, assets and Docker."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
 from generate_envs3 import PREFIX
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root = Path(__file__).resolve().parent
 rank = int(sys.argv[1])

@@ -1,5 +1,9 @@
 # Computation-demanding D/L study — INCOMPLETE
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **NEEDS-T5. Collection stopped at 342/480 replies; 138 remain uncollected. G is restored.**
 Spec SHA256: `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`.
 D = declared tool, executor OFF. L = identical declaration/request, lane ON. No plain arm.
@@ -68,7 +72,7 @@ The native report exposes call_ms (translate/queue/run) and exec_ms (executor ru
 | graph | 0.000 (n=20) | 0.015 (n=40) | 0.000 (n=20) | 0.000 (n=2) |
 | aggregation | 0.000 (n=20) | 0.016 (n=21) | 0.000 (n=20) | unknown (n=0) |
 
-[Timing sums, means, medians and coverage](supplementary-telemetry.json).
+Timing sums, means, medians and coverage (`supplementary-telemetry.json`, omitted from this export).
 
 ## Operational evidence and limits
 
@@ -76,6 +80,6 @@ Cumulative operator-held GPU time: 3413.519s (56.89min), including boots, diagno
 CPU D/L prompt arrays matched for 242 keys; source/image/environment and sent-wire/initial-count checks are retained. Served initial arrays were not directly observed; same-length server rendering differences remain unobserved. Full planned 244 wire/count comparisons cannot qualify with 138 replies missing.
 Inherited declaration-control base SHA `adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6`; A1 SHA `e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89`.
 Public task manifest SHA `3e1e07d7a573eb194c0568afac2ef2112011b2b2cada9012fbbce4e6f47f7548`; reference A/B agree 120/120, zero disjointness collisions. Frozen grader/statistics and all original receipts are preserved.
-DeepSeek published scores in [PUBLISHED.md](../PUBLISHED.md) are labelled historical reference only. This generated task set has no matched DeepSeek published score; no vendor number is treated as a study arm.
+DeepSeek published scores in PUBLISHED.md (`../PUBLISHED.md`, omitted from this export) are labelled historical reference only. This generated task set has no matched DeepSeek published score; no vendor number is treated as a study arm.
 
 **NEEDS-T5** — adjudicate the clipping-aware verifier and completion layout before any further collection.

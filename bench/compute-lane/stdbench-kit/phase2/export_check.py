@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Final standalone kit checks; constrained Spark CPU scope only."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import py_compile
 import subprocess
 import tempfile
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 root=Path(__file__).resolve().parent
 sources=sorted(root.glob('*.py'))+sorted(root.glob('*.sh'))
 with tempfile.TemporaryDirectory(prefix='stdbench-export-check-') as temp:

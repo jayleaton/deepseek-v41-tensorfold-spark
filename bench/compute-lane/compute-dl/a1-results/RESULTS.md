@@ -1,5 +1,9 @@
 # Compute study A1 — BLOCKED / INCOMPLETE
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **NEEDS-T5. No new benchmark requests were attempted. G is not restored.**
 Observed dataset remains342/720: D120, L222, P0. All378 fresh requests remain:18 L,120 D,240 P.
 
@@ -44,7 +48,7 @@ New A1 GO markers are revoked on both nodes as `GO.REVOKED-lock-missing-20261106
 
 The original3413.519101628801s carry is preserved. The new ledger retains its unresolved active restoration interval, starting08:53:34.922223Z; it has **not** been reset or closed as if G had been restored. The18000s limit and15900s admission cutoff remain. No new collection may start until actual restoration and held-time evidence are reconciled.
 
-[Collection/queue step log](../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/steps.jsonl) · [lease failure](../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/<rank1-host>-lease.log) · [G restoration log](../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/G-restore.log) · [budget ledger](../stdbench-compute-a1-20261105-v2/budget.json).
+Collection/queue step log (`../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/steps.jsonl`, omitted from this export) · lease failure (`../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/<rank1-host>-lease.log`, omitted from this export) · G restoration log (`../a1-runtime/runs/stdbench-compute-a1-20261105-v2-A1-resume/G-restore.log`, omitted from this export) · [budget ledger](../stdbench-compute-a1-20261105-v2/budget.json).
 
 ## Retained descriptive results only
 
@@ -58,7 +62,7 @@ These unchanged cost means were computed in the preserved original report. They 
 
 Full-cohort L/P accuracy difference, confidence interval, exact paired test, cost ratios and efficiency claims are withheld. Scheduled solve-count bounds are D[1,121], L[169,187], P[0,240]. No missing value is zero-imputed. Multi-round processed-input totals remain withheld; initial-prompt-plus-returned is only a subtotal. Tool-policy failures in D do not establish ordinary-answer speed or arithmetic accuracy. The complete strict/sensitivity reporting code is frozen; no new sensitivity result is promoted here.
 
-[Preserved per-family original costs and outcomes](../RESULTS.md) · [original480-row ledger](../per-problem.csv). DeepSeek scores in [PUBLISHED.md](../../PUBLISHED.md) are historical reference rows only; this generated task mixture has no matched published vendor score.
+[Preserved per-family original costs and outcomes](../RESULTS.md) · [original480-row ledger](../per-problem.csv). DeepSeek scores in PUBLISHED.md (`../../PUBLISHED.md`, omitted from this export) are historical reference rows only; this generated task mixture has no matched published vendor score.
 
 ## Required recovery
 

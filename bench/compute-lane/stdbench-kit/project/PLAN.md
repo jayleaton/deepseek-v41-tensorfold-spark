@@ -1,6 +1,10 @@
 # Phase 2: normal public benchmarks, CPU-prepared only
 
-Status: **NO GPU GO**. Nothing is queued. Start only after JJ explicitly accepts the current guide×S3 ablation as promising and authorizes phase 2. This prep does not adjudicate that ablation. Read [PUBLISHED](PUBLISHED.md) before interpreting historical numbers: no exact-1017 scores were found for these short suites. This is a useful paired local experiment, not a reproduction of DeepSeek's scorecard.
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
+Status: **NO GPU GO**. Nothing is queued. Start only after JJ explicitly accepts the current guide×S3 ablation as promising and authorizes phase 2. This prep does not adjudicate that ablation. Read PUBLISHED (`PUBLISHED.md`, omitted from this export) before interpreting historical numbers: no exact-1017 scores were found for these short suites. This is a useful paired local experiment, not a reproduction of DeepSeek's scorecard.
 
 ## Suites and budget
 

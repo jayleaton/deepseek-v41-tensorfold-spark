@@ -1,7 +1,11 @@
 """Writes selftest/receipts/{cut-record-*,live-record-*,bad-record-capcut-*}.json: a length cap ending a reply inside its last engine
 record (owned-oracle `cut`), and the negative controls that must fail. Run once when the shapes change:
   python3 -I selftest/make_cut_receipts.py"""
+import sys
 import json, os
+if __name__ == '__main__' and sys.argv[1:] == ['--help']:
+    print(__doc__)
+    raise SystemExit(0)
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'receipts')
 MARK = ' @engine'

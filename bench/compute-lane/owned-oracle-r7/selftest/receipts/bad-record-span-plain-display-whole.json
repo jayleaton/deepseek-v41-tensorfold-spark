@@ -1,0 +1,29 @@
+{
+ "reasoning": "So [exact, computed by the engine: 2^37 - 3^18 = 136276692005]\n",
+ "finish": "stop",
+ "tensorfold": {
+  "finish": "done",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "trace",
+     "span": "2**37-3**19",
+     "ids": 12,
+     "display": "2^37 - 3^18",
+     "landed": 12,
+     "field": "reasoning",
+     "at": 3,
+     "value": "[exact, computed by the engine: 2^37 - 3^18 = 136276692005]\n",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 12
+    }
+   ]
+  }
+ }
+}

@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Stage a new high-thinking fixture without changing the completed first proof."""
+
+import sys as _archive_sys
 import json
 from pathlib import Path
 import shutil
 import subprocess
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root=Path(__file__).resolve().parent
 old=root/'dispatch'; new=root/'dispatch-high'

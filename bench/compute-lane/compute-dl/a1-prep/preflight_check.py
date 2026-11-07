@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Exercise actual entrypoints on CPU, including unapproved-entry refusal."""
+
+import sys as _archive_sys
 import ast
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 import stage_control
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 HERE=Path(__file__).resolve().parent
 for path in HERE.glob('*.py'): ast.parse(path.read_text(),filename=str(path))
 pf=subprocess.run(['bash','<rank0-work>/queue/turn-preflight.sh',str(HERE/'launch.sh'),str(HERE/'turn.sh')],

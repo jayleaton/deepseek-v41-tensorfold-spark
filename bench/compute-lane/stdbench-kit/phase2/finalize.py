@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Merge sealed judgments and run the unchanged registered paired analysis."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import os
@@ -10,6 +12,11 @@ import tempfile
 from pathlib import Path
 import analysis
 import math_review
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 root=Path(__file__).resolve().parent
 out=root/'post-v1'
 load=lambda p: json.loads(Path(p).read_text())

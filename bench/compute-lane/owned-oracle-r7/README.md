@@ -7,23 +7,54 @@ text. It runs no engine code, no tests and no builds. Evaluation is CPython 3.12
 `report.md` path and the owned-mismatch count (owner `engine` or `owned-form`) in the report. Any owned mismatch is
 a wrong engine write until shown otherwise. Do not report "owned correct" with one open.
 
-## Running it (<rank0-host>/<rank1-host> only, never <dev-host>)
+## Running it on an authorized CPU host
 
-The evaluation is compute, so it runs on a Spark:
+From the recipe root, use `bench/compute-lane/owned-oracle-r7/`. To copy the complete checker,
+including its synthetic tests, use:
 
-```
-scp -r tools/owned-oracle/{oracle.py,run.sh,selftest.sh,selftest} <rank0-user>@<rank0-ip>:work/owned-oracle/tool/
-ssh <rank0-user>@<rank0-ip> 'bash ~/work/owned-oracle/tool/selftest.sh'                       # must print selftest PASS
-ssh <rank0-user>@<rank0-ip> 'bash ~/work/owned-oracle/tool/run.sh ~/work/owned-oracle/out/<run> <receipt dir>...'
-scp <rank0-user>@<rank0-ip>:work/owned-oracle/out/<run>/{report.md,mismatches.jsonl} <evidence dir>/
+```sh
+scp -r bench/compute-lane/owned-oracle-r7 <user>@<cpu-host>:/absolute/checker-parent/
 ```
 
-Pass any number of receipt directories or files; JSON files are found recursively. Runner counts are read from `tensorfold`, `response.tensorfold` or `extra.tensorfold` (imr-measure receipts). `run.sh` does the following:
+The host needs Linux cgroup v2, Bash, Python 3, Docker and `timeout`. Use the site's CPU admission
+controller for **the whole command**, including the image pull: check its QUIET/boot state, scope
+budget and free memory first. On the Sparks, never run this on dev-box, leave at least 6 GiB free,
+keep fewer than four CPU scopes per node, and run no CPU work during a GPU boot. Node02 is reached
+through node01. No GPU or model is needed.
 
-- **Waits.** It waits out `~/work/queue/QUIET`, a held T4 window and an `imr-measure` at the head of ORDER before each step.
-- **Extract and report.** These steps run in a `systemd-run --user --scope` with MemoryMax=2G, MemorySwapMax=0, nice 19 and ionice c3.
-- **Evaluate.** This step runs in `docker run --network none --read-only` (2 GiB, 1 CPU, cpuset 0-4, pids 256, nice 19). The container is `docker pause`d while QUIET or a T4 window is held. Fence and REPL code runs there under `prlimit --as=1G --cpu=5 python3 -I` in an empty temp directory.
-- **Image.** It uses `tensorfold-dsv41-imr:r-6cdaf1bed8ae` (python 3.12.3; only its python is used). Override with `ORACLE_IMAGE`.
+`run.sh`, `gate.sh` and `selftest.sh` require an existing caller-owned scope with MemoryMax ≤2 GiB
+and MemorySwapMax=0; they do not create nested scopes. The site's controller must pause the whole
+scope and its labelled Docker children during QUIET, and stop its own work if boot/memory admission
+is lost. Set `QUIET_FILE` to the site's **absolute** marker path if it has one; no private queue or
+`~/work` layout is assumed. `run.sh` also waits at phase boundaries and pauses its evaluator for
+that marker. `STDBENCH_CPU_JOB` is copied to the container's `stdbench.cpu_job` ownership label
+(otherwise a per-process oracle label is used).
+
+For an otherwise idle authorized host, after the admission checks above, the equivalent resource
+envelope is shown below. On a shared Spark use its guarded CPU controller instead of this bare
+scope command. Set `TOOL` to the absolute checker directory and `OUT` to a fresh writable output:
+
+```sh
+export ORACLE_IMAGE=python:3.12.3-slim-bookworm@sha256:afc139a0a640942491ec481ad8dda10f2c5b753f5c969393b12480155fe15a63
+systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 \
+  nice -n 19 ionice -c3 timeout 7200 docker pull "$ORACLE_IMAGE"
+systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 \
+  nice -n 19 ionice -c3 timeout 7200 bash "$TOOL/selftest.sh" "$OUT"
+# Expected final line: selftest PASS. For actual receipts, in a separate fresh output:
+systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 \
+  nice -n 19 ionice -c3 timeout 7200 bash "$TOOL/gate.sh" "$RECEIPT_OUT" "$RECEIPTS"
+```
+
+The digest-pinned public CPython 3.12.3 image is also the default; `ORACLE_IMAGE` can select another
+qualified CPython 3.12 image. Images must be loaded first: evaluation never pulls implicitly.
+Pass any number of receipt files/directories; JSON is found recursively. Runner counts are read
+from `tensorfold`, `response.tensorfold` or `extra.tensorfold`. Extract/report/gate run inside the
+caller scope. Evaluation runs without GPU, network, writes to the image, capabilities or privilege
+escalation, with 2 GiB/no additional swap, one CPU, 256 PIDs, nice 19 and a 7200-second timeout.
+Fence/REPL subprocesses retain `prlimit --as=1G --cpu=5 python3 -I` in an empty temporary directory.
+Only exact owned container names are removed on completion/interruption. The other window/W9
+scripts below preserve historical collection integration; the portable checker procedure is the
+one above, not those old host layouts.
 
 Speed: 674 replies (19 roots, today's whole corpus) take 18 s; TE's 57-reply arms take 10 s.
 

@@ -75,6 +75,15 @@ with a recipe update.
 scripts/fetch-reference.sh build/reference    # new directory; a full clone reads the patches from local history
 export PY_SOURCE="$PWD/build/reference/src"
 set -a; source config/prod-zig.env; set +a    # MODEL_DIR, ASSETS_DIR, STATE_DIR, TF_DSV41_CONTEXT
+mkdir -p "$ASSETS_DIR/aot" "$STATE_DIR"
+# Obtain the actual pin, not the historical engine/zig export, into a fresh directory.
+TENSORFOLD_SOURCE="$PWD/build/token-map-source"
+bash docker/zig/fetch-source.sh "$(cat config/tensorfold.rev)" "$TENSORFOLD_SOURCE" \
+  "$PWD/build/no-local-bundle" "$(cat config/tensorfold.repo)"
+test "$(zig version)" = "$(cat "$TENSORFOLD_SOURCE/.zig-version")"   # 0.17.0 at this pin
+(cd "$TENSORFOLD_SOURCE" && zig build dsv41-assets -j1 && \
+  zig-out/bin/tf-dsv41-token-map --tokenizer "$MODEL_DIR/tokenizer.json" \
+    --config "$MODEL_DIR/config.json" --output "$ASSETS_DIR/engram-token-map.bin")
 (cd engine/zig && python tools/zig/triton_fill.py sigs --py "$PY_SOURCE" --out "$ASSETS_DIR/sigs.json")
 scripts/run-zig.sh 0 --check-aot   # writes STATE_DIR/aot-needs-r0.json; reports the variants still missing
 (cd engine/zig && python tools/zig/triton_fill.py compile --py "$PY_SOURCE" --needs "$STATE_DIR/aot-needs-r0.json" \

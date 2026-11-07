@@ -62,8 +62,9 @@ effective container environment of the L boot is in
 
 **Tool-full** (AB3 only, engine `3bf584af1`, image `tensorfold-dsv41-imr:r-3bf584af1c54`): L plus the in-model runner,
 its calculator circuit and graph bank, S3 (calls go to the runner first, with the sandbox as fallback) and the trust
-guide sent as the request's `runner_guide` (sha256 `53ed328f…`). The 18 engine lines are the commented
-"tool-full" block of [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example); the requests
+guide sent as the request's `runner_guide` (sha256 `53ed328f…`). The 18 engine lines are the active default
+"tool-full" block of [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example), before
+`TF_DSV41_COMPUTE_LANE_DEFAULT=1`; the requests
 used `tools: [{"type": "code_interpreter"}]` (tool definition sha256 `eec0577c…`, about 306 prompt tokens),
 `max_tokens` 32768, `deadline_s` 300, three seeds and four streams at a time. Its arms were plain, lane (L's engine
 lines with this request shape), full and runner-only.
@@ -177,7 +178,7 @@ lane numbers come from arm L.
 
 ## Experimental settings
 
-On in the default profile, measured only where stated:
+Configured in the default profile, measured only where stated:
 
 | setting | status |
 | --- | --- |
@@ -186,7 +187,8 @@ On in the default profile, measured only where stated:
 | `TF_DSV41_COMPUTE_LANE_DEFAULT` | every chat gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
 
 Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_INLINE_ARITH`,
-`_INLINE_MOD`, `_COMMIT` (on), `_STATED`, `_INLINE_CHAIN`, `_INLINE_MARK` and `_SYNC_GRAPH`.
+`_INLINE_MOD`, `_COMMIT`, `_STATED`, `_INLINE_CHAIN`, `_INLINE_MARK` and `_SYNC_GRAPH`.
+The active default explicitly sets `TF_DSV41_RUNNER_COMMIT=0`; listing a setting here does not enable it.
 
 The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_s` are the measured path of arm L.
 

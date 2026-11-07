@@ -1,10 +1,14 @@
 # Format retest — frozen prospective specification
 
-2026-11-07. JJ-authorized fresh development-cohort test of Implementer B's [plan](s3-commit/format-fix/DIAGNOSIS.md). **60 new tasks,10 per family × seeds101/102. L-old and L-new each120 replies; P-old and P-new each60 on DP/graph/aggregation only:360 replies total.** No old compute-DL outcomes are regraded or pooled. This tests wording, not an engine fix or a new benchmark.
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
+2026-11-07. JJ-authorized fresh development-cohort test of Implementer B's plan (`s3-commit/format-fix/DIAGNOSIS.md`, omitted from this export). **60 new tasks,10 per family × seeds101/102. L-old and L-new each120 replies; P-old and P-new each60 on DP/graph/aggregation only:360 replies total.** No old compute-DL outcomes are regraded or pooled. This tests wording, not an engine fix or a new benchmark.
 
 ## Inputs and exact wording
 
-Use the generation distributions, draw sequence, fixed mathematical prompt bodies and independent A/B reference algorithms in [T5-COMPUTE-DL-SPEC.md](T5-COMPUTE-DL-SPEC.md), SHA `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`, with exactly these changes: slots0..9 per family, master20261107, label `compute-format-v1|20261107|{family}|{slot}|{attempt}`, SHA256-to-integer MT19937 seeding as in that spec, IDs `compute-format-v1-{family}-{slot+1:03d}`. Start attempt0; increment only for documented input overlap, maximum1000 attempts. No selection by calls, output length, answers, model performance or convenient formatting. Pin generator/Python version before generating. Reference disagreement stops preparation, never regenerates a task. Both wording variants use the same underlying instance/reference.
+Use the generation distributions, draw sequence, fixed mathematical prompt bodies and independent A/B reference algorithms in [T5-COMPUTE-DL-SPEC.md](../../compute-dl/spec/T5-COMPUTE-DL-SPEC.md), SHA `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`, with exactly these changes: slots0..9 per family, master20261107, label `compute-format-v1|20261107|{family}|{slot}|{attempt}`, SHA256-to-integer MT19937 seeding as in that spec, IDs `compute-format-v1-{family}-{slot+1:03d}`. Start attempt0; increment only for documented input overlap, maximum1000 attempts. No selection by calls, output length, answers, model performance or convenient formatting. Pin generator/Python version before generating. Reference disagreement stops preparation, never regenerates a task. Both wording variants use the same underlying instance/reference.
 
 Old wording is exactly the six original final-format sentences. New replaces only that sentence, with these exact bytes:
 

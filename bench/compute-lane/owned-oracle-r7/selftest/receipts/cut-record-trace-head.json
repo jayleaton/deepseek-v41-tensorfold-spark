@@ -1,0 +1,28 @@
+{
+ "reasoning": "So [exact, computed by the en",
+ "finish": "length",
+ "tensorfold": {
+  "finish": "length",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "trace",
+     "span": "2**37-3**19",
+     "ids": 12,
+     "landed": 3,
+     "field": "reasoning",
+     "at": 3,
+     "value": "[exact, computed by the en",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 3
+    }
+   ]
+  }
+ }
+}

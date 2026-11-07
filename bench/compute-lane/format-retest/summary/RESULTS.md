@@ -1,5 +1,9 @@
 # Format re-test — PASS / COMPLETE / NEEDS-T5
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 All **360/360** fresh replies are collected and independently audited under T5's frozen rule. **L-new solved120/120 with0 format failures**, versus L-old86/120 with34 format failures. L gained34 strict solves with0 paired losses. **P-new solved60/60**, versus P-old59/60, with1 gain and **0 paired P losses**. Safety/provenance qualification passed; the strict grader is unchanged.
 
 Spec SHA256: `b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec`.
@@ -34,16 +38,16 @@ A postcollection audit schema bug was corrected in a new versioned postprocessor
 
 ## Review evidence
 
-- [Frozen analysis, per-family counts, paired identities and cost intervals](format-retest/results-v1/RESULTS.md)
-- [Full machine-readable report, per-family costs and safety provenance](format-retest/results-v1/report.json)
-- [360-row observation ledger](format-retest/results-v1/per-observation.csv)
-- [Independent raw audit](format-retest/audit-v2/raw-audit.json)
-- [Final artifact inspection](format-retest/final-evidence/final-inspection.json)
-- [Actual step log](format-retest/final-evidence/steps.jsonl),[budget](format-retest/final-evidence/budget.json),[G restoration](format-retest/final-evidence/G-restore.log) and [independent G verification](format-retest/final-evidence/final-G.json)
-- [Pinned r7 coverage](format-retest/final-evidence/r7/r7.json)
-- [Postcollection correction controls](format-retest/final-evidence/audit-post-check-v2.json) and [original failure](format-retest/final-evidence/audit-v1.log)
-- [Task ledger](format-retest/LEDGER.md) and [NEEDS-T5 handoff](format-retest/NEEDS-T5.md)
-- [Previous compute-DL A2 summary, preserved](RESULTS.before-format-20261107.md)
-- [DeepSeek published benchmarks, historical reference only](PUBLISHED.md)
+- [Frozen analysis, per-family counts, paired identities and cost intervals](../results-v1/RESULTS.md)
+- Full machine-readable report, per-family costs and safety provenance (`format-retest/results-v1/report.json`, omitted from this export)
+- [360-row observation ledger](../results-v1/per-observation.csv)
+- [Independent raw audit](../audit-v2/raw-audit.json)
+- [Final artifact inspection](../final-inspection.json)
+- [Actual step log](../final-evidence/steps.jsonl),[budget](../stdbench-format-20261107-v1/budget.json),G restoration (`format-retest/final-evidence/G-restore.log`, omitted from this export) and [independent G verification](../final-G.json)
+- [Pinned r7 coverage](../r7-final-v1/r7.json)
+- [Postcollection correction controls](../audit-post-check-v2.json) and original failure (`format-retest/final-evidence/audit-v1.log`, omitted from this export)
+- [Task ledger](../LEDGER.md) and [NEEDS-T5 handoff](../NEEDS-T5.md)
+- [Previous compute-DL A2 summary, preserved](../../compute-dl/summary/RESULTS.before-format-20261107.md)
+- DeepSeek published benchmarks, historical reference only (`PUBLISHED.md`, omitted from this export)
 
 This PASS supports clearer final formatting on a60-task,six-template development cohort; it does not establish a turn-boundary mechanism, public-benchmark superiority or a serving-default change. The observed0/120 L-new failures does not prove a population≤1.67% failure rate, and0/60 paired P losses does not prove zero population risk. Actual served prompt arrays were not captured; CPU arrays, exact wires and server initial-count reconciliation leave same-length rendering differences possible. Old study outcomes are not pooled. No matched DeepSeek published score exists for this generated cohort.

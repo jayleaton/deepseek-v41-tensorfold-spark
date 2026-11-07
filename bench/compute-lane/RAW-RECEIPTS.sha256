@@ -1,4 +1,7 @@
-# Files behind the compute-lane studies that are NOT in this directory: raw receipts (request/response logs,
+# Historical exclusion inventory from the initial export at recipe 2f5b423. The later publication repair restores
+# the r7 synthetic selftest/receipts and t5-r5/t5-r6 EXPECTED inputs; see README.md, Published-layout adaptations.
+# Those restored inputs now have current hashes in MANIFEST.sha256. Original inventory rows below are retained.
+# Files behind the compute-lane studies initially NOT in this directory: raw receipts (request/response logs,
 # per-boot snapshots, telemetry, run state, step logs, caches, large reports), the engine-source snapshot used by
 # the declaration-control dispatch proof, superseded/duplicate kit copies, and byte-identical duplicates of files
 # that ARE included. Columns (TAB-separated): sha256, size in bytes, original path, category.

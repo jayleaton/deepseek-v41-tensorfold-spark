@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Actual native-adapter dry runs, fresh names and effective env on one CPU rank."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
@@ -8,6 +10,11 @@ import sys
 import protocol
 import rank_ops
 from coordination import check
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 HERE=Path(__file__).resolve().parent
 rank=int(sys.argv[1]);root=HERE.parent/protocol.PREFIX
 cfg=json.loads((root/'campaign-v1.json').read_text())

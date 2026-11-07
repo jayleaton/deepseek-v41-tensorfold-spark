@@ -3,10 +3,17 @@
 must equal the kit), the layout's units/order/config/template hashes, the pinned image IDs, engine, r7 oracle, guide,
 rendered tool schema and engine runner prelude, written before the first AB3 request.
 Usage: python3 -I ab3_freeze.py KIT_DIR OUT_JSON FROZEN_AT_UTC TURN_DIR..."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 kit, out, at, turns = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], [Path(p) for p in sys.argv[4:]]
 sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()  # noqa: E731

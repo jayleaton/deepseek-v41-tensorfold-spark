@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Seal the complete MATH cohort using the frozen mapping; no grading/inference."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 import math_review
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 root=Path(__file__).resolve().parent
 receipt=json.loads((root/'cpu-final-v3/verification.json').read_text())
 for name in ('math_review.py','analysis.py'):

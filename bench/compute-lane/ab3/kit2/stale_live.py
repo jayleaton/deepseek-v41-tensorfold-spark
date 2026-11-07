@@ -3,12 +3,19 @@
 claims: each native trace record becomes one of its rows (display, value, the claim's place and, as the statement line,
 the line before the claim); then a count per arm and the replies with one.
 Usage: python3 -B stale_live.py STALE_SCRIPTS_DIR RUN OUTDIR > stale.json"""
+
+import sys as _archive_sys
 import contextlib
 import io
 import json
 import re
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 sys.path.insert(0, sys.argv[1])
 import stale  # noqa: E402

@@ -1,0 +1,11 @@
+{
+ "reasoning": "[exact: (0x0123456789ABCDEF + 1)*2^64 = 1512366075204170947414340898899623936]\nOk.\n",
+ "content": "",
+ "tensorfold": {
+  "runner": {
+   "trace": {
+    "owned": 1
+   }
+  }
+ }
+}

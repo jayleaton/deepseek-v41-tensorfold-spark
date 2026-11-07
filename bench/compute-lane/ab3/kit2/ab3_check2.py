@@ -3,12 +3,19 @@
 bytes), seeds, the shared within-block order (recomputed), boot orders, each arm's env and request bodies (tools,
 guide bytes, sampling, prompt), the client wait (300 + 60 s), pairing (each task x seed once per arm) and hashes.
 Usage: python3 -I ab3_check2.py KIT_DIR PILOT_CONFIGS ROWS"""
+
+import sys as _archive_sys
 import collections
 import hashlib
 import json
 import random
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 kit, pilot_env = Path(sys.argv[1]), json.loads(Path(sys.argv[2]).read_text())[0]['extra']
 sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731

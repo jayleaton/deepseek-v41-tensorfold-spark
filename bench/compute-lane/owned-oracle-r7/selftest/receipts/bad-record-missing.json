@@ -1,0 +1,29 @@
+{
+ "reasoning": "x = 7*11 = 76.\n",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 1
+   },
+   "cells": [
+    {
+     "cell": 0,
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "field": "reasoning",
+     "at": 10,
+     "token": 10,
+     "drafted": 0,
+     "path": "held",
+     "form": "inline",
+     "span": "7*11",
+     "value": " 77",
+     "ids": 2,
+     "landed": 2,
+     "forced": 2
+    }
+   ]
+  }
+ }
+}

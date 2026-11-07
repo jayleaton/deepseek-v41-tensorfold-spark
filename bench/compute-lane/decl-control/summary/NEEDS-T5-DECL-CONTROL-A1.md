@@ -1,8 +1,12 @@
 # NEEDS-T5 — declaration control A1
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 The fresh three-arm study is complete: 552/552 scheduled replies, 18 excluded diagnostics, three qualified GPU turns, no reserve turn. G was restored after every turn and directly verified on both ranks. All 18 experiment container names were absent at the final checks; no experiment job remains pending. No engine changes, pushes or external posts.
 
-[RESULTS.md](RESULTS.md) records both frozen spec hashes, per-suite accuracy/native returned tokens/wall time/timeouts/caps, exact cluster sign-flip/Holm tests and paired bootstrap intervals. [The complete report](decl-control/RESULTS.md), [552-row CSV](decl-control/finalized-a1-v1/per-request.csv), [analysis](decl-control/finalized-a1-v1/analysis.json), [evidence audit](decl-control/finalized-a1-v1/audit.json), [export verification](decl-control/exports-a1-v1.json), and [ledger](LEDGER.md) are retained locally. The earlier two-arm study is preserved separately.
+[RESULTS.md](../RESULTS.md) records both frozen spec hashes, per-suite accuracy/native returned tokens/wall time/timeouts/caps, exact cluster sign-flip/Holm tests and paired bootstrap intervals. [The complete report](../RESULTS.md), [552-row CSV](../finalized-a1-v1/per-request.csv), [analysis](../finalized-a1-v1/analysis.json), evidence audit (`decl-control/finalized-a1-v1/audit.json`, omitted from this export), [export verification](../exports-a1-v1.json), and [ledger](../../stdbench-kit/project/LEDGER.md) are retained locally. The earlier two-arm study is preserved separately.
 
 Review focus:
 

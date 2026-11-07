@@ -12,11 +12,13 @@
 # Receipts without records fall back to text mode, where an owned mismatch (owner engine or owned-form) fails.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+source "$here/cpu-scope.sh"
+oracle_require_scope || exit 2
 out=$(realpath -m "$1"); shift
 mkdir -p "$out"
 echo "owned-oracle $(md5sum "$here/oracle.py" | cut -c1-8) on $*"
 bash "$here/run.sh" "$out" "$@" > "$out.run.log" 2>&1 || { tail -3 "$out.run.log"; echo "owned-oracle gate ERROR: run failed"; exit 2; }
-systemd-run --user --scope --quiet -p MemoryMax=2G -p MemorySwapMax=0 nice -n 19 python3 -I "$here/oracle.py" gate "$out"
+python3 -I "$here/oracle.py" gate "$out"
 rc=$?
 [ $rc -le 1 ] || [ $rc = 3 ] || { echo "owned-oracle gate ERROR: gate rc=$rc"; exit 2; }
 exit $rc

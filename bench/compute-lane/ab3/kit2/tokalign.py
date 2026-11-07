@@ -6,13 +6,21 @@ retokenized  no native ids: completion ids rebuilt from text with the model toke
 --check-native decodes every hash-matched retokenized reply's ids the native way and asserts the same boundaries.
 Usage: python3 -I tokalign.py TOKENIZER_JSON RUN OUT.jsonl [--glob '*/*/*.json'] [--check-native]
        (a python with `tokenizers`: rank0-host ~/venvs/exl3_v41)"""
+
+import sys as _archive_sys
 import argparse
 import codecs
 import hashlib
 import json
 from pathlib import Path
 
-from tokenizers import Tokenizer
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
+
+from tokenizers import Tokenizer  # noqa: E402 - optional dependency after help
 
 ap = argparse.ArgumentParser()
 ap.add_argument('tokenizer')

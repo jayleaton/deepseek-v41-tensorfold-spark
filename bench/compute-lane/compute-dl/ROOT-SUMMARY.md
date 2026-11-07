@@ -1,5 +1,9 @@
 # Computation-demanding D/L study — INCOMPLETE
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **NEEDS-T5.** Collection stopped at 342/480 replies; 138 remain uncollected.
 The verifier omitted the native 512-token tool-result clipping policy and
 compared a clipped result with full stdout. The pinned native-tokenizer CPU
@@ -17,12 +21,12 @@ point estimate, confidence interval and test are withheld.
 
 Spec SHA256: `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`.
 
-- [Per-family results, tokens, wall time, missingness and paired sensitivities](compute-dl/RESULTS.md)
-- [480-row per-problem ledger](compute-dl/per-problem.csv)
-- [Exact native clipping proof](compute-dl/diagnosis-v1/truncation-proof.json)
-- [T5 adjudication request and completion constraints](compute-dl/NEEDS-T5.md)
-- [138 remaining original requests](compute-dl/remaining-collection.json)
-- [Prior declaration-control results](decl-control/RESULTS.md)
-- [DeepSeek published scores — historical reference only](PUBLISHED.md)
+- [Per-family results, tokens, wall time, missingness and paired sensitivities](RESULTS.md)
+- [480-row per-problem ledger](per-problem.csv)
+- [Exact native clipping proof](diagnosis-v1/truncation-proof.json)
+- [T5 adjudication request and completion constraints](NEEDS-T5.md)
+- [138 remaining original requests](remaining-collection.json)
+- [Prior declaration-control results](../decl-control/RESULTS.md)
+- DeepSeek published scores — historical reference only (`PUBLISHED.md`, omitted from this export)
 
 **Default: keep collection stopped until JJ steers a frozen T5 amendment SHA.**

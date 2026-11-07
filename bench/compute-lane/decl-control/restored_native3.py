@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Direct read-only G liveness probe; run through the guarded Spark CPU scope."""
+
+import sys as _archive_sys
 import json
 import os
 from pathlib import Path
 import sys
 import urllib.request
 from rank_ops3 import engine_environment
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 rank=int(sys.argv[1]); assert rank in (0,1)
 root=Path(__file__).resolve().parent

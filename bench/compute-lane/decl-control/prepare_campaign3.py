@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Bind the completed rank1-host A1 CPU seal to identical rank0-host artifacts."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 import sys
 from generate_envs3 import PREFIX, IMAGE_IDS
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root=Path(__file__).resolve().parent
 sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()

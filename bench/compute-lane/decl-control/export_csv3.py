@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Project sealed final-row metrics to CSV; no grading or inference changes."""
+
+import sys as _archive_sys
 import csv
 import json
 from pathlib import Path
 import sys
 import analysis3
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 source=Path(sys.argv[1]); target=Path(sys.argv[2])
 rows=[json.loads(line) for line in source.read_text().splitlines() if line]

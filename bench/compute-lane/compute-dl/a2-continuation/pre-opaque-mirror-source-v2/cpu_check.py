@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 import protocol as p
 import runtime_stage as s
 import adoption

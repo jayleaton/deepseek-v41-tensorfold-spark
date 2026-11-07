@@ -1,0 +1,11 @@
+{
+ "reasoning": "So 3^400 mod 10^18 = 1000000000000000000? Wait.\nSince φ(2^18)= 262144/2=131072. 400.\n",
+ "content": "",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 2
+   }
+  }
+ }
+}

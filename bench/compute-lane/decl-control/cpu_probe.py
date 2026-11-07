@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Host-only native prompt feasibility; not server/dispatch/collection qualification."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import os
@@ -7,6 +9,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 root=Path(__file__).resolve().parent
 phase=root.parent/'phase2'
 spec_sha='adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6'

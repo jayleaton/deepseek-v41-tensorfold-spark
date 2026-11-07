@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """CPU-only artifact checks; never qualify collection from reconstructed IDs."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 import py_compile
 import tempfile
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root = Path(__file__).resolve().parent
 digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()

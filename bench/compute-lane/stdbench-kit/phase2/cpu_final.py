@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Final immutable precollection gate; execute only in guarded Spark CPU scope."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import py_compile
@@ -11,6 +13,11 @@ root = Path('<rank1-work>/stdbench/phase2')
 sys.path[:0] = [str(root),str(root.parent/'kit')]
 import activation_report, analysis, bench, client, controller, freeze, grade_all, math_review, native_frames
 from jail import Jail
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()

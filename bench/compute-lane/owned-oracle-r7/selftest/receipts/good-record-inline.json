@@ -1,0 +1,29 @@
+{
+ "reasoning": "So 3^400 mod 10^18 = 192443283334088001.\n",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 1
+   },
+   "cells": [
+    {
+     "cell": 0,
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "field": "reasoning",
+     "at": 20,
+     "token": 20,
+     "drafted": 0,
+     "path": "held",
+     "form": "inline",
+     "span": "3^400 mod 10^18",
+     "value": " 192443283334088001",
+     "ids": 7,
+     "landed": 7,
+     "forced": 7
+    }
+   ]
+  }
+ }
+}

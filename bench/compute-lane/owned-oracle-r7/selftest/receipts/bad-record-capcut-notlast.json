@@ -1,0 +1,45 @@
+{
+ "reasoning": "First 271828*14000 = 3. Then 314159*271000 = 85137089000.",
+ "finish": "length",
+ "tensorfold": {
+  "finish": "length",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "inline",
+     "span": "271828*14000",
+     "ids": 5,
+     "landed": 1,
+     "field": "reasoning",
+     "at": 20,
+     "value": " ",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 1
+    },
+    {
+     "cell": 1,
+     "form": "inline",
+     "span": "314159*271000",
+     "ids": 5,
+     "landed": 5,
+     "field": "reasoning",
+     "at": 44,
+     "value": " 85137089000",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 2,
+     "forced": 5
+    }
+   ]
+  }
+ }
+}

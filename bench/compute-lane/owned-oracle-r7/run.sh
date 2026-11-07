@@ -1,36 +1,51 @@
 #!/usr/bin/env bash
-# owned-oracle on rank0-host/rank1-host (never dev-host): extract in a 2 GiB scope at nice 19, evaluate in a no-network,
-# read-only container (2 GiB, 1 CPU, cpuset 0-4, nice 19) paused under QUIET, then report. Waits out QUIET, a held
-# T4 window and an imr-measure at the head of ORDER before each step.
-#   run.sh OUT ROOT...      e.g. run.sh ~/work/owned-oracle/out/today ~/work/dsv41-bench/out/imr-20261102T115935Z
-set -uo pipefail
-Q=${QUIET_FILE:-$HOME/work/queue/QUIET}  # the QUIET flag; window-hook.sh mirrors rank0-host's onto rank1-host
+# CPU only. The caller supplies the bounded scope and queue/QUIET admission policy.
+# Usage: run.sh OUT RECEIPT...; ORACLE_IMAGE selects a public CPython 3.12 image.
+set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+source "$here/cpu-scope.sh"
+oracle_require_scope
+[[ $# -ge 2 ]] || { echo 'usage: run.sh OUT RECEIPT...' >&2; exit 2; }
 out=$(realpath -m "$1"); shift
 mkdir -p "$out"
-img=${ORACLE_IMAGE:-tensorfold-dsv41-imr:r-6cdaf1bed8ae}
-held() { grep -E "HELD both locks|RELEASED" ~/work/imr-t4/measure/window.log 2>/dev/null | tail -1 | grep -q HELD; }
-t4() { [ ~/work/imr-t4/measure/WINDOW-RUN -nt ~/work/imr-t4/measure/window-END ] 2>/dev/null || head -1 ~/work/queue/ORDER 2>/dev/null | grep -q imr-measure; }
-idle() { while [ -e "$Q" ] || held || t4; do sleep 30; done; }
-scope() { systemd-run --user --scope --quiet -p MemoryMax=2G -p MemorySwapMax=0 nice -n 19 ionice -c3 "$@"; }
-
+img=${ORACLE_IMAGE:-python:3.12.3-slim-bookworm@sha256:afc139a0a640942491ec481ad8dda10f2c5b753f5c969393b12480155fe15a63}
+quiet=${QUIET_FILE:-}
+job=${STDBENCH_CPU_JOB:-oracle-$$}
+name=owned-oracle-$$-$RANDOM
+pid=
+cleanup() {
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  if [[ -n "$pid" ]]; then wait "$pid" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+idle() { while [[ -n "$quiet" && -e "$quiet" ]]; do sleep 1; done; }
 idle
 start=$(date +%s)
-scope python3 -I "$here/oracle.py" extract "$out" "$@" || exit 1
+python3 -I "$here/oracle.py" extract "$out" "$@"
 idle
-name=owned-oracle-$$
-docker run --rm --name "$name" --network none --read-only --tmpfs /tmp:rw,size=256m --memory 2g --memory-swap 2g \
-  --cpus 1 --cpuset-cpus 0-4 --pids-limit 256 -u "$(id -u):$(id -g)" -v "$here:/tool:ro" -v "$out:/out" -e HOME=/tmp \
+# No implicit pull: fetch/verify the selected public image under the caller's CPU protocol first.
+docker image inspect "$img" >/dev/null 2>&1 || { echo 'ORACLE_IMAGE is not loaded; pull the documented public image first' >&2; exit 2; }
+timeout 7200 docker run --rm --pull=never --runtime=runc --name "$name" --label "stdbench.cpu_job=$job" \
+  --network none --read-only --security-opt no-new-privileges --cap-drop ALL \
+  --tmpfs /tmp:rw,nosuid,nodev,size=256m --memory 2g --memory-swap 2g --cpus 1 --pids-limit 256 \
+  -u "$(id -u):$(id -g)" -v "$here:/tool:ro" -v "$out:/out" -e HOME=/tmp -e NVIDIA_VISIBLE_DEVICES=void \
   --entrypoint /usr/bin/nice "$img" -n 19 python3 -I /tool/oracle.py evaluate /out &
 pid=$!
 paused=0
-while kill -0 $pid 2>/dev/null; do
-  if { [ -e "$Q" ] || held; } && [ $paused = 0 ]; then docker pause "$name" >/dev/null 2>&1 && paused=1; fi
-  if [ ! -e "$Q" ] && ! held && [ $paused = 1 ]; then docker unpause "$name" >/dev/null 2>&1 && paused=0; fi
-  sleep 5
+while kill -0 "$pid" 2>/dev/null; do
+  if [[ -n "$quiet" && -e "$quiet" && "$paused" == 0 ]]; then
+    docker pause "$name" >/dev/null 2>&1 && paused=1 || true
+  elif [[ ( -z "$quiet" || ! -e "$quiet" ) && "$paused" == 1 ]]; then
+    docker unpause "$name" >/dev/null 2>&1 && paused=0 || true
+  fi
+  sleep 0.1
 done
-wait $pid; rc=$?
-docker kill "$name" >/dev/null 2>&1
-[ $rc = 0 ] || { echo "evaluate failed rc=$rc"; exit 1; }
-scope python3 -I "$here/oracle.py" report "$out"
+rc=0
+wait "$pid" || rc=$?
+pid=
+[[ "$rc" == 0 ]] || { echo "evaluate failed rc=$rc" >&2; exit 1; }
+idle
+python3 -I "$here/oracle.py" report "$out"
 echo "owned-oracle: $(( $(date +%s) - start )) s; report $out/report.md"

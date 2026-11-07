@@ -1,5 +1,9 @@
 # Compute study A2 completion — COMPLETE
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **NEEDS-T5.** 720/720 dataset replies observed. See final G verification receipt for independent live status.
 
 Parent SHA `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`; A1 SHA `0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453`; A2 SHA `8eaa9575592f519b504d08022d400602e4b552874c8424b02c59c34f4af174e2`.
@@ -75,6 +79,6 @@ D attempted/blocked/policy/final/strict-solve counts by family/seed, native exec
 
 CPU-matched/count-checked prompts; actual served arrays were not captured and same-length rendering differences remain possible. Cold boots/cache resets, pause, mostly L-before-P order and outcome-informed amendment remain confounds. No serving-default promotion or full-token-saving claim.
 
-DeepSeek published scores in [PUBLISHED.md](../../PUBLISHED.md) are labelled historical references only. This generated mixture has no matched published vendor score.
+DeepSeek published scores in PUBLISHED.md (`../../PUBLISHED.md`, omitted from this export) are labelled historical references only. This generated mixture has no matched published vendor score.
 
-[Complete analysis](analysis.json) · [Sensitivity and changed/residual rows](report.json) · [720-row ledger](per-problem.csv)
+Complete analysis (`analysis.json`, omitted from this export) · Sensitivity and changed/residual rows (`report.json`, omitted from this export) · [720-row ledger](per-problem.csv)

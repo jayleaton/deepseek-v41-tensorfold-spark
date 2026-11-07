@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+import sys as _archive_sys
 import json
 import signal
 import subprocess
@@ -13,6 +15,11 @@ sys.path.insert(0,str(root))
 import controller
 import rank_ops
 from jail import Jail
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 subprocess.run([sys.executable,str(root/'controller_selftest.py'),str(root/'control-recovery-v2.json')],check=True)
 assert json.loads((root/'control-recovery-v2.json').read_text())['passed']
