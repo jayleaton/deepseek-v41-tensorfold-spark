@@ -1,0 +1,4 @@
+# The archive scripts/fetch_runner_assets.py downloads for scripts/build-runner-image.sh: the files listed in
+# runner-assets.sha256 (calc.tfpc and the graph-v7-powmod bank, as AB3's image served them), one deterministic tar.gz.
+url https://github.com/jayleaton/deepseek-v41-tensorfold-spark/releases/download/runner-assets-20261107/runner-assets-20261107.tar.gz
+sha256 b5c40d32bcab0fa896795d08aaa651d55d0574e500f3624e61db23058cdd800f

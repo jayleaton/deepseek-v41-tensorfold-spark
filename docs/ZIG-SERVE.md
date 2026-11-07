@@ -13,11 +13,16 @@ scripts/build-native.sh -t tensorfold-dsv41:local   # fetches config/tensorfold.
 # or, from a local engine checkout or bundle instead of the network (see ENGINE):
 # TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
 # TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
-scripts/check-zig-image.sh tensorfold-dsv41:local
-docker save tensorfold-dsv41:local -o build-native-image.tar
+# the default profile's image: the in-model runner layer over it, with its circuit and graph bank downloaded from
+# config/runner-assets.release and checked against config/runner-assets.sha256 (docs/compute-lane.md, "Runner image")
+scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner
+scripts/check-zig-image.sh tensorfold-dsv41:local-runner
+docker save tensorfold-dsv41:local-runner -o build-native-image.tar
 ```
 
-Transfer the image to the worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
+The flash17 profile's default (the in-thinking compute profile) needs `tensorfold-dsv41:local-runner`; set `IMAGE` to it.
+`tensorfold-dsv41:local` alone serves the rollback profile and the profile's arm L block. Transfer the image to the
+worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
 content and runtime config, and an `org.tensorfold.revision` label matching `config/tensorfold.rev`. The pair identity
 hashes the image's ordered layer digests, platform and runtime config (`Env`, `Entrypoint`, `Cmd`, `Shell`, `User`,
 `WorkingDir`, `StopSignal`, `Volumes`, `ExposedPorts`, `Healthcheck`, `Labels`), so an image that differs only by a

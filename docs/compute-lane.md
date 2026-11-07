@@ -215,16 +215,21 @@ The default needs the runner's frontend (clang-18 and lld-18), circuit and graph
 the pin, then layer them over it:
 
 ```sh
-TENSORFOLD_SOURCE=/path/to/TensorFold scripts/build-native.sh -t tensorfold-dsv41-recipe:<tag>
-scripts/build-runner-image.sh tensorfold-dsv41-recipe:<tag> /path/to/runner-assets -t tensorfold-dsv41-recipe:<tag>-runner
+scripts/build-native.sh -t tensorfold-dsv41-recipe:<tag>
+scripts/build-runner-image.sh tensorfold-dsv41-recipe:<tag> -t tensorfold-dsv41-recipe:<tag>-runner
 ```
 
-`/path/to/runner-assets` holds `calc.tfpc` and `graph-v7-powmod/bank/`, the files AB3's image served;
-[`config/runner-assets.sha256`](../config/runner-assets.sha256) lists each with its sha256 and the build refuses any
-other set. The circuit is exported from Qwenputer (MIT; its license ships in the bank and the image) with the engine's
-`tools/runner_export.py`, and the bank with its `tools/runner_graph_*` tools. The layer fails to build unless the
-image's circuit route computes the engine's probe cells (`tf-runner-frontend-check --require --circuit`). The image
-`scripts/build-native.sh` builds alone serves arm L and the rollback profile.
+`build-runner-image.sh` downloads the assets itself: `calc.tfpc` and `graph-v7-powmod/bank/`, the files AB3's image
+served, as one archive pinned in [`config/runner-assets.release`](../config/runner-assets.release) (URL and sha256; the
+archive is a release asset of this repository). [`config/runner-assets.sha256`](../config/runner-assets.sha256) lists
+each file with its sha256, and the build refuses any other set. A failed download, a wrong archive hash or a missing or
+changed file stops it with a message naming the file and the URL. `RUNNER_ASSETS_URL` points it at a mirror (the same
+sha256 is still required); `scripts/fetch_runner_assets.py --archive FILE DIR` unpacks an archive downloaded elsewhere,
+and `scripts/build-runner-image.sh BASE DIR -t TAG` takes an unpacked directory. The circuit is exported from Qwenputer
+(MIT; its license ships in the bank and the image) with the engine's `tools/runner_export.py`, and the bank with its
+`tools/runner_graph_*` tools. The layer fails to build unless the image's circuit route computes the engine's probe
+cells (`tf-runner-frontend-check --require --circuit`). The image `scripts/build-native.sh` builds alone serves arm L
+and the rollback profile.
 
 ## Reproducing
 

@@ -75,6 +75,8 @@ The full guide is [ZIG-SERVE](docs/ZIG-SERVE.md). Build the image and the per-ra
 ```bash
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
+scripts/build-native.sh -t tensorfold-dsv41:local                                    # the engine at the pin
+scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner  # + runner assets (downloaded, sha256-checked)
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
 scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting
