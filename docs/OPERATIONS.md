@@ -136,11 +136,16 @@ options off, which is how the lane-only studies ran.
 The studies, their exact configurations, results and how to rerun them are in
 [compute lane](compute-lane.md).
 
-**Turning it off.** Set `TF_DSV41_COMPUTE_LANE=0` and `TF_DSV41_COMPUTE_LANE_DEFAULT=0` (or delete both lines) in
-`config/prod-zig.env` on both nodes and restart the pair; the engine refuses the default without the lane. To keep the
-lane only for clients that ask for it, use the profile's arm L block instead. Nothing else changes: the lane-off rows in the measurement below served the same tokens. The lane
-runs model-written code on the serving host inside the sandbox above; turn it off if no client sends
-`code_interpreter` or if that is not acceptable for your host.
+**Turning it off.** The sandbox lane and the in-thinking runner are separate switches. To disable only the sandbox
+lane, set `TF_DSV41_COMPUTE_LANE=0` and `TF_DSV41_COMPUTE_LANE_DEFAULT=0` (or delete both lines) in
+`config/prod-zig.env` on both nodes and restart the pair; the engine refuses the default without the lane, and the
+in-thinking runner (`TF_DSV41_RUNNER=1`) still computes inside the model's thinking. To disable the whole compute
+default and restore plain generation, also set `TF_DSV41_RUNNER=0` and `TF_DSV41_COMPUTE_LANE_RUNNER=0` on both nodes
+and restart: no cells run and the runner loads neither its circuit nor its bank.
+`scripts/run-zig.sh 0 --effective-profile` reports both runner switches as `0` for that environment. To keep the lane
+only for clients that ask for it, use the profile's arm L block instead. Nothing else changes: the lane-off rows in
+the measurement below served the same tokens. The lane runs model-written code on the serving host inside the sandbox
+above; turn it off if no client sends `code_interpreter` or if that is not acceptable for your host.
 
 **Measured on G (`58bece1d3`), 2026-11-01** (TP2, flash17 K6 MTP, the bench settings of
 [BENCHMARKS](BENCHMARKS.md#release-candidate-g); the only change between arms is `TF_DSV41_COMPUTE_LANE`):

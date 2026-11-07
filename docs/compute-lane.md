@@ -186,9 +186,10 @@ Configured in the default profile, measured only where stated:
 | `TF_DSV41_RUNNER` and the default's `TF_DSV41_RUNNER_*` lines | the in-model runner; measured only in AB3's tool-full arm |
 | `TF_DSV41_COMPUTE_LANE_RUNNER` and `_*` | S3, runner-first lane calls; tool-full only |
 | `TF_DSV41_COMPUTE_LANE_DEFAULT` | every chat gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
+| `TF_DSV41_RUNNER_INLINE_ARITH` and `_INLINE_MOD` | not set in either block, so the engine defaults both to `1` and inline arithmetic and modulo cells run (the profile's `TF_DSV41_RUNNER_FORMS` includes `inline`); on in AB3 (mapped source `00b66d9f6`) |
 
-Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_INLINE_ARITH`,
-`_INLINE_MOD`, `_COMMIT`, `_STATED`, `_INLINE_CHAIN`, `_INLINE_MARK` and `_SYNC_GRAPH`.
+Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_COMMIT`, `_STATED`,
+`_INLINE_CHAIN`, `_INLINE_MARK` and `_SYNC_GRAPH`.
 The active default explicitly sets `TF_DSV41_RUNNER_COMMIT=0`; listing a setting here does not enable it.
 
 The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_s` are the measured path of arm L.
