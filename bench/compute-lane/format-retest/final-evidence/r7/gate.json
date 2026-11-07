@@ -1,0 +1,24 @@
+{
+ "pass": true,
+ "verdict": "PASS",
+ "live_receipts": [],
+ "records": 0,
+ "ok": 0,
+ "wrong-value": 0,
+ "wrong-span": 0,
+ "not-in-text": 0,
+ "unparsed": 0,
+ "wrong-check": 0,
+ "cut": 0,
+ "inconclusive": 0,
+ "short": 0,
+ "unknown": 0,
+ "text_owned_mismatches": 0,
+ "marks": {
+  "engine-inline": 0,
+  "engine-inline-partial": 0,
+  "engine-other-output": 0,
+  "model-imitation": 0
+ },
+ "wrong": []
+}

@@ -1,0 +1,10 @@
+{
+  "artifact_checks": "PASS",
+  "full_array_pairs": 186,
+  "draft_fresh_requests": 552,
+  "collection": "BLOCKED",
+  "source_sha256": {
+    "cpu_probe.py": "cff0cc6ee14543f4368ebd9bfc35ac7db5f88509d0ab20968118e245cb45627a",
+    "verify_feasibility.py": "0abd457d3f3f604097544ea91e65d32ce359d6d55f61ce4ad6a10166f6a2f48f"
+  }
+}

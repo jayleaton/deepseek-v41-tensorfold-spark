@@ -1,0 +1,38 @@
+{
+ "t01": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T09:53:01Z"
+ },
+ "t02": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T10:18:46Z"
+ },
+ "t03": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T10:46:25Z"
+ },
+ "t04": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T11:23:41Z"
+ },
+ "t05": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T11:51:42Z"
+ },
+ "t06": {
+  "oracle_sha_before": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "oracle_sha_after": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fence": "on",
+  "end_utc": "2026-11-04T12:29:12Z"
+ }
+}

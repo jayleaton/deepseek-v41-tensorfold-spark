@@ -1,0 +1,128 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "campaign_sha256": "b0105a551a56a08610a80850da4279cc4ac660ca65d9e0756911ca94495e0654",
+  "code_sha256": {
+    "<rank0-work>/stdbench/format-retest/runtime/protocol.py": "2dce4067ebb970a42dde5113ab08f2e4e6138b28e3a076483273af4ee387fc0b",
+    "<rank0-work>/stdbench/format-retest/runtime/rank_ops.py": "1c9461cd7fc741d8319ade9496b5962d36b8cd839b3c8e2e6ab7402ea92fcc4b",
+    "<rank0-work>/stdbench/format-retest/runtime/prep_bridge.py": "9fa64bce348a5ecee8595474cf34740958c35e2f526f4dbdb7e26932bed98005",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle_probe.py": "1608099784c11ede409d022141646834f6b5543acf68c198d8acbca5e2ea708c",
+    "<rank0-work>/stdbench/format-retest/runtime/finalize_cpu.py": "d20984b7490ace6e753627a55bab2ed6d3767465b6633dab4759c44b255e7049",
+    "<rank0-work>/stdbench/format-retest/runtime/controller.py": "b8cb7f0c7d57b5ad7080c6abbf71bed095b264b4dcd887b58d99f87e0b225f2c",
+    "<rank0-work>/stdbench/format-retest/runtime/coordination.py": "d6b5070dc60919bcf4720b2472fa89d5ef5272c34999d963bc0cb0d4acbeaf2c",
+    "<rank0-work>/stdbench/format-retest/runtime/render_prompts.py": "34b8753cafe3f825b80ae799d9ba690e2423c29eeb12f3a3767cc48713a4a097",
+    "<rank0-work>/stdbench/format-retest/runtime/clipping.py": "baa5beeeb29ec1736473a1b1863ec4a1421f74089a74104955e1b35f409b0af9",
+    "<rank0-work>/stdbench/format-retest/runtime/request_adapter.py": "f821172aabe340bdfac52c604513d5aa893757a34b1395350ad934731a38d374",
+    "<rank0-work>/stdbench/format-retest/runtime/qualify_rank.py": "da3054d4ea248a7d58e9e9a83f6c1e5294fe138a3d537034b9dd2709969a6bcd",
+    "<rank0-work>/stdbench/format-retest/runtime/budget.py": "7c0558f3bbade10f63c238aad3d99f243b7be54eb2790936bd5695a7ecfb753c",
+    "<rank0-work>/stdbench/format-retest/runtime/runtime_stage.py": "faa64572a92436c63c0865cf5a67118ca5556395f14ea476492c99c9c83948cb",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_check.py": "e7ecfc82e981649c1af94ee6d67b2ba7a3c34efec78a5f1023dffb7baed82f16",
+    "<rank0-work>/stdbench/format-retest/runtime/manifest.py": "831244d8c04f1a8d594efd700f0043acf6fd1e60e361a88c0a750dcccee7512c",
+    "<rank0-work>/stdbench/format-retest/runtime/qualification.py": "2bd2c575d9afd09afbb2084f27f7143c7527c4942cfb0478452ace9f949d47ff",
+    "<rank0-work>/stdbench/format-retest/runtime/control_check.py": "bc0d84a9854f9340a09667178b331a0bdd776683857e0ff5be82e02b286e23aa",
+    "<rank0-work>/stdbench/format-retest/runtime/fence.sh": "91a9b462442304dddb9d13361e78eca415094e64f4f7c4ea148fcd1516c0a0b7",
+    "<rank0-work>/stdbench/format-retest/runtime/turn.sh": "4be510c7442b1718c51323ab853aaba6b26a842dc83f10ebfffca458d4a67af2",
+    "<rank0-work>/stdbench/format-retest/runtime/launch.sh": "3c86812e7a3e64625749d6ea6e4def8bff66c629922b1c9555d88eb845655f0e",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle-launch.sh": "49809d9fd86d98251d3ea8bffc35b2bf8e96262253b4296e1b34cfaac7558ece",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed",
+    "<rank0-work>/stdbench/format-retest/runtime/T5-FORMAT-RETEST-SPEC.md": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+    "<rank0-work>/stdbench/phase2/references/base-arms.json": "9bbacf49fd8bf7917321409c23c8c7f68836d4d28fe456181b7957daac0f5d4f",
+    "<rank0-work>/stdbench/phase2/references/base-r0.env": "c0301508e99561c4e457d5c40e26eb23667a8243b2602210fa23018afa96c61b",
+    "<rank0-work>/stdbench/phase2/references/base-r1.env": "96cbacd85464af61073619b4e96c83180bb902112b1ef8062e543cf6c0085edc",
+    "<rank0-work>/stdbench/decl-control/client3.py": "56d1f10bc125182dfc8d52fbf6ccf595e92a089f827357d848fd269d6442aef7",
+    "<rank0-work>/stdbench/decl-control/reconciliation.py": "c5c081c1f5a2d1cb6561d85aa5de1b7ce61722d6c4812b7f9c2c614b4e79928c",
+    "<rank0-work>/stdbench/decl-control/generate_envs3.py": "01ba062c5eccee41033dab42697eb5e5ff06392c2bf2c9a462ea0db2e6ec0076",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/reference_policy.py": "ae81dfba75a4598a9dcb998c47863236044692ff329823a3606bb5ede115a697",
+    "<rank0-work>/stdbench/phase2/client.py": "4d762ae999ca2d4e6823a32cba1a87f1e020dded576d13bc7eada918021900bb",
+    "<rank0-work>/stdbench/phase2/native_frames.py": "f4a993962284c0cab1a3bf96a5110a5ee2f54e67a70665aec7bf3dad0d472c46",
+    "<rank0-work>/stdbench/phase2/jail.py": "499cf0001c3259f9fbe040c32df5663681066a56ab58f07df0b13779623da67b",
+    "<rank0-work>/stdbench/phase2/jail_worker.py": "703ee5a019b4b3a454f35c5dd914a5a01990095a47ad43aef54d2695fc0a61a8",
+    "<rank0-work>/stdbench/kit/bench.py": "6056c87694f583ac3e9eb3ac28a86e6fdb6affe9753d9bf10806c15fb7fa6757",
+    "<rank0-work>/dsv41-bench/ops/rank.py": "8c4eeac488858e954ee9856008e20b2a92172c1554210fc53f76e32c97c56e92",
+    "<rank0-work>/dsv41-bench/ops/guard.py": "db69d030b280dae0373397725f54cab0ad6023c90f927e275087cf7f4f2931f0",
+    "<rank0-work>/dsv41-bench/ops/mem_guard.py": "154a909d4493c679f0e10a6e7647b31802b4af30d502312d36b09d5ab295afdf",
+    "<rank0-work>/dsv41-bench/ops/node.sh": "049c8e389b8506d1166836022a9d6b168e92dd9010565452a9aa5ebc210e05cc",
+    "<rank0-work>/stdbench/format-retest/prep-manifest-v1.json": "7b6e579836989a851f726f7e3b2c928673c75fcd0af4c75b1f93912d15c320f9",
+    "<rank0-work>/stdbench/format-retest/stage-config-v1.json": "584974d2eb8d5f1b295a6b24c5592323fda838c45acfeb3bd059911b97d4a2f1",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/tasks.jsonl": "a697b7e556d793f3f712bbc043b496b1f1ed7a343289c2f32358e4d6b00238c6",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/generation-audit.json": "5085c09cf74ae8ff2e0f60bb932893ce2f7884afca66573b3b0e7c6055949c8f",
+    "<rank0-work>/stdbench/format-retest/settings-v1.json": "9003f17c9bed44cabbf5cbe55240df644f7b158c651605c136f3cb59c61f7606",
+    "<rank0-work>/stdbench/decl-control/canonical-python-tools.json": "1d112d68e2df0a69c1a6222daedef99f8afb8323e872d5c0849563a83812361f",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-a.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-b.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/manifest.json": "8aee124a6c4fcb68208d8bd710bd8f2a9413c153359240c43bc99ec670db8f2f",
+    "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t01-L.json": "f044822f55fb1e80c6509514c3d271fa7c5936ecec8933b60ad621939e4e98e7",
+    "<rank0-work>/stdbench/format-retest/prep/checks.py": "93044b7f3259f6f48ccde235f988a6c68066c3157252c65e9f966d454059cce7",
+    "<rank0-work>/stdbench/format-retest/prep/common.py": "35342f82e17cc09a6eb37615d5d131192759840423a235d1cf0e97e59f7babc7",
+    "<rank0-work>/stdbench/format-retest/prep/prep.py": "837f1c2fcb4cf486770fdb8cc21c3dc5e4a64f684eaca66a7b05c0c45ab71111",
+    "<rank0-work>/stdbench/format-retest/prep/request_adapter.py": "436ed0b868fabfc130c3e7d20c3b51ca80f686db241444f8940707d938f99068",
+    "<rank0-work>/stdbench/format-retest/prep/generation.py": "5c29cf6df79e344d57319971e66a450758206b392dedb0ed48c26a2876b0b928",
+    "<rank0-work>/stdbench/format-retest/prep/legacy.py": "4b80baf32f81910596ca46618caf772236a880f1552e306d4da98d712fbb3c5b",
+    "<rank0-work>/stdbench/format-retest/assemble.py": "5d21611fa6779a1d640d6821a4598b49c11e7416639ab8a06db5687caff159f8",
+    "<rank0-work>/stdbench/format-retest/r7_checks.py": "dd3756a9e9012327b8a6b03fa2e78ce2139f8e88bd402ce517baefcca8135216",
+    "<rank0-work>/stdbench/format-retest/inventory_sources.py": "ec8179c46dd12d846cca06402d6a5ad71cbfadc73151285eb94643c230920698",
+    "<rank0-work>/stdbench/format-retest/discover_sources.py": "2c90d6f1de7b23f7a825c661a9104320614f85ecd00d8613a5c904000b4055c0",
+    "<rank0-work>/stdbench/format-retest/publication_checks.py": "a52b22e7def35e0998260ded6b66cd37fc7b035eaf000bff8bc5d40eb5759009",
+    "<rank0-work>/stdbench/format-retest/audit_collection.py": "4a231b75040b282e143f85409003e052fb21821370327c01fdc8196f314bb5b7",
+    "<rank0-work>/stdbench/format-retest/r7_audit.py": "0cfa6d5262360b178071228934f426e7230adbd4afce68879b60554ac8ed530c",
+    "<rank0-work>/stdbench/format-retest/prepare.py": "51874d3d52409e2115632608706dec57a967489f679820a8b6a5621a1c830654",
+    "<rank0-work>/stdbench/format-retest/qualify_cpu.py": "509feae550f23b75f9a5caa3647db62014bf08910e95bc4f625df286c7b917a5",
+    "<rank0-work>/stdbench/format-retest/publish.py": "e0b6e0451dbb9d4af853f66762eb43ab689f4f266b00c1510556275c135b48de",
+    "<rank0-work>/stdbench/format-retest/r7/oracle.py": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+    "<rank0-work>/stdbench/format-retest/analysis/reporter.py": "24c6e6165746c27ef2066438aaef05af85f47960fd721c71e0d513d4e3e6e274",
+    "<rank0-work>/stdbench/format-retest/analysis/handwritten_checks.py": "d47faa7ae031d2595c463b8397d7c53fb73336c53d96da22b87397458fa3c540",
+    "<rank0-work>/stdbench/compute-dl/collect_report.py": "9410580d28597c9d85000e917f653e4db9c21a3bb60fa68eb489576624b95c31",
+    "<rank0-work>/stdbench/compute-dl/analysis.py": "71101f372473fc5be4a7f9896fb5b3e8ef375620c1dca87f48bb8559ddb292ae",
+    "<rank0-work>/stdbench/compute-dl/grade.py": "1a2249a1b5e0b06f03a4300995d0c320e5a21630d261b3791501f7c83740fb9f",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/audit_lifecycle.py": "0141d9621ca318b4beaecdefb8cfed1e7725ada2b78d4c7416e55e9e2cba62a3",
+    "<rank0-work>/stdbench/phase2/audit_records.py": "4cec13b9d73d41d71c8a0aa05fa8f9cc414965d1f1eb4ffbd6b482eb6dff035c",
+    "<rank0-work>/stdbench/compute-dl/a2-continuation/request_adapter.py": "d1b4da6f4fdf3d0bce6d89d2bae04de258f451671a4c9335051bf7abe3cc2b67",
+    "<rank0-work>/stdbench/compute-dl/disjointness.py": "40e0842546d67b46565ac024c607c0c13c39a6d947962b11a5b620b9a1a98868",
+    "<rank0-work>/stdbench/compute-dl/reference_a.py": "22909fc48f6f0d1fc80a43c83e96a1c55f1d1f6aabec119d971e8a53d9c63a15",
+    "<rank0-work>/stdbench/compute-dl/reference_b.py": "27c29675a9459733148b446b519dfe2c8646f95a3bd02c80f44149fa99f1e0c8",
+    "<rank0-work>/stdbench/compute-dl/exclusion_sources.py": "a7d7d4d568646976bf1cfcb3400b676e630559213eff855ec1ccaef4fa1e3b6b",
+    "<rank0-work>/stdbench/format-retest/final_review_controls.py": "626fd754f763426a0ffc7c98831b58201f0267c832aee5cf043cf695e78a4c43",
+    "<rank0-work>/stdbench/format-retest/seal_check.py": "7ef65e63f3e9e81c339235486ec7c0720a41055bca7ab3aa9c77b36092ba3bd4"
+  },
+  "qualification": {
+    "preparation": {
+      "path": "<rank0-work>/stdbench/format-retest/preparation-check.json",
+      "sha256": "ae8fb313bb951f2dfe7551513565eabbe3c2f6d5b17db87117e013bb8f79b9aa"
+    },
+    "prompts": {
+      "path": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/prompt-proof.json",
+      "sha256": "f8a039795c481731f7a1ac4cc97d1a313f435d0821d6e0fac354f790182a3de6"
+    },
+    "controls": {
+      "path": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/control-check.json",
+      "sha256": "f541319ffe5eafe95c653157189f07a0461ccf78daac6d10316ec77fad9e33c0"
+    },
+    "rank0": {
+      "path": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank-check-r0.json",
+      "sha256": "5418ef5607e47c98deccef7dae6dc5196dd23f503736b5ade968b2e40c9b3962"
+    },
+    "rank1": {
+      "path": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank-check-r1.json",
+      "sha256": "4a13f0ea3f1df87d386a52705615400fed078f9658858ccd8e485448c88eb834"
+    },
+    "clipping": {
+      "path": "<rank0-work>/stdbench/compute-dl/a1-prep/a1-policy-check-receipt.json",
+      "sha256": "e3176b17b8a97c29c35dce69b986568380406df076ab1ec5cea0caf6730dc8c6"
+    },
+    "dispatch": {
+      "path": "<rank0-work>/stdbench/format-retest/dispatch-check.json",
+      "sha256": "b91eacfea27d26503eb665440e83661380c900381ec657da4baec77bce625aac"
+    },
+    "grader": {
+      "path": "<rank0-work>/stdbench/format-retest/grader-check-v2.json",
+      "sha256": "bb22cf13d72e9e924388715ba6e149f43f1aad9f7680d4e5b6bb08809bae3798"
+    },
+    "analysis": {
+      "path": "<rank0-work>/stdbench/format-retest/analysis-check-v2.json",
+      "sha256": "3f31aefe24e8747b4e24b65dba0ab70dceeeb59fcd16ed5ede90db6e2b533d79"
+    }
+  },
+  "freeze_sha256": "72bf0826d63710072f52ffbd2007e54f217788a17d78e7422dce058d2197b316",
+  "cpu_prompt_arrays_sha256": "ecfbe3b2e5f05009a31f17751f99403ecc44e290a1000756672a585333cb747c",
+  "prep_manifest_sha256": "7b6e579836989a851f726f7e3b2c928673c75fcd0af4c75b1f93912d15c320f9"
+}

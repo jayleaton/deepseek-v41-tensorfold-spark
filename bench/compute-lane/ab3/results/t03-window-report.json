@@ -1,0 +1,212 @@
+{
+ "root": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T101747Z",
+ "gate": {
+  "pass": true,
+  "verdict": "PASS",
+  "live_receipts": [],
+  "records": 13,
+  "ok": 13,
+  "wrong-value": 0,
+  "wrong-span": 0,
+  "not-in-text": 0,
+  "unparsed": 0,
+  "wrong-check": 0,
+  "cut": 0,
+  "inconclusive": 0,
+  "short": 0,
+  "unknown": 0,
+  "text_owned_mismatches": 0,
+  "marks": {
+   "engine-inline": 0,
+   "engine-inline-partial": 0,
+   "engine-other-output": 0,
+   "model-imitation": 0
+  }
+ },
+ "wrong": [],
+ "arms": [
+  {
+   "arm": "d:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 6743,
+   "reasoning_mean": 337.1,
+   "completion_total": 9520,
+   "completion_mean": 476,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "d:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 6359,
+   "reasoning_mean": 317.9,
+   "completion_total": 8975,
+   "completion_mean": 448.8,
+   "solve": 20,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "d:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 5029,
+   "reasoning_mean": 251.4,
+   "completion_total": 8058,
+   "completion_mean": 402.9,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "rn:s101",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 4335,
+   "reasoning_mean": 216.8,
+   "completion_total": 6833,
+   "completion_mean": 341.6,
+   "solve": 20,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 3,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 4335,
+    "owned": 0,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 0,
+    "owning_reasoning": 0
+   }
+  },
+  {
+   "arm": "rn:s102",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 3280,
+   "reasoning_mean": 164,
+   "completion_total": 5937,
+   "completion_mean": 296.9,
+   "solve": 20,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 5,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 19,
+    "reasoning": 3278,
+    "owned": 2,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 1,
+    "owning": 2,
+    "owning_reasoning": 941
+   }
+  },
+  {
+   "arm": "rn:s103",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 3703,
+   "reasoning_mean": 185.2,
+   "completion_total": 6100,
+   "completion_mean": 305,
+   "solve": 18,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 3,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 5,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 16,
+    "reasoning": 3695,
+    "owned": 1,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 1,
+    "owning_reasoning": 562
+   }
+  }
+ ]
+}

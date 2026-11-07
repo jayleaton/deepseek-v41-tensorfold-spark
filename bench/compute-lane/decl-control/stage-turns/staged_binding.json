@@ -1,0 +1,18 @@
+{
+  "schema": "decl-control-launch-binding-v1",
+  "status": "BLOCKED_UNBOUND",
+  "original_spec_sha256": "adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6",
+  "amended_spec_sha256": "e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89",
+  "controller_protocol": "sealed-three-arm-campaign-v1",
+  "controller_sha256": null,
+  "spec": null,
+  "original_spec": null,
+  "controller": null,
+  "campaign": null,
+  "stage_index": null,
+  "scheduled_turns": ["t01", "t02", "t03"],
+  "max_turns": 4,
+  "waits": {"aggregate_returned_ids": 8192, "server_deadline_s": 270, "client_wait_s": 330, "outer_timeout_s": 7200, "concurrency": 1},
+  "files": {},
+  "gates": {}
+}

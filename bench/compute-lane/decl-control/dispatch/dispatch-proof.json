@@ -1,0 +1,25 @@
+{
+  "verdict": "PASS",
+  "base_spec_sha256": "adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6",
+  "spec_sha256": "e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89",
+  "whole_stream_noncall_and_wrong_arm_controls": true,
+  "guard_mutant_compiled": true,
+  "guard_mutant_behaviorally_caught": true,
+  "production_sources_unchanged": 3436,
+  "observed_fixtures": 8,
+  "GPU": false,
+  "deployed_binary_instrumentation": false,
+  "sha256": {
+    "build.zig": "4abaf4294a024b194aa1f9559e423333fda72ce72868469657f4aea432ebcde6",
+    "dispatch_spy.c": "c95f430864fcfafec1a8296187963ba65076be175f02ab13af60cab0c5346f42",
+    "zig/src/server/decl_control_probe.zig": "36655cc739aa0fd3c9bb956ccf5f0d43bd0da9ac8f53f272b680bf3587279cc8",
+    "zig/src/server/decl_control_tools.json": "1d112d68e2df0a69c1a6222daedef99f8afb8323e872d5c0849563a83812361f",
+    "fixture-receipts.jsonl": "33ee35d863872c4481030dc8fca4f8e80e8ed3be69dbc6a31ef49da5d1579c86",
+    "prepare_guard_mutant.sh": "3bd3271f6c180f7a665e7bb39212cbd7e6fa3f1d0c804c7097440f60a12d6818",
+    "unmodified-source-sha256.json": "4191a9e458467dce0c9c9ff8bce2795e7f69f2897748153b4697c3753110666f",
+    "guard-mutant/source.patch": "145b13da6f7683d7807ec7393b46ecdd02c0a04c6f8fcb74498a3e8e3427d505",
+    "guard-mutant/compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "guard-mutant/check.log": "bd5645675d25e4818fbd4a0c122e4ddb27ba113a0d86da6906116e462eea3bd4"
+  },
+  "compiler_sha256": "5165c9a2d17938a8173839b3adf81d025b558d38d9e9711237a6fa5b8d8bb3f7"
+}

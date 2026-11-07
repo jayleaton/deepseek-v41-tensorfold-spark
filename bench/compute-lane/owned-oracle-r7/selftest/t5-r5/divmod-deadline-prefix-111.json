@@ -1,0 +1,34 @@
+{
+  "reasoning": "[exact, computed by the engine: 1000 \u00f7 7 = 142 remainder 6] check: 7*7 + 6 \u2261 1 (mod 9), 142*7 + 6 \u2261 000 (mod 10",
+  "content": "",
+  "finish": "deadline",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "cells": [
+          {
+            "cell": 0,
+            "form": "trace",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 0,
+            "token": 3,
+            "path": "held",
+            "span": "divmod(1000,7)",
+            "value": "[exact, computed by the engine: 1000 \u00f7 7 = 142 remainder 6] check: 7*7 + 6 \u2261 1 (mod 9), 142*7 + 6 \u2261 000 (mod 10",
+            "ids": 100,
+            "landed": 1,
+            "drafted": 0,
+            "forced": 1,
+            "display": "1000 \u00f7 7"
+          }
+        ],
+        "trace": {
+          "owned": 1
+        }
+      }
+    }
+  }
+}

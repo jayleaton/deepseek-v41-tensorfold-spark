@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "controls": [
+    "unheld prequeue budget refusal remains incomplete without fake restoration/charge",
+    "cooling/pre-ready cutoff needs zero attempts and drain",
+    "ready partial diagnostics cutoff keeps missingness",
+    "qualified ready boot may retain paired request prefix",
+    "missing restoration refused",
+    "unheld GPU activity refused",
+    "unready dataset attempt refused",
+    "unready lacks drain refused",
+    "dataset before full diagnostic gate refused",
+    "partial diagnostics without budget cutoff refused"
+  ],
+  "GPU_requests": 0,
+  "source_sha256": {
+    "<rank0-work>/stdbench/compute-dl/a1-prep/lifecycle_check.py": "4a1c3edeb28f284ab35ceb8b7c5a1762f699666edbbed52e911ae1e2ed773284",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/audit_lifecycle.py": "0141d9621ca318b4beaecdefb8cfed1e7725ada2b78d4c7416e55e9e2cba62a3",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/audit_collection.py": "3638a2ac04e23db75a21adce455b340883f12290aeca2316cc03f2213e9715af"
+  }
+}

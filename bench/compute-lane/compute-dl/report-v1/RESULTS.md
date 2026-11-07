@@ -1,0 +1,28607 @@
+# Compute-DL results
+
+Status: **INCOMPLETE**
+Spec SHA256: `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`
+
+Integrity qualified: False.
+Observed: 342 / 480; missing: 138.
+Activation: 111 / 120 distinct tasks — ADEQUATE.
+
+CPU-matched/count-checked prompts; served-array equality was not directly observed.
+Initial-prompt-plus-returned is an accounting subtotal. Unknown multi-round input costs are not zero.
+Published declaration-control/older study scores are historical context only; no matched synthetic published score is constructed.
+This is a fixed equal-weight mixture of six templates, not 120 independent task families.
+
+## Accuracy
+
+| Mixture | D solved / scheduled | L solved / scheduled | L−D | 95% CI | bounds |
+|---|---:|---:|---:|---|---|
+| overall | 1/240 | 169/240 | null | null | [0.20000000000000007, 0.775] |
+| integer | 0/40 | 28/40 | null | null | [0.19999999999999996, 0.7] |
+| modular | 0/40 | 21/40 | null | null | [0.025000000000000022, 0.525] |
+| division | 0/40 | 40/40 | null | null | [0.5, 1.0] |
+| dp | 0/40 | 31/40 | null | null | [0.275, 0.775] |
+| graph | 1/40 | 28/40 | null | null | [0.17499999999999993, 0.6749999999999999] |
+| aggregation | 0/40 | 21/40 | null | null | [0.025000000000000022, 0.975] |
+
+Overall primary exact task sign-flip: null
+Qualification: {"safety": false, "D_execution_identities": [], "integrity": false, "case_A_primary_accuracy": false, "case_B_secondary_returned_ID_efficiency": false, "qualified_local_execution_enabled_benefit": false, "total_token_saving_claim": false, "serving_default_promotion": false}
+
+## Costs and censoring
+
+### returned_ids
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 120,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 120,
+    "D_sum": 32358,
+    "L_sum": 46810,
+    "ratio_L_over_D": 1.4466283453859943,
+    "mean_difference_L_minus_D": 120.43333333333334,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": [
+      1.3760257579211306,
+      1.533785221435302
+    ],
+    "difference_ci95": [
+      100.53623188405797,
+      145.08064516129033
+    ]
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 291,
+    "L_sum": 291,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 32358,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 269.65,
+    "known_median": 216.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 222,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 79316,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 357.27927927927925,
+    "known_median": 242.0,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": -14452,
+    "positive_savings": 0,
+    "censored_net_savings": -14452,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": 1.0,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": true,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### initial_prompt_ids
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 120,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 120,
+    "D_sum": 61344,
+    "L_sum": 61344,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": [
+      1.0,
+      1.0
+    ],
+    "difference_ci95": [
+      0.0,
+      0.0
+    ]
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 498,
+    "L_sum": 498,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 61344,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 511.2,
+    "known_median": 454.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 222,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 108433,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 488.43693693693695,
+    "known_median": 411.0,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": 0,
+    "positive_savings": 0,
+    "censored_net_savings": 0,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": null,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": false,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### processed_input_ids
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 1,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 1,
+    "D_sum": 498,
+    "L_sum": 498,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 498,
+    "L_sum": 498,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 61344,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 511.2,
+    "known_median": 454.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 2,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 1008,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 504,
+    "known_median": 504.0,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": 0,
+    "positive_savings": 0,
+    "censored_net_savings": 0,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": null,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": false,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### processed_input_plus_returned_ids
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 1,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 1,
+    "D_sum": 789,
+    "L_sum": 789,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 789,
+    "L_sum": 789,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 93702,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 780.85,
+    "known_median": 662.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 2,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 1529,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 764.5,
+    "known_median": 764.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": 0,
+    "positive_savings": 0,
+    "censored_net_savings": 0,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": null,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": false,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### initial_prompt_plus_returned_SUBTOTAL
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 120,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 120,
+    "D_sum": 93702,
+    "L_sum": 108154,
+    "ratio_L_over_D": 1.1542336342874218,
+    "mean_difference_L_minus_D": 120.43333333333334,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": [
+      1.1307848580575854,
+      1.182629500629903
+    ],
+    "difference_ci95": [
+      100.53623188405797,
+      145.08064516129033
+    ]
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 789,
+    "L_sum": 789,
+    "ratio_L_over_D": 1.0,
+    "mean_difference_L_minus_D": 0.0,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 93702,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 780.85,
+    "known_median": 662.5,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 222,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 187749,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 845.7162162162163,
+    "known_median": 653.0,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": -14452,
+    "positive_savings": 0,
+    "censored_net_savings": -14452,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": 1.0,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": true,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### wall_seconds
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 120,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 120,
+    "D_sum": 377.6817765161395,
+    "L_sum": 573.9080264489166,
+    "ratio_L_over_D": 1.519554455983639,
+    "mean_difference_L_minus_D": 1.6352187494398094,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": [
+      1.449793843273254,
+      1.6043014529368174
+    ],
+    "difference_ci95": [
+      1.3982556952331733,
+      1.9271561628866039
+    ]
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 1,
+    "D_sum": 3.768697358900681,
+    "L_sum": 3.8436428538989276,
+    "ratio_L_over_D": 1.0198863129248743,
+    "mean_difference_L_minus_D": 0.07494549499824643,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 120,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 377.6817765161395,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 3.147348137634496,
+    "known_median": 2.872834559995681,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 222,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": 982.8609869515058,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": 4.427301743024801,
+    "known_median": 3.3848786710295826,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": -196.22624993277714,
+    "positive_savings": 0,
+    "censored_net_savings": -196.1513044377789,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": 0.9996180659059432,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": true,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### server_seconds
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 0,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 0,
+    "D_sum": null,
+    "L_sum": null,
+    "ratio_L_over_D": null,
+    "mean_difference_L_minus_D": null,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 0,
+    "D_sum": null,
+    "L_sum": null,
+    "ratio_L_over_D": null,
+    "mean_difference_L_minus_D": null,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 0,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": null,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": null,
+    "known_median": null,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 0,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": null,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": null,
+    "known_median": null,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": 0,
+    "positive_savings": 0,
+    "censored_net_savings": 0,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": null,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": false,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### tool_execution_seconds
+
+```json
+{
+  "full_cohort_claim_withheld": true,
+  "scheduled_pairs": 240,
+  "complete_pairs": 0,
+  "paired_accounting_complete_sensitivity": {
+    "pairs": 0,
+    "D_sum": null,
+    "L_sum": null,
+    "ratio_L_over_D": null,
+    "mean_difference_L_minus_D": null,
+    "selection": "selected complete pairs; not representative of unknown cases",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "complete_both_uncensored_sensitivity": {
+    "pairs": 0,
+    "D_sum": null,
+    "L_sum": null,
+    "ratio_L_over_D": null,
+    "mean_difference_L_minus_D": null,
+    "selection": "selected complete paired uncensored replies; descriptive",
+    "ratio_ci95": null,
+    "difference_ci95": null
+  },
+  "D": {
+    "known_rows": 0,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": null,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": null,
+    "known_median": null,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "D"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "D"
+      ]
+    ]
+  },
+  "L": {
+    "known_rows": 0,
+    "scheduled_rows": 240,
+    "known_sum_lower_bound": null,
+    "sum": null,
+    "mean": null,
+    "median": null,
+    "known_mean": null,
+    "known_median": null,
+    "unknown_identities": [
+      [
+        "compute-dl-v1-integer-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-integer-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-modular-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-division-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-dp-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-graph-020",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-001",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-002",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-003",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-004",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-005",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-006",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-007",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-008",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-009",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-010",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-011",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-012",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-013",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-014",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-015",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-016",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-017",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-018",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-019",
+        102,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        101,
+        "L"
+      ],
+      [
+        "compute-dl-v1-aggregation-020",
+        102,
+        "L"
+      ]
+    ]
+  },
+  "ratio_L_over_D": null,
+  "mean_difference_L_minus_D": null,
+  "censoring": {
+    "net_savings": 0,
+    "positive_savings": 0,
+    "censored_net_savings": 0,
+    "censored_positive_savings": 0,
+    "net_contribution_fraction": null,
+    "net_fraction_undefined_with_nonzero_contribution": false,
+    "positive_contribution_fraction": 0,
+    "over_25_percent": false,
+    "complete_both_reversal": false,
+    "uncensored_efficiency_guard": false
+  },
+  "ratio_ci95": null,
+  "difference_ci95": null
+}
+```
+
+### Family: integer
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 0,
+      "solved_count_bounds": [
+        0,
+        20
+      ],
+      "solve_bounds": [
+        0.0,
+        0.5
+      ],
+      "statuses": {
+        "policy_terminated": 20
+      },
+      "finish_reasons": {
+        "tool_calls": 20
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.5
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 1.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 40,
+      "solved": 28,
+      "solved_count_bounds": [
+        28,
+        28
+      ],
+      "solve_bounds": [
+        0.7,
+        0.7
+      ],
+      "statuses": {
+        "ok": 40
+      },
+      "finish_reasons": {
+        "stop": 40
+      },
+      "format_rejections": 12,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": false,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 44
+        },
+        "blocked_dispatches": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 44
+        },
+        "failed_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 44
+        },
+        "reply_used_result": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 24
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 24
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 24
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 1840,
+        "L_sum": 3582,
+        "ratio_L_over_D": 1.9467391304347825,
+        "mean_difference_L_minus_D": 87.1,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.7164650184113623,
+          2.2619718309859156
+        ],
+        "difference_ci95": [
+          67.70833333333333,
+          111.5909090909091
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 1840,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 92,
+        "known_median": 92.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7187,
+        "sum": 7187,
+        "mean": 179.675,
+        "median": 162.5,
+        "known_mean": 179.675,
+        "known_median": 162.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -1742,
+        "positive_savings": 0,
+        "censored_net_savings": -1742,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 7750,
+        "L_sum": 7750,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7750,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 387.5,
+        "known_median": 387.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 15486,
+        "sum": 15486,
+        "mean": 387.15,
+        "median": 386.5,
+        "known_mean": 387.15,
+        "known_median": 386.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7750,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 387.5,
+        "known_median": 387.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 9590,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 479.5,
+        "known_median": 480.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 9590,
+        "L_sum": 11332,
+        "ratio_L_over_D": 1.1816475495307612,
+        "mean_difference_L_minus_D": 87.1,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.140328151986183,
+          1.2347978910369068
+        ],
+        "difference_ci95": [
+          67.70833333333333,
+          111.5909090909091
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 9590,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 479.5,
+        "known_median": 480.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 22673,
+        "sum": 22673,
+        "mean": 566.825,
+        "median": 550.0,
+        "known_mean": 566.825,
+        "known_median": 550.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -1742,
+        "positive_savings": 0,
+        "censored_net_savings": -1742,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 27.64607945550233,
+        "L_sum": 51.86459242599085,
+        "ratio_L_over_D": 1.8760197990991583,
+        "mean_difference_L_minus_D": 1.210925648524426,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.6778946682827354,
+          2.1388865940401103
+        ],
+        "difference_ci95": [
+          0.9659623781529566,
+          1.5120134710397741
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 27.64607945550233,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1.3823039727751165,
+        "known_median": 1.4008134909672663,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 103.17058761813678,
+        "sum": 103.17058761813678,
+        "mean": 2.5792646904534196,
+        "median": 2.3667634099256247,
+        "known_mean": 2.5792646904534196,
+        "known_median": 2.3667634099256247,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -24.21851297048852,
+        "positive_savings": 0,
+        "censored_net_savings": -24.21851297048852,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-integer-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-integer-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 0,
+    "solve_difference_L_minus_D": null,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+### Family: modular
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 0,
+      "solved_count_bounds": [
+        0,
+        20
+      ],
+      "solve_bounds": [
+        0.0,
+        0.5
+      ],
+      "statuses": {
+        "policy_terminated": 20
+      },
+      "finish_reasons": {
+        "tool_calls": 20
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.5
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 1.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 40,
+      "solved": 21,
+      "solved_count_bounds": [
+        21,
+        21
+      ],
+      "solve_bounds": [
+        0.525,
+        0.525
+      ],
+      "statuses": {
+        "ok": 40
+      },
+      "finish_reasons": {
+        "stop": 40
+      },
+      "format_rejections": 19,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": false,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "blocked_dispatches": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "failed_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "reply_used_result": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 2133,
+        "L_sum": 3053,
+        "ratio_L_over_D": 1.43131739334271,
+        "mean_difference_L_minus_D": 46.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.3817907444668007,
+          1.4813805631244323
+        ],
+        "difference_ci95": [
+          41.6875,
+          50.3125
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 2133,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 106.65,
+        "known_median": 99.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 5948,
+        "sum": 5948,
+        "mean": 148.7,
+        "median": 140.5,
+        "known_mean": 148.7,
+        "known_median": 140.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -920,
+        "positive_savings": 0,
+        "censored_net_savings": -920,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 7758,
+        "L_sum": 7758,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7758,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 387.9,
+        "known_median": 388.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 15512,
+        "sum": 15512,
+        "mean": 387.8,
+        "median": 388.0,
+        "known_mean": 387.8,
+        "known_median": 388.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7758,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 387.9,
+        "known_median": 388.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 9891,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 494.55,
+        "known_median": 486.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 9891,
+        "L_sum": 10811,
+        "ratio_L_over_D": 1.0930138509756344,
+        "mean_difference_L_minus_D": 46.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0839527765631831,
+          1.1016196072810664
+        ],
+        "difference_ci95": [
+          41.6875,
+          50.3125
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 9891,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 494.55,
+        "known_median": 486.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 21460,
+        "sum": 21460,
+        "mean": 536.5,
+        "median": 529.0,
+        "known_mean": 536.5,
+        "known_median": 529.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -920,
+        "positive_savings": 0,
+        "censored_net_savings": -920,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 33.21174287679605,
+        "L_sum": 47.97873182059266,
+        "ratio_L_over_D": 1.4446315569338521,
+        "mean_difference_L_minus_D": 0.7383494471898302,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.390684415411655,
+          1.5073379528211794
+        ],
+        "difference_ci95": [
+          0.6712708101009152,
+          0.8077093714964576
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 33.21174287679605,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1.6605871438398025,
+        "known_median": 1.6930527025833726,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 93.16452502738684,
+        "sum": 93.16452502738684,
+        "mean": 2.329113125684671,
+        "median": 2.2425920865498483,
+        "known_mean": 2.329113125684671,
+        "known_median": 2.2425920865498483,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -14.766988943796605,
+        "positive_savings": 0,
+        "censored_net_savings": -14.766988943796605,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-modular-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-modular-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 0,
+    "solve_difference_L_minus_D": null,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+### Family: division
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 0,
+      "solved_count_bounds": [
+        0,
+        20
+      ],
+      "solve_bounds": [
+        0.0,
+        0.5
+      ],
+      "statuses": {
+        "policy_terminated": 20
+      },
+      "finish_reasons": {
+        "tool_calls": 20
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.5
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 1.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 40,
+      "solved": 40,
+      "solved_count_bounds": [
+        40,
+        40
+      ],
+      "solve_bounds": [
+        1.0,
+        1.0
+      ],
+      "statuses": {
+        "ok": 40
+      },
+      "finish_reasons": {
+        "stop": 40
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": false,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "blocked_dispatches": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "failed_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "reply_used_result": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 2394,
+        "L_sum": 4462,
+        "ratio_L_over_D": 1.863826232247285,
+        "mean_difference_L_minus_D": 103.4,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.8009049773755657,
+          1.926388888888889
+        ],
+        "difference_ci95": [
+          96.0909090909091,
+          110.625
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 2394,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 119.7,
+        "known_median": 119.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 8675,
+        "sum": 8675,
+        "mean": 216.875,
+        "median": 213.5,
+        "known_mean": 216.875,
+        "known_median": 213.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -2068,
+        "positive_savings": 0,
+        "censored_net_savings": -2068,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 8220,
+        "L_sum": 8220,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 8220,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 411,
+        "known_median": 411.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 16440,
+        "sum": 16440,
+        "mean": 411,
+        "median": 411.0,
+        "known_mean": 411,
+        "known_median": 411.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 8220,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 411,
+        "known_median": 411.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 10614,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 530.7,
+        "known_median": 530.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 10614,
+        "L_sum": 12682,
+        "ratio_L_over_D": 1.1948370077256454,
+        "mean_difference_L_minus_D": 103.4,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.180983040201005,
+          1.2085101367279585
+        ],
+        "difference_ci95": [
+          96.0909090909091,
+          110.625
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 10614,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 530.7,
+        "known_median": 530.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 25115,
+        "sum": 25115,
+        "mean": 627.875,
+        "median": 624.5,
+        "known_mean": 627.875,
+        "known_median": 624.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -2068,
+        "positive_savings": 0,
+        "censored_net_savings": -2068,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 35.26848402642645,
+        "L_sum": 61.1513184341602,
+        "ratio_L_over_D": 1.733879981581854,
+        "mean_difference_L_minus_D": 1.2941417203866876,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.6867581013884,
+          1.7801169626473061
+        ],
+        "difference_ci95": [
+          1.2145534983331647,
+          1.369441401019382
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 35.26848402642645,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1.7634242013213224,
+        "known_median": 1.7792883070651442,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 120.15729551785626,
+        "sum": 120.15729551785626,
+        "mean": 3.0039323879464064,
+        "median": 3.034905254957266,
+        "known_mean": 3.0039323879464064,
+        "known_median": 3.034905254957266,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -25.882834407733753,
+        "positive_savings": 0,
+        "censored_net_savings": -25.882834407733753,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-division-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-division-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 0,
+    "solve_difference_L_minus_D": null,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+### Family: dp
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 0,
+      "solved_count_bounds": [
+        0,
+        20
+      ],
+      "solve_bounds": [
+        0.0,
+        0.5
+      ],
+      "statuses": {
+        "policy_terminated": 20
+      },
+      "finish_reasons": {
+        "tool_calls": 20
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.5
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 1.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 40,
+      "solved": 31,
+      "solved_count_bounds": [
+        31,
+        31
+      ],
+      "solve_bounds": [
+        0.775,
+        0.775
+      ],
+      "statuses": {
+        "ok": 40
+      },
+      "finish_reasons": {
+        "stop": 40
+      },
+      "format_rejections": 9,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": false,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "blocked_dispatches": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "failed_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        },
+        "reply_used_result": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 40
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 8734,
+        "L_sum": 11873,
+        "ratio_L_over_D": 1.3594000457980306,
+        "mean_difference_L_minus_D": 156.95,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.3049297130752937,
+          1.4133026563480444
+        ],
+        "difference_ci95": [
+          135.0,
+          175.75
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 8734,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 436.7,
+        "known_median": 444.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 22751,
+        "sum": 22751,
+        "mean": 568.775,
+        "median": 587.5,
+        "known_mean": 568.775,
+        "known_median": 587.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -3139,
+        "positive_savings": 0,
+        "censored_net_savings": -3139,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 11028,
+        "L_sum": 11028,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 11028,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 551.4,
+        "known_median": 540.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 21876,
+        "sum": 21876,
+        "mean": 546.9,
+        "median": 540.0,
+        "known_mean": 546.9,
+        "known_median": 540.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 11028,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 551.4,
+        "known_median": 540.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 19762,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 988.1,
+        "known_median": 988.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 19762,
+        "L_sum": 22901,
+        "ratio_L_over_D": 1.15884019836049,
+        "mean_difference_L_minus_D": 156.95,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.1348333473260013,
+          1.1809924970383046
+        ],
+        "difference_ci95": [
+          135.0,
+          175.75
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 19762,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 988.1,
+        "known_median": 988.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 44627,
+        "sum": 44627,
+        "mean": 1115.675,
+        "median": 1136.0,
+        "known_mean": 1115.675,
+        "known_median": 1136.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -3139,
+        "positive_savings": 0,
+        "censored_net_savings": -3139,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 95.42328155972064,
+        "L_sum": 139.33400880848058,
+        "ratio_L_over_D": 1.460167859782504,
+        "mean_difference_L_minus_D": 2.195536362437997,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.3900490618830004,
+          1.5278387164827008
+        ],
+        "difference_ci95": [
+          1.8902278887981083,
+          2.456259973398927
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 95.42328155972064,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 4.771164077986032,
+        "known_median": 4.756317298975773,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 265.46680399635807,
+        "sum": 265.46680399635807,
+        "mean": 6.636670099908952,
+        "median": 6.798549015424214,
+        "known_mean": 6.636670099908952,
+        "known_median": 6.798549015424214,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -43.91072724875994,
+        "positive_savings": 0,
+        "censored_net_savings": -43.91072724875994,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-dp-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-dp-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 0,
+    "solve_difference_L_minus_D": null,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+### Family: graph
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 1,
+      "solved_count_bounds": [
+        1,
+        21
+      ],
+      "solve_bounds": [
+        0.025,
+        0.525
+      ],
+      "statuses": {
+        "policy_terminated": 19,
+        "ok": 1
+      },
+      "finish_reasons": {
+        "tool_calls": 19,
+        "stop": 1
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.475
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 0.975
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 19
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 19
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 9
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 9
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 40,
+      "solved": 28,
+      "solved_count_bounds": [
+        28,
+        28
+      ],
+      "solve_bounds": [
+        0.7,
+        0.7
+      ],
+      "statuses": {
+        "ok": 40
+      },
+      "finish_reasons": {
+        "stop": 40
+      },
+      "format_rejections": 12,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": false,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 38
+        },
+        "blocked_dispatches": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 38
+        },
+        "failed_executions": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 38
+        },
+        "reply_used_result": {
+          "known_rows": 40,
+          "unknown_rows": 0,
+          "known_sum": 38
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 18
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 18
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 18
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 18
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "blocked_dispatches": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "failed_executions": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          },
+          "reply_used_result": {
+            "known_rows": 20,
+            "unknown_rows": 0,
+            "known_sum": 20
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 7869,
+        "L_sum": 10237,
+        "ratio_L_over_D": 1.3009276909391283,
+        "mean_difference_L_minus_D": 118.4,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.198220536756126,
+          1.4144053263391505
+        ],
+        "difference_ci95": [
+          77.54545454545455,
+          161.55555555555554
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 291,
+        "L_sum": 291,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 7869,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 393.45,
+        "known_median": 387.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 19502,
+        "sum": 19502,
+        "mean": 487.55,
+        "median": 480.0,
+        "known_mean": 487.55,
+        "known_median": 480.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -2368,
+        "positive_savings": 0,
+        "censored_net_savings": -2368,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 11328,
+        "L_sum": 11328,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 498,
+        "L_sum": 498,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 11328,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 566.4,
+        "known_median": 555.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 22368,
+        "sum": 22368,
+        "mean": 559.2,
+        "median": 555.0,
+        "known_mean": 559.2,
+        "known_median": 555.0,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 1,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 1,
+        "D_sum": 498,
+        "L_sum": 498,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 498,
+        "L_sum": 498,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 11328,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 566.4,
+        "known_median": 555.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 2,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 1008,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 504,
+        "known_median": 504.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 1,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 1,
+        "D_sum": 789,
+        "L_sum": 789,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 789,
+        "L_sum": 789,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 19197,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 959.85,
+        "known_median": 937.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 2,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 1529,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 764.5,
+        "known_median": 764.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 19197,
+        "L_sum": 21565,
+        "ratio_L_over_D": 1.123352607178205,
+        "mean_difference_L_minus_D": 118.4,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0814906034159661,
+          1.1685407949790796
+        ],
+        "difference_ci95": [
+          77.54545454545455,
+          161.55555555555554
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 789,
+        "L_sum": 789,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 19197,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 959.85,
+        "known_median": 937.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 41870,
+        "sum": 41870,
+        "mean": 1046.75,
+        "median": 1027.5,
+        "known_mean": 1046.75,
+        "known_median": 1027.5,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -2368,
+        "positive_savings": 0,
+        "censored_net_savings": -2368,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 85.58765458827838,
+        "L_sum": 119.77503388701007,
+        "ratio_L_over_D": 1.3994428806723465,
+        "mean_difference_L_minus_D": 1.7093689649365842,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.2758651675991266,
+          1.5356481183419664
+        ],
+        "difference_ci95": [
+          1.1818866351515882,
+          2.263909000903368
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 1,
+        "D_sum": 3.768697358900681,
+        "L_sum": 3.8436428538989276,
+        "ratio_L_over_D": 1.0198863129248743,
+        "mean_difference_L_minus_D": 0.07494549499824643,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 85.58765458827838,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 4.2793827294139195,
+        "known_median": 4.233832092490047,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 40,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 226.31517146900296,
+        "sum": 226.31517146900296,
+        "mean": 5.657879286725074,
+        "median": 5.509315822389908,
+        "known_mean": 5.657879286725074,
+        "known_median": 5.509315822389908,
+        "unknown_identities": []
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -34.187379298731685,
+        "positive_savings": 0,
+        "censored_net_savings": -34.11243380373344,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 0.9978078022786313,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-graph-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-graph-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 1,
+    "solve_difference_L_minus_D": 0.0,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+### Family: aggregation
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 40,
+      "observed": 20,
+      "solved": 0,
+      "solved_count_bounds": [
+        0,
+        20
+      ],
+      "solve_bounds": [
+        0.0,
+        0.5
+      ],
+      "statuses": {
+        "policy_terminated": 20
+      },
+      "finish_reasons": {
+        "tool_calls": 20
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.5
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 1.0
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "blocked_dispatches": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 20
+        },
+        "successful_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 20,
+          "unknown_rows": 20,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "blocked_dispatches": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 10
+          },
+          "successful_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 10,
+            "unknown_rows": 10,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 40,
+      "observed": 22,
+      "solved": 21,
+      "solved_count_bounds": [
+        21,
+        39
+      ],
+      "solve_bounds": [
+        0.525,
+        0.975
+      ],
+      "statuses": {
+        "ok": 22
+      },
+      "finish_reasons": {
+        "stop": 22
+      },
+      "format_rejections": 1,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.45,
+        "deadline": 0.45,
+        "policy_error": 0.45
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 23
+        },
+        "blocked_dispatches": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 23
+        },
+        "failed_executions": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 23
+        },
+        "reply_used_result": {
+          "known_rows": 22,
+          "unknown_rows": 18,
+          "known_sum": 22
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 12
+          },
+          "blocked_dispatches": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 12
+          },
+          "failed_executions": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 12
+          },
+          "reply_used_result": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 11
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 11
+          },
+          "blocked_dispatches": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 11
+          },
+          "failed_executions": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 11
+          },
+          "reply_used_result": {
+            "known_rows": 11,
+            "unknown_rows": 9,
+            "known_sum": 11
+          }
+        }
+      }
+    }
+  },
+  "costs": {
+    "returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 9388,
+        "L_sum": 13603,
+        "ratio_L_over_D": 1.4489774179804005,
+        "mean_difference_L_minus_D": 210.75,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.2447457627118643,
+          1.7158555729984302
+        ],
+        "difference_ci95": [
+          112.41666666666667,
+          340.1666666666667
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 9388,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 469.4,
+        "known_median": 464.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 22,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 15253,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 693.3181818181819,
+        "known_median": 592.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -4215,
+        "positive_savings": 0,
+        "censored_net_savings": -4215,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 15260,
+        "L_sum": 15260,
+        "ratio_L_over_D": 1.0,
+        "mean_difference_L_minus_D": 0.0,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0,
+          1.0
+        ],
+        "difference_ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 15260,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 763,
+        "known_median": 765.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 22,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 16751,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 761.4090909090909,
+        "known_median": 746.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 15260,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 763,
+        "known_median": 765.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "processed_input_plus_returned_ids": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 24648,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1232.4,
+        "known_median": 1229.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "initial_prompt_plus_returned_SUBTOTAL": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 24648,
+        "L_sum": 28863,
+        "ratio_L_over_D": 1.1710077896786757,
+        "mean_difference_L_minus_D": 210.75,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.0926463968572246,
+          1.2730433596945732
+        ],
+        "difference_ci95": [
+          112.41666666666667,
+          340.1666666666667
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 24648,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1232.4,
+        "known_median": 1229.0,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 22,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 32004,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 1454.7272727272727,
+        "known_median": 1380.5,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -4215,
+        "positive_savings": 0,
+        "censored_net_savings": -4215,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "wall_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 20,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 20,
+        "D_sum": 100.54453400941566,
+        "L_sum": 153.8043410726823,
+        "ratio_L_over_D": 1.5297135999285554,
+        "mean_difference_L_minus_D": 2.6629903531633317,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": [
+          1.314736547309154,
+          1.812738936753442
+        ],
+        "difference_ci95": [
+          1.5457995854750541,
+          4.14040327607654
+        ]
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 20,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 100.54453400941566,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 5.0272267004707825,
+        "known_median": 5.164492859621532,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 22,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": 174.58660332276486,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": 7.935754696489312,
+        "known_median": 6.844395789434202,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": -53.259807063266635,
+        "positive_savings": 0,
+        "censored_net_savings": -53.259807063266635,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": 1.0,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": true,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "server_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    },
+    "tool_execution_seconds": {
+      "full_cohort_claim_withheld": true,
+      "scheduled_pairs": 40,
+      "complete_pairs": 0,
+      "paired_accounting_complete_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete pairs; not representative of unknown cases",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "complete_both_uncensored_sensitivity": {
+        "pairs": 0,
+        "D_sum": null,
+        "L_sum": null,
+        "ratio_L_over_D": null,
+        "mean_difference_L_minus_D": null,
+        "selection": "selected complete paired uncensored replies; descriptive",
+        "ratio_ci95": null,
+        "difference_ci95": null
+      },
+      "D": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "D"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "D"
+          ]
+        ]
+      },
+      "L": {
+        "known_rows": 0,
+        "scheduled_rows": 40,
+        "known_sum_lower_bound": null,
+        "sum": null,
+        "mean": null,
+        "median": null,
+        "known_mean": null,
+        "known_median": null,
+        "unknown_identities": [
+          [
+            "compute-dl-v1-aggregation-001",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-001",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-002",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-003",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-004",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-005",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-006",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-007",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-008",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-009",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-010",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-011",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-012",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-013",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-014",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-015",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-016",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-017",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-018",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-019",
+            102,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            101,
+            "L"
+          ],
+          [
+            "compute-dl-v1-aggregation-020",
+            102,
+            "L"
+          ]
+        ]
+      },
+      "ratio_L_over_D": null,
+      "mean_difference_L_minus_D": null,
+      "censoring": {
+        "net_savings": 0,
+        "positive_savings": 0,
+        "censored_net_savings": 0,
+        "censored_positive_savings": 0,
+        "net_contribution_fraction": null,
+        "net_fraction_undefined_with_nonzero_contribution": false,
+        "positive_contribution_fraction": 0,
+        "over_25_percent": false,
+        "complete_both_reversal": false,
+        "uncensored_efficiency_guard": false
+      },
+      "ratio_ci95": null,
+      "difference_ci95": null
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 0,
+    "solve_difference_L_minus_D": null,
+    "solve_difference_ci95": null
+  }
+}
+```
+
+## Paired gains and losses
+
+Gains: [["compute-dl-v1-integer-001", 101], ["compute-dl-v1-integer-001", 102], ["compute-dl-v1-integer-003", 101], ["compute-dl-v1-integer-003", 102], ["compute-dl-v1-integer-004", 101], ["compute-dl-v1-integer-004", 102], ["compute-dl-v1-integer-005", 101], ["compute-dl-v1-integer-006", 102], ["compute-dl-v1-integer-008", 101], ["compute-dl-v1-integer-008", 102], ["compute-dl-v1-integer-009", 102], ["compute-dl-v1-integer-010", 101], ["compute-dl-v1-integer-010", 102], ["compute-dl-v1-modular-001", 101], ["compute-dl-v1-modular-001", 102], ["compute-dl-v1-modular-002", 101], ["compute-dl-v1-modular-002", 102], ["compute-dl-v1-modular-004", 101], ["compute-dl-v1-modular-005", 102], ["compute-dl-v1-modular-006", 101], ["compute-dl-v1-modular-006", 102], ["compute-dl-v1-modular-007", 101], ["compute-dl-v1-modular-008", 101], ["compute-dl-v1-modular-008", 102], ["compute-dl-v1-division-001", 101], ["compute-dl-v1-division-001", 102], ["compute-dl-v1-division-002", 101], ["compute-dl-v1-division-002", 102], ["compute-dl-v1-division-003", 101], ["compute-dl-v1-division-003", 102], ["compute-dl-v1-division-004", 101], ["compute-dl-v1-division-004", 102], ["compute-dl-v1-division-005", 101], ["compute-dl-v1-division-005", 102], ["compute-dl-v1-division-006", 101], ["compute-dl-v1-division-006", 102], ["compute-dl-v1-division-007", 101], ["compute-dl-v1-division-007", 102], ["compute-dl-v1-division-008", 101], ["compute-dl-v1-division-008", 102], ["compute-dl-v1-division-009", 101], ["compute-dl-v1-division-009", 102], ["compute-dl-v1-division-010", 101], ["compute-dl-v1-division-010", 102], ["compute-dl-v1-dp-001", 101], ["compute-dl-v1-dp-001", 102], ["compute-dl-v1-dp-002", 101], ["compute-dl-v1-dp-002", 102], ["compute-dl-v1-dp-003", 101], ["compute-dl-v1-dp-003", 102], ["compute-dl-v1-dp-004", 101], ["compute-dl-v1-dp-004", 102], ["compute-dl-v1-dp-005", 102], ["compute-dl-v1-dp-006", 101], ["compute-dl-v1-dp-007", 101], ["compute-dl-v1-dp-007", 102], ["compute-dl-v1-dp-008", 101], ["compute-dl-v1-dp-008", 102], ["compute-dl-v1-dp-009", 101], ["compute-dl-v1-dp-010", 101], ["compute-dl-v1-dp-010", 102], ["compute-dl-v1-graph-001", 101], ["compute-dl-v1-graph-002", 101], ["compute-dl-v1-graph-003", 102], ["compute-dl-v1-graph-004", 102], ["compute-dl-v1-graph-005", 102], ["compute-dl-v1-graph-006", 102], ["compute-dl-v1-graph-007", 101], ["compute-dl-v1-graph-007", 102], ["compute-dl-v1-graph-008", 101], ["compute-dl-v1-graph-008", 102], ["compute-dl-v1-graph-009", 101], ["compute-dl-v1-graph-009", 102], ["compute-dl-v1-graph-010", 101], ["compute-dl-v1-graph-010", 102], ["compute-dl-v1-aggregation-001", 101], ["compute-dl-v1-aggregation-001", 102], ["compute-dl-v1-aggregation-002", 101], ["compute-dl-v1-aggregation-002", 102], ["compute-dl-v1-aggregation-003", 101], ["compute-dl-v1-aggregation-003", 102], ["compute-dl-v1-aggregation-004", 101], ["compute-dl-v1-aggregation-004", 102], ["compute-dl-v1-aggregation-005", 101], ["compute-dl-v1-aggregation-005", 102], ["compute-dl-v1-aggregation-006", 101], ["compute-dl-v1-aggregation-006", 102], ["compute-dl-v1-aggregation-007", 101], ["compute-dl-v1-aggregation-007", 102], ["compute-dl-v1-aggregation-008", 101], ["compute-dl-v1-aggregation-008", 102], ["compute-dl-v1-aggregation-009", 101], ["compute-dl-v1-aggregation-009", 102], ["compute-dl-v1-aggregation-010", 102]]
+Losses: []
+Net observed paired gains minus losses: 94
+
+## Rates, exposure and sensitivities
+
+```json
+{
+  "arms": {
+    "D": {
+      "scheduled": 240,
+      "observed": 120,
+      "solved": 1,
+      "solved_count_bounds": [
+        1,
+        121
+      ],
+      "solve_bounds": [
+        0.004166666666666667,
+        0.5041666666666667
+      ],
+      "statuses": {
+        "policy_terminated": 119,
+        "ok": 1
+      },
+      "finish_reasons": {
+        "tool_calls": 119,
+        "stop": 1
+      },
+      "format_rejections": 0,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.49583333333333335
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.5,
+        "deadline": 0.5,
+        "policy_error": 0.9958333333333333
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 119
+        },
+        "blocked_dispatches": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 119
+        },
+        "successful_executions": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 0
+        },
+        "failed_executions": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 0
+        },
+        "reply_used_result": {
+          "known_rows": 120,
+          "unknown_rows": 120,
+          "known_sum": 0
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 59
+          },
+          "blocked_dispatches": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 59
+          },
+          "successful_executions": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 60
+          },
+          "blocked_dispatches": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 60
+          },
+          "successful_executions": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "failed_executions": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          },
+          "reply_used_result": {
+            "known_rows": 60,
+            "unknown_rows": 60,
+            "known_sum": 0
+          }
+        }
+      }
+    },
+    "L": {
+      "scheduled": 240,
+      "observed": 222,
+      "solved": 169,
+      "solved_count_bounds": [
+        169,
+        187
+      ],
+      "solve_bounds": [
+        0.7041666666666667,
+        0.7791666666666667
+      ],
+      "statuses": {
+        "ok": 222
+      },
+      "finish_reasons": {
+        "stop": 222
+      },
+      "format_rejections": 53,
+      "rates": {
+        "cap": 0.0,
+        "deadline": 0.0,
+        "policy_error": 0.0
+      },
+      "rates_are_lower_bounds": true,
+      "rates_denominator": "all scheduled replies; missing event status unknown",
+      "rate_upper_bounds": {
+        "cap": 0.075,
+        "deadline": 0.075,
+        "policy_error": 0.075
+      },
+      "calls": {
+        "attempted": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 225
+        },
+        "blocked_dispatches": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 0
+        },
+        "successful_executions": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 225
+        },
+        "failed_executions": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 0
+        },
+        "delivered_authenticated_results": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 225
+        },
+        "reply_used_result": {
+          "known_rows": 222,
+          "unknown_rows": 18,
+          "known_sum": 220
+        }
+      },
+      "calls_per_seed": {
+        "101": {
+          "attempted": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 114
+          },
+          "blocked_dispatches": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 114
+          },
+          "failed_executions": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 114
+          },
+          "reply_used_result": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 109
+          }
+        },
+        "102": {
+          "attempted": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 111
+          },
+          "blocked_dispatches": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "successful_executions": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 111
+          },
+          "failed_executions": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 0
+          },
+          "delivered_authenticated_results": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 111
+          },
+          "reply_used_result": {
+            "known_rows": 111,
+            "unknown_rows": 9,
+            "known_sum": 111
+          }
+        }
+      }
+    }
+  },
+  "activation": {
+    "task_ids": [
+      "compute-dl-v1-aggregation-001",
+      "compute-dl-v1-aggregation-002",
+      "compute-dl-v1-aggregation-003",
+      "compute-dl-v1-aggregation-004",
+      "compute-dl-v1-aggregation-005",
+      "compute-dl-v1-aggregation-006",
+      "compute-dl-v1-aggregation-007",
+      "compute-dl-v1-aggregation-008",
+      "compute-dl-v1-aggregation-009",
+      "compute-dl-v1-aggregation-010",
+      "compute-dl-v1-aggregation-019",
+      "compute-dl-v1-division-001",
+      "compute-dl-v1-division-002",
+      "compute-dl-v1-division-003",
+      "compute-dl-v1-division-004",
+      "compute-dl-v1-division-005",
+      "compute-dl-v1-division-006",
+      "compute-dl-v1-division-007",
+      "compute-dl-v1-division-008",
+      "compute-dl-v1-division-009",
+      "compute-dl-v1-division-010",
+      "compute-dl-v1-division-011",
+      "compute-dl-v1-division-012",
+      "compute-dl-v1-division-013",
+      "compute-dl-v1-division-014",
+      "compute-dl-v1-division-015",
+      "compute-dl-v1-division-016",
+      "compute-dl-v1-division-017",
+      "compute-dl-v1-division-018",
+      "compute-dl-v1-division-019",
+      "compute-dl-v1-division-020",
+      "compute-dl-v1-dp-001",
+      "compute-dl-v1-dp-002",
+      "compute-dl-v1-dp-003",
+      "compute-dl-v1-dp-004",
+      "compute-dl-v1-dp-005",
+      "compute-dl-v1-dp-006",
+      "compute-dl-v1-dp-007",
+      "compute-dl-v1-dp-008",
+      "compute-dl-v1-dp-009",
+      "compute-dl-v1-dp-010",
+      "compute-dl-v1-dp-011",
+      "compute-dl-v1-dp-012",
+      "compute-dl-v1-dp-013",
+      "compute-dl-v1-dp-014",
+      "compute-dl-v1-dp-015",
+      "compute-dl-v1-dp-016",
+      "compute-dl-v1-dp-017",
+      "compute-dl-v1-dp-018",
+      "compute-dl-v1-dp-019",
+      "compute-dl-v1-dp-020",
+      "compute-dl-v1-graph-001",
+      "compute-dl-v1-graph-002",
+      "compute-dl-v1-graph-003",
+      "compute-dl-v1-graph-004",
+      "compute-dl-v1-graph-005",
+      "compute-dl-v1-graph-006",
+      "compute-dl-v1-graph-007",
+      "compute-dl-v1-graph-008",
+      "compute-dl-v1-graph-009",
+      "compute-dl-v1-graph-010",
+      "compute-dl-v1-graph-011",
+      "compute-dl-v1-graph-012",
+      "compute-dl-v1-graph-013",
+      "compute-dl-v1-graph-014",
+      "compute-dl-v1-graph-015",
+      "compute-dl-v1-graph-016",
+      "compute-dl-v1-graph-017",
+      "compute-dl-v1-graph-018",
+      "compute-dl-v1-graph-019",
+      "compute-dl-v1-graph-020",
+      "compute-dl-v1-integer-001",
+      "compute-dl-v1-integer-002",
+      "compute-dl-v1-integer-003",
+      "compute-dl-v1-integer-004",
+      "compute-dl-v1-integer-005",
+      "compute-dl-v1-integer-006",
+      "compute-dl-v1-integer-007",
+      "compute-dl-v1-integer-008",
+      "compute-dl-v1-integer-009",
+      "compute-dl-v1-integer-010",
+      "compute-dl-v1-integer-011",
+      "compute-dl-v1-integer-012",
+      "compute-dl-v1-integer-013",
+      "compute-dl-v1-integer-014",
+      "compute-dl-v1-integer-015",
+      "compute-dl-v1-integer-016",
+      "compute-dl-v1-integer-017",
+      "compute-dl-v1-integer-018",
+      "compute-dl-v1-integer-019",
+      "compute-dl-v1-integer-020",
+      "compute-dl-v1-modular-001",
+      "compute-dl-v1-modular-002",
+      "compute-dl-v1-modular-003",
+      "compute-dl-v1-modular-004",
+      "compute-dl-v1-modular-005",
+      "compute-dl-v1-modular-006",
+      "compute-dl-v1-modular-007",
+      "compute-dl-v1-modular-008",
+      "compute-dl-v1-modular-009",
+      "compute-dl-v1-modular-010",
+      "compute-dl-v1-modular-011",
+      "compute-dl-v1-modular-012",
+      "compute-dl-v1-modular-013",
+      "compute-dl-v1-modular-014",
+      "compute-dl-v1-modular-015",
+      "compute-dl-v1-modular-016",
+      "compute-dl-v1-modular-017",
+      "compute-dl-v1-modular-018",
+      "compute-dl-v1-modular-019",
+      "compute-dl-v1-modular-020"
+    ],
+    "distinct_tasks": 111,
+    "threshold": 30,
+    "status": "ADEQUATE",
+    "per_family": {
+      "integer": [
+        "compute-dl-v1-integer-001",
+        "compute-dl-v1-integer-002",
+        "compute-dl-v1-integer-003",
+        "compute-dl-v1-integer-004",
+        "compute-dl-v1-integer-005",
+        "compute-dl-v1-integer-006",
+        "compute-dl-v1-integer-007",
+        "compute-dl-v1-integer-008",
+        "compute-dl-v1-integer-009",
+        "compute-dl-v1-integer-010",
+        "compute-dl-v1-integer-011",
+        "compute-dl-v1-integer-012",
+        "compute-dl-v1-integer-013",
+        "compute-dl-v1-integer-014",
+        "compute-dl-v1-integer-015",
+        "compute-dl-v1-integer-016",
+        "compute-dl-v1-integer-017",
+        "compute-dl-v1-integer-018",
+        "compute-dl-v1-integer-019",
+        "compute-dl-v1-integer-020"
+      ],
+      "modular": [
+        "compute-dl-v1-modular-001",
+        "compute-dl-v1-modular-002",
+        "compute-dl-v1-modular-003",
+        "compute-dl-v1-modular-004",
+        "compute-dl-v1-modular-005",
+        "compute-dl-v1-modular-006",
+        "compute-dl-v1-modular-007",
+        "compute-dl-v1-modular-008",
+        "compute-dl-v1-modular-009",
+        "compute-dl-v1-modular-010",
+        "compute-dl-v1-modular-011",
+        "compute-dl-v1-modular-012",
+        "compute-dl-v1-modular-013",
+        "compute-dl-v1-modular-014",
+        "compute-dl-v1-modular-015",
+        "compute-dl-v1-modular-016",
+        "compute-dl-v1-modular-017",
+        "compute-dl-v1-modular-018",
+        "compute-dl-v1-modular-019",
+        "compute-dl-v1-modular-020"
+      ],
+      "division": [
+        "compute-dl-v1-division-001",
+        "compute-dl-v1-division-002",
+        "compute-dl-v1-division-003",
+        "compute-dl-v1-division-004",
+        "compute-dl-v1-division-005",
+        "compute-dl-v1-division-006",
+        "compute-dl-v1-division-007",
+        "compute-dl-v1-division-008",
+        "compute-dl-v1-division-009",
+        "compute-dl-v1-division-010",
+        "compute-dl-v1-division-011",
+        "compute-dl-v1-division-012",
+        "compute-dl-v1-division-013",
+        "compute-dl-v1-division-014",
+        "compute-dl-v1-division-015",
+        "compute-dl-v1-division-016",
+        "compute-dl-v1-division-017",
+        "compute-dl-v1-division-018",
+        "compute-dl-v1-division-019",
+        "compute-dl-v1-division-020"
+      ],
+      "dp": [
+        "compute-dl-v1-dp-001",
+        "compute-dl-v1-dp-002",
+        "compute-dl-v1-dp-003",
+        "compute-dl-v1-dp-004",
+        "compute-dl-v1-dp-005",
+        "compute-dl-v1-dp-006",
+        "compute-dl-v1-dp-007",
+        "compute-dl-v1-dp-008",
+        "compute-dl-v1-dp-009",
+        "compute-dl-v1-dp-010",
+        "compute-dl-v1-dp-011",
+        "compute-dl-v1-dp-012",
+        "compute-dl-v1-dp-013",
+        "compute-dl-v1-dp-014",
+        "compute-dl-v1-dp-015",
+        "compute-dl-v1-dp-016",
+        "compute-dl-v1-dp-017",
+        "compute-dl-v1-dp-018",
+        "compute-dl-v1-dp-019",
+        "compute-dl-v1-dp-020"
+      ],
+      "graph": [
+        "compute-dl-v1-graph-001",
+        "compute-dl-v1-graph-002",
+        "compute-dl-v1-graph-003",
+        "compute-dl-v1-graph-004",
+        "compute-dl-v1-graph-005",
+        "compute-dl-v1-graph-006",
+        "compute-dl-v1-graph-007",
+        "compute-dl-v1-graph-008",
+        "compute-dl-v1-graph-009",
+        "compute-dl-v1-graph-010",
+        "compute-dl-v1-graph-011",
+        "compute-dl-v1-graph-012",
+        "compute-dl-v1-graph-013",
+        "compute-dl-v1-graph-014",
+        "compute-dl-v1-graph-015",
+        "compute-dl-v1-graph-016",
+        "compute-dl-v1-graph-017",
+        "compute-dl-v1-graph-018",
+        "compute-dl-v1-graph-019",
+        "compute-dl-v1-graph-020"
+      ],
+      "aggregation": [
+        "compute-dl-v1-aggregation-001",
+        "compute-dl-v1-aggregation-002",
+        "compute-dl-v1-aggregation-003",
+        "compute-dl-v1-aggregation-004",
+        "compute-dl-v1-aggregation-005",
+        "compute-dl-v1-aggregation-006",
+        "compute-dl-v1-aggregation-007",
+        "compute-dl-v1-aggregation-008",
+        "compute-dl-v1-aggregation-009",
+        "compute-dl-v1-aggregation-010",
+        "compute-dl-v1-aggregation-019"
+      ]
+    },
+    "per_seed": {
+      "101": [
+        "compute-dl-v1-aggregation-001",
+        "compute-dl-v1-aggregation-002",
+        "compute-dl-v1-aggregation-003",
+        "compute-dl-v1-aggregation-004",
+        "compute-dl-v1-aggregation-005",
+        "compute-dl-v1-aggregation-006",
+        "compute-dl-v1-aggregation-007",
+        "compute-dl-v1-aggregation-008",
+        "compute-dl-v1-aggregation-009",
+        "compute-dl-v1-aggregation-010",
+        "compute-dl-v1-division-001",
+        "compute-dl-v1-division-002",
+        "compute-dl-v1-division-003",
+        "compute-dl-v1-division-004",
+        "compute-dl-v1-division-005",
+        "compute-dl-v1-division-006",
+        "compute-dl-v1-division-007",
+        "compute-dl-v1-division-008",
+        "compute-dl-v1-division-009",
+        "compute-dl-v1-division-010",
+        "compute-dl-v1-division-011",
+        "compute-dl-v1-division-012",
+        "compute-dl-v1-division-013",
+        "compute-dl-v1-division-014",
+        "compute-dl-v1-division-015",
+        "compute-dl-v1-division-016",
+        "compute-dl-v1-division-017",
+        "compute-dl-v1-division-018",
+        "compute-dl-v1-division-019",
+        "compute-dl-v1-division-020",
+        "compute-dl-v1-dp-001",
+        "compute-dl-v1-dp-002",
+        "compute-dl-v1-dp-003",
+        "compute-dl-v1-dp-004",
+        "compute-dl-v1-dp-005",
+        "compute-dl-v1-dp-006",
+        "compute-dl-v1-dp-007",
+        "compute-dl-v1-dp-008",
+        "compute-dl-v1-dp-009",
+        "compute-dl-v1-dp-010",
+        "compute-dl-v1-dp-011",
+        "compute-dl-v1-dp-012",
+        "compute-dl-v1-dp-013",
+        "compute-dl-v1-dp-014",
+        "compute-dl-v1-dp-015",
+        "compute-dl-v1-dp-016",
+        "compute-dl-v1-dp-017",
+        "compute-dl-v1-dp-018",
+        "compute-dl-v1-dp-019",
+        "compute-dl-v1-dp-020",
+        "compute-dl-v1-graph-001",
+        "compute-dl-v1-graph-002",
+        "compute-dl-v1-graph-004",
+        "compute-dl-v1-graph-005",
+        "compute-dl-v1-graph-006",
+        "compute-dl-v1-graph-007",
+        "compute-dl-v1-graph-008",
+        "compute-dl-v1-graph-009",
+        "compute-dl-v1-graph-010",
+        "compute-dl-v1-graph-012",
+        "compute-dl-v1-graph-013",
+        "compute-dl-v1-graph-014",
+        "compute-dl-v1-graph-015",
+        "compute-dl-v1-graph-016",
+        "compute-dl-v1-graph-017",
+        "compute-dl-v1-graph-018",
+        "compute-dl-v1-graph-019",
+        "compute-dl-v1-graph-020",
+        "compute-dl-v1-integer-001",
+        "compute-dl-v1-integer-002",
+        "compute-dl-v1-integer-003",
+        "compute-dl-v1-integer-004",
+        "compute-dl-v1-integer-005",
+        "compute-dl-v1-integer-006",
+        "compute-dl-v1-integer-007",
+        "compute-dl-v1-integer-008",
+        "compute-dl-v1-integer-009",
+        "compute-dl-v1-integer-010",
+        "compute-dl-v1-integer-011",
+        "compute-dl-v1-integer-012",
+        "compute-dl-v1-integer-013",
+        "compute-dl-v1-integer-014",
+        "compute-dl-v1-integer-015",
+        "compute-dl-v1-integer-016",
+        "compute-dl-v1-integer-017",
+        "compute-dl-v1-integer-018",
+        "compute-dl-v1-integer-019",
+        "compute-dl-v1-integer-020",
+        "compute-dl-v1-modular-001",
+        "compute-dl-v1-modular-002",
+        "compute-dl-v1-modular-003",
+        "compute-dl-v1-modular-004",
+        "compute-dl-v1-modular-005",
+        "compute-dl-v1-modular-006",
+        "compute-dl-v1-modular-007",
+        "compute-dl-v1-modular-008",
+        "compute-dl-v1-modular-009",
+        "compute-dl-v1-modular-010",
+        "compute-dl-v1-modular-011",
+        "compute-dl-v1-modular-012",
+        "compute-dl-v1-modular-013",
+        "compute-dl-v1-modular-014",
+        "compute-dl-v1-modular-015",
+        "compute-dl-v1-modular-016",
+        "compute-dl-v1-modular-017",
+        "compute-dl-v1-modular-018",
+        "compute-dl-v1-modular-019",
+        "compute-dl-v1-modular-020"
+      ],
+      "102": [
+        "compute-dl-v1-aggregation-001",
+        "compute-dl-v1-aggregation-002",
+        "compute-dl-v1-aggregation-003",
+        "compute-dl-v1-aggregation-004",
+        "compute-dl-v1-aggregation-005",
+        "compute-dl-v1-aggregation-006",
+        "compute-dl-v1-aggregation-007",
+        "compute-dl-v1-aggregation-008",
+        "compute-dl-v1-aggregation-009",
+        "compute-dl-v1-aggregation-010",
+        "compute-dl-v1-aggregation-019",
+        "compute-dl-v1-division-001",
+        "compute-dl-v1-division-002",
+        "compute-dl-v1-division-003",
+        "compute-dl-v1-division-004",
+        "compute-dl-v1-division-005",
+        "compute-dl-v1-division-006",
+        "compute-dl-v1-division-007",
+        "compute-dl-v1-division-008",
+        "compute-dl-v1-division-009",
+        "compute-dl-v1-division-010",
+        "compute-dl-v1-division-011",
+        "compute-dl-v1-division-012",
+        "compute-dl-v1-division-013",
+        "compute-dl-v1-division-014",
+        "compute-dl-v1-division-015",
+        "compute-dl-v1-division-016",
+        "compute-dl-v1-division-017",
+        "compute-dl-v1-division-018",
+        "compute-dl-v1-division-019",
+        "compute-dl-v1-division-020",
+        "compute-dl-v1-dp-001",
+        "compute-dl-v1-dp-002",
+        "compute-dl-v1-dp-003",
+        "compute-dl-v1-dp-004",
+        "compute-dl-v1-dp-005",
+        "compute-dl-v1-dp-006",
+        "compute-dl-v1-dp-007",
+        "compute-dl-v1-dp-008",
+        "compute-dl-v1-dp-009",
+        "compute-dl-v1-dp-010",
+        "compute-dl-v1-dp-011",
+        "compute-dl-v1-dp-012",
+        "compute-dl-v1-dp-013",
+        "compute-dl-v1-dp-014",
+        "compute-dl-v1-dp-015",
+        "compute-dl-v1-dp-016",
+        "compute-dl-v1-dp-017",
+        "compute-dl-v1-dp-018",
+        "compute-dl-v1-dp-019",
+        "compute-dl-v1-dp-020",
+        "compute-dl-v1-graph-001",
+        "compute-dl-v1-graph-002",
+        "compute-dl-v1-graph-003",
+        "compute-dl-v1-graph-004",
+        "compute-dl-v1-graph-005",
+        "compute-dl-v1-graph-006",
+        "compute-dl-v1-graph-007",
+        "compute-dl-v1-graph-008",
+        "compute-dl-v1-graph-009",
+        "compute-dl-v1-graph-010",
+        "compute-dl-v1-graph-011",
+        "compute-dl-v1-graph-012",
+        "compute-dl-v1-graph-013",
+        "compute-dl-v1-graph-014",
+        "compute-dl-v1-graph-015",
+        "compute-dl-v1-graph-016",
+        "compute-dl-v1-graph-017",
+        "compute-dl-v1-graph-018",
+        "compute-dl-v1-graph-019",
+        "compute-dl-v1-graph-020",
+        "compute-dl-v1-integer-001",
+        "compute-dl-v1-integer-002",
+        "compute-dl-v1-integer-003",
+        "compute-dl-v1-integer-004",
+        "compute-dl-v1-integer-005",
+        "compute-dl-v1-integer-006",
+        "compute-dl-v1-integer-007",
+        "compute-dl-v1-integer-008",
+        "compute-dl-v1-integer-009",
+        "compute-dl-v1-integer-010",
+        "compute-dl-v1-integer-011",
+        "compute-dl-v1-integer-012",
+        "compute-dl-v1-integer-013",
+        "compute-dl-v1-integer-014",
+        "compute-dl-v1-integer-015",
+        "compute-dl-v1-integer-016",
+        "compute-dl-v1-integer-017",
+        "compute-dl-v1-integer-018",
+        "compute-dl-v1-integer-019",
+        "compute-dl-v1-integer-020",
+        "compute-dl-v1-modular-001",
+        "compute-dl-v1-modular-002",
+        "compute-dl-v1-modular-003",
+        "compute-dl-v1-modular-004",
+        "compute-dl-v1-modular-005",
+        "compute-dl-v1-modular-006",
+        "compute-dl-v1-modular-007",
+        "compute-dl-v1-modular-008",
+        "compute-dl-v1-modular-009",
+        "compute-dl-v1-modular-010",
+        "compute-dl-v1-modular-011",
+        "compute-dl-v1-modular-012",
+        "compute-dl-v1-modular-013",
+        "compute-dl-v1-modular-014",
+        "compute-dl-v1-modular-015",
+        "compute-dl-v1-modular-016",
+        "compute-dl-v1-modular-017",
+        "compute-dl-v1-modular-018",
+        "compute-dl-v1-modular-019",
+        "compute-dl-v1-modular-020"
+      ]
+    }
+  },
+  "uncensored_sensitivity": {
+    "selection": "observed paired uncensored replies; descriptive",
+    "pairs": 1,
+    "solve_difference_L_minus_D": 0.0,
+    "solve_difference_ci95": null
+  },
+  "budget": {
+    "schema": 1,
+    "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+    "limit_seconds": 18000,
+    "admission_seconds": 15900,
+    "held_seconds": 3413.519101628801,
+    "active": null,
+    "turns": [
+      {
+        "turn": "t01",
+        "started_utc": "2026-11-05T05:03:43.945178+00:00",
+        "pid": 3534643,
+        "clock": "monotonic within foreground controller",
+        "finished_utc": "2026-11-05T05:39:50.933941+00:00",
+        "held_seconds": 2166.988761158893,
+        "cumulative_seconds": 2166.988761158893
+      },
+      {
+        "turn": "t02",
+        "started_utc": "2026-11-05T05:41:52.159797+00:00",
+        "pid": 3699276,
+        "clock": "monotonic within foreground controller",
+        "finished_utc": "2026-11-05T06:02:38.690140+00:00",
+        "held_seconds": 1246.530340469908,
+        "cumulative_seconds": 3413.519101628801
+      }
+    ],
+    "overrun_seconds": 0,
+    "reported_overrun_seconds": 0
+  },
+  "integrity_gaps": [
+    "missing replies: t02-L/responses.jsonl",
+    "missing artifact: <rank0-work>/stdbench/compute-dl/runs/stdbench-compute-dl-20261105-v1-t02/t02-D/raw-observations.jsonl",
+    "missing artifact: <rank0-work>/stdbench/compute-dl/runs/stdbench-compute-dl-20261105-v1-t02/t02-D/safety.jsonl",
+    "missing artifact: <rank0-work>/stdbench/compute-dl/runs/stdbench-compute-dl-20261105-v1-t02/t02-D/responses.jsonl",
+    "missing replies: t02-D/responses.jsonl",
+    "missing artifact: <rank0-work>/stdbench/compute-dl/runs/stdbench-compute-dl-20261105-v1-t02/t02-D/diagnostics.jsonl",
+    "missing replies: t02-D/diagnostics.jsonl",
+    "HTTP access coverage failed: t02-D",
+    "missing actual native snapshot: t02-D rank0",
+    "missing actual native snapshot: t02-D rank1",
+    "wire/count pair coverage incomplete/failed",
+    "retained row provenance/safety/accounting failed",
+    "turn verdict missing/unqualified: t02",
+    "turn incomplete: t02",
+    "480 study / 8 diagnostic coverage incomplete"
+  ]
+}
+```
+
+Fixed equal-weight six-template mixture; one overall primary sign-flip test. Family, cost and sensitivity intervals are marginal/descriptive. Nonsignificance is not equivalence. Initial plus returned is a subtotal, not full all-round cost.
+
+Cumulative operator-held ledger and restored-G receipts audited. Individual request starts have no independent timestamp; cutoff enforcement relies on the sealed controller.
+
+INCOMPLETE cohorts support bounds, not a completed-study efficacy claim. Missing replies have unknown costs.
+Family, cost and subgroup results are descriptive. No serving-default promotion or total-token-saving claim.

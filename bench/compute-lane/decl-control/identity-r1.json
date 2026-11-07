@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "rank": 1,
+  "model_dir": "<home>/.cache/dsv41-flash17-k6-mtp/model",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "image_id": "sha256:80beaba732d1ed9439e012b007d8dbe19ec2f8962f50fbac29a18c8cd6fda306",
+  "revision": "3a429d6f122d9eb2900c43e622933d311e4be44f",
+  "GPU": false
+}

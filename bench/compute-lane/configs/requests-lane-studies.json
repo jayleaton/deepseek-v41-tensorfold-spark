@@ -1,0 +1,19 @@
+{
+  "chat_template_kwargs": {
+    "enable_thinking": true
+  },
+  "deadline_s": 270,
+  "max_tokens": 8192,
+  "model": "DeepSeek-V4.1-Flash-TF",
+  "reasoning_effort": "high",
+  "return_token_ids": true,
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "temperature": 1.0,
+  "top_k": 20,
+  "top_p": 0.95,
+  "seed": "<101|102>",
+  "tools": "<arms D and L: decl-control/canonical-python-tools.json; arm P: no tools field>"
+}

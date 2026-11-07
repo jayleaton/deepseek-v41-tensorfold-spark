@@ -1,0 +1,168 @@
+{
+  "model_alias": "DeepSeek-V4.1-Flash-TF",
+  "boot_min_gib": 114,
+  "image_ids": [
+    "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+    "sha256:80beaba732d1ed9439e012b007d8dbe19ec2f8962f50fbac29a18c8cd6fda306"
+  ],
+  "diagnostic_tensorfold": {
+    "enable_thinking": true,
+    "reasoning_effort": "high"
+  },
+  "tokenizer": "<rank0-work>/stdbench/phase2/references/tokenizer.json",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "transport_contract": {
+    "deadline_s": 270,
+    "max_tokens": 8192
+  },
+  "g_restore_step": {
+    "events": [
+      "SERVING",
+      "MODELS200",
+      "POPPED"
+    ],
+    "format": "g-restore-v1"
+  },
+  "prefix": "stdbench-format-20261107-v1",
+  "spec": "<rank0-work>/stdbench/format-retest/runtime/T5-FORMAT-RETEST-SPEC.md",
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "base_spec": "<rank0-work>/stdbench/compute-dl/T5-COMPUTE-DL-SPEC.md",
+  "base_spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "arms": [
+    "L",
+    "P"
+  ],
+  "layout": {
+    "turns": [
+      {
+        "name": "format",
+        "boots": [
+          "format-L",
+          "format-P"
+        ]
+      }
+    ],
+    "boots": [
+      {
+        "boot": "format-L",
+        "arm": "L",
+        "file": "boots/format-L.json",
+        "sha256": "40f4379669b9641cbc550cba9691d8b275b046b98ffc55b5e8e642b2867a9ffb"
+      },
+      {
+        "boot": "format-P",
+        "arm": "P",
+        "file": "boots/format-P.json",
+        "sha256": "6f7fd7ba7e2c4661e9d361d6353daeb5518fecf737d66cc68988a786c2152aaa"
+      }
+    ]
+  },
+  "freeze": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/frozen-v1",
+  "freeze_sha256": "72bf0826d63710072f52ffbd2007e54f217788a17d78e7422dce058d2197b316",
+  "cpu_receipt": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/cpu-seal/verification.json",
+  "cpu_receipt_sha256": null,
+  "cpu_prompt_arrays": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/prompt-arrays.jsonl",
+  "cpu_prompt_arrays_sha256": null,
+  "prep_manifest": "<rank0-work>/stdbench/format-retest/prep-manifest-v1.json",
+  "prep_manifest_sha256": "7b6e579836989a851f726f7e3b2c928673c75fcd0af4c75b1f93912d15c320f9",
+  "prep_config": "<rank0-work>/stdbench/format-retest/stage-config-v1.json",
+  "prep_config_sha256": "584974d2eb8d5f1b295a6b24c5592323fda838c45acfeb3bd059911b97d4a2f1",
+  "qualification": {},
+  "go_file": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/GO",
+  "budget_ledger": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/budget.json",
+  "budget": {
+    "limit_seconds": 6300,
+    "admission_seconds": 5880
+  },
+  "timeouts": {
+    "client_wait_s": 360,
+    "gpu_parent_s": 7200,
+    "remote_control_s": 7200,
+    "turn_s": 14400
+  },
+  "cap_policy": {
+    "binary": "<rank0-work>/stdbench/compute-dl/a1-prep/zig-out/bin/native-cap",
+    "tokenizer": "<rank0-work>/stdbench/phase2/references/tokenizer.json",
+    "source": "<rank0-work>/stdbench/decl-control/dispatch-high",
+    "receipt": "<rank0-work>/stdbench/compute-dl/a1-prep/native-build-receipt.json"
+  },
+  "status": "CPU_GATES_PENDING",
+  "collection_qualified": false,
+  "code_sha256": {
+    "<rank0-work>/stdbench/format-retest/runtime/protocol.py": "2dce4067ebb970a42dde5113ab08f2e4e6138b28e3a076483273af4ee387fc0b",
+    "<rank0-work>/stdbench/format-retest/runtime/rank_ops.py": "1c9461cd7fc741d8319ade9496b5962d36b8cd839b3c8e2e6ab7402ea92fcc4b",
+    "<rank0-work>/stdbench/format-retest/runtime/prep_bridge.py": "9fa64bce348a5ecee8595474cf34740958c35e2f526f4dbdb7e26932bed98005",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle_probe.py": "1608099784c11ede409d022141646834f6b5543acf68c198d8acbca5e2ea708c",
+    "<rank0-work>/stdbench/format-retest/runtime/finalize_cpu.py": "d20984b7490ace6e753627a55bab2ed6d3767465b6633dab4759c44b255e7049",
+    "<rank0-work>/stdbench/format-retest/runtime/controller.py": "b8cb7f0c7d57b5ad7080c6abbf71bed095b264b4dcd887b58d99f87e0b225f2c",
+    "<rank0-work>/stdbench/format-retest/runtime/coordination.py": "d6b5070dc60919bcf4720b2472fa89d5ef5272c34999d963bc0cb0d4acbeaf2c",
+    "<rank0-work>/stdbench/format-retest/runtime/render_prompts.py": "34b8753cafe3f825b80ae799d9ba690e2423c29eeb12f3a3767cc48713a4a097",
+    "<rank0-work>/stdbench/format-retest/runtime/clipping.py": "baa5beeeb29ec1736473a1b1863ec4a1421f74089a74104955e1b35f409b0af9",
+    "<rank0-work>/stdbench/format-retest/runtime/request_adapter.py": "f821172aabe340bdfac52c604513d5aa893757a34b1395350ad934731a38d374",
+    "<rank0-work>/stdbench/format-retest/runtime/qualify_rank.py": "da3054d4ea248a7d58e9e9a83f6c1e5294fe138a3d537034b9dd2709969a6bcd",
+    "<rank0-work>/stdbench/format-retest/runtime/budget.py": "ecdd448aba0718c74e0cf0595c3ae19abd80c70adb37cb798163e1da1ad54b48",
+    "<rank0-work>/stdbench/format-retest/runtime/runtime_stage.py": "f89157ee45c0bb537f0322058e76aac67da0b15d316a7b8156d0dfb70eda5d5a",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_check.py": "e7b6e5708475ea7fb92a95778e06008f1563bf86e90a40a75cc9381095e0ab6e",
+    "<rank0-work>/stdbench/format-retest/runtime/manifest.py": "831244d8c04f1a8d594efd700f0043acf6fd1e60e361a88c0a750dcccee7512c",
+    "<rank0-work>/stdbench/format-retest/runtime/qualification.py": "f0b0e1a0af0ac20c2555a072b7f484917e910df66647aa497d939458bc8aa4d9",
+    "<rank0-work>/stdbench/format-retest/runtime/control_check.py": "bc0d84a9854f9340a09667178b331a0bdd776683857e0ff5be82e02b286e23aa",
+    "<rank0-work>/stdbench/format-retest/runtime/fence.sh": "91a9b462442304dddb9d13361e78eca415094e64f4f7c4ea148fcd1516c0a0b7",
+    "<rank0-work>/stdbench/format-retest/runtime/turn.sh": "4be510c7442b1718c51323ab853aaba6b26a842dc83f10ebfffca458d4a67af2",
+    "<rank0-work>/stdbench/format-retest/runtime/launch.sh": "3c86812e7a3e64625749d6ea6e4def8bff66c629922b1c9555d88eb845655f0e",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle-launch.sh": "49809d9fd86d98251d3ea8bffc35b2bf8e96262253b4296e1b34cfaac7558ece",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed",
+    "<rank0-work>/stdbench/format-retest/runtime/T5-FORMAT-RETEST-SPEC.md": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+    "<rank0-work>/stdbench/phase2/references/base-arms.json": "9bbacf49fd8bf7917321409c23c8c7f68836d4d28fe456181b7957daac0f5d4f",
+    "<rank0-work>/stdbench/phase2/references/base-r0.env": "c0301508e99561c4e457d5c40e26eb23667a8243b2602210fa23018afa96c61b",
+    "<rank0-work>/stdbench/phase2/references/base-r1.env": "96cbacd85464af61073619b4e96c83180bb902112b1ef8062e543cf6c0085edc",
+    "<rank0-work>/stdbench/decl-control/client3.py": "56d1f10bc125182dfc8d52fbf6ccf595e92a089f827357d848fd269d6442aef7",
+    "<rank0-work>/stdbench/decl-control/reconciliation.py": "c5c081c1f5a2d1cb6561d85aa5de1b7ce61722d6c4812b7f9c2c614b4e79928c",
+    "<rank0-work>/stdbench/decl-control/generate_envs3.py": "01ba062c5eccee41033dab42697eb5e5ff06392c2bf2c9a462ea0db2e6ec0076",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/reference_policy.py": "ae81dfba75a4598a9dcb998c47863236044692ff329823a3606bb5ede115a697",
+    "<rank0-work>/stdbench/phase2/client.py": "4d762ae999ca2d4e6823a32cba1a87f1e020dded576d13bc7eada918021900bb",
+    "<rank0-work>/stdbench/phase2/native_frames.py": "f4a993962284c0cab1a3bf96a5110a5ee2f54e67a70665aec7bf3dad0d472c46",
+    "<rank0-work>/stdbench/phase2/jail.py": "499cf0001c3259f9fbe040c32df5663681066a56ab58f07df0b13779623da67b",
+    "<rank0-work>/stdbench/phase2/jail_worker.py": "703ee5a019b4b3a454f35c5dd914a5a01990095a47ad43aef54d2695fc0a61a8",
+    "<rank0-work>/stdbench/kit/bench.py": "6056c87694f583ac3e9eb3ac28a86e6fdb6affe9753d9bf10806c15fb7fa6757",
+    "<rank0-work>/dsv41-bench/ops/rank.py": "8c4eeac488858e954ee9856008e20b2a92172c1554210fc53f76e32c97c56e92",
+    "<rank0-work>/dsv41-bench/ops/guard.py": "db69d030b280dae0373397725f54cab0ad6023c90f927e275087cf7f4f2931f0",
+    "<rank0-work>/dsv41-bench/ops/mem_guard.py": "154a909d4493c679f0e10a6e7647b31802b4af30d502312d36b09d5ab295afdf",
+    "<rank0-work>/dsv41-bench/ops/node.sh": "049c8e389b8506d1166836022a9d6b168e92dd9010565452a9aa5ebc210e05cc",
+    "<rank0-work>/stdbench/format-retest/prep-manifest-v1.json": "7b6e579836989a851f726f7e3b2c928673c75fcd0af4c75b1f93912d15c320f9",
+    "<rank0-work>/stdbench/format-retest/stage-config-v1.json": "584974d2eb8d5f1b295a6b24c5592323fda838c45acfeb3bd059911b97d4a2f1",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/tasks.jsonl": "a697b7e556d793f3f712bbc043b496b1f1ed7a343289c2f32358e4d6b00238c6",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/generation-audit.json": "5085c09cf74ae8ff2e0f60bb932893ce2f7884afca66573b3b0e7c6055949c8f",
+    "<rank0-work>/stdbench/format-retest/settings-v1.json": "9003f17c9bed44cabbf5cbe55240df644f7b158c651605c136f3cb59c61f7606",
+    "<rank0-work>/stdbench/decl-control/canonical-python-tools.json": "1d112d68e2df0a69c1a6222daedef99f8afb8323e872d5c0849563a83812361f",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-a.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-b.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/manifest.json": "8aee124a6c4fcb68208d8bd710bd8f2a9413c153359240c43bc99ec670db8f2f",
+    "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t01-L.json": "f044822f55fb1e80c6509514c3d271fa7c5936ecec8933b60ad621939e4e98e7",
+    "<rank0-work>/stdbench/format-retest/prep/checks.py": "93044b7f3259f6f48ccde235f988a6c68066c3157252c65e9f966d454059cce7",
+    "<rank0-work>/stdbench/format-retest/prep/common.py": "35342f82e17cc09a6eb37615d5d131192759840423a235d1cf0e97e59f7babc7",
+    "<rank0-work>/stdbench/format-retest/prep/prep.py": "837f1c2fcb4cf486770fdb8cc21c3dc5e4a64f684eaca66a7b05c0c45ab71111",
+    "<rank0-work>/stdbench/format-retest/prep/request_adapter.py": "436ed0b868fabfc130c3e7d20c3b51ca80f686db241444f8940707d938f99068",
+    "<rank0-work>/stdbench/format-retest/prep/generation.py": "5c29cf6df79e344d57319971e66a450758206b392dedb0ed48c26a2876b0b928",
+    "<rank0-work>/stdbench/format-retest/prep/legacy.py": "4b80baf32f81910596ca46618caf772236a880f1552e306d4da98d712fbb3c5b"
+  },
+  "rank_manifests": {
+    "format-L": {
+      "0": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank0/boots/format-L/manifest.json",
+      "1": "<rank1-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank1/boots/format-L/manifest.json"
+    },
+    "format-P": {
+      "0": "<rank0-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank0/boots/format-P/manifest.json",
+      "1": "<rank1-work>/stdbench/format-retest/stdbench-format-20261107-v1/rank1/boots/format-P/manifest.json"
+    }
+  },
+  "rank_manifest_sha256": {
+    "format-L": {
+      "0": "e3c7a4ceb4bb6255fd3c9725ec4959231861ef06de1048ea09af3be41d2018f4",
+      "1": "a514bb7a91fcbafaf53b904ee2e7fee3c4408bc8a799d7cdd92c3078f7c50d8b"
+    },
+    "format-P": {
+      "0": "25fc56fc22490ca418650ddd38b2ff6864440bda7ed740a182b064bc04738f14",
+      "1": "b3c33fc1fa3f57356f0dfc6a5670639f644dce9a7a449ccf32725df4fa44ebb4"
+    }
+  }
+}

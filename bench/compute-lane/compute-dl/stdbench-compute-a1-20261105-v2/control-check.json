@@ -1,0 +1,91 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "fake": {
+    "passed": true,
+    "status": "FAKE_NOT_COLLECTION",
+    "GPU_requests": 0,
+    "controls": [
+      "actual raw342 mask",
+      "stopped reply never rescheduled",
+      "remaining wire mutation",
+      "P only removes tools D",
+      "original declaration retained D",
+      "P only removes tools L",
+      "original declaration retained L",
+      "actual A1 stage order",
+      "P exact original D order",
+      "720 schedule mask",
+      "materialization grants no GO 0",
+      "materialization grants no GO 1",
+      "no stage overwrite",
+      "config mutation prefix",
+      "config mutation arms",
+      "config mutation budget",
+      "config mutation transport_contract",
+      "config mutation go_file",
+      "turn reversal",
+      "pending CPU qualification refuses collection",
+      "budget original carry",
+      "active ledger refuses restart",
+      "restore charged and original ledger immutable",
+      "admission cutoff",
+      "exact fake reference",
+      "landed byte refused",
+      "status swap refused",
+      "false marker refused",
+      "unexpected optional flag",
+      "cleanup survives GO revocation A1-resume-L0",
+      "cleanup survives GO revocation A1-resume-D0",
+      "cleanup survives GO revocation A1-plain-P0",
+      "cleanup survives GO revocation A1-resume-L1",
+      "cleanup survives GO revocation A1-resume-D1",
+      "cleanup survives GO revocation A1-plain-P1",
+      "fake D native client accounting"
+    ],
+    "pending": "actual native CPU prompts/clipping/rank/env/dispatch/preflight/SIGPIPE and parent qualification"
+  },
+  "diagnostic_controls": [
+    "both323and55 independently delivered",
+    "missing 323 delivery refused",
+    "missing 55 delivery refused"
+  ],
+  "sigpipe_lifecycle": [
+    {
+      "mode": "success",
+      "owned_exact_pids_exited": true,
+      "receipt_sha256": "6ddf68ba26b37fdb2ca967de3c938e5257667136bfc7476ffcde53cd0d1b712c"
+    },
+    {
+      "mode": "failure",
+      "owned_exact_pids_exited": true,
+      "receipt_sha256": "a6b73961448c67f47b1740c9da1aeed3aa604fdcc1c2a1362212bcafd04fcbd1"
+    }
+  ],
+  "preflight": {
+    "passed": true,
+    "stdout": "preflight <rank0-work>/stdbench/compute-dl/a1-runtime/launch.sh: 4 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/compute-dl/a1-runtime/turn.sh: 4 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/compute-dl/a1-runtime/cpu_gate.sh: 0 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/compute-dl/a1-runtime/fence.sh: 0 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/compute-dl/a1-runtime/lifecycle-launch.sh: 3 literal paths checked, 0 refused, 0 notes\n",
+    "stderr": ""
+  },
+  "code_sha256": {
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/protocol.py": "fa5e160c369feaafc4a4dd58630088807d4d52596f95fca79bd05cb0b0684d05",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/rank_ops.py": "020263299eba5291c20c1496b50b36b32d32263083b5704ab581e4f679717771",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/lifecycle_probe.py": "126013eea63d5f41cf4a69b0ec8ca232f4ac59bbe15410d9bd419cd4f4b79649",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/controller.py": "0451332db2deac9e25527fdcaeee738b22f040902d4d3fe9b036544b197d09f9",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/render_prompts.py": "108f88cffd7cc0bfc263f4f12f53f69e00f74c19e64d0399defc9f303069708d",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/clipping.py": "3f1c71d14ba0ab58029767ee14facaa4a98c12765ee830fdcd826b60eb95c373",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/request_adapter.py": "d1b4da6f4fdf3d0bce6d89d2bae04de258f451671a4c9335051bf7abe3cc2b67",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/qualify_rank.py": "010e0798e95db75289933f1f9ddaa4c5d74866734cd85dce24859b7d495de2f7",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/budget.py": "52bf57f933a8b7e4691eda2d1ed241fa9ae28474b5a98d5eac5c14ad2558c9bb",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/runtime_stage.py": "028b48621d9e5c1bcc1fb6e366ede555b760b31407fafa21748822310a341fc5",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/cpu_check.py": "a1281f9661878948e58475e8740665c0f4a4d6ae513faaa05ba23220fdfc7970",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/fake_client_check.py": "d6bf93a4548b2d0cc7f8b62119e6c6d0d4571ebd3b30e4b8ab02435768b3233a",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/control_check.py": "1dd01c1eed55c8a6a387fcd6233c01b59149ea5594b6647dd3292bb7f2d09c22",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/fence.sh": "4613ab2c4dda5cebe02bbbe278204f9bdd27990c21bc66a8965e7e0d6987278a",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/turn.sh": "1a6f9f0a99d030a264bf071e1ecf02a1b2cff26f8c13ce70558fd3e1d9d41141",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/launch.sh": "d5064e613f231bc66acab2f67842eb52fcb10bbdc37f853a351d48eddb24b6de",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/lifecycle-launch.sh": "9defffbc4bcef89d93bc9b4aa55ae0e26e9ddeaa9192edd510bd07ba57c059e6",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed"
+  },
+  "GPU_requests": 0
+}

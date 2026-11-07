@@ -1,0 +1,247 @@
+{
+  "passed": true,
+  "status": "PASS",
+  "collection": "COMPLETE",
+  "observed": 360,
+  "arms": {
+    "L-new": {
+      "scheduled": 120,
+      "strict_solves": 120,
+      "format_failures": 0,
+      "typed_wrong_values": 0,
+      "caps": 0,
+      "deadlines": 0,
+      "means": {
+        "full_input_ids": null,
+        "full_input_plus_returned_ids": null,
+        "full_wall_seconds": 4.468695805592263,
+        "initial_prompt_ids": 529.0,
+        "initial_prompt_plus_returned_SUBTOTAL": 880.6416666666667,
+        "returned_ids": 351.64166666666665
+      },
+      "calls": {
+        "attempted": 120,
+        "blocked_dispatches": 0,
+        "delivered_authenticated_results": 120,
+        "failed_executions": 0,
+        "reply_used_result": 119,
+        "successful_executions": 120
+      }
+    },
+    "L-old": {
+      "scheduled": 120,
+      "strict_solves": 86,
+      "format_failures": 34,
+      "typed_wrong_values": 0,
+      "caps": 0,
+      "deadlines": 0,
+      "means": {
+        "full_input_ids": null,
+        "full_input_plus_returned_ids": null,
+        "full_wall_seconds": 4.821568885517384,
+        "initial_prompt_ids": 509.5,
+        "initial_prompt_plus_returned_SUBTOTAL": 889.9833333333333,
+        "returned_ids": 380.48333333333335
+      },
+      "calls": {
+        "attempted": 123,
+        "blocked_dispatches": 0,
+        "delivered_authenticated_results": 123,
+        "failed_executions": 1,
+        "reply_used_result": 119,
+        "successful_executions": 122
+      }
+    },
+    "P-new": {
+      "scheduled": 60,
+      "strict_solves": 60,
+      "format_failures": 0,
+      "typed_wrong_values": 0,
+      "caps": 0,
+      "deadlines": 0,
+      "means": {
+        "full_input_ids": 336.8666666666667,
+        "full_input_plus_returned_ids": 2802.983333333333,
+        "full_wall_seconds": 26.935905227618303,
+        "initial_prompt_ids": 336.8666666666667,
+        "initial_prompt_plus_returned_SUBTOTAL": 2802.983333333333,
+        "returned_ids": 2466.116666666667
+      },
+      "calls": {
+        "attempted": 0,
+        "blocked_dispatches": 0,
+        "delivered_authenticated_results": 0,
+        "failed_executions": 0,
+        "reply_used_result": 0,
+        "successful_executions": 0
+      }
+    },
+    "P-old": {
+      "scheduled": 60,
+      "strict_solves": 59,
+      "format_failures": 1,
+      "typed_wrong_values": 0,
+      "caps": 0,
+      "deadlines": 0,
+      "means": {
+        "full_input_ids": 317.53333333333336,
+        "full_input_plus_returned_ids": 2656.1,
+        "full_wall_seconds": 25.61726172456523,
+        "initial_prompt_ids": 317.53333333333336,
+        "initial_prompt_plus_returned_SUBTOTAL": 2656.1,
+        "returned_ids": 2338.5666666666666
+      },
+      "calls": {
+        "attempted": 0,
+        "blocked_dispatches": 0,
+        "delivered_authenticated_results": 0,
+        "failed_executions": 0,
+        "reply_used_result": 0,
+        "successful_executions": 0
+      }
+    }
+  },
+  "pairs": {
+    "L_format": {
+      "gains": 34,
+      "losses": 0,
+      "missing_pairs": 0
+    },
+    "L_strict": {
+      "gains": 34,
+      "losses": 0,
+      "missing_pairs": 0
+    },
+    "P_strict": {
+      "gains": 1,
+      "losses": 0,
+      "missing_pairs": 0
+    },
+    "secondary_Lnew_Pnew_strict": {
+      "gains": 0,
+      "losses": 0,
+      "missing_pairs": 0
+    }
+  },
+  "primary": {
+    "ci95": [
+      -0.36666666666666664,
+      -0.2
+    ],
+    "complete": true,
+    "cost_ratios_right_over_left": {
+      "full_input_ids": {
+        "ci95": null,
+        "ratio_of_sums": null
+      },
+      "full_input_plus_returned_ids": {
+        "ci95": null,
+        "ratio_of_sums": null
+      },
+      "full_wall_seconds": {
+        "ci95": [
+          0.878999642606415,
+          0.9766334631828585
+        ],
+        "ratio_of_sums": 0.9268136392316098
+      },
+      "initial_prompt_ids": {
+        "ci95": [
+          1.0379119276757072,
+          1.038650853952628
+        ],
+        "ratio_of_sums": 1.0382728164867516
+      },
+      "initial_prompt_plus_returned_SUBTOTAL": {
+        "ci95": [
+          0.9665631078701612,
+          1.0118712990030732
+        ],
+        "ratio_of_sums": 0.9895035487555947
+      },
+      "returned_ids": {
+        "ci95": [
+          0.8739962161025857,
+          0.9752816434724983
+        ],
+        "ratio_of_sums": 0.9241972929169039
+      }
+    },
+    "difference_right_minus_left": -0.2833333333333333,
+    "families": [
+      "aggregation",
+      "division",
+      "dp",
+      "graph",
+      "integer",
+      "modular"
+    ],
+    "left": "L-old",
+    "rate_field": "format_failure",
+    "right": "L-new"
+  },
+  "secondary": {
+    "ci95": [
+      0.0,
+      0.0
+    ],
+    "complete": true,
+    "cost_ratios_right_over_left": {
+      "full_input_ids": {
+        "ci95": null,
+        "ratio_of_sums": null
+      },
+      "full_input_plus_returned_ids": {
+        "ci95": null,
+        "ratio_of_sums": null
+      },
+      "full_wall_seconds": {
+        "ci95": [
+          0.21078000582549283,
+          0.2597809254693127
+        ],
+        "ratio_of_sums": 0.23464770866393564
+      },
+      "initial_prompt_ids": {
+        "ci95": [
+          1.8829470039434453,
+          1.9358752166377817
+        ],
+        "ratio_of_sums": 1.90837126459529
+      },
+      "initial_prompt_plus_returned_SUBTOTAL": {
+        "ci95": [
+          0.386203129482907,
+          0.45506390215521925
+        ],
+        "ratio_of_sums": 0.4199929836662128
+      },
+      "returned_ids": {
+        "ci95": [
+          0.1951910707294185,
+          0.23991023114004975
+        ],
+        "ratio_of_sums": 0.21668344968810613
+      }
+    },
+    "difference_right_minus_left": 0.0,
+    "families": [
+      "aggregation",
+      "dp",
+      "graph"
+    ],
+    "left": "P-new",
+    "rate_field": "strict_correct",
+    "right": "L-new"
+  },
+  "native_presentations": {
+    "observed": 245,
+    "clipped": 0,
+    "qualified": true
+  },
+  "budget_seconds": 5590.182566875999,
+  "source_sha256": "3880402e8b056ea9c5b4cb03bf4c43a15d8a74df334c06dafae47d815b92bed4",
+  "report_sha256": "1d6d22b4b9b08df982aa4f59907b7a177725d3f91e05442b9f79e8bf2f2bce55",
+  "original_auditor_sha256": "4a231b75040b282e143f85409003e052fb21821370327c01fdc8196f314bb5b7",
+  "post_auditor_sha256": "ea25d473bd384931aff9ef4f80a51efbdd91a13547b3e9e2c5390288e7089fa8"
+}

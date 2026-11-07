@@ -1,0 +1,212 @@
+{
+ "root": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T104533Z",
+ "gate": {
+  "pass": true,
+  "verdict": "PASS",
+  "live_receipts": [],
+  "records": 13,
+  "ok": 13,
+  "wrong-value": 0,
+  "wrong-span": 0,
+  "not-in-text": 0,
+  "unparsed": 0,
+  "wrong-check": 0,
+  "cut": 0,
+  "inconclusive": 0,
+  "short": 0,
+  "unknown": 0,
+  "text_owned_mismatches": 0,
+  "marks": {
+   "engine-inline": 0,
+   "engine-inline-partial": 0,
+   "engine-other-output": 0,
+   "model-imitation": 0
+  }
+ },
+ "wrong": [],
+ "arms": [
+  {
+   "arm": "a:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 30622,
+   "reasoning_mean": 1531.1,
+   "completion_total": 31532,
+   "completion_mean": 1576.6,
+   "solve": 20,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 2,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "a:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 36706,
+   "reasoning_mean": 1835.3,
+   "completion_total": 37650,
+   "completion_mean": 1882.5,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "a:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 37751,
+   "reasoning_mean": 1887.5,
+   "completion_total": 38552,
+   "completion_mean": 1927.6,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "ro:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 6981,
+   "reasoning_mean": 349.1,
+   "completion_total": 9754,
+   "completion_mean": 487.7,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 5,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 6981,
+    "owned": 3,
+    "rechecked": 1,
+    "episodes": 2,
+    "tokens": 34.3,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 2,
+    "owning_reasoning": 715
+   }
+  },
+  {
+   "arm": "ro:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 6414,
+   "reasoning_mean": 320.7,
+   "completion_total": 9172,
+   "completion_mean": 458.6,
+   "solve": 20,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": {
+    "ok": 6,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 6414,
+    "owned": 4,
+    "rechecked": 1,
+    "episodes": 1,
+    "tokens": 28.7,
+    "restate_only": 0.0,
+    "doubt": 2,
+    "owning": 3,
+    "owning_reasoning": 850
+   }
+  },
+  {
+   "arm": "ro:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 5029,
+   "reasoning_mean": 251.4,
+   "completion_total": 8048,
+   "completion_mean": 402.4,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": {
+    "ok": 2,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 19,
+    "reasoning": 5027,
+    "owned": 0,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 0,
+    "owning_reasoning": 0
+   }
+  }
+ ]
+}

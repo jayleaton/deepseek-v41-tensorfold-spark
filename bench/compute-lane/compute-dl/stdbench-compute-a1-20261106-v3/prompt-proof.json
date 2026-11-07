@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "pairs": 242,
+  "dataset_pairs": 240,
+  "diagnostic_pairs": 2,
+  "arrays_sha256": "39a4134c55dcd79a67d72589aeb882c1cb697319749a89d768501e6c0587ecf6",
+  "input_sha256": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+  "binary_sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "source_sha256": "53cd7b5309bf82d1975038a6b77457fe984b81ac1569455a89d9bb980e601c79",
+  "actual_served_array_equality_observed": false,
+  "limitation": "CPU-matched/count-checked prompts; same-length server rendering differences remain unobserved.",
+  "reuse": true,
+  "prior_proof_path": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/prompt-proof.json",
+  "prior_proof_sha256": "aae16671d7fe62a5e1c24fe136cfaaceea3faaf70e583e4b2a6082455c3e0846",
+  "prior_cpu_receipt_path": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/cpu-seal/verification-v2.json",
+  "prior_cpu_receipt_sha256": "29414ab052787fb8d186dd9d3920a689c25c3fbf207a8b0f2c355a07f118f303"
+}

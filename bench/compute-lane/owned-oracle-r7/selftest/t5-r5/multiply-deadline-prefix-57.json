@@ -1,0 +1,34 @@
+{
+  "reasoning": "[exact, computed by the engine: 1000*7 = 7000] check: 1*7",
+  "content": "",
+  "finish": "deadline",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "cells": [
+          {
+            "cell": 0,
+            "form": "trace",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 0,
+            "token": 3,
+            "path": "held",
+            "span": "1000*7",
+            "value": "[exact, computed by the engine: 1000*7 = 7000] check: 1*7",
+            "ids": 100,
+            "landed": 1,
+            "drafted": 0,
+            "forced": 1,
+            "display": "1000*7"
+          }
+        ],
+        "trace": {
+          "owned": 1
+        }
+      }
+    }
+  }
+}

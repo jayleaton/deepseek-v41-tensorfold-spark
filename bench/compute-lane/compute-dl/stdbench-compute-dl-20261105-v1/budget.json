@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "limit_seconds": 18000,
+  "admission_seconds": 15900,
+  "held_seconds": 3413.519101628801,
+  "active": null,
+  "turns": [
+    {
+      "turn": "t01",
+      "started_utc": "2026-11-05T05:03:43.945178+00:00",
+      "pid": 3534643,
+      "clock": "monotonic within foreground controller",
+      "finished_utc": "2026-11-05T05:39:50.933941+00:00",
+      "held_seconds": 2166.988761158893,
+      "cumulative_seconds": 2166.988761158893
+    },
+    {
+      "turn": "t02",
+      "started_utc": "2026-11-05T05:41:52.159797+00:00",
+      "pid": 3699276,
+      "clock": "monotonic within foreground controller",
+      "finished_utc": "2026-11-05T06:02:38.690140+00:00",
+      "held_seconds": 1246.530340469908,
+      "cumulative_seconds": 3413.519101628801
+    }
+  ],
+  "overrun_seconds": 0
+}

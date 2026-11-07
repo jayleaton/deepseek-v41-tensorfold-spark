@@ -1,0 +1,171 @@
+{
+  "task": {
+    "id": "t6-arithmetic-004",
+    "category": "arithmetic",
+    "prompt": "Evaluate (9876 - 4321) × 37 + 818 without rounding."
+  },
+  "request": {
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate (9876 - 4321) × 37 + 818 without rounding."
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 32768,
+    "stream": false,
+    "return_token_ids": true,
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "started_utc": "2026-11-01T06:21:35.290220+00:00",
+  "elapsed_s": 1.3125661599915475,
+  "response": {
+    "id": "chatcmpl-a15de323abf1012bcbe1f4b123ddb2b9",
+    "object": "chat.completion",
+    "created": 1793514095,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "206353",
+          "reasoning_content": "We need answer compute. Need be careful. 9876-4321=5555. 5555*37 = 5555* (40-3)=222200-16665=205535? Let's calc: 5555*30=166650; *7=38885; sum 205535 yes. +818=206353. Need final concise."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 48,
+      "completion_tokens": 82,
+      "total_tokens": 130,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 79
+      }
+    },
+    "exact_mode": "exact",
+    "tensorfold": {
+      "enable_thinking": true,
+      "reasoning_effort": null,
+      "engine": "dsv41-cuda",
+      "tokens_per_second": 75.8763261821195,
+      "seconds": 1.067526646,
+      "prefill_seconds": 0.236848484,
+      "prefill_widths": [],
+      "prefill_raised": [],
+      "time_to_first_token": 0.288343995,
+      "sampling": "greedy",
+      "drafts": true,
+      "token_sha": "1a2c39f9c229",
+      "token_sha256": "1a2c39f9c229227abfde1c09b71f6c9a82a91d9468a9346c3dc84af8011d0f13",
+      "token_ids": [
+        2581,
+        1309,
+        3287,
+        23917,
+        16,
+        21017,
+        366,
+        16372,
+        16,
+        223,
+        30515,
+        24,
+        15,
+        20208,
+        19,
+        31,
+        20295,
+        23,
+        16,
+        223,
+        20295,
+        23,
+        12,
+        1942,
+        438,
+        223,
+        20295,
+        23,
+        12,
+        343,
+        1484,
+        15,
+        21,
+        6912,
+        12398,
+        792,
+        15,
+        10739,
+        2738,
+        31,
+        11773,
+        24960,
+        33,
+        4480,
+        734,
+        32937,
+        28,
+        223,
+        20295,
+        23,
+        12,
+        1059,
+        31,
+        10739,
+        17720,
+        29,
+        982,
+        25,
+        31,
+        21895,
+        5361,
+        29,
+        2595,
+        223,
+        11773,
+        24960,
+        14452,
+        16,
+        940,
+        29483,
+        31,
+        13476,
+        19966,
+        16,
+        21017,
+        4087,
+        47468,
+        16,
+        128822,
+        13476,
+        19966,
+        1
+      ],
+      "min_rows": 2,
+      "prompt": 48,
+      "cached": 0,
+      "ttft_s": 0.2883,
+      "finish": "done",
+      "completion": 82,
+      "prefill_s": 0.2368,
+      "decode_s": 1.0675,
+      "rounds": 22,
+      "drafted": 83,
+      "accepted": 61
+    },
+    "speculative": {
+      "rounds": 22,
+      "drafted": 83,
+      "accepted": 61,
+      "acceptance_rate": 0.7349397590361446,
+      "tokens_per_round": 3.727272727272727
+    }
+  }
+}

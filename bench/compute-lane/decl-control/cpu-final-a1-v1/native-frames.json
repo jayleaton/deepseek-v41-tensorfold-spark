@@ -1,0 +1,24 @@
+{
+  "network": false,
+  "passed": true,
+  "tests": [
+    "multiple frames/calls, JSON source and Unicode",
+    "single-token think opener",
+    "323 substring/later assistant cannot authenticate 1323",
+    "wrong exact source",
+    "reordered reports",
+    "missing calls",
+    "missing inserted_tokens",
+    "missing prefix_tokens",
+    "hidden unreported frame",
+    "zero plain complete",
+    "explicit zero compute",
+    "exact trailing newline accepted",
+    "newline mismatch rejected",
+    "literal closing tags and embedded role IDs in output",
+    "foreign executor",
+    "positive runner cells",
+    "noninserted calls are not delivered successes"
+  ],
+  "tokenizer": "fabricated byte pieces only"
+}

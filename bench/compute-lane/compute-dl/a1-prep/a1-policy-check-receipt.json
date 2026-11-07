@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "boundary_tokens": [
+    511,
+    512,
+    513
+  ],
+  "native_body_branches": 8,
+  "UTF8_seams": 21,
+  "false_marker_and_byte_mutations_rejected": 4,
+  "reference_policy_mutations_rejected": 5,
+  "invisible_tail_change": "observationally indistinguishable after clipping; not detected",
+  "native_build_receipt_sha256": "e1f30f0c4c928af1f4dcc5efe983321eecd38a0a7687f39849417c86478eb3e4",
+  "worker_sha256": "703ee5a019b4b3a454f35c5dd914a5a01990095a47ad43aef54d2695fc0a61a8",
+  "code_sha256": {
+    "<rank0-work>/stdbench/compute-dl/a1-prep/a1_policy_check.py": "04973823c2c6f0d2ed433fccc7431123ee02f74ab5752e371179d5da63c4e6b3",
+    "<rank0-work>/stdbench/compute-dl/a1-prep/reference_policy.py": "ae81dfba75a4598a9dcb998c47863236044692ff329823a3606bb5ede115a697"
+  },
+  "GPU_requests": 0
+}

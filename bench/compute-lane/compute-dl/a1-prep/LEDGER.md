@@ -1,0 +1,26 @@
+# Compute-DL A1 task ledger
+
+This is a separate artifact version. Original sealed sources, GO revocations, raw342 observations, frozen strict grader, stopped audit and incomplete report are preserved.
+
+Standards checked before editing: ancestry AGENTS.md/LOCAL-AGENT.md/CONTRIBUTING paths recorded in ../LEDGER.md, plus a fresh standards/config search in stdbench: none applicable. No lint/type/format/build configuration exists for this artifact directory; it is not a Git repository. No TensorFold engine repository is edited. Applicable checks: AST, pinned-source native CPU build (`zig build -j1`), real retained-receipt/body/codec checks, exact native clipping and normalization controls, raw342/SSE/ID/source/frame/jail provenance revalidation, fake-client/config/analysis/sensitivity checks, actual sourced rank environment/image/clash checks, lifecycle controls and queue turn-preflight. Functional execution is only on Sparks in bounded2GiB/no-swap user scopes, nice19/ionice-c3, timeout7200, one worker, queue/QUIET/memory/scope admission. No <other-host> or <dev-host> CPU tests.
+
+Skills applied: diagnose (saved failing receipt and exact production-policy reproduction) and principle-prove-it-works (real native function, actual raw observations and sourced rank environments).
+
+Named reviewer helper owns provisional P staging; named reviewer helpers own disjoint final A1 runtime and amended analysis. Reviewer first prep review found missing generated-code build binding and unexpected serving-flag filtering; fixed with a build driver that hashes sources before/after compilation and runtime extraction validation, and full serving namespace validation. Further review remains a resumption gate.
+
+Parent spec SHA256: c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141.
+A1 supplied and independently read/hashed: 0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453.
+
+Native clipping: unchanged pinned compute_segments.capTokens body, generic server tokenizer encodePlain/decode(false), fixed512 policy. Harness also copies unchanged compute_runner.body and exact Status/Outcome declarations. Native build receipt binds copied function, adapter/build sources, production source hashes, tokenizer and actual binary. Encoder or unsupported independent status fails closed.
+
+CPU proof: saved aggregation015/101 reconciles exactly, full554 tokens versus landed512-token prefix plus exact marker. False prefix/marker/status mutations fail. Exact511/512/513 controls pass, as do empty output, native stdout/stderr/errors/timeout/byte-limit normalization, literal short marker,21 UTF8 seam cases and malformed reference controls. A change entirely beyond the landed prefix is explicitly observationally indistinguishable. No clipping rescue of final answer grading.
+
+Uniform original revalidation recomputes every original SSE/accounting/initial count/native source+frame binding and independent replay provenance, preserves originals, checks all original sealed sources and consumed evidence hashes, and verifies raw transport/HTTP attempted-key coverage. First CPU pass revalidated342 with112 distinct successful verified L tasks and one clipped presentation. Final version is revalidation-v2, additionally bound to the A1 control/native build receipts. Original mask342/138 is disjoint; stopped aggregation015/101 remains observed and is never retried.
+
+Provisional P prep contains240 tools-removed requests and two fresh lane0 configs. Those candidate L-based order files remain labelled pending; the final A1 runtime MUST use the frozen concatenated original t01-D then t02-D order. Prep launchers deliberately refuse collection; only the separately sealed qualified A1 runtime may resume.
+
+Budget carries3413.519101628801 seconds forward, limit18000, admission15900. Queue wait and CPU work do not count; cold boots, diagnostics, held references, drain and G restoration do count. Next GPU turns, after all CPU gates, are A1-resume(L18,D120), restore G; A1-plain(P240), restore G. No collection has occurred during this prep.
+
+## 2026-11-06 operator attempt — infrastructure stop
+
+Final campaignfb14994c… / CPU seal29414ab0… / derived720-key manifest33b0b22e… qualified3772 sources. Both ranks passed the exact final seal with GO absent. The new GO was then created and A1-resume launched through its queue protocol. It reached head, requested G stop, then logged collection STOPPED because <rank1-host> /tmp/<rank1-host>-gpu.lock was absent. No new boot, diagnostic or dataset request began; no attempt directory exists. The normal queued G restoration also logged serving failed on that missing read-only lock. A1 service MainPID0/failed, G restore ended, no running containers on either node. Failed restore entry remains at queue head. New GO revoked both ranks. Original carry preserved and active restoration interval intentionally unresolved. Owner must restore coordination infrastructure and G before a fresh continuation; preflight must check readable root lock before G stop. CPU cache directories .zig-cache removed by exact path on both nodes; native binary/evidence retained. No pending owned job, no lock creation, no engine edits. NEEDS-T5 recorded in a1-results.

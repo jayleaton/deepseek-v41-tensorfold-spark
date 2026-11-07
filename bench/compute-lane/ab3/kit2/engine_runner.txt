@@ -1,0 +1,24 @@
+import sys, ast, io, linecache, random, traceback
+random.seed(0)
+src = sys.stdin.read()
+sys.stdin = io.StringIO()
+linecache.cache["<code>"] = (len(src), None, src.splitlines(True), "<code>")
+try:
+    tree = ast.parse(src, "<code>")
+    last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
+    ns = {"__name__": "__main__"}
+    exec(compile(tree, "<code>", "exec"), ns)
+    if last is not None:
+        value = eval(compile(ast.Expression(last.value), "<code>", "eval"), ns)
+        if value is not None:
+            print(repr(value))
+except SystemExit:
+    raise
+except BaseException as e:
+    tb = None if isinstance(e, SyntaxError) else e.__traceback__.tb_next
+    traceback.print_exception(type(e), e, tb)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(1)
+sys.stdout.flush()
+sys.stderr.flush()

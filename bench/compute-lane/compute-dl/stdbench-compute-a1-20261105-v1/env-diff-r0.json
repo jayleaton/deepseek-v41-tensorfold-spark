@@ -1,0 +1,10 @@
+{
+  "added": {
+    "TF_TP_WORLD": "2",
+    "TF_TP_RANK": "0",
+    "TF_TP_DEVICE": "0",
+    "TF_TP_KERNEL_IMAGE": "/opt/tensorfold/share/tp_mailbox.fatbin"
+  },
+  "missing": {},
+  "changed": {}
+}

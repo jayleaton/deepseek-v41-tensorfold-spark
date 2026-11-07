@@ -1,0 +1,45 @@
+{
+  "schema": 2,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "limit_seconds": 18000,
+  "admission_seconds": 15900,
+  "held_seconds": 6323.689661628801,
+  "active": null,
+  "turns": [
+    {
+      "turn": "t01",
+      "started_utc": "2026-11-05T05:03:43.945178+00:00",
+      "pid": 3534643,
+      "clock": "monotonic within foreground controller",
+      "finished_utc": "2026-11-05T05:39:50.933941+00:00",
+      "held_seconds": 2166.988761158893,
+      "cumulative_seconds": 2166.988761158893
+    },
+    {
+      "turn": "t02",
+      "started_utc": "2026-11-05T05:41:52.159797+00:00",
+      "pid": 3699276,
+      "clock": "monotonic within foreground controller",
+      "finished_utc": "2026-11-05T06:02:38.690140+00:00",
+      "held_seconds": 1246.530340469908,
+      "cumulative_seconds": 3413.519101628801
+    },
+    {
+      "turn": "A1-resume",
+      "started_utc": "2026-11-06T08:53:34.922223+00:00",
+      "pid": 2491553,
+      "clock": "conservative UTC wall interval after controller loss",
+      "finished_utc": "2026-11-06T09:42:05.092783+00:00",
+      "held_seconds": 2910.17056,
+      "cumulative_seconds": 6323.689661628801,
+      "run_prefix": "stdbench-compute-a1-20261105-v2",
+      "recovery_log_sha256": "39cb342b6182dd3f4a89ed05add7cff75ea8dbe84f040b3eeb4e5a944cca058b",
+      "restored_G_run": "efast2-20261106T093336Z",
+      "no_new_requests": true
+    }
+  ],
+  "overrun_seconds": 0,
+  "parent_spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "original_ledger_sha256": "f40308960f7bc0b8132ab45bf760f3063d7cda707acda0dc180340981863c6fc",
+  "carry_seconds": 3413.519101628801
+}

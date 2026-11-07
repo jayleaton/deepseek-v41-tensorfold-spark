@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "prefix": "stdbench-compute-dl-20261105-v1",
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "status": "STAGED_CPU_GATES_PENDING",
+  "collection_qualified": false,
+  "turns": [
+    {
+      "name": "t01",
+      "boots": [
+        "t01-D",
+        "t01-L"
+      ]
+    },
+    {
+      "name": "t02",
+      "boots": [
+        "t02-L",
+        "t02-D"
+      ]
+    }
+  ],
+  "boots": [
+    {
+      "boot": "t01-D",
+      "arm": "D",
+      "file": "boots/t01-D.json",
+      "sha256": "828d9bfc466796a08c36d9324fa5294048e2c2fda9bdcff69d9107840bcaf162"
+    },
+    {
+      "boot": "t01-L",
+      "arm": "L",
+      "file": "boots/t01-L.json",
+      "sha256": "f044822f55fb1e80c6509514c3d271fa7c5936ecec8933b60ad621939e4e98e7"
+    },
+    {
+      "boot": "t02-L",
+      "arm": "L",
+      "file": "boots/t02-L.json",
+      "sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "boot": "t02-D",
+      "arm": "D",
+      "file": "boots/t02-D.json",
+      "sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    }
+  ],
+  "fresh_replies": 480,
+  "diagnostic_replies": 8,
+  "tasks_public_sha256": "3e1e07d7a573eb194c0568afac2ef2112011b2b2cada9012fbbce4e6f47f7548",
+  "seeds": [
+    101,
+    102
+  ],
+  "families": [
+    "integer",
+    "modular",
+    "division",
+    "dp",
+    "graph",
+    "aggregation"
+  ],
+  "files": {
+    "frozen-v1/boots/t01-D.json": "828d9bfc466796a08c36d9324fa5294048e2c2fda9bdcff69d9107840bcaf162",
+    "rank0/configs/t01-D-r0.env": "a9137fb8a2719ca4f31ccbee00b3700c0933e8f5da6ee63fbaf01d1f46f19bd5",
+    "rank1/configs/t01-D-r1.env": "bc569386ed00510d1a3f84b1e7bb62f678ac5a28b91a9f846ff20d45e30648b9",
+    "rank0/boots/t01-D/manifest.json": "70df618de2ec243f4bc4bcc0238ecbef9f7f4c0dd7549a0445e660ec0387c1b8",
+    "rank1/boots/t01-D/manifest.json": "e579d07bcaf5500a3e8a4072e5d8c173102c4330ac8da31158dbf8a6d8dd2d17",
+    "frozen-v1/boots/t01-L.json": "f044822f55fb1e80c6509514c3d271fa7c5936ecec8933b60ad621939e4e98e7",
+    "rank0/configs/t01-L-r0.env": "0a6c8f0a5b07cf6be525b1700485947cfb9502f65da7e8f63990791d6cf389b4",
+    "rank1/configs/t01-L-r1.env": "c30a1c97d60d6df5d988849fca9b7343e23ab4f172588815554f77e4072606bf",
+    "rank0/boots/t01-L/manifest.json": "6b0eb11cbbc146e83ee6a58a300257854298bf46a522e7b337bd3efd4f22a4cd",
+    "rank1/boots/t01-L/manifest.json": "fa50c05a358ceda78fdb7d451eb4c984e22af3864c9cfe4c7e57c85dd266d302",
+    "frozen-v1/boots/t02-L.json": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2",
+    "rank0/configs/t02-L-r0.env": "664e5b393af972137434bdb567b0cea02b6eb1a8236f8715c712bb47f0cd6f9d",
+    "rank1/configs/t02-L-r1.env": "ba60f04f76733c0eed5ab740eb44ca2f7cb33c1e2461f6d76ad4dfcfd7be9338",
+    "rank0/boots/t02-L/manifest.json": "90487afd0d36b0344f28af67cff681023920556fcddfe73dcb65cebd05b177d0",
+    "rank1/boots/t02-L/manifest.json": "563114e7ecf45841f7b490dbaca660336903f47c718a74a92c31d6470561eea7",
+    "frozen-v1/boots/t02-D.json": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8",
+    "rank0/configs/t02-D-r0.env": "f61ba03b2487bf92b1076c6f65c238bdc66dc6ea465bb1ce3b543fbf07659006",
+    "rank1/configs/t02-D-r1.env": "3cd27628f9e454a61c83d39cb674b0647479ceaf0b2d6f102a90615c73dd8299",
+    "rank0/boots/t02-D/manifest.json": "20f59d132eaf28d8bc56fb43fa8049fc07fd18e94e507f0efc7a2b31c2f84f7e",
+    "rank1/boots/t02-D/manifest.json": "634fa5c1c1660e69421d9db3a26bf2bea2c5db4479b400c90a0f058d0fe0b34f",
+    "frozen-v1/manifest.json": "8aee124a6c4fcb68208d8bd710bd8f2a9413c153359240c43bc99ec670db8f2f",
+    "prompt-inputs.json": "1d293e89d6f81da06196be8926e9ef6fe7a4ad4d71a2385bddffb3012728e7b4",
+    "stage-campaign.json": "1b0c7f8e28fdd3dc10c0953d498ef5a72d434eac2fdb3b7f840bad8ce698f91d",
+    "source-hashes.json": "a8abb60face530e8a44f08d3d1dd7305be79fbab43e9aa92cd30eb56c090b695",
+    "materialization.json": "2bad3d91afb3e05e470d42cad3677db1f798716d3503ff4caf40ba11754fa227"
+  },
+  "materialization": "materialization.json",
+  "source_hashes": "source-hashes.json",
+  "renderer_input": "prompt-inputs.json",
+  "preliminary_campaign": "stage-campaign.json"
+}

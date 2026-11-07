@@ -1,0 +1,83 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "fake": {
+    "passed": true,
+    "controls": [
+      "missing request",
+      "duplicate identity",
+      "wording order",
+      "wire mutation",
+      "P lane",
+      "diagnostic reference",
+      "pending qualification/GO",
+      "exclusive budget",
+      "exact5880 admission",
+      "active restart",
+      "no second turn",
+      "budget cutoff before readiness classified INCOMPLETE",
+      "budget cutoff between diagnostics classified INCOMPLETE",
+      "missing lock",
+      "directory lock",
+      "FIFO lock",
+      "unreadable lock"
+    ],
+    "coordination_fixtures": true,
+    "prep_native_fake_controls": {
+      "stdout": "PASS handwritten fake-response controls; no generation, network or runtime seal\n",
+      "stderr": ""
+    },
+    "GPU_requests": 0
+  },
+  "diagnostic_controls": [
+    "both323and55 independently delivered",
+    "missing 323 delivery refused",
+    "missing 55 delivery refused",
+    "P no executor/no calls",
+    "P unexpected native calls refused"
+  ],
+  "sigpipe_lifecycle": [
+    {
+      "mode": "success",
+      "owned_exact_pids_exited": true,
+      "receipt_sha256": "f08b7b41eee7fcb79daa0e0f452d7e3a880ae539203613be3ec9ffa420c83fd0",
+      "log_sha256": "2d2c9b5112658b8ffb9905c5711c824a64bd387cadc9af8b85371197ce0c4751"
+    },
+    {
+      "mode": "failure",
+      "owned_exact_pids_exited": true,
+      "receipt_sha256": "b963e09cb9d20c69b52aafb3e4bb9fee550d1b4b622b6c9f1b3cb9958e22c0e1",
+      "log_sha256": "652c0ce60ecb43a22efc69c1a4aa1c3914eb729c92b08b65d5b6f43fce02acf6"
+    }
+  ],
+  "preflight": {
+    "passed": true,
+    "stdout": "preflight <rank0-work>/stdbench/format-retest/runtime/launch.sh: 4 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/format-retest/runtime/turn.sh: 4 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/format-retest/runtime/cpu_gate.sh: 0 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/format-retest/runtime/fence.sh: 0 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/format-retest/runtime/lifecycle-launch.sh: 3 literal paths checked, 0 refused, 0 notes\n",
+    "stderr": ""
+  },
+  "code_sha256": {
+    "<rank0-work>/stdbench/format-retest/runtime/protocol.py": "2dce4067ebb970a42dde5113ab08f2e4e6138b28e3a076483273af4ee387fc0b",
+    "<rank0-work>/stdbench/format-retest/runtime/rank_ops.py": "1c9461cd7fc741d8319ade9496b5962d36b8cd839b3c8e2e6ab7402ea92fcc4b",
+    "<rank0-work>/stdbench/format-retest/runtime/prep_bridge.py": "9fa64bce348a5ecee8595474cf34740958c35e2f526f4dbdb7e26932bed98005",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle_probe.py": "1608099784c11ede409d022141646834f6b5543acf68c198d8acbca5e2ea708c",
+    "<rank0-work>/stdbench/format-retest/runtime/finalize_cpu.py": "d20984b7490ace6e753627a55bab2ed6d3767465b6633dab4759c44b255e7049",
+    "<rank0-work>/stdbench/format-retest/runtime/controller.py": "b8cb7f0c7d57b5ad7080c6abbf71bed095b264b4dcd887b58d99f87e0b225f2c",
+    "<rank0-work>/stdbench/format-retest/runtime/coordination.py": "d6b5070dc60919bcf4720b2472fa89d5ef5272c34999d963bc0cb0d4acbeaf2c",
+    "<rank0-work>/stdbench/format-retest/runtime/render_prompts.py": "34b8753cafe3f825b80ae799d9ba690e2423c29eeb12f3a3767cc48713a4a097",
+    "<rank0-work>/stdbench/format-retest/runtime/clipping.py": "baa5beeeb29ec1736473a1b1863ec4a1421f74089a74104955e1b35f409b0af9",
+    "<rank0-work>/stdbench/format-retest/runtime/request_adapter.py": "f821172aabe340bdfac52c604513d5aa893757a34b1395350ad934731a38d374",
+    "<rank0-work>/stdbench/format-retest/runtime/qualify_rank.py": "da3054d4ea248a7d58e9e9a83f6c1e5294fe138a3d537034b9dd2709969a6bcd",
+    "<rank0-work>/stdbench/format-retest/runtime/budget.py": "7c0558f3bbade10f63c238aad3d99f243b7be54eb2790936bd5695a7ecfb753c",
+    "<rank0-work>/stdbench/format-retest/runtime/runtime_stage.py": "faa64572a92436c63c0865cf5a67118ca5556395f14ea476492c99c9c83948cb",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_check.py": "e7ecfc82e981649c1af94ee6d67b2ba7a3c34efec78a5f1023dffb7baed82f16",
+    "<rank0-work>/stdbench/format-retest/runtime/manifest.py": "831244d8c04f1a8d594efd700f0043acf6fd1e60e361a88c0a750dcccee7512c",
+    "<rank0-work>/stdbench/format-retest/runtime/qualification.py": "2bd2c575d9afd09afbb2084f27f7143c7527c4942cfb0478452ace9f949d47ff",
+    "<rank0-work>/stdbench/format-retest/runtime/control_check.py": "bc0d84a9854f9340a09667178b331a0bdd776683857e0ff5be82e02b286e23aa",
+    "<rank0-work>/stdbench/format-retest/runtime/fence.sh": "91a9b462442304dddb9d13361e78eca415094e64f4f7c4ea148fcd1516c0a0b7",
+    "<rank0-work>/stdbench/format-retest/runtime/turn.sh": "4be510c7442b1718c51323ab853aaba6b26a842dc83f10ebfffca458d4a67af2",
+    "<rank0-work>/stdbench/format-retest/runtime/launch.sh": "3c86812e7a3e64625749d6ea6e4def8bff66c629922b1c9555d88eb845655f0e",
+    "<rank0-work>/stdbench/format-retest/runtime/lifecycle-launch.sh": "49809d9fd86d98251d3ea8bffc35b2bf8e96262253b4296e1b34cfaac7558ece",
+    "<rank0-work>/stdbench/format-retest/runtime/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed"
+  },
+  "GPU_requests": 0
+}

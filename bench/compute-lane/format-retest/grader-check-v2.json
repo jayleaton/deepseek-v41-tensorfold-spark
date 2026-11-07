@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "positive_negative_fixtures": true,
+  "result": {
+    "passed": true,
+    "stdout": "{\"checks\": [\"strict_extraction\", \"typed_answers\", \"exact_task_DP\", \"shared_cluster_CIs\", \"incomplete_bounds\", \"missing_input_cost\", \"activation_receipt_join\", \"all_gain_loss_IDs\", \"censor_contributions_and_reversal\", \"positive_case_A\"], \"collection\": false, \"fixture\": \"FAKE_NOT_COLLECTION\", \"passed\": true, \"study_generation\": false}\n",
+    "stderr": "",
+    "source_sha256": "9ca062d72022a397f54c7286fafc43087659f2f294b8dea631d91dde90182395",
+    "returncode": 0
+  },
+  "source_sha256": {
+    "<rank1-work>/stdbench/compute-dl/grade.py": "1a2249a1b5e0b06f03a4300995d0c320e5a21630d261b3791501f7c83740fb9f",
+    "<rank1-work>/stdbench/compute-dl/outcome_check.py": "9ca062d72022a397f54c7286fafc43087659f2f294b8dea631d91dde90182395",
+    "<rank1-work>/stdbench/compute-dl/analysis.py": "71101f372473fc5be4a7f9896fb5b3e8ef375620c1dca87f48bb8559ddb292ae",
+    "<rank1-work>/stdbench/format-retest/qualify_cpu.py": "509feae550f23b75f9a5caa3647db62014bf08910e95bc4f625df286c7b917a5"
+  }
+}

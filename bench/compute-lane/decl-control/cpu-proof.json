@@ -1,0 +1,43 @@
+{
+  "cpu_prompt_arrays_equal": true,
+  "dataset_pairs": 184,
+  "diagnostic_pairs": 2,
+  "arrays_retained": "prompt-arrays.jsonl",
+  "prompt_arrays_sha256": "7887963d2c6b3f4de450792ba5b89655b3ab80f64e9cc1f4a5300d12ac7187db",
+  "spec_sha256": "adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "zig_version": "0.17.0",
+  "binary_sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1",
+  "native_source_sha256": {
+    "api_stub.zig": "734da9dd50e1dbbc9431410cd32bfb427cf17693cbc01b8a32b322f3c47c82d9",
+    "chat.zig": "b1df1e053e50bec33d274b7239ec7724a9b967326c18151acd8ad99e925bfa71",
+    "compute_turns.zig": "512a0dccc2fcc65389f8794e0448157d18e7c91356c58437598202968f65f8af",
+    "encoder.zig": "a4549713139ea676adbe47ebce25ec2ff15a90b2ecb4d7c00819847f65f7987a",
+    "errors.zig": "68efcebbd4140ccb0f26d19b3095fc637e066c8cb9c71403ed80a0711ba7453e",
+    "json.zig": "183054cd75508def5cac3fbd26687f8ed04f429ad2d19913ca46d939a7ac5323",
+    "json_parse.zig": "c8b1601849f32b7efef398871cdbca5d60736772e3135fb592cb7729d53b4940",
+    "json_write.zig": "4110ecd27fa4d1dfad15aba9d95a5eeb26b75cbbd36fad85752c8fb80751c765",
+    "server.zig": "ecb1e06f4a72cffa6bfd830dd0cd9debc993e4198067061a16322b84a232c95d",
+    "template.zig": "97f267f2b520e3bd226bd318a95b8178bdb6a6ad8e90891be20d4b1fd58994f3",
+    "tokenizer.zig": "bc626dd3deed97e2fced211c6b09d9170f6df30c30208e4f61f4c96a3036f17c",
+    "tool_specs.zig": "206ba713ba90e0aed6e62c4cc579ce160bfd9051c927d036fb5dc56bffde9f01",
+    "unicode.zig": "93babef3489d305dc7934c1d650b7b9663bbd93f6f858131612913cbd83db171",
+    "unicode_data.zig": "288ab80c28fcbd318548b21b9b8f702195da1e0f44a641d0778268251db29796",
+    "unicode_root.zig": "4be2f3f06ee5e8dd33dbce3bb9c9abc93a42f19aee15285cec7ac1ff8d4e103f"
+  },
+  "harness_sha256": {
+    "build.zig": "9610489158f705e6c040d11de8f2df42cdaf949d6e3d79f9b24abf25073ad013",
+    "prompt_gate.zig": "6858e04217a09084d4898adc2e5245fa997bf11e295d6a166d4b96e49df6ef3b",
+    "cpu_probe.py": "cff0cc6ee14543f4368ebd9bfc35ac7db5f88509d0ab20968118e245cb45627a"
+  },
+  "request_side_arming_only": true,
+  "dispatch_negative_control_qualified": false,
+  "actual_served_prompt_array_capture_available": false,
+  "collection_qualified": false,
+  "limitations": [
+    "Inert Server/API/chat types only exercise unchanged tools/arming functions, not actual server dispatch.",
+    "No actual served initial prompt arrays are exposed on the pinned chat route.",
+    "All-round actual prompt-processing accounting is not emitted by compute_segments merge.",
+    "No GPU, endpoint, queue, lock or engine edit was used."
+  ]
+}

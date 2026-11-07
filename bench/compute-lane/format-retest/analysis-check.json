@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "scheduled_replies": 360,
+  "strict_grader_sha256": "1a2249a1b5e0b06f03a4300995d0c320e5a21630d261b3791501f7c83740fb9f",
+  "result": {
+    "passed": true,
+    "stdout": "Handwritten synthetic controls passed. NEEDS-T5: no production or safety evidence generated.\n",
+    "stderr": "",
+    "source_sha256": "d47faa7ae031d2595c463b8397d7c53fb73336c53d96da22b87397458fa3c540",
+    "returncode": 0
+  },
+  "source_sha256": {
+    "<rank1-work>/stdbench/format-retest/analysis/reporter.py": "24c6e6165746c27ef2066438aaef05af85f47960fd721c71e0d513d4e3e6e274",
+    "<rank1-work>/stdbench/format-retest/analysis/handwritten_checks.py": "d47faa7ae031d2595c463b8397d7c53fb73336c53d96da22b87397458fa3c540",
+    "<rank1-work>/stdbench/format-retest/qualify_cpu.py": "b97f46a4649ef0e3b940a9a3b3a070725e0440c38484b4ba395ad71d85194bac"
+  }
+}

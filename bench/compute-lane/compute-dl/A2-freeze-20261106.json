@@ -1,0 +1,17 @@
+{
+  "event": "A2_FROZEN_BEFORE_A1_CUTOFF",
+  "at_utc": "2026-11-06T11:59:56Z",
+  "spec_sha256": "8eaa9575592f519b504d08022d400602e4b552874c8424b02c59c34f4af174e2",
+  "parent_spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "a1_spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "old_limits": {"limit_seconds": 18000, "admission_seconds": 15900},
+  "new_limits": {"limit_seconds": 36000, "admission_seconds": 33900},
+  "decision_point_reported_by_JJ": {"P_replies": 49, "at_utc": "2026-11-06T11:53:00Z"},
+  "latest_observed_durable_P_count": 52,
+  "latest_observed_response_at_utc": "2026-11-06T11:58:36.258857+00:00",
+  "running_A1_changed": false,
+  "live_cutoff_reload_available": false,
+  "break_policy": "Let sealed A1 reach its original admission cutoff, settle current request, drain, restore G; CPU-seal exact unattempted P suffix before one fresh A2 continuation turn.",
+  "adoption_pending": true,
+  "outcome_informed_extension": true
+}

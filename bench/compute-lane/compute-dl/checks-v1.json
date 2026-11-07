@@ -1,0 +1,10 @@
+{
+  "generation":"<rank0-work>/stdbench/compute-dl/cpu-generation-v1.json",
+  "outcome":"<rank0-work>/stdbench/compute-dl/cpu-outcome-v1.json",
+  "disjoint":"<rank0-work>/stdbench/compute-dl/cpu-disjoint-v1.json",
+  "lifecycle":"<rank0-work>/stdbench/compute-dl/cpu-lifecycle-v4.json",
+  "runtime":"<rank0-work>/stdbench/compute-dl/cpu-runtime-v1.json",
+  "budget":"<rank0-work>/stdbench/compute-dl/cpu-budget-v1.json",
+  "controller":"<rank0-work>/stdbench/compute-dl/cpu-controller-v8.json",
+  "report":"<rank0-work>/stdbench/compute-dl/cpu-report-v4.json"
+}

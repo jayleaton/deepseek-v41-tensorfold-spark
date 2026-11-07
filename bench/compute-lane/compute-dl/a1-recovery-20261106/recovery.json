@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "parent_spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "raw_budget_path": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/budget.json",
+  "raw_budget_sha256": "bbad3c8e182e579b258e8f725faf2cbdbef8fd70b48d52985efdfdd304bfa2e5",
+  "reconciled_budget_path": "<rank0-work>/stdbench/compute-dl/a1-recovery-20261106/reconciled-budget.json",
+  "reconciled_budget_sha256": "6a7a7a0fee3f1a9a4e7ceb97d0d17eb4ce234fd14a45744247ece73c71e7171e",
+  "held_seconds": 6323.689661628801,
+  "original_carry_seconds": 3413.519101628801,
+  "charged_recovery_seconds": 2910.17056,
+  "interval_start_utc": "2026-11-06T08:53:34.922223+00:00",
+  "interval_end_utc": "2026-11-06T09:42:05.092783+00:00",
+  "no_new_requests": true,
+  "models_http_status": 200,
+  "served_model_id": "DeepSeek-V4.1-Flash-TF",
+  "restored_G_engine_sha": "58bece1d3184269059fd3f7f755c52f4f295113d",
+  "restored_G_run": "efast2-20261106T093336Z",
+  "ranks": [
+    {
+      "rank": 0,
+      "image_id": "sha256:e6cf428b02d188ceda5859b2f25839d4c305ad1f66b758b634b5d07dbe9da4f5",
+      "host_pid": 2587956,
+      "running": true
+    },
+    {
+      "rank": 1,
+      "image_id": "sha256:ca6feff3164a67710816be940968403f938947e4974ff04f61717d8f0f5688f9",
+      "host_pid": 1397187,
+      "running": true
+    }
+  ],
+  "restore_log_path": "<rank0-work>/stdbench/compute-dl/a1-runtime/G-recovery-20261106-v3.log",
+  "restore_log_sha256": "39cb342b6182dd3f4a89ed05add7cff75ea8dbe84f040b3eeb4e5a944cca058b",
+  "status_sha256": "4a9fe2604abe9213ed9c43007c0a03f69edc72915a16bf2443eab98ff67839b4",
+  "failed_steps_sha256": "9a27688cec9b9dd02167eb189f021e2f97288cff32faea0e36580d3b644b939c",
+  "outage_utc": "2026-11-05 ~07:30Z (JJ confirmed)",
+  "policy": "conservative full UTC interval; no infrastructure-wait subtraction",
+  "limit_seconds": 18000,
+  "admission_seconds": 15900,
+  "remaining_until_admission_seconds": 9576.310338371199,
+  "source_sha256": "882c6f8a1a4e37759abfa374a7c6a4df16ac4b8a584a89e8b9aeebfd5e994b6e"
+}

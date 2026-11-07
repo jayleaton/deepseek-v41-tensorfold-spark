@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "pairs": 242,
+  "dataset_pairs": 240,
+  "diagnostic_pairs": 2,
+  "arrays_sha256": "39a4134c55dcd79a67d72589aeb882c1cb697319749a89d768501e6c0587ecf6",
+  "input_sha256": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+  "binary_sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "source_sha256": "108f88cffd7cc0bfc263f4f12f53f69e00f74c19e64d0399defc9f303069708d",
+  "actual_served_array_equality_observed": false,
+  "limitation": "CPU-matched/count-checked prompts; same-length server rendering differences remain unobserved."
+}

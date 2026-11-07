@@ -1,0 +1,15 @@
+{
+  "verdict": "PASS",
+  "rank": 0,
+  "exact_names_absent": [
+    "stdbench-decl-a1-20261105-v1-t01-plain-r0",
+    "stdbench-decl-a1-20261105-v1-t01-declared_off-r0",
+    "stdbench-decl-a1-20261105-v1-t01-lane-r0",
+    "stdbench-decl-a1-20261105-v1-t02-declared_off-r0",
+    "stdbench-decl-a1-20261105-v1-t02-lane-r0",
+    "stdbench-decl-a1-20261105-v1-t02-plain-r0",
+    "stdbench-decl-a1-20261105-v1-t03-lane-r0",
+    "stdbench-decl-a1-20261105-v1-t03-plain-r0",
+    "stdbench-decl-a1-20261105-v1-t03-declared_off-r0"
+  ]
+}

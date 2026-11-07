@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "run_prefix": "stdbench-format-20261107-v1",
+  "limit_seconds": 6300,
+  "admission_seconds": 5880,
+  "held_seconds": 5590.182566875999,
+  "overrun_seconds": 0,
+  "turns": [
+    {
+      "turn": "format",
+      "run_prefix": "stdbench-format-20261107-v1",
+      "started_utc": "2026-11-06T19:04:24.198097+00:00",
+      "pid": 3867363,
+      "finished_utc": "2026-11-06T20:37:34.380669+00:00",
+      "held_seconds": 5590.182566875999,
+      "cumulative_seconds": 5590.182566875999
+    }
+  ],
+  "active": null
+}

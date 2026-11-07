@@ -1,0 +1,133 @@
+{
+  "arms": [
+    "D",
+    "L",
+    "P"
+  ],
+  "boot_min_gib": 114,
+  "budget": {
+    "admission_seconds": 15900,
+    "limit_seconds": 18000
+  },
+  "budget_ledger": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/budget.json",
+  "code_sha256": {},
+  "collection_qualified": false,
+  "cpu_prompt_arrays": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/prompt-arrays.jsonl",
+  "cpu_prompt_arrays_sha256": null,
+  "cpu_receipt": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/cpu-seal/verification.json",
+  "cpu_receipt_sha256": null,
+  "diagnostic_tensorfold": {
+    "enable_thinking": true,
+    "reasoning_effort": "high"
+  },
+  "freeze": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/frozen-v1",
+  "freeze_sha256": "33b0b22e48268a2cb50fddad8ed33ee636e22e0885a524d147b2a95207089a80",
+  "g_restore_step": {
+    "events": [
+      "SERVING",
+      "MODELS200",
+      "POPPED"
+    ],
+    "format": "g-restore-v1"
+  },
+  "go_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/GO",
+  "image_ids": [
+    "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+    "sha256:80beaba732d1ed9439e012b007d8dbe19ec2f8962f50fbac29a18c8cd6fda306"
+  ],
+  "layout": {
+    "turns": [
+      {
+        "name": "A1-resume",
+        "boots": [
+          "A1-resume-L",
+          "A1-resume-D"
+        ]
+      },
+      {
+        "name": "A1-plain",
+        "boots": [
+          "A1-plain-P"
+        ]
+      }
+    ],
+    "boots": [
+      {
+        "boot": "A1-resume-L",
+        "arm": "L",
+        "file": "boots/A1-resume-L.json",
+        "sha256": "bd4cf14a18da01c0ffdf9d33bf2454401edbeeb1f4639ec245f0788259f3d8f6"
+      },
+      {
+        "boot": "A1-resume-D",
+        "arm": "D",
+        "file": "boots/A1-resume-D.json",
+        "sha256": "3c4601f04fbfd043a1d2c772100d0bbfa9dc4983a4e77697a93a6d412bc24460"
+      },
+      {
+        "boot": "A1-plain-P",
+        "arm": "P",
+        "file": "boots/A1-plain-P.json",
+        "sha256": "f70dd22f422b597eec0fd3480268491a6064b72b322dba25994848ba079916df"
+      }
+    ]
+  },
+  "model_alias": "DeepSeek-V4.1-Flash-TF",
+  "pending": [],
+  "prefix": "stdbench-compute-a1-20261105-v2",
+  "rank_manifest_sha256": {
+    "A1-resume-L": {
+      "0": "565d1a72e1570ea276f25488665e7cf7601ebb8b97492443bc7ee7ae642aba8c",
+      "1": "04cb734306ffbcdad2d2993187831d8d7dd795b02b26f5736dc2803307e9b39c"
+    },
+    "A1-resume-D": {
+      "0": "f1f88688bc6a830dfe8125bcc219dd5e797bdf128c7fb12e683b8f7391f822cd",
+      "1": "bc20b456978f41cf9fd4cda44af829017fc3a8a5b1c09e4a4c4654dbd0f21d67"
+    },
+    "A1-plain-P": {
+      "0": "6e83c5bed4d77c8d65b0e3d4ecaecc89a9224bc5c186e03c7e083a979cf515d8",
+      "1": "d2b34fd7588e29dcd37f05b3dca6cecef400e769ce96c75c80393e0fabb879ef"
+    }
+  },
+  "rank_manifests": {
+    "A1-resume-L": {
+      "0": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank0/boots/A1-resume-L/manifest.json",
+      "1": "<rank1-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank1/boots/A1-resume-L/manifest.json"
+    },
+    "A1-resume-D": {
+      "0": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank0/boots/A1-resume-D/manifest.json",
+      "1": "<rank1-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank1/boots/A1-resume-D/manifest.json"
+    },
+    "A1-plain-P": {
+      "0": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank0/boots/A1-plain-P/manifest.json",
+      "1": "<rank1-work>/stdbench/compute-dl/stdbench-compute-a1-20261105-v2/rank1/boots/A1-plain-P/manifest.json"
+    }
+  },
+  "spec": "<rank0-work>/stdbench/compute-dl/a1-runtime/T5-COMPUTE-DL-SPEC-A1.md",
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "status": "STAGED_CPU_GATES_PENDING",
+  "timeouts": {
+    "client_wait_s": 360,
+    "gpu_parent_s": 43200,
+    "remote_control_s": 43200,
+    "turn_s": 43200
+  },
+  "tokenizer": "<rank0-work>/stdbench/phase2/references/tokenizer.json",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "transport_contract": {
+    "deadline_s": 270,
+    "max_tokens": 8192
+  },
+  "base_spec": "<rank0-work>/stdbench/compute-dl/T5-COMPUTE-DL-SPEC.md",
+  "base_spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "original_budget": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/budget.json",
+  "original_budget_sha256": "f40308960f7bc0b8132ab45bf760f3063d7cda707acda0dc180340981863c6fc",
+  "revalidation_receipt": "<rank0-work>/stdbench/compute-dl/a1-prep/revalidation-v2/qualification.json",
+  "revalidation_receipt_sha256": null,
+  "cap_policy": {
+    "binary": "<rank0-work>/stdbench/compute-dl/a1-prep/zig-out/bin/native-cap",
+    "tokenizer": "<rank0-work>/stdbench/phase2/references/tokenizer.json",
+    "source": "<rank0-work>/stdbench/decl-control/dispatch-high",
+    "receipt": "<rank0-work>/stdbench/compute-dl/a1-prep/native-build-receipt.json"
+  }
+}

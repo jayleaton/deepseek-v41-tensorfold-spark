@@ -1,0 +1,44 @@
+{
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "frozen_gate_still_failed": true,
+  "collection_must_remain_stopped": true,
+  "source_sha256": "85dd51227cd20659481aae58d6ba25c25820383b98b62dba2b8842fcb40e38bd",
+  "case_id": "compute-dl-v1-aggregation-015",
+  "seed": 101,
+  "binding_qualified": true,
+  "calls": [
+    {
+      "call_id": "call_8e022ce20c4745055975a97f",
+      "code_sha256": "82f034b1982fff335ba8bda40f95619d7eef75d49c18cae53d1cdc2dd1318572",
+      "native_status": "ok",
+      "original_reference_status": "ok",
+      "native_body_sha256": "99d65cefb912e03a8bbe8cec9efcf830ce0195597a00fe08624e7270f783a9bf",
+      "original_reference_body_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+      "native_typed_map": null,
+      "original_reference_typed_map": null,
+      "replays": [
+        {
+          "status": "ok",
+          "body_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+          "typed_map": null
+        },
+        {
+          "status": "ok",
+          "body_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+          "typed_map": null
+        },
+        {
+          "status": "ok",
+          "body_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+          "typed_map": null
+        }
+      ],
+      "all_typed_maps_equal_task_reference": false,
+      "distinct_body_variants": 2,
+      "CPU_replays_vary": false,
+      "classification": "REPLAY_MISMATCH_REQUIRES_ADJUDICATION"
+    }
+  ],
+  "diagnosis_only_not_regrading": true,
+  "GPU_requests": 0
+}

@@ -1,0 +1,30 @@
+{
+  "reasoning": "[exact, computed by the engine: 999 \u00f7 7 = 142 remainder 6]",
+  "content": "",
+  "finish": "deadline",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "cells": [
+          {
+            "cell": 0,
+            "form": "trace",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 0,
+            "span": "divmod(1000,7)",
+            "display": "999 \u00f7 7",
+            "value": "[exact, computed by the engine: 999 \u00f7 7 = 142 remainder 6]",
+            "ids": 100,
+            "landed": 1
+          }
+        ],
+        "trace": {
+          "owned": 1
+        }
+      }
+    }
+  }
+}

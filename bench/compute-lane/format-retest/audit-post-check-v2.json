@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "actual_templates_without_nested_task": 360,
+  "blocked_fallback_controls": 3,
+  "model_requests": 0,
+  "source_sha256": {
+    "<rank0-work>/stdbench/format-retest/audit_post_checks_v2.py": "3a7b0d0d22ea6e6f2531595100164531ffc8bd41f9138c1aec7aa57ed7831255",
+    "<rank0-work>/stdbench/format-retest/audit_collection_post_v2.py": "ea25d473bd384931aff9ef4f80a51efbdd91a13547b3e9e2c5390288e7089fa8",
+    "<rank0-work>/stdbench/format-retest/audit_collection.py": "4a231b75040b282e143f85409003e052fb21821370327c01fdc8196f314bb5b7"
+  }
+}

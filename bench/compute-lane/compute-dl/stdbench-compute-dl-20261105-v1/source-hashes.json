@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "sources": {
+    "spec": {
+      "path": "<rank0-work>/stdbench/compute-dl/T5-COMPUTE-DL-SPEC.md",
+      "sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141"
+    },
+    "tasks_public": {
+      "path": "<rank0-work>/stdbench/compute-dl/dataset-v1/tasks-public.jsonl",
+      "sha256": "3e1e07d7a573eb194c0568afac2ef2112011b2b2cada9012fbbce4e6f47f7548"
+    },
+    "a1/frozen-manifest": {
+      "path": "<rank0-work>/stdbench/decl-control/frozen-a1-v1/manifest.json",
+      "sha256": "785a8f5b9625427d50fc1e18b26bbdd40198ddd55ca18d3a635741edaab94d21"
+    },
+    "a1/lane-boot": {
+      "path": "<rank0-work>/stdbench/decl-control/frozen-a1-v1/boots/t01-lane.json",
+      "sha256": "a0c36b80c12f53b819715b77e0e0c57a801f8f350a394af80983bc2edda1db8d"
+    },
+    "a1/canonical-python-tools": {
+      "path": "<rank0-work>/stdbench/decl-control/canonical-python-tools.json",
+      "sha256": "1d112d68e2df0a69c1a6222daedef99f8afb8323e872d5c0849563a83812361f"
+    },
+    "a1/generate_envs3.py": {
+      "path": "<rank0-work>/stdbench/decl-control/generate_envs3.py",
+      "sha256": "01ba062c5eccee41033dab42697eb5e5ff06392c2bf2c9a462ea0db2e6ec0076"
+    },
+    "runtime_stage.py": {
+      "path": "<rank0-work>/stdbench/compute-dl/runtime_stage.py",
+      "sha256": "fcb48012cae6f0ca16ca14581894527872af8d493a1c64243891727fac744942"
+    },
+    "references/base-arms.json": {
+      "path": "<rank0-work>/stdbench/phase2/references/base-arms.json",
+      "sha256": "9bbacf49fd8bf7917321409c23c8c7f68836d4d28fe456181b7957daac0f5d4f"
+    },
+    "references/base-r0.env": {
+      "path": "<rank0-work>/stdbench/phase2/references/base-r0.env",
+      "sha256": "c0301508e99561c4e457d5c40e26eb23667a8243b2602210fa23018afa96c61b"
+    },
+    "references/base-r1.env": {
+      "path": "<rank0-work>/stdbench/phase2/references/base-r1.env",
+      "sha256": "96cbacd85464af61073619b4e96c83180bb902112b1ef8062e543cf6c0085edc"
+    },
+    "references/tokenizer.json": {
+      "path": "<rank0-work>/stdbench/phase2/references/tokenizer.json",
+      "sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b"
+    },
+    "a1/prompt-gate": {
+      "path": "<rank0-work>/stdbench/decl-control/prompt-gate",
+      "sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1"
+    }
+  },
+  "source_paths_are_provenance_only": true,
+  "runtime_paths": "stage-campaign.json",
+  "task_sha256_contract": "SHA256 of UTF-8 canonical public task JSON; sorted keys, compact separators, ensure_ascii=False",
+  "body_sha256_contract": "SHA256 of exact UTF-8 wire bytes; preserve insertion order"
+}

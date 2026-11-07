@@ -1,0 +1,2352 @@
+# owned-oracle report
+
+Replies (unique texts): 429; cells checked: 16918.
+Engine records (runtime.runner.cells): 0 owned cells judged exactly; replies without records fall back to text reconstruction.
+
+| form | verdict | owner | cells |
+|---|---|---|---:|
+| inline | boundary | model (form owned 0) | 10 |
+| inline | no-cell |  | 4896 |
+| inline | ok |  | 7727 |
+| inline | unknown |  | 96 |
+| inline | unparsed |  | 3421 |
+| inline | value | model (form owned 0) | 768 |
+
+Verdicts: ok = written value equals the independent value of the visible expression (inline), the span (trace) or CPython stdout (fence/repl). boundary = the value of a strictly shorter span glued inside a larger expression (the engine-cell signature: `3^400 mod 10^18 = 10^18`, `φ(2^18) = 2^18`). value = a different value. unknown/unparsed = not decidable here. owner: engine (trace form), owned-form (the reply owned cells of this form), model (this form owned nothing in the reply, so the text is the model's).
+
+Record verdicts: wrong-value = the engine's own parsed span has another value; wrong-span = right for the span it parsed, but the reader's expression around it is larger; not-in-text = the landed bytes are not in the reply; short = every byte of the value landed but fewer result tokens than the engine gave, with no length cap; cut (counted, never a verified value, not listed here) = the length cap ended the reply inside its last write and the landed bytes are a prefix of the whole write; unparsed = the landed bytes hold no value this oracle can read, so the write is unchecked (fails the gate).
+
+- **boundary** [inline, model (form owned 0)] `30000-41*15` = 29385; wrote 615; span 41*15
+  - at /receipts/0244.json (reasoning offset 5325; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' =>29385.\n7*530=3710.\n8*160=1280.\n17*253: 253*7=1771 +2530=4301.\n6*1531=9186.\n20*1142=22840.\n15*1711'
+- **boundary** [inline, model (form owned 0)] `25500+11*15` = 25665; wrote 165; span 11*15
+  - at /receipts/0244.json (reasoning offset 5451; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "=25665.\n11*169=1859.\n20*1897=37940.\nSum positives all positive. Let's add with grouping:\n29385+3710="
+- **boundary** [inline, model (form owned 0)] `10500+38*7` = 10766; wrote 266; span 38*7
+  - at /receipts/0269.json (reasoning offset 968; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ') yes.\n4: 20*1143=22,860\n9: 17*1352 = 1352*10=13,520 + *7=9,464 total 22,984\n13: 8*(-128)= -1,024\n14'
+- **boundary** [inline, model (form owned 0)] `18960+1896*7` = 32232; wrote 13272; span 1896*7
+  - at /receipts/0270.json (reasoning offset 1961; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' =>32232. B=12548+32232=44780.\n35 C:9*1630=14670. C=-4869+14670=9801.\n36 F:8*1945=15560. F=64338+155'
+- **boundary** [inline, model (form owned 0)] `21600+18*26` = 22068; wrote 468; span 18*26
+  - at /receipts/0316.json (reasoning offset 1455; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ')\n46: 18*1505 = 27090\n51: 12*1770 = 21240\nSum A:\n8610+14380=22990\n22990-11645=11345\n11345-3648=7697\n'
+- **boundary** [inline, model (form owned 0)] `5600-6*7` = 5558; wrote 42; span 6*7
+  - at /receipts/0318.json (reasoning offset 1934; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next ' => -5558)\n4:18*1034 = 1034*20 -2068=20680-2068=18612.\n6:15*812 = 12180.\n8:14*1240 = 17360.\n31:18*-5'
+- **boundary** [inline, model (form owned 0)] `4380+438*6` = 7008; wrote 2628; span 438*6
+  - at /receipts/0333.json (reasoning offset 929; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' =>7008 negative. A=-7,008.\n10 ["F",12,1414]: 1414*12=16,968. F=-7,380+16,968=9,588.\n11 ["C",7,530]:'
+- **boundary** [inline, model (form owned 0)] `14400+17*8` = 14536; wrote 136; span 17*8
+  - at /receipts/0340.json (reasoning offset 1217; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' =14536)\n45 A 6*161=966\n50 A 4*-28=-112\n51 A 12*1050=12600\n52 A 2*-147=-294\n53 A 17*-946 = -(946*17)'
+- **boundary** [inline, model (form owned 0)] `13600+15*8` = 13720; wrote 120; span 15*8
+  - at /receipts/0342.json (reasoning offset 1355; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ') yes. C=13720.\n4 B:18*1034 = 1034*20 -1034*2=20680-2068=18,612. B=-5558+18612=13,054.\n5 F:17*179 = '
+- **boundary** [inline, model (form owned 0)] `14000+14*57` = 14798; wrote 798; span 14*57
+  - at /receipts/0349.json (reasoning offset 1347; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' =>14798\n41:15*(-557)= -8355\n43:1*123=123\n48:3*(-365)= -1095\nSum: start 0\n+1752=1752\n-6070=-4318\n-87'
+- **value** [inline, model (form owned 0)] `0-1-10` = -11; wrote 66; span None
+  - at /receipts/0166.json (reasoning offset 281; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. 0-6-2-10=26+22+6=54. So 50. Final JSON integer only.'
+- **value** [inline, model (form owned 0)] `4+16` = 20; wrote 32; span None
+  - at /receipts/0211.json (reasoning offset 257; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. 0->3 2, 3->4 5, 4->7 18, 7->8 4 =29. So 24. Final bare.'
+- **value** [inline, model (form owned 0)] `24-5328` = -5304; wrote -23094; span None
+  - at /receipts/0246.json (reasoning offset 3269; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nPositive sum:\n2178+144=2322.\n+2988=5310.\n+432=5742.\n+17095=22837.\n+15800=38637.\n+11336=49973.\n+175'
+- **value** [inline, model (form owned 0)] `4-1348` = -1344; wrote -9728; span None
+  - at /receipts/0246.json (reasoning offset 5050; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '; #12 -3372=-13100; #26 -6897=-19997; #46 -13650=-33647; #48 -1976=-35623. 98373-35623=62750 yes.\n\nN'
+- **value** [inline, model (form owned 0)] `12-3372` = -3360; wrote -13100; span None
+  - at /receipts/0246.json (reasoning offset 5067; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '; #26 -6897=-19997; #46 -13650=-33647; #48 -1976=-35623. 98373-35623=62750 yes.\n\nNeed final JSON key'
+- **value** [inline, model (form owned 0)] `26-6897` = -6871; wrote -19997; span None
+  - at /receipts/0246.json (reasoning offset 5085; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '; #46 -13650=-33647; #48 -1976=-35623. 98373-35623=62750 yes.\n\nNeed final JSON keys A through F inte'
+- **value** [inline, model (form owned 0)] `46-13650` = -13604; wrote -33647; span None
+  - at /receipts/0246.json (reasoning offset 5104; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "; #48 -1976=-35623. 98373-35623=62750 yes.\n\nNeed final JSON keys A through F integer values. Let's a"
+- **value** [inline, model (form owned 0)] `48-1976` = -1928; wrote -35623; span None
+  - at /receipts/0246.json (reasoning offset 5122; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ". 98373-35623=62750 yes.\n\nNeed final JSON keys A through F integer values. Let's also cross-check al"
+- **value** [inline, model (form owned 0)] `2+19432` = 19434; wrote 11052; span None
+  - at /receipts/0246.json (reasoning offset 6577; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n3 +5895=16947\n4 -1348=15599\n5 +1236=16835\n6 +5464=22299\n7 +5103=27402\n8 +28883=56285\n9 +2178=58463\n'
+- **value** [inline, model (form owned 0)] `3+5895` = 5898; wrote 16947; span None
+  - at /receipts/0246.json (reasoning offset 6591; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n4 -1348=15599\n5 +1236=16835\n6 +5464=22299\n7 +5103=27402\n8 +28883=56285\n9 +2178=58463\n10 -991=57472\n'
+- **value** [inline, model (form owned 0)] `4-1348` = -1344; wrote 15599; span None
+  - at /receipts/0246.json (reasoning offset 6605; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n5 +1236=16835\n6 +5464=22299\n7 +5103=27402\n8 +28883=56285\n9 +2178=58463\n10 -991=57472\n11 -512=56960\n'
+- **value** [inline, model (form owned 0)] `5+1236` = 1241; wrote 16835; span None
+  - at /receipts/0246.json (reasoning offset 6619; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n6 +5464=22299\n7 +5103=27402\n8 +28883=56285\n9 +2178=58463\n10 -991=57472\n11 -512=56960\n12 -3372=53588'
+- **value** [inline, model (form owned 0)] `6+5464` = 5470; wrote 22299; span None
+  - at /receipts/0246.json (reasoning offset 6633; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n7 +5103=27402\n8 +28883=56285\n9 +2178=58463\n10 -991=57472\n11 -512=56960\n12 -3372=53588\n13 +39760=933'
+- **value** [inline, model (form owned 0)] `7+5103` = 5110; wrote 27402; span None
+  - at /receipts/0246.json (reasoning offset 6647; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n8 +28883=56285\n9 +2178=58463\n10 -991=57472\n11 -512=56960\n12 -3372=53588\n13 +39760=93348\n14 -17766=7'
+- **value** [inline, model (form owned 0)] `8+28883` = 28891; wrote 56285; span None
+  - at /receipts/0246.json (reasoning offset 6662; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n9 +2178=58463\n10 -991=57472\n11 -512=56960\n12 -3372=53588\n13 +39760=93348\n14 -17766=75582\n15 +144=75'
+- **value** [inline, model (form owned 0)] `9+2178` = 2187; wrote 58463; span None
+  - at /receipts/0246.json (reasoning offset 6676; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n10 -991=57472\n11 -512=56960\n12 -3372=53588\n13 +39760=93348\n14 -17766=75582\n15 +144=75726\n16 +2988=7'
+- **value** [inline, model (form owned 0)] `10-991` = -981; wrote 57472; span None
+  - at /receipts/0246.json (reasoning offset 6690; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n11 -512=56960\n12 -3372=53588\n13 +39760=93348\n14 -17766=75582\n15 +144=75726\n16 +2988=78714\n17 +13275'
+- **value** [inline, model (form owned 0)] `11-512` = -501; wrote 56960; span None
+  - at /receipts/0246.json (reasoning offset 6704; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n12 -3372=53588\n13 +39760=93348\n14 -17766=75582\n15 +144=75726\n16 +2988=78714\n17 +13275=91989\n18 -196'
+- **value** [inline, model (form owned 0)] `12-3372` = -3360; wrote 53588; span None
+  - at /receipts/0246.json (reasoning offset 6719; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n13 +39760=93348\n14 -17766=75582\n15 +144=75726\n16 +2988=78714\n17 +13275=91989\n18 -1969=90020\n19 +214'
+- **value** [inline, model (form owned 0)] `13+39760` = 39773; wrote 93348; span None
+  - at /receipts/0246.json (reasoning offset 6735; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n14 -17766=75582\n15 +144=75726\n16 +2988=78714\n17 +13275=91989\n18 -1969=90020\n19 +21460=111480\n20 -33'
+- **value** [inline, model (form owned 0)] `14-17766` = -17752; wrote 75582; span None
+  - at /receipts/0246.json (reasoning offset 6751; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n15 +144=75726\n16 +2988=78714\n17 +13275=91989\n18 -1969=90020\n19 +21460=111480\n20 -3350=108130\n21 +43'
+- **value** [inline, model (form owned 0)] `15+144` = 159; wrote 75726; span None
+  - at /receipts/0246.json (reasoning offset 6765; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n16 +2988=78714\n17 +13275=91989\n18 -1969=90020\n19 +21460=111480\n20 -3350=108130\n21 +432=108562\n22 +6'
+- **value** [inline, model (form owned 0)] `16+2988` = 3004; wrote 78714; span None
+  - at /receipts/0246.json (reasoning offset 6780; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n17 +13275=91989\n18 -1969=90020\n19 +21460=111480\n20 -3350=108130\n21 +432=108562\n22 +6734=115296\n23 +'
+- **value** [inline, model (form owned 0)] `17+13275` = 13292; wrote 91989; span None
+  - at /receipts/0246.json (reasoning offset 6796; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n18 -1969=90020\n19 +21460=111480\n20 -3350=108130\n21 +432=108562\n22 +6734=115296\n23 +31502=146798\n24 '
+- **value** [inline, model (form owned 0)] `18-1969` = -1951; wrote 90020; span None
+  - at /receipts/0246.json (reasoning offset 6811; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n19 +21460=111480\n20 -3350=108130\n21 +432=108562\n22 +6734=115296\n23 +31502=146798\n24 -5328=141470\n25'
+- **value** [inline, model (form owned 0)] `19+21460` = 21479; wrote 111480; span None
+  - at /receipts/0246.json (reasoning offset 6827; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n20 -3350=108130\n21 +432=108562\n22 +6734=115296\n23 +31502=146798\n24 -5328=141470\n25 -252=141218\n26 -'
+- **value** [inline, model (form owned 0)] `20-3350` = -3330; wrote 108130; span None
+  - at /receipts/0246.json (reasoning offset 6843; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n21 +432=108562\n22 +6734=115296\n23 +31502=146798\n24 -5328=141470\n25 -252=141218\n26 -6897=134321\n27 +'
+- **value** [inline, model (form owned 0)] `21+432` = 453; wrote 108562; span None
+  - at /receipts/0246.json (reasoning offset 6858; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n22 +6734=115296\n23 +31502=146798\n24 -5328=141470\n25 -252=141218\n26 -6897=134321\n27 +27664=161985\n28'
+- **value** [inline, model (form owned 0)] `22+6734` = 6756; wrote 115296; span None
+  - at /receipts/0246.json (reasoning offset 6874; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n23 +31502=146798\n24 -5328=141470\n25 -252=141218\n26 -6897=134321\n27 +27664=161985\n28 +17095=179080\n2'
+- **value** [inline, model (form owned 0)] `23+31502` = 31525; wrote 146798; span None
+  - at /receipts/0246.json (reasoning offset 6891; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n24 -5328=141470\n25 -252=141218\n26 -6897=134321\n27 +27664=161985\n28 +17095=179080\n29 +22946=202026\n3'
+- **value** [inline, model (form owned 0)] `24-5328` = -5304; wrote 141470; span None
+  - at /receipts/0246.json (reasoning offset 6907; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n25 -252=141218\n26 -6897=134321\n27 +27664=161985\n28 +17095=179080\n29 +22946=202026\n30 +2650=204676\n3'
+- **value** [inline, model (form owned 0)] `25-252` = -227; wrote 141218; span None
+  - at /receipts/0246.json (reasoning offset 6922; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n26 -6897=134321\n27 +27664=161985\n28 +17095=179080\n29 +22946=202026\n30 +2650=204676\n31 -1602=203074\n'
+- **value** [inline, model (form owned 0)] `26-6897` = -6871; wrote 134321; span None
+  - at /receipts/0246.json (reasoning offset 6938; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n27 +27664=161985\n28 +17095=179080\n29 +22946=202026\n30 +2650=204676\n31 -1602=203074\n32 +28405=231479'
+- **value** [inline, model (form owned 0)] `27+27664` = 27691; wrote 161985; span None
+  - at /receipts/0246.json (reasoning offset 6955; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n28 +17095=179080\n29 +22946=202026\n30 +2650=204676\n31 -1602=203074\n32 +28405=231479\n33 -6888=224591\n'
+- **value** [inline, model (form owned 0)] `28+17095` = 17123; wrote 179080; span None
+  - at /receipts/0246.json (reasoning offset 6972; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n29 +22946=202026\n30 +2650=204676\n31 -1602=203074\n32 +28405=231479\n33 -6888=224591\n34 +112=224703\n35'
+- **value** [inline, model (form owned 0)] `29+22946` = 22975; wrote 202026; span None
+  - at /receipts/0246.json (reasoning offset 6989; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n30 +2650=204676\n31 -1602=203074\n32 +28405=231479\n33 -6888=224591\n34 +112=224703\n35 +7413=232116\n36 '
+- **value** [inline, model (form owned 0)] `30+2650` = 2680; wrote 204676; span None
+  - at /receipts/0246.json (reasoning offset 7005; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n31 -1602=203074\n32 +28405=231479\n33 -6888=224591\n34 +112=224703\n35 +7413=232116\n36 -3224=228892\n37 '
+- **value** [inline, model (form owned 0)] `31-1602` = -1571; wrote 203074; span None
+  - at /receipts/0246.json (reasoning offset 7021; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n32 +28405=231479\n33 -6888=224591\n34 +112=224703\n35 +7413=232116\n36 -3224=228892\n37 +36613=265505\n38'
+- **value** [inline, model (form owned 0)] `32+28405` = 28437; wrote 231479; span None
+  - at /receipts/0246.json (reasoning offset 7038; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n33 -6888=224591\n34 +112=224703\n35 +7413=232116\n36 -3224=228892\n37 +36613=265505\n38 +15939=281444\n39'
+- **value** [inline, model (form owned 0)] `33-6888` = -6855; wrote 224591; span None
+  - at /receipts/0246.json (reasoning offset 7054; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n34 +112=224703\n35 +7413=232116\n36 -3224=228892\n37 +36613=265505\n38 +15939=281444\n39 +1432=282876\n40'
+- **value** [inline, model (form owned 0)] `34+112` = 146; wrote 224703; span None
+  - at /receipts/0246.json (reasoning offset 7069; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n35 +7413=232116\n36 -3224=228892\n37 +36613=265505\n38 +15939=281444\n39 +1432=282876\n40 +15800=298676\n'
+- **value** [inline, model (form owned 0)] `35+7413` = 7448; wrote 232116; span None
+  - at /receipts/0246.json (reasoning offset 7085; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n36 -3224=228892\n37 +36613=265505\n38 +15939=281444\n39 +1432=282876\n40 +15800=298676\n41 +11336=310012'
+- **value** [inline, model (form owned 0)] `36-3224` = -3188; wrote 228892; span None
+  - at /receipts/0246.json (reasoning offset 7101; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n37 +36613=265505\n38 +15939=281444\n39 +1432=282876\n40 +15800=298676\n41 +11336=310012\n42 +2208=312220'
+- **value** [inline, model (form owned 0)] `37+36613` = 36650; wrote 265505; span None
+  - at /receipts/0246.json (reasoning offset 7118; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n38 +15939=281444\n39 +1432=282876\n40 +15800=298676\n41 +11336=310012\n42 +2208=312220\n43 +11808=324028'
+- **value** [inline, model (form owned 0)] `38+15939` = 15977; wrote 281444; span None
+  - at /receipts/0246.json (reasoning offset 7135; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n39 +1432=282876\n40 +15800=298676\n41 +11336=310012\n42 +2208=312220\n43 +11808=324028\n44 +3872=327900\n'
+- **value** [inline, model (form owned 0)] `39+1432` = 1471; wrote 282876; span None
+  - at /receipts/0246.json (reasoning offset 7151; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n40 +15800=298676\n41 +11336=310012\n42 +2208=312220\n43 +11808=324028\n44 +3872=327900\n45 -2688=325212\n'
+- **value** [inline, model (form owned 0)] `40+15800` = 15840; wrote 298676; span None
+  - at /receipts/0246.json (reasoning offset 7168; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n41 +11336=310012\n42 +2208=312220\n43 +11808=324028\n44 +3872=327900\n45 -2688=325212\n46 -13650=311562\n'
+- **value** [inline, model (form owned 0)] `41+11336` = 11377; wrote 310012; span None
+  - at /receipts/0246.json (reasoning offset 7185; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n42 +2208=312220\n43 +11808=324028\n44 +3872=327900\n45 -2688=325212\n46 -13650=311562\n47 +17518=329080\n'
+- **value** [inline, model (form owned 0)] `42+2208` = 2250; wrote 312220; span None
+  - at /receipts/0246.json (reasoning offset 7201; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n43 +11808=324028\n44 +3872=327900\n45 -2688=325212\n46 -13650=311562\n47 +17518=329080\n48 -1976=327104\n'
+- **value** [inline, model (form owned 0)] `43+11808` = 11851; wrote 324028; span None
+  - at /receipts/0246.json (reasoning offset 7218; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n44 +3872=327900\n45 -2688=325212\n46 -13650=311562\n47 +17518=329080\n48 -1976=327104\n49 -11760=315344\n'
+- **value** [inline, model (form owned 0)] `44+3872` = 3916; wrote 327900; span None
+  - at /receipts/0246.json (reasoning offset 7234; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n45 -2688=325212\n46 -13650=311562\n47 +17518=329080\n48 -1976=327104\n49 -11760=315344\n50 +7545=322889\n'
+- **value** [inline, model (form owned 0)] `45-2688` = -2643; wrote 325212; span None
+  - at /receipts/0246.json (reasoning offset 7250; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n46 -13650=311562\n47 +17518=329080\n48 -1976=327104\n49 -11760=315344\n50 +7545=322889\n51 +11868=334757'
+- **value** [inline, model (form owned 0)] `46-13650` = -13604; wrote 311562; span None
+  - at /receipts/0246.json (reasoning offset 7267; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n47 +17518=329080\n48 -1976=327104\n49 -11760=315344\n50 +7545=322889\n51 +11868=334757\n52 +17160=351917'
+- **value** [inline, model (form owned 0)] `47+17518` = 17565; wrote 329080; span None
+  - at /receipts/0246.json (reasoning offset 7284; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n48 -1976=327104\n49 -11760=315344\n50 +7545=322889\n51 +11868=334757\n52 +17160=351917\n53 +11940=363857'
+- **value** [inline, model (form owned 0)] `48-1976` = -1928; wrote 327104; span None
+  - at /receipts/0246.json (reasoning offset 7300; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n49 -11760=315344\n50 +7545=322889\n51 +11868=334757\n52 +17160=351917\n53 +11940=363857. Matches.\n\nFina'
+- **value** [inline, model (form owned 0)] `49-11760` = -11711; wrote 315344; span None
+  - at /receipts/0246.json (reasoning offset 7317; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n50 +7545=322889\n51 +11868=334757\n52 +17160=351917\n53 +11940=363857. Matches.\n\nFinal format JSON obj'
+- **value** [inline, model (form owned 0)] `50+7545` = 7595; wrote 322889; span None
+  - at /receipts/0246.json (reasoning offset 7333; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n51 +11868=334757\n52 +17160=351917\n53 +11940=363857. Matches.\n\nFinal format JSON object with keys A '
+- **value** [inline, model (form owned 0)] `51+11868` = 11919; wrote 334757; span None
+  - at /receipts/0246.json (reasoning offset 7350; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n52 +17160=351917\n53 +11940=363857. Matches.\n\nFinal format JSON object with keys A through F and int'
+- **value** [inline, model (form owned 0)] `52+17160` = 17212; wrote 351917; span None
+  - at /receipts/0246.json (reasoning offset 7367; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n53 +11940=363857. Matches.\n\nFinal format JSON object with keys A through F and integer values. Need'
+- **value** [inline, model (form owned 0)] `53+11940` = 11993; wrote 363857; span None
+  - at /receipts/0246.json (reasoning offset 7384; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. Matches.\n\nFinal format JSON object with keys A through F and integer values. Need exact JSON, no m'
+- **value** [inline, model (form owned 0)] `81+min(177,130)` = 177211; wrote 211; span None
+  - at /receipts/0251.json (reasoning offset 1220; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc5: 25 + min(268,211)=236.\nc6: 27 + min(327,236)=263.\nc7: 54 + min(359,263)=317.\nc8: 53 + min(457,'
+- **value** [inline, model (form owned 0)] `25+min(268,211)` = 268236; wrote 236; span None
+  - at /receipts/0251.json (reasoning offset 1247; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc6: 27 + min(327,236)=263.\nc7: 54 + min(359,263)=317.\nc8: 53 + min(457,317)=370.\nc9: 62 + min(472,'
+- **value** [inline, model (form owned 0)] `27+min(327,236)` = 327263; wrote 263; span None
+  - at /receipts/0251.json (reasoning offset 1274; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc7: 54 + min(359,263)=317.\nc8: 53 + min(457,317)=370.\nc9: 62 + min(472,370)=432.\nc10:19 + min(540,'
+- **value** [inline, model (form owned 0)] `54+min(359,263)` = 359317; wrote 317; span None
+  - at /receipts/0251.json (reasoning offset 1301; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '.\nc8: 53 + min(457,317)=370.\nc9: 62 + min(472,370)=432.\nc10:19 + min(540,432)=451.\nRow2 dp: [88,97,1'
+- **value** [inline, model (form owned 0)] `53+min(457,317)` = 457370; wrote 370; span None
+  - at /receipts/0251.json (reasoning offset 1328; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc9: 62 + min(472,370)=432.\nc10:19 + min(540,432)=451.\nRow2 dp: [88,97,130,211,236,263,317,370,432,'
+- **value** [inline, model (form owned 0)] `62+min(472,370)` = 472432; wrote 432; span None
+  - at /receipts/0251.json (reasoning offset 1355; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc10:19 + min(540,432)=451.\nRow2 dp: [88,97,130,211,236,263,317,370,432,451]\n\nRow3 grid [63,76,13,3'
+- **value** [inline, model (form owned 0)] `19+min(540,432)` = 540451; wrote 451; span None
+  - at /receipts/0251.json (reasoning offset 1382; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nRow2 dp: [88,97,130,211,236,263,317,370,432,451]\n\nRow3 grid [63,76,13,35,65,92,84,50,2,33]\nc1: 88+'
+- **value** [inline, model (form owned 0)] `13+min(130,173)` = 130186; wrote 143; span None
+  - at /receipts/0251.json (reasoning offset 1558; 1 receipt copies)
+  - model: reappears later 6x, in final content False, questioned False; next '\nc4: 35 + min(211,143)=178\nc5: 65 + min(236,178)=243\nc6: 92 + min(263,243)=335\nc7: 84 + min(317,335)'
+- **value** [inline, model (form owned 0)] `35+min(211,143)` = 211178; wrote 178; span None
+  - at /receipts/0251.json (reasoning offset 1584; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc5: 65 + min(236,178)=243\nc6: 92 + min(263,243)=335\nc7: 84 + min(317,335)=401\nc8: 50 + min(370,401)'
+- **value** [inline, model (form owned 0)] `65+min(236,178)` = 236243; wrote 243; span None
+  - at /receipts/0251.json (reasoning offset 1610; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc6: 92 + min(263,243)=335\nc7: 84 + min(317,335)=401\nc8: 50 + min(370,401)=420\nc9: 2 + min(432,420)='
+- **value** [inline, model (form owned 0)] `92+min(263,243)` = 263335; wrote 335; span None
+  - at /receipts/0251.json (reasoning offset 1636; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc7: 84 + min(317,335)=401\nc8: 50 + min(370,401)=420\nc9: 2 + min(432,420)=422\nc10:33 + min(451,422)='
+- **value** [inline, model (form owned 0)] `84+min(317,335)` = 317419; wrote 401; span None
+  - at /receipts/0251.json (reasoning offset 1662; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '\nc8: 50 + min(370,401)=420\nc9: 2 + min(432,420)=422\nc10:33 + min(451,422)=455\nRow3 dp: [151,173,143,'
+- **value** [inline, model (form owned 0)] `50+min(370,401)` = 370451; wrote 420; span None
+  - at /receipts/0251.json (reasoning offset 1688; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc9: 2 + min(432,420)=422\nc10:33 + min(451,422)=455\nRow3 dp: [151,173,143,178,243,335,401,420,422,45'
+- **value** [inline, model (form owned 0)] `2+min(432,420)` = 432422; wrote 422; span None
+  - at /receipts/0251.json (reasoning offset 1713; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc10:33 + min(451,422)=455\nRow3 dp: [151,173,143,178,243,335,401,420,422,455]\n\nCheck c2: above row2 '
+- **value** [inline, model (form owned 0)] `33+min(451,422)` = 451455; wrote 455; span None
+  - at /receipts/0251.json (reasoning offset 1739; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nRow3 dp: [151,173,143,178,243,335,401,420,422,455]\n\nCheck c2: above row2 c2=97, left c1=151 min97+7'
+- **value** [inline, model (form owned 0)] `1+5` = 6; wrote 88; span None
+  - at /receipts/0251.json (reasoning offset 5957; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc2 = min(dp1,2=104, dp2,1=88)+9 =97. yes.\nc3 = min(dp1,3=130, left97)+33=130. (97+33=130) yes.\nc4 '
+- **value** [inline, model (form owned 0)] `min(268,211)+25` = 268236; wrote 236; span None
+  - at /receipts/0251.json (reasoning offset 6119; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc6 = min(327,236)+27=263. yes.\nc7 = min(359,263)+54=317. yes.\nc8 = min(457,317)+53=370. yes.\n'
+- **value** [inline, model (form owned 0)] `min(327,236)+27` = 327263; wrote 263; span None
+  - at /receipts/0251.json (reasoning offset 6150; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc7 = min(359,263)+54=317. yes.\nc8 = min(457,317)+53=370. yes.\nc9 = min(472,370)+62=432. yes.\n'
+- **value** [inline, model (form owned 0)] `min(359,263)+54` = 359317; wrote 317; span None
+  - at /receipts/0251.json (reasoning offset 6181; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '. yes.\nc8 = min(457,317)+53=370. yes.\nc9 = min(472,370)+62=432. yes.\nc10=min(540,432)+19=451. yes.\n\n'
+- **value** [inline, model (form owned 0)] `min(457,317)+53` = 457370; wrote 370; span None
+  - at /receipts/0251.json (reasoning offset 6212; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc9 = min(472,370)+62=432. yes.\nc10=min(540,432)+19=451. yes.\n\nRow3:\ngrid 63,76,13,35,65,92,84'
+- **value** [inline, model (form owned 0)] `min(472,370)+62` = 472432; wrote 432; span None
+  - at /receipts/0251.json (reasoning offset 6243; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc10=min(540,432)+19=451. yes.\n\nRow3:\ngrid 63,76,13,35,65,92,84,50,2,33\nc1=88+63=151.\nc2=min(a'
+- **value** [inline, model (form owned 0)] `min(540,432)+19` = 540451; wrote 451; span None
+  - at /receipts/0251.json (reasoning offset 6273; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow3:\ngrid 63,76,13,35,65,92,84,50,2,33\nc1=88+63=151.\nc2=min(above97,left151)+76=97+76=173. '
+- **value** [inline, model (form owned 0)] `min(257,264)` = 257264; wrote 257; span None
+  - at /receipts/0253.json (reasoning offset 5728; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ', +63=320 yes.\nc4 min up334,left320 =>320+81=401.\nc5 min up424,left401 =>401+42=443.\nc6 min up407,le'
+- **value** [inline, model (form owned 0)] `48+min(138,133)` = 138181; wrote 181; span None
+  - at /receipts/0256.json (reasoning offset 5129; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc3 = 71+min(206,181)=252.\nc4 = 11+min(228,252)=239.\nc5 = 47+min(236,239)=283.\nc6 = 56+min(332,283)'
+- **value** [inline, model (form owned 0)] `71+min(206,181)` = 206252; wrote 252; span None
+  - at /receipts/0256.json (reasoning offset 5155; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 = 11+min(228,252)=239.\nc5 = 47+min(236,239)=283.\nc6 = 56+min(332,283)=339.\nc7 = 72+min(353,339)'
+- **value** [inline, model (form owned 0)] `11+min(228,252)` = 228263; wrote 239; span None
+  - at /receipts/0256.json (reasoning offset 5181; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 = 47+min(236,239)=283.\nc6 = 56+min(332,283)=339.\nc7 = 72+min(353,339)=411.\nc8 = 76+min(393,411)'
+- **value** [inline, model (form owned 0)] `47+min(236,239)` = 236286; wrote 283; span None
+  - at /receipts/0256.json (reasoning offset 5207; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 = 56+min(332,283)=339.\nc7 = 72+min(353,339)=411.\nc8 = 76+min(393,411)=469.\nc9 = 32+min(462,469)'
+- **value** [inline, model (form owned 0)] `56+min(332,283)` = 332339; wrote 339; span None
+  - at /receipts/0256.json (reasoning offset 5233; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 = 72+min(353,339)=411.\nc8 = 76+min(393,411)=469.\nc9 = 32+min(462,469)=494.\nc10=52+min(557,494)='
+- **value** [inline, model (form owned 0)] `72+min(353,339)` = 353411; wrote 411; span None
+  - at /receipts/0256.json (reasoning offset 5259; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 = 76+min(393,411)=469.\nc9 = 32+min(462,469)=494.\nc10=52+min(557,494)=546. yes.\n\nRow3:\nc1=17+133'
+- **value** [inline, model (form owned 0)] `76+min(393,411)` = 393487; wrote 469; span None
+  - at /receipts/0256.json (reasoning offset 5285; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 = 32+min(462,469)=494.\nc10=52+min(557,494)=546. yes.\n\nRow3:\nc1=17+133=150.\nc2=30+min(181,150)=1'
+- **value** [inline, model (form owned 0)] `32+min(462,469)` = 462501; wrote 494; span None
+  - at /receipts/0256.json (reasoning offset 5311; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10=52+min(557,494)=546. yes.\n\nRow3:\nc1=17+133=150.\nc2=30+min(181,150)=180.\nc3=42+min(252,180)=222'
+- **value** [inline, model (form owned 0)] `52+min(557,494)` = 557546; wrote 546; span None
+  - at /receipts/0256.json (reasoning offset 5336; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow3:\nc1=17+133=150.\nc2=30+min(181,150)=180.\nc3=42+min(252,180)=222.\nc4=60+min(239,222)=282.'
+- **value** [inline, model (form owned 0)] `30+min(181,150)` = 181180; wrote 180; span None
+  - at /receipts/0256.json (reasoning offset 5387; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc3=42+min(252,180)=222.\nc4=60+min(239,222)=282.\nc5=88+min(283,282)=370.\nc6=79+min(339,370)=418.\nc7'
+- **value** [inline, model (form owned 0)] `42+min(252,180)` = 252222; wrote 222; span None
+  - at /receipts/0256.json (reasoning offset 5411; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=60+min(239,222)=282.\nc5=88+min(283,282)=370.\nc6=79+min(339,370)=418.\nc7=47+min(411,418)=458.\nc8'
+- **value** [inline, model (form owned 0)] `60+min(239,222)` = 239282; wrote 282; span None
+  - at /receipts/0256.json (reasoning offset 5435; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=88+min(283,282)=370.\nc6=79+min(339,370)=418.\nc7=47+min(411,418)=458.\nc8=7+min(469,458)=465.\nc9='
+- **value** [inline, model (form owned 0)] `88+min(283,282)` = 283370; wrote 370; span None
+  - at /receipts/0256.json (reasoning offset 5459; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=79+min(339,370)=418.\nc7=47+min(411,418)=458.\nc8=7+min(469,458)=465.\nc9=40+min(494,465)=505.\nc10'
+- **value** [inline, model (form owned 0)] `79+min(339,370)` = 339449; wrote 418; span None
+  - at /receipts/0256.json (reasoning offset 5483; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=47+min(411,418)=458.\nc8=7+min(469,458)=465.\nc9=40+min(494,465)=505.\nc10=58+min(546,505)=563. ye'
+- **value** [inline, model (form owned 0)] `47+min(411,418)` = 411465; wrote 458; span None
+  - at /receipts/0256.json (reasoning offset 5507; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8=7+min(469,458)=465.\nc9=40+min(494,465)=505.\nc10=58+min(546,505)=563. yes.\n\nRow4:\nc1=98+150=248.'
+- **value** [inline, model (form owned 0)] `7+min(469,458)` = 469465; wrote 465; span None
+  - at /receipts/0256.json (reasoning offset 5530; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9=40+min(494,465)=505.\nc10=58+min(546,505)=563. yes.\n\nRow4:\nc1=98+150=248.\nc2=37+min(180,248)=217'
+- **value** [inline, model (form owned 0)] `40+min(494,465)` = 494505; wrote 505; span None
+  - at /receipts/0256.json (reasoning offset 5554; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10=58+min(546,505)=563. yes.\n\nRow4:\nc1=98+150=248.\nc2=37+min(180,248)=217.\nc3=94+min(222,217)=311'
+- **value** [inline, model (form owned 0)] `58+min(546,505)` = 546563; wrote 563; span None
+  - at /receipts/0256.json (reasoning offset 5579; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow4:\nc1=98+150=248.\nc2=37+min(180,248)=217.\nc3=94+min(222,217)=311.\nc4=50+min(282,311)=332.'
+- **value** [inline, model (form owned 0)] `37+min(180,248)` = 180285; wrote 217; span None
+  - at /receipts/0256.json (reasoning offset 5630; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc3=94+min(222,217)=311.\nc4=50+min(282,311)=332.\nc5=27+min(370,332)=359.\nc6=69+min(418,359)=428.\nc7'
+- **value** [inline, model (form owned 0)] `94+min(222,217)` = 222311; wrote 311; span None
+  - at /receipts/0256.json (reasoning offset 5654; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=50+min(282,311)=332.\nc5=27+min(370,332)=359.\nc6=69+min(418,359)=428.\nc7=57+min(458,428)=485.\nc8'
+- **value** [inline, model (form owned 0)] `50+min(282,311)` = 282361; wrote 332; span None
+  - at /receipts/0256.json (reasoning offset 5678; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=27+min(370,332)=359.\nc6=69+min(418,359)=428.\nc7=57+min(458,428)=485.\nc8=83+min(465,485)=548.\nc9'
+- **value** [inline, model (form owned 0)] `27+min(370,332)` = 370359; wrote 359; span None
+  - at /receipts/0256.json (reasoning offset 5702; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=69+min(418,359)=428.\nc7=57+min(458,428)=485.\nc8=83+min(465,485)=548.\nc9=12+min(505,548)=517.\nc1'
+- **value** [inline, model (form owned 0)] `69+min(418,359)` = 418428; wrote 428; span None
+  - at /receipts/0256.json (reasoning offset 5726; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=57+min(458,428)=485.\nc8=83+min(465,485)=548.\nc9=12+min(505,548)=517.\nc10=1+min(563,517)=518. ye'
+- **value** [inline, model (form owned 0)] `57+min(458,428)` = 458485; wrote 485; span None
+  - at /receipts/0256.json (reasoning offset 5750; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8=83+min(465,485)=548.\nc9=12+min(505,548)=517.\nc10=1+min(563,517)=518. yes.\n\nRow5:\nc1=59+248=307.'
+- **value** [inline, model (form owned 0)] `83+min(465,485)` = 465568; wrote 548; span None
+  - at /receipts/0256.json (reasoning offset 5774; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9=12+min(505,548)=517.\nc10=1+min(563,517)=518. yes.\n\nRow5:\nc1=59+248=307.\nc2=64+min(217,307)=281.'
+- **value** [inline, model (form owned 0)] `12+min(505,548)` = 505560; wrote 517; span None
+  - at /receipts/0256.json (reasoning offset 5798; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10=1+min(563,517)=518. yes.\n\nRow5:\nc1=59+248=307.\nc2=64+min(217,307)=281.\nc3=71+min(311,281)=352.'
+- **value** [inline, model (form owned 0)] `1+min(563,517)` = 563518; wrote 518; span None
+  - at /receipts/0256.json (reasoning offset 5822; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow5:\nc1=59+248=307.\nc2=64+min(217,307)=281.\nc3=71+min(311,281)=352.\nc4=83+min(332,352)=415.'
+- **value** [inline, model (form owned 0)] `64+min(217,307)` = 217371; wrote 281; span None
+  - at /receipts/0256.json (reasoning offset 5873; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc3=71+min(311,281)=352.\nc4=83+min(332,352)=415.\nc5=44+min(359,415)=403.\nc6=37+min(428,403)=440.\nc7'
+- **value** [inline, model (form owned 0)] `71+min(311,281)` = 311352; wrote 352; span None
+  - at /receipts/0256.json (reasoning offset 5897; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc4=83+min(332,352)=415.\nc5=44+min(359,415)=403.\nc6=37+min(428,403)=440.\nc7=77+min(485,440)=517.\nc8'
+- **value** [inline, model (form owned 0)] `83+min(332,352)` = 332435; wrote 415; span None
+  - at /receipts/0256.json (reasoning offset 5921; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=44+min(359,415)=403.\nc6=37+min(428,403)=440.\nc7=77+min(485,440)=517.\nc8=23+min(548,517)=540.\nc9'
+- **value** [inline, model (form owned 0)] `44+min(359,415)` = 359459; wrote 403; span None
+  - at /receipts/0256.json (reasoning offset 5945; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=37+min(428,403)=440.\nc7=77+min(485,440)=517.\nc8=23+min(548,517)=540.\nc9=75+min(517,540)=592.\nc1'
+- **value** [inline, model (form owned 0)] `37+min(428,403)` = 428440; wrote 440; span None
+  - at /receipts/0256.json (reasoning offset 5969; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=77+min(485,440)=517.\nc8=23+min(548,517)=540.\nc9=75+min(517,540)=592.\nc10=26+min(518,592)=544. y'
+- **value** [inline, model (form owned 0)] `77+min(485,440)` = 485517; wrote 517; span None
+  - at /receipts/0256.json (reasoning offset 5993; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8=23+min(548,517)=540.\nc9=75+min(517,540)=592.\nc10=26+min(518,592)=544. yes.\n\nRow6:\nc1=30+307=337'
+- **value** [inline, model (form owned 0)] `23+min(548,517)` = 548540; wrote 540; span None
+  - at /receipts/0256.json (reasoning offset 6017; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9=75+min(517,540)=592.\nc10=26+min(518,592)=544. yes.\n\nRow6:\nc1=30+307=337.\nc2=19+min(281,337)=300'
+- **value** [inline, model (form owned 0)] `75+min(517,540)` = 517615; wrote 592; span None
+  - at /receipts/0256.json (reasoning offset 6041; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10=26+min(518,592)=544. yes.\n\nRow6:\nc1=30+307=337.\nc2=19+min(281,337)=300.\nc3=35+min(352,300)=335'
+- **value** [inline, model (form owned 0)] `26+min(518,592)` = 518618; wrote 544; span None
+  - at /receipts/0256.json (reasoning offset 6066; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow6:\nc1=30+307=337.\nc2=19+min(281,337)=300.\nc3=35+min(352,300)=335.\nc4=88+min(415,335)=423.'
+- **value** [inline, model (form owned 0)] `19+min(281,337)` = 281356; wrote 300; span None
+  - at /receipts/0256.json (reasoning offset 6117; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc3=35+min(352,300)=335.\nc4=88+min(415,335)=423.\nc5=36+min(403,423)=439.\nc6=48+min(440,439)=487.\nc7'
+- **value** [inline, model (form owned 0)] `35+min(352,300)` = 352335; wrote 335; span None
+  - at /receipts/0256.json (reasoning offset 6141; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc4=88+min(415,335)=423.\nc5=36+min(403,423)=439.\nc6=48+min(440,439)=487.\nc7=47+min(517,487)=534.\nc8'
+- **value** [inline, model (form owned 0)] `88+min(415,335)` = 415423; wrote 423; span None
+  - at /receipts/0256.json (reasoning offset 6165; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc5=36+min(403,423)=439.\nc6=48+min(440,439)=487.\nc7=47+min(517,487)=534.\nc8=10+min(540,534)=544.\nc9'
+- **value** [inline, model (form owned 0)] `36+min(403,423)` = 403459; wrote 439; span None
+  - at /receipts/0256.json (reasoning offset 6189; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=48+min(440,439)=487.\nc7=47+min(517,487)=534.\nc8=10+min(540,534)=544.\nc9=85+min(592,544)=629.\nc1'
+- **value** [inline, model (form owned 0)] `48+min(440,439)` = 440487; wrote 487; span None
+  - at /receipts/0256.json (reasoning offset 6213; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=47+min(517,487)=534.\nc8=10+min(540,534)=544.\nc9=85+min(592,544)=629.\nc10=24+min(544,629)=568. y'
+- **value** [inline, model (form owned 0)] `47+min(517,487)` = 517534; wrote 534; span None
+  - at /receipts/0256.json (reasoning offset 6237; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8=10+min(540,534)=544.\nc9=85+min(592,544)=629.\nc10=24+min(544,629)=568. yes.\n\nRow7:\nc1=93+337=430'
+- **value** [inline, model (form owned 0)] `10+min(540,534)` = 540544; wrote 544; span None
+  - at /receipts/0256.json (reasoning offset 6261; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9=85+min(592,544)=629.\nc10=24+min(544,629)=568. yes.\n\nRow7:\nc1=93+337=430.\nc2=65+min(300,430)=365'
+- **value** [inline, model (form owned 0)] `85+min(592,544)` = 592629; wrote 629; span None
+  - at /receipts/0256.json (reasoning offset 6285; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10=24+min(544,629)=568. yes.\n\nRow7:\nc1=93+337=430.\nc2=65+min(300,430)=365.\nc3=66+min(335,365)=401'
+- **value** [inline, model (form owned 0)] `24+min(544,629)` = 544653; wrote 568; span None
+  - at /receipts/0256.json (reasoning offset 6310; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '. yes.\n\nRow7:\nc1=93+337=430.\nc2=65+min(300,430)=365.\nc3=66+min(335,365)=401.\nc4=73+min(423,401)=474.'
+- **value** [inline, model (form owned 0)] `65+min(300,430)` = 300495; wrote 365; span None
+  - at /receipts/0256.json (reasoning offset 6361; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc3=66+min(335,365)=401.\nc4=73+min(423,401)=474.\nc5=34+min(439,474)=473.\nc6=6+min(487,473)=479.\nc7='
+- **value** [inline, model (form owned 0)] `66+min(335,365)` = 335431; wrote 401; span None
+  - at /receipts/0256.json (reasoning offset 6385; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc4=73+min(423,401)=474.\nc5=34+min(439,474)=473.\nc6=6+min(487,473)=479.\nc7=58+min(534,479)=537.\nc8='
+- **value** [inline, model (form owned 0)] `73+min(423,401)` = 423474; wrote 474; span None
+  - at /receipts/0256.json (reasoning offset 6409; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=34+min(439,474)=473.\nc6=6+min(487,473)=479.\nc7=58+min(534,479)=537.\nc8=56+min(544,537)=593.\nc9='
+- **value** [inline, model (form owned 0)] `34+min(439,474)` = 439508; wrote 473; span None
+  - at /receipts/0256.json (reasoning offset 6433; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=6+min(487,473)=479.\nc7=58+min(534,479)=537.\nc8=56+min(544,537)=593.\nc9=88+min(629,593)=681.\nc10'
+- **value** [inline, model (form owned 0)] `6+min(487,473)` = 487479; wrote 479; span None
+  - at /receipts/0256.json (reasoning offset 6456; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc7=58+min(534,479)=537.\nc8=56+min(544,537)=593.\nc9=88+min(629,593)=681.\nc10=24+min(568,681)=592. y'
+- **value** [inline, model (form owned 0)] `58+min(534,479)` = 534537; wrote 537; span None
+  - at /receipts/0256.json (reasoning offset 6480; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8=56+min(544,537)=593.\nc9=88+min(629,593)=681.\nc10=24+min(568,681)=592. yes.\n\nRow8:\nc1=31+430=461'
+- **value** [inline, model (form owned 0)] `56+min(544,537)` = 544593; wrote 593; span None
+  - at /receipts/0256.json (reasoning offset 6504; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc9=88+min(629,593)=681.\nc10=24+min(568,681)=592. yes.\n\nRow8:\nc1=31+430=461.\nc2=92+min(365,461)=457'
+- **value** [inline, model (form owned 0)] `88+min(629,593)` = 629681; wrote 681; span None
+  - at /receipts/0256.json (reasoning offset 6528; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10=24+min(568,681)=592. yes.\n\nRow8:\nc1=31+430=461.\nc2=92+min(365,461)=457.\nc3=22+min(401,457)=423'
+- **value** [inline, model (form owned 0)] `24+min(568,681)` = 568705; wrote 592; span None
+  - at /receipts/0256.json (reasoning offset 6553; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow8:\nc1=31+430=461.\nc2=92+min(365,461)=457.\nc3=22+min(401,457)=423.\nc4=63+min(474,423)=486.'
+- **value** [inline, model (form owned 0)] `92+min(365,461)` = 365553; wrote 457; span None
+  - at /receipts/0256.json (reasoning offset 6604; 1 receipt copies)
+  - model: reappears later 6x, in final content False, questioned False; next '.\nc3=22+min(401,457)=423.\nc4=63+min(474,423)=486.\nc5=37+min(473,486)=510.\nc6=81+min(479,510)=560.\nc7'
+- **value** [inline, model (form owned 0)] `22+min(401,457)` = 401479; wrote 423; span None
+  - at /receipts/0256.json (reasoning offset 6628; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc4=63+min(474,423)=486.\nc5=37+min(473,486)=510.\nc6=81+min(479,510)=560.\nc7=44+min(537,560)=581.\nc8'
+- **value** [inline, model (form owned 0)] `63+min(474,423)` = 474486; wrote 486; span None
+  - at /receipts/0256.json (reasoning offset 6652; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc5=37+min(473,486)=510.\nc6=81+min(479,510)=560.\nc7=44+min(537,560)=581.\nc8=3+min(593,581)=584.\nc9='
+- **value** [inline, model (form owned 0)] `37+min(473,486)` = 473523; wrote 510; span None
+  - at /receipts/0256.json (reasoning offset 6676; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc6=81+min(479,510)=560.\nc7=44+min(537,560)=581.\nc8=3+min(593,581)=584.\nc9=59+min(681,584)=643.\nc10'
+- **value** [inline, model (form owned 0)] `81+min(479,510)` = 479591; wrote 560; span None
+  - at /receipts/0256.json (reasoning offset 6700; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc7=44+min(537,560)=581.\nc8=3+min(593,581)=584.\nc9=59+min(681,584)=643.\nc10=14+min(592,643)=606. ye'
+- **value** [inline, model (form owned 0)] `44+min(537,560)` = 537604; wrote 581; span None
+  - at /receipts/0256.json (reasoning offset 6724; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc8=3+min(593,581)=584.\nc9=59+min(681,584)=643.\nc10=14+min(592,643)=606. yes.\n\nRow9:\nc1=72+461=533.'
+- **value** [inline, model (form owned 0)] `3+min(593,581)` = 593584; wrote 584; span None
+  - at /receipts/0256.json (reasoning offset 6747; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9=59+min(681,584)=643.\nc10=14+min(592,643)=606. yes.\n\nRow9:\nc1=72+461=533.\nc2=56+min(457,533)=513'
+- **value** [inline, model (form owned 0)] `59+min(681,584)` = 681643; wrote 643; span None
+  - at /receipts/0256.json (reasoning offset 6771; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc10=14+min(592,643)=606. yes.\n\nRow9:\nc1=72+461=533.\nc2=56+min(457,533)=513.\nc3=34+min(423,513)=457'
+- **value** [inline, model (form owned 0)] `14+min(592,643)` = 592657; wrote 606; span None
+  - at /receipts/0256.json (reasoning offset 6796; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow9:\nc1=72+461=533.\nc2=56+min(457,533)=513.\nc3=34+min(423,513)=457.\nc4=32+min(486,457)=489.'
+- **value** [inline, model (form owned 0)] `56+min(457,533)` = 457589; wrote 513; span None
+  - at /receipts/0256.json (reasoning offset 6847; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc3=34+min(423,513)=457.\nc4=32+min(486,457)=489.\nc5=23+min(510,489)=512.\nc6=53+min(560,512)=565.\nc7'
+- **value** [inline, model (form owned 0)] `34+min(423,513)` = 423547; wrote 457; span None
+  - at /receipts/0256.json (reasoning offset 6871; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '.\nc4=32+min(486,457)=489.\nc5=23+min(510,489)=512.\nc6=53+min(560,512)=565.\nc7=3+min(581,565)=568.\nc8='
+- **value** [inline, model (form owned 0)] `32+min(486,457)` = 486489; wrote 489; span None
+  - at /receipts/0256.json (reasoning offset 6895; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc5=23+min(510,489)=512.\nc6=53+min(560,512)=565.\nc7=3+min(581,565)=568.\nc8=75+min(584,568)=643.\nc9='
+- **value** [inline, model (form owned 0)] `23+min(510,489)` = 510512; wrote 512; span None
+  - at /receipts/0256.json (reasoning offset 6919; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc6=53+min(560,512)=565.\nc7=3+min(581,565)=568.\nc8=75+min(584,568)=643.\nc9=42+min(643,643)=685.\nc10'
+- **value** [inline, model (form owned 0)] `53+min(560,512)` = 560565; wrote 565; span None
+  - at /receipts/0256.json (reasoning offset 6943; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc7=3+min(581,565)=568.\nc8=75+min(584,568)=643.\nc9=42+min(643,643)=685.\nc10=69+min(606,685)=675. ye'
+- **value** [inline, model (form owned 0)] `3+min(581,565)` = 581568; wrote 568; span None
+  - at /receipts/0256.json (reasoning offset 6966; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '.\nc8=75+min(584,568)=643.\nc9=42+min(643,643)=685.\nc10=69+min(606,685)=675. yes.\n\nRow10:\nc1=54+533=58'
+- **value** [inline, model (form owned 0)] `75+min(584,568)` = 584643; wrote 643; span None
+  - at /receipts/0256.json (reasoning offset 6990; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc9=42+min(643,643)=685.\nc10=69+min(606,685)=675. yes.\n\nRow10:\nc1=54+533=587.\nc2=96+min(513,587)=60'
+- **value** [inline, model (form owned 0)] `42+min(643,643)` = 643685; wrote 685; span None
+  - at /receipts/0256.json (reasoning offset 7014; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10=69+min(606,685)=675. yes.\n\nRow10:\nc1=54+533=587.\nc2=96+min(513,587)=609.\nc3=2+min(457,609)=459'
+- **value** [inline, model (form owned 0)] `69+min(606,685)` = 606754; wrote 675; span None
+  - at /receipts/0256.json (reasoning offset 7039; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow10:\nc1=54+533=587.\nc2=96+min(513,587)=609.\nc3=2+min(457,609)=459.\nc4=20+min(489,459)=479.'
+- **value** [inline, model (form owned 0)] `96+min(513,587)` = 513683; wrote 609; span None
+  - at /receipts/0256.json (reasoning offset 7091; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3=2+min(457,609)=459.\nc4=20+min(489,459)=479.\nc5=77+min(512,479)=556.\nc6=47+min(565,556)=603.\nc7='
+- **value** [inline, model (form owned 0)] `2+min(457,609)` = 457611; wrote 459; span None
+  - at /receipts/0256.json (reasoning offset 7114; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=20+min(489,459)=479.\nc5=77+min(512,479)=556.\nc6=47+min(565,556)=603.\nc7=25+min(568,603)=593.\nc8'
+- **value** [inline, model (form owned 0)] `20+min(489,459)` = 489479; wrote 479; span None
+  - at /receipts/0256.json (reasoning offset 7138; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=77+min(512,479)=556.\nc6=47+min(565,556)=603.\nc7=25+min(568,603)=593.\nc8=29+min(643,593)=622.\nc9'
+- **value** [inline, model (form owned 0)] `77+min(512,479)` = 512556; wrote 556; span None
+  - at /receipts/0256.json (reasoning offset 7162; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=47+min(565,556)=603.\nc7=25+min(568,603)=593.\nc8=29+min(643,593)=622.\nc9=4+min(685,622)=626.\nc10'
+- **value** [inline, model (form owned 0)] `47+min(565,556)` = 565603; wrote 603; span None
+  - at /receipts/0256.json (reasoning offset 7186; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc7=25+min(568,603)=593.\nc8=29+min(643,593)=622.\nc9=4+min(685,622)=626.\nc10=30+min(675,626)=656. ye'
+- **value** [inline, model (form owned 0)] `25+min(568,603)` = 568628; wrote 593; span None
+  - at /receipts/0256.json (reasoning offset 7210; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next ".\nc8=29+min(643,593)=622.\nc9=4+min(685,622)=626.\nc10=30+min(675,626)=656. yes.\n\nLet's trace path tha"
+- **value** [inline, model (form owned 0)] `29+min(643,593)` = 643622; wrote 622; span None
+  - at /receipts/0256.json (reasoning offset 7234; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next ".\nc9=4+min(685,622)=626.\nc10=30+min(675,626)=656. yes.\n\nLet's trace path that gives 656 to ensure no"
+- **value** [inline, model (form owned 0)] `4+min(685,622)` = 685626; wrote 626; span None
+  - at /receipts/0256.json (reasoning offset 7257; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next ".\nc10=30+min(675,626)=656. yes.\n\nLet's trace path that gives 656 to ensure no issue: From end r10c10"
+- **value** [inline, model (form owned 0)] `30+min(675,626)` = 675656; wrote 656; span None
+  - at /receipts/0256.json (reasoning offset 7282; 1 receipt copies)
+  - model: reappears later 5x, in final content True, questioned False; next ". yes.\n\nLet's trace path that gives 656 to ensure no issue: From end r10c10 dp=656, came from min(up"
+- **value** [inline, model (form owned 0)] `0-7-8-10` = -25; wrote 52; span None
+  - at /receipts/0257.json (reasoning offset 1512; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. 0-7-8-9-6-2-10? 6+8+16+2+22+6=60. Could be 0-1-10=66 etc. 50 likely.\n\nNeed final answer as JSON in'
+- **value** [inline, model (form owned 0)] `0-1-10` = -11; wrote 66; span None
+  - at /receipts/0257.json (reasoning offset 1566; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' etc. 50 likely.\n\nNeed final answer as JSON integer. Just 50. \n'
+- **value** [inline, model (form owned 0)] `15+min(63,121)` = 63136; wrote 78; span None
+  - at /receipts/0262.json (reasoning offset 1023; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc4 =77 + min(78,78?) wait dp row1c4=78, r2c3=78 =>155? 77+78=155.\nc5 =19 + min(row1c5=117, r2c4=155'
+- **value** [inline, model (form owned 0)] `32+min(202,190)` = 202222; wrote 222; span None
+  - at /receipts/0262.json (reasoning offset 2056; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=87+min(185,222)=272\nc4=51+min(144,272)=195\nc5=87+min(183,195)=270\nc6=65+min(282,270)=335\nc7=29+m'
+- **value** [inline, model (form owned 0)] `87+min(185,222)` = 185309; wrote 272; span None
+  - at /receipts/0262.json (reasoning offset 2079; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=51+min(144,272)=195\nc5=87+min(183,195)=270\nc6=65+min(282,270)=335\nc7=29+min(302,335)=331\nc8=19+m'
+- **value** [inline, model (form owned 0)] `51+min(144,272)` = 144323; wrote 195; span None
+  - at /receipts/0262.json (reasoning offset 2102; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc5=87+min(183,195)=270\nc6=65+min(282,270)=335\nc7=29+min(302,335)=331\nc8=19+min(307,331)=326\nRow5: ['
+- **value** [inline, model (form owned 0)] `87+min(183,195)` = 183282; wrote 270; span None
+  - at /receipts/0262.json (reasoning offset 2125; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=65+min(282,270)=335\nc7=29+min(302,335)=331\nc8=19+min(307,331)=326\nRow5: [190,222,272,195,270,335'
+- **value** [inline, model (form owned 0)] `65+min(282,270)` = 282335; wrote 335; span None
+  - at /receipts/0262.json (reasoning offset 2148; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=29+min(302,335)=331\nc8=19+min(307,331)=326\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 values '
+- **value** [inline, model (form owned 0)] `29+min(302,335)` = 302364; wrote 331; span None
+  - at /receipts/0262.json (reasoning offset 2171; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=19+min(307,331)=326\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 values [2,3,0,10,38,94,16,79]\n'
+- **value** [inline, model (form owned 0)] `19+min(307,331)` = 307350; wrote 326; span None
+  - at /receipts/0262.json (reasoning offset 2194; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 values [2,3,0,10,38,94,16,79]\nc1=190+2=192\nc2=3+min(2'
+- **value** [inline, model (form owned 0)] `3+min(222,192)` = 222195; wrote 195; span None
+  - at /receipts/0262.json (reasoning offset 2305; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc3=0+min(272,195)=195\nc4=10+min(195,195)=205\nc5=38+min(270,205)=243\nc6=94+min(335,243)=337\nc7=16+mi'
+- **value** [inline, model (form owned 0)] `0+min(272,195)` = 272195; wrote 195; span None
+  - at /receipts/0262.json (reasoning offset 2327; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=10+min(195,195)=205\nc5=38+min(270,205)=243\nc6=94+min(335,243)=337\nc7=16+min(331,337)=347\nc8=79+m'
+- **value** [inline, model (form owned 0)] `10+min(195,195)` = 195205; wrote 205; span None
+  - at /receipts/0262.json (reasoning offset 2350; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=38+min(270,205)=243\nc6=94+min(335,243)=337\nc7=16+min(331,337)=347\nc8=79+min(326,347)=405\nRow6: ['
+- **value** [inline, model (form owned 0)] `38+min(270,205)` = 270243; wrote 243; span None
+  - at /receipts/0262.json (reasoning offset 2373; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=94+min(335,243)=337\nc7=16+min(331,337)=347\nc8=79+min(326,347)=405\nRow6: [192,195,195,205,243,337'
+- **value** [inline, model (form owned 0)] `94+min(335,243)` = 335337; wrote 337; span None
+  - at /receipts/0262.json (reasoning offset 2396; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=16+min(331,337)=347\nc8=79+min(326,347)=405\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 values '
+- **value** [inline, model (form owned 0)] `16+min(331,337)` = 331353; wrote 347; span None
+  - at /receipts/0262.json (reasoning offset 2419; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=79+min(326,347)=405\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 values [6,48,87,81,70,14,41,37'
+- **value** [inline, model (form owned 0)] `79+min(326,347)` = 326426; wrote 405; span None
+  - at /receipts/0262.json (reasoning offset 2442; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 values [6,48,87,81,70,14,41,37]\nc1=192+6=198\nc2=48+mi'
+- **value** [inline, model (form owned 0)] `48+min(195,198)` = 195246; wrote 243; span None
+  - at /receipts/0262.json (reasoning offset 2556; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=87+min(195,243)=282\nc4=81+min(205,282)=286\nc5=70+min(243,286)=313\nc6=14+min(337,313)=327\nc7=41+m'
+- **value** [inline, model (form owned 0)] `87+min(195,243)` = 195330; wrote 282; span None
+  - at /receipts/0262.json (reasoning offset 2579; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=81+min(205,282)=286\nc5=70+min(243,286)=313\nc6=14+min(337,313)=327\nc7=41+min(347,327)=368\nc8=37+m'
+- **value** [inline, model (form owned 0)] `81+min(205,282)` = 205363; wrote 286; span None
+  - at /receipts/0262.json (reasoning offset 2602; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=70+min(243,286)=313\nc6=14+min(337,313)=327\nc7=41+min(347,327)=368\nc8=37+min(405,368)=405\nRow7: ['
+- **value** [inline, model (form owned 0)] `70+min(243,286)` = 243356; wrote 313; span None
+  - at /receipts/0262.json (reasoning offset 2625; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=14+min(337,313)=327\nc7=41+min(347,327)=368\nc8=37+min(405,368)=405\nRow7: [198,243,282,286,313,327'
+- **value** [inline, model (form owned 0)] `14+min(337,313)` = 337327; wrote 327; span None
+  - at /receipts/0262.json (reasoning offset 2648; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=41+min(347,327)=368\nc8=37+min(405,368)=405\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 values '
+- **value** [inline, model (form owned 0)] `41+min(347,327)` = 347368; wrote 368; span None
+  - at /receipts/0262.json (reasoning offset 2671; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=37+min(405,368)=405\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 values [39,67,22,65,2,34,45,21'
+- **value** [inline, model (form owned 0)] `37+min(405,368)` = 405405; wrote 405; span None
+  - at /receipts/0262.json (reasoning offset 2694; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 values [39,67,22,65,2,34,45,21]\nc1=198+39=237\nc2=67+m'
+- **value** [inline, model (form owned 0)] `67+min(243,237)` = 243304; wrote 304; span None
+  - at /receipts/0262.json (reasoning offset 2809; 1 receipt copies)
+  - model: reappears later 6x, in final content False, questioned False; next '\nc3=22+min(282,304)=304\nc4=65+min(286,304)=351\nc5=2+min(313,351)=315\nc6=34+min(327,315)=349\nc7=45+mi'
+- **value** [inline, model (form owned 0)] `22+min(282,304)` = 282326; wrote 304; span None
+  - at /receipts/0262.json (reasoning offset 2832; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '\nc4=65+min(286,304)=351\nc5=2+min(313,351)=315\nc6=34+min(327,315)=349\nc7=45+min(368,349)=394\nc8=21+mi'
+- **value** [inline, model (form owned 0)] `65+min(286,304)` = 286369; wrote 351; span None
+  - at /receipts/0262.json (reasoning offset 2855; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=2+min(313,351)=315\nc6=34+min(327,315)=349\nc7=45+min(368,349)=394\nc8=21+min(405,394)=415\nRow8: [2'
+- **value** [inline, model (form owned 0)] `2+min(313,351)` = 313353; wrote 315; span None
+  - at /receipts/0262.json (reasoning offset 2877; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=34+min(327,315)=349\nc7=45+min(368,349)=394\nc8=21+min(405,394)=415\nRow8: [237,304,304,351,315,349'
+- **value** [inline, model (form owned 0)] `34+min(327,315)` = 327349; wrote 349; span None
+  - at /receipts/0262.json (reasoning offset 2900; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc7=45+min(368,349)=394\nc8=21+min(405,394)=415\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 values '
+- **value** [inline, model (form owned 0)] `45+min(368,349)` = 368394; wrote 394; span None
+  - at /receipts/0262.json (reasoning offset 2923; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc8=21+min(405,394)=415\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 values [74,37,57,37,15,4,74,55'
+- **value** [inline, model (form owned 0)] `21+min(405,394)` = 405415; wrote 415; span None
+  - at /receipts/0262.json (reasoning offset 2946; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 values [74,37,57,37,15,4,74,55]\nc1=237+74=311\nc2=37+m'
+- **value** [inline, model (form owned 0)] `37+min(304,311)` = 304348; wrote 341; span None
+  - at /receipts/0262.json (reasoning offset 3061; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=57+min(304,341)=361\nc4=37+min(351,361)=388\nc5=15+min(315,388)=330\nc6=4+min(349,330)=334\nc7=74+mi'
+- **value** [inline, model (form owned 0)] `57+min(304,341)` = 304398; wrote 361; span None
+  - at /receipts/0262.json (reasoning offset 3084; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=37+min(351,361)=388\nc5=15+min(315,388)=330\nc6=4+min(349,330)=334\nc7=74+min(394,334)=408\nc8=55+mi'
+- **value** [inline, model (form owned 0)] `37+min(351,361)` = 351398; wrote 388; span None
+  - at /receipts/0262.json (reasoning offset 3107; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=15+min(315,388)=330\nc6=4+min(349,330)=334\nc7=74+min(394,334)=408\nc8=55+min(415,408)=463\nRow9 fin'
+- **value** [inline, model (form owned 0)] `15+min(315,388)` = 315403; wrote 330; span None
+  - at /receipts/0262.json (reasoning offset 3130; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=4+min(349,330)=334\nc7=74+min(394,334)=408\nc8=55+min(415,408)=463\nRow9 final c8=463.\n\nNeed ensure'
+- **value** [inline, model (form owned 0)] `4+min(349,330)` = 349334; wrote 334; span None
+  - at /receipts/0262.json (reasoning offset 3152; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=74+min(394,334)=408\nc8=55+min(415,408)=463\nRow9 final c8=463.\n\nNeed ensure dimensions: 9 rows, 8'
+- **value** [inline, model (form owned 0)] `74+min(394,334)` = 394408; wrote 408; span None
+  - at /receipts/0262.json (reasoning offset 3175; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=55+min(415,408)=463\nRow9 final c8=463.\n\nNeed ensure dimensions: 9 rows, 8 cols. Moves only right'
+- **value** [inline, model (form owned 0)] `55+min(415,408)` = 415463; wrote 463; span None
+  - at /receipts/0262.json (reasoning offset 3198; 1 receipt copies)
+  - model: reappears later 3x, in final content True, questioned False; next '\nRow9 final c8=463.\n\nNeed ensure dimensions: 9 rows, 8 cols. Moves only right/down, min path length '
+- **value** [inline, model (form owned 0)] `(-9050)` = -9050; wrote -22863; span None
+  - at /receipts/0266.json (reasoning offset 1683; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "\n+774 = -22089\n+(-2730)= -24819\n+(-8784)= -33603\n+7520 = -26083\n+19978 = -6105? Let's do -26083+1997"
+- **value** [inline, model (form owned 0)] `(-2730)` = -2730; wrote -24819; span None
+  - at /receipts/0266.json (reasoning offset 1714; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "\n+(-8784)= -33603\n+7520 = -26083\n+19978 = -6105? Let's do -26083+19978 = -6105 yes.\n+3591 = -2514\n+1"
+- **value** [inline, model (form owned 0)] `(-8784)` = -8784; wrote -33603; span None
+  - at /receipts/0266.json (reasoning offset 1731; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "\n+7520 = -26083\n+19978 = -6105? Let's do -26083+19978 = -6105 yes.\n+3591 = -2514\n+1862 = -652\n-576 ="
+- **value** [inline, model (form owned 0)] `80+min(159,122)` = 159202; wrote 202; span None
+  - at /receipts/0268.json (reasoning offset 1380; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc3=86+min(202,99)=185\nc4=0+min(185,144)=144\nc5=39+min(144,232)=183\nc6=99+min(183,221)=282\nc7=20+min'
+- **value** [inline, model (form owned 0)] `0+min(185,144)` = 185144; wrote 144; span None
+  - at /receipts/0268.json (reasoning offset 1424; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc5=39+min(144,232)=183\nc6=99+min(183,221)=282\nc7=20+min(282,311)=302\nc8=5+min(302,341)=307\nRow4: [1'
+- **value** [inline, model (form owned 0)] `39+min(144,232)` = 144271; wrote 183; span None
+  - at /receipts/0268.json (reasoning offset 1447; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=99+min(183,221)=282\nc7=20+min(282,311)=302\nc8=5+min(302,341)=307\nRow4: [159,202,185,144,183,282,'
+- **value** [inline, model (form owned 0)] `99+min(183,221)` = 183320; wrote 282; span None
+  - at /receipts/0268.json (reasoning offset 1470; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc7=20+min(282,311)=302\nc8=5+min(302,341)=307\nRow4: [159,202,185,144,183,282,302,307]\n\nRow5 [31,32,8'
+- **value** [inline, model (form owned 0)] `20+min(282,311)` = 282331; wrote 302; span None
+  - at /receipts/0268.json (reasoning offset 1493; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc8=5+min(302,341)=307\nRow4: [159,202,185,144,183,282,302,307]\n\nRow5 [31,32,87,51,87,65,29,19]\nc1=15'
+- **value** [inline, model (form owned 0)] `5+min(302,341)` = 302346; wrote 307; span None
+  - at /receipts/0268.json (reasoning offset 1515; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow4: [159,202,185,144,183,282,302,307]\n\nRow5 [31,32,87,51,87,65,29,19]\nc1=159+31=190\nc2=32+min(190'
+- **value** [inline, model (form owned 0)] `32+min(190,202)` = 190234; wrote 222; span None
+  - at /receipts/0268.json (reasoning offset 1624; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc3=87+min(222,185)=272\nc4=51+min(272,144)=195\nc5=87+min(195,183)=270\nc6=65+min(270,282)=335\nc7=29+m'
+- **value** [inline, model (form owned 0)] `87+min(222,185)` = 222272; wrote 272; span None
+  - at /receipts/0268.json (reasoning offset 1647; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc4=51+min(272,144)=195\nc5=87+min(195,183)=270\nc6=65+min(270,282)=335\nc7=29+min(335,302)=331\nc8=19+m'
+- **value** [inline, model (form owned 0)] `51+min(272,144)` = 272195; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 1670; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '\nc5=87+min(195,183)=270\nc6=65+min(270,282)=335\nc7=29+min(335,302)=331\nc8=19+min(331,307)=326\nRow5: ['
+- **value** [inline, model (form owned 0)] `87+min(195,183)` = 195270; wrote 270; span None
+  - at /receipts/0268.json (reasoning offset 1693; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=65+min(270,282)=335\nc7=29+min(335,302)=331\nc8=19+min(331,307)=326\nRow5: [190,222,272,195,270,335'
+- **value** [inline, model (form owned 0)] `65+min(270,282)` = 270347; wrote 335; span None
+  - at /receipts/0268.json (reasoning offset 1716; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=29+min(335,302)=331\nc8=19+min(331,307)=326\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 [2,3,0,'
+- **value** [inline, model (form owned 0)] `29+min(335,302)` = 335331; wrote 331; span None
+  - at /receipts/0268.json (reasoning offset 1739; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc8=19+min(331,307)=326\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 [2,3,0,10,38,94,16,79]\nc1=190+'
+- **value** [inline, model (form owned 0)] `19+min(331,307)` = 331326; wrote 326; span None
+  - at /receipts/0268.json (reasoning offset 1762; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow5: [190,222,272,195,270,335,331,326]\n\nRow6 [2,3,0,10,38,94,16,79]\nc1=190+2=192\nc2=3+min(192,222)'
+- **value** [inline, model (form owned 0)] `3+min(192,222)` = 192225; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 1866; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc3=0+min(195,272)=195\nc4=10+min(195,195)=205\nc5=38+min(205,270)=243\nc6=94+min(243,335)=337\nc7=16+mi'
+- **value** [inline, model (form owned 0)] `0+min(195,272)` = 195272; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 1888; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc4=10+min(195,195)=205\nc5=38+min(205,270)=243\nc6=94+min(243,335)=337\nc7=16+min(337,331)=347\nc8=79+m'
+- **value** [inline, model (form owned 0)] `10+min(195,195)` = 195205; wrote 205; span None
+  - at /receipts/0268.json (reasoning offset 1911; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=38+min(205,270)=243\nc6=94+min(243,335)=337\nc7=16+min(337,331)=347\nc8=79+min(347,326)=405\nRow6: ['
+- **value** [inline, model (form owned 0)] `38+min(205,270)` = 205308; wrote 243; span None
+  - at /receipts/0268.json (reasoning offset 1934; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc6=94+min(243,335)=337\nc7=16+min(337,331)=347\nc8=79+min(347,326)=405\nRow6: [192,195,195,205,243,337'
+- **value** [inline, model (form owned 0)] `94+min(243,335)` = 243429; wrote 337; span None
+  - at /receipts/0268.json (reasoning offset 1957; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=16+min(337,331)=347\nc8=79+min(347,326)=405\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 [6,48,8'
+- **value** [inline, model (form owned 0)] `16+min(337,331)` = 337347; wrote 347; span None
+  - at /receipts/0268.json (reasoning offset 1980; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc8=79+min(347,326)=405\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 [6,48,87,81,70,14,41,37]\nc1=19'
+- **value** [inline, model (form owned 0)] `79+min(347,326)` = 347405; wrote 405; span None
+  - at /receipts/0268.json (reasoning offset 2003; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nRow6: [192,195,195,205,243,337,347,405]\n\nRow7 [6,48,87,81,70,14,41,37]\nc1=192+6=198\nc2=48+min(198,1'
+- **value** [inline, model (form owned 0)] `48+min(198,195)` = 198243; wrote 243; span None
+  - at /receipts/0268.json (reasoning offset 2110; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc3=87+min(243,195)=282\nc4=81+min(282,205)=286\nc5=70+min(286,243)=313\nc6=14+min(313,337)=327\nc7=41+m'
+- **value** [inline, model (form owned 0)] `87+min(243,195)` = 243282; wrote 282; span None
+  - at /receipts/0268.json (reasoning offset 2133; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc4=81+min(282,205)=286\nc5=70+min(286,243)=313\nc6=14+min(313,337)=327\nc7=41+min(327,347)=368\nc8=37+m'
+- **value** [inline, model (form owned 0)] `81+min(282,205)` = 282286; wrote 286; span None
+  - at /receipts/0268.json (reasoning offset 2156; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=70+min(286,243)=313\nc6=14+min(313,337)=327\nc7=41+min(327,347)=368\nc8=37+min(368,405)=405\nRow7: ['
+- **value** [inline, model (form owned 0)] `70+min(286,243)` = 286313; wrote 313; span None
+  - at /receipts/0268.json (reasoning offset 2179; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=14+min(313,337)=327\nc7=41+min(327,347)=368\nc8=37+min(368,405)=405\nRow7: [198,243,282,286,313,327'
+- **value** [inline, model (form owned 0)] `14+min(313,337)` = 313351; wrote 327; span None
+  - at /receipts/0268.json (reasoning offset 2202; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=41+min(327,347)=368\nc8=37+min(368,405)=405\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 [39,67,'
+- **value** [inline, model (form owned 0)] `41+min(327,347)` = 327388; wrote 368; span None
+  - at /receipts/0268.json (reasoning offset 2225; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc8=37+min(368,405)=405\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 [39,67,22,65,2,34,45,21]\nc1=19'
+- **value** [inline, model (form owned 0)] `37+min(368,405)` = 368442; wrote 405; span None
+  - at /receipts/0268.json (reasoning offset 2248; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nRow7: [198,243,282,286,313,327,368,405]\n\nRow8 [39,67,22,65,2,34,45,21]\nc1=198+39=237\nc2=67+min(237,'
+- **value** [inline, model (form owned 0)] `67+min(237,243)` = 237310; wrote 304; span None
+  - at /receipts/0268.json (reasoning offset 2356; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nc3=22+min(304,282)=304\nc4=65+min(304,286)=351\nc5=2+min(351,313)=315\nc6=34+min(315,327)=349\nc7=45+mi'
+- **value** [inline, model (form owned 0)] `22+min(304,282)` = 304304; wrote 304; span None
+  - at /receipts/0268.json (reasoning offset 2379; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nc4=65+min(304,286)=351\nc5=2+min(351,313)=315\nc6=34+min(315,327)=349\nc7=45+min(349,368)=394\nc8=21+mi'
+- **value** [inline, model (form owned 0)] `65+min(304,286)` = 304351; wrote 351; span None
+  - at /receipts/0268.json (reasoning offset 2402; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=2+min(351,313)=315\nc6=34+min(315,327)=349\nc7=45+min(349,368)=394\nc8=21+min(394,405)=415\nRow8: [2'
+- **value** [inline, model (form owned 0)] `2+min(351,313)` = 351315; wrote 315; span None
+  - at /receipts/0268.json (reasoning offset 2424; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=34+min(315,327)=349\nc7=45+min(349,368)=394\nc8=21+min(394,405)=415\nRow8: [237,304,304,351,315,349'
+- **value** [inline, model (form owned 0)] `34+min(315,327)` = 315361; wrote 349; span None
+  - at /receipts/0268.json (reasoning offset 2447; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=45+min(349,368)=394\nc8=21+min(394,405)=415\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 [74,37,'
+- **value** [inline, model (form owned 0)] `45+min(349,368)` = 349413; wrote 394; span None
+  - at /receipts/0268.json (reasoning offset 2470; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc8=21+min(394,405)=415\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 [74,37,57,37,15,4,74,55]\nc1=23'
+- **value** [inline, model (form owned 0)] `21+min(394,405)` = 394426; wrote 415; span None
+  - at /receipts/0268.json (reasoning offset 2493; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow8: [237,304,304,351,315,349,394,415]\n\nRow9 [74,37,57,37,15,4,74,55]\nc1=237+74=311\nc2=37+min(311,'
+- **value** [inline, model (form owned 0)] `37+min(311,304)` = 311341; wrote 341; span None
+  - at /receipts/0268.json (reasoning offset 2601; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc3=57+min(341,304)=361\nc4=37+min(361,351)=388\nc5=15+min(388,315)=330\nc6=4+min(330,349)=334\nc7=74+mi'
+- **value** [inline, model (form owned 0)] `57+min(341,304)` = 341361; wrote 361; span None
+  - at /receipts/0268.json (reasoning offset 2624; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc4=37+min(361,351)=388\nc5=15+min(388,315)=330\nc6=4+min(330,349)=334\nc7=74+min(334,394)=408\nc8=55+mi'
+- **value** [inline, model (form owned 0)] `37+min(361,351)` = 361388; wrote 388; span None
+  - at /receipts/0268.json (reasoning offset 2647; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=15+min(388,315)=330\nc6=4+min(330,349)=334\nc7=74+min(334,394)=408\nc8=55+min(408,415)=463\n\nMinimum'
+- **value** [inline, model (form owned 0)] `15+min(388,315)` = 388330; wrote 330; span None
+  - at /receipts/0268.json (reasoning offset 2670; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=4+min(330,349)=334\nc7=74+min(334,394)=408\nc8=55+min(408,415)=463\n\nMinimum final = 463. Need be s'
+- **value** [inline, model (form owned 0)] `4+min(330,349)` = 330353; wrote 334; span None
+  - at /receipts/0268.json (reasoning offset 2692; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=74+min(334,394)=408\nc8=55+min(408,415)=463\n\nMinimum final = 463. Need be sure no arithmetic erro'
+- **value** [inline, model (form owned 0)] `74+min(334,394)` = 334468; wrote 408; span None
+  - at /receipts/0268.json (reasoning offset 2715; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next "\nc8=55+min(408,415)=463\n\nMinimum final = 463. Need be sure no arithmetic errors. Let's cross-check b"
+- **value** [inline, model (form owned 0)] `55+min(408,415)` = 408470; wrote 463; span None
+  - at /receipts/0268.json (reasoning offset 2738; 1 receipt copies)
+  - model: reappears later 3x, in final content True, questioned False; next "\n\nMinimum final = 463. Need be sure no arithmetic errors. Let's cross-check by backward reconstructi"
+- **value** [inline, model (form owned 0)] `80+min(122,159)` = 122239; wrote 202; span None
+  - at /receipts/0268.json (reasoning offset 3889; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc3 86+min(99,202)=185. yes.\nc4 0+min(144,185)=144. yes.\nc5 39+min(232,144)=183. yes.\nc6 99+mi'
+- **value** [inline, model (form owned 0)] `86+min(99,202)` = 99288; wrote 185; span None
+  - at /receipts/0268.json (reasoning offset 3917; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc4 0+min(144,185)=144. yes.\nc5 39+min(232,144)=183. yes.\nc6 99+min(221,183)=282. yes.\nc7 20+m'
+- **value** [inline, model (form owned 0)] `0+min(144,185)` = 144185; wrote 144; span None
+  - at /receipts/0268.json (reasoning offset 3945; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc5 39+min(232,144)=183. yes.\nc6 99+min(221,183)=282. yes.\nc7 20+min(311,282)=302. yes.\nc8 5+m'
+- **value** [inline, model (form owned 0)] `39+min(232,144)` = 232183; wrote 183; span None
+  - at /receipts/0268.json (reasoning offset 3974; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc6 99+min(221,183)=282. yes.\nc7 20+min(311,282)=302. yes.\nc8 5+min(341,302)=307. yes.\n\nRow5:\n'
+- **value** [inline, model (form owned 0)] `99+min(221,183)` = 221282; wrote 282; span None
+  - at /receipts/0268.json (reasoning offset 4003; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc7 20+min(311,282)=302. yes.\nc8 5+min(341,302)=307. yes.\n\nRow5:\nc1 159+31=190.\nc2 32+min(202,'
+- **value** [inline, model (form owned 0)] `20+min(311,282)` = 311302; wrote 302; span None
+  - at /receipts/0268.json (reasoning offset 4032; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc8 5+min(341,302)=307. yes.\n\nRow5:\nc1 159+31=190.\nc2 32+min(202,190)=222. yes (up202 left190)'
+- **value** [inline, model (form owned 0)] `5+min(341,302)` = 341307; wrote 307; span None
+  - at /receipts/0268.json (reasoning offset 4060; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow5:\nc1 159+31=190.\nc2 32+min(202,190)=222. yes (up202 left190).\nc3 87+min(185,222)=272. ye'
+- **value** [inline, model (form owned 0)] `32+min(202,190)` = 202222; wrote 222; span None
+  - at /receipts/0268.json (reasoning offset 4111; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes (up202 left190).\nc3 87+min(185,222)=272. yes.\nc4 51+min(144,272)=195. yes.\nc5 87+min(183,195)='
+- **value** [inline, model (form owned 0)] `87+min(185,222)` = 185309; wrote 272; span None
+  - at /receipts/0268.json (reasoning offset 4156; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc4 51+min(144,272)=195. yes.\nc5 87+min(183,195)=270. yes.\nc6 65+min(282,270)=335. yes.\nc7 29+'
+- **value** [inline, model (form owned 0)] `51+min(144,272)` = 144323; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 4185; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '. yes.\nc5 87+min(183,195)=270. yes.\nc6 65+min(282,270)=335. yes.\nc7 29+min(302,335)=331. yes.\nc8 19+'
+- **value** [inline, model (form owned 0)] `87+min(183,195)` = 183282; wrote 270; span None
+  - at /receipts/0268.json (reasoning offset 4214; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc6 65+min(282,270)=335. yes.\nc7 29+min(302,335)=331. yes.\nc8 19+min(307,331)=326. yes.\n\nRow6:'
+- **value** [inline, model (form owned 0)] `65+min(282,270)` = 282335; wrote 335; span None
+  - at /receipts/0268.json (reasoning offset 4243; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc7 29+min(302,335)=331. yes.\nc8 19+min(307,331)=326. yes.\n\nRow6:\nc1 190+2=192.\nc2 3+min(222,1'
+- **value** [inline, model (form owned 0)] `29+min(302,335)` = 302364; wrote 331; span None
+  - at /receipts/0268.json (reasoning offset 4272; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc8 19+min(307,331)=326. yes.\n\nRow6:\nc1 190+2=192.\nc2 3+min(222,192)=195. yes.\nc3 0+min(272,19'
+- **value** [inline, model (form owned 0)] `19+min(307,331)` = 307350; wrote 326; span None
+  - at /receipts/0268.json (reasoning offset 4301; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow6:\nc1 190+2=192.\nc2 3+min(222,192)=195. yes.\nc3 0+min(272,195)=195. yes.\nc4 10+min(195,19'
+- **value** [inline, model (form owned 0)] `3+min(222,192)` = 222195; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 4350; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc3 0+min(272,195)=195. yes.\nc4 10+min(195,195)=205. yes.\nc5 38+min(270,205)=243. yes.\nc6 94+m'
+- **value** [inline, model (form owned 0)] `0+min(272,195)` = 272195; wrote 195; span None
+  - at /receipts/0268.json (reasoning offset 4378; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc4 10+min(195,195)=205. yes.\nc5 38+min(270,205)=243. yes.\nc6 94+min(335,243)=337. yes.\nc7 16+'
+- **value** [inline, model (form owned 0)] `10+min(195,195)` = 195205; wrote 205; span None
+  - at /receipts/0268.json (reasoning offset 4407; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc5 38+min(270,205)=243. yes.\nc6 94+min(335,243)=337. yes.\nc7 16+min(331,337)=347. yes.\nc8 79+'
+- **value** [inline, model (form owned 0)] `38+min(270,205)` = 270243; wrote 243; span None
+  - at /receipts/0268.json (reasoning offset 4436; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '. yes.\nc6 94+min(335,243)=337. yes.\nc7 16+min(331,337)=347. yes.\nc8 79+min(326,347)=405. yes.\n\nRow7:'
+- **value** [inline, model (form owned 0)] `94+min(335,243)` = 335337; wrote 337; span None
+  - at /receipts/0268.json (reasoning offset 4465; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc7 16+min(331,337)=347. yes.\nc8 79+min(326,347)=405. yes.\n\nRow7:\nc1 192+6=198.\nc2 48+min(195,'
+- **value** [inline, model (form owned 0)] `16+min(331,337)` = 331353; wrote 347; span None
+  - at /receipts/0268.json (reasoning offset 4494; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc8 79+min(326,347)=405. yes.\n\nRow7:\nc1 192+6=198.\nc2 48+min(195,198)=243. yes.\nc3 87+min(195,'
+- **value** [inline, model (form owned 0)] `79+min(326,347)` = 326426; wrote 405; span None
+  - at /receipts/0268.json (reasoning offset 4523; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow7:\nc1 192+6=198.\nc2 48+min(195,198)=243. yes.\nc3 87+min(195,243)=282. yes.\nc4 81+min(205,'
+- **value** [inline, model (form owned 0)] `48+min(195,198)` = 195246; wrote 243; span None
+  - at /receipts/0268.json (reasoning offset 4573; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\nc3 87+min(195,243)=282. yes.\nc4 81+min(205,282)=286. yes.\nc5 70+min(243,286)=313. yes.\nc6 14+'
+- **value** [inline, model (form owned 0)] `87+min(195,243)` = 195330; wrote 282; span None
+  - at /receipts/0268.json (reasoning offset 4602; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc4 81+min(205,282)=286. yes.\nc5 70+min(243,286)=313. yes.\nc6 14+min(337,313)=327. yes.\nc7 41+'
+- **value** [inline, model (form owned 0)] `81+min(205,282)` = 205363; wrote 286; span None
+  - at /receipts/0268.json (reasoning offset 4631; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc5 70+min(243,286)=313. yes.\nc6 14+min(337,313)=327. yes.\nc7 41+min(347,327)=368. yes.\nc8 37+'
+- **value** [inline, model (form owned 0)] `70+min(243,286)` = 243356; wrote 313; span None
+  - at /receipts/0268.json (reasoning offset 4660; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc6 14+min(337,313)=327. yes.\nc7 41+min(347,327)=368. yes.\nc8 37+min(405,368)=405. yes.\n\nRow8:'
+- **value** [inline, model (form owned 0)] `14+min(337,313)` = 337327; wrote 327; span None
+  - at /receipts/0268.json (reasoning offset 4689; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc7 41+min(347,327)=368. yes.\nc8 37+min(405,368)=405. yes.\n\nRow8:\nc1 198+39=237.\nc2 67+min(243'
+- **value** [inline, model (form owned 0)] `41+min(347,327)` = 347368; wrote 368; span None
+  - at /receipts/0268.json (reasoning offset 4718; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc8 37+min(405,368)=405. yes.\n\nRow8:\nc1 198+39=237.\nc2 67+min(243,237)=304. yes (up243 left237'
+- **value** [inline, model (form owned 0)] `37+min(405,368)` = 405405; wrote 405; span None
+  - at /receipts/0268.json (reasoning offset 4747; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow8:\nc1 198+39=237.\nc2 67+min(243,237)=304. yes (up243 left237 min237 +67=304)\nc3 22+min(28'
+- **value** [inline, model (form owned 0)] `67+min(243,237)` = 243304; wrote 304; span None
+  - at /receipts/0268.json (reasoning offset 4798; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '. yes (up243 left237 min237 +67=304)\nc3 22+min(282,304)=304. yes\nc4 65+min(286,304)=351. yes\nc5 2+mi'
+- **value** [inline, model (form owned 0)] `22+min(282,304)` = 282326; wrote 304; span None
+  - at /receipts/0268.json (reasoning offset 4857; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc4 65+min(286,304)=351. yes\nc5 2+min(313,351)=315. yes\nc6 34+min(327,315)=349. yes\nc7 45+min(3'
+- **value** [inline, model (form owned 0)] `65+min(286,304)` = 286369; wrote 351; span None
+  - at /receipts/0268.json (reasoning offset 4885; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc5 2+min(313,351)=315. yes\nc6 34+min(327,315)=349. yes\nc7 45+min(368,349)=394. yes\nc8 21+min(4'
+- **value** [inline, model (form owned 0)] `2+min(313,351)` = 313353; wrote 315; span None
+  - at /receipts/0268.json (reasoning offset 4912; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc6 34+min(327,315)=349. yes\nc7 45+min(368,349)=394. yes\nc8 21+min(405,394)=415. yes\n\nRow9:\nc1 '
+- **value** [inline, model (form owned 0)] `34+min(327,315)` = 327349; wrote 349; span None
+  - at /receipts/0268.json (reasoning offset 4940; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc7 45+min(368,349)=394. yes\nc8 21+min(405,394)=415. yes\n\nRow9:\nc1 237+74=311.\nc2 37+min(304,31'
+- **value** [inline, model (form owned 0)] `45+min(368,349)` = 368394; wrote 394; span None
+  - at /receipts/0268.json (reasoning offset 4968; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc8 21+min(405,394)=415. yes\n\nRow9:\nc1 237+74=311.\nc2 37+min(304,311)=341. yes\nc3 57+min(304,34'
+- **value** [inline, model (form owned 0)] `21+min(405,394)` = 405415; wrote 415; span None
+  - at /receipts/0268.json (reasoning offset 4996; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\n\nRow9:\nc1 237+74=311.\nc2 37+min(304,311)=341. yes\nc3 57+min(304,341)=361. yes\nc4 37+min(351,36'
+- **value** [inline, model (form owned 0)] `37+min(304,311)` = 304348; wrote 341; span None
+  - at /receipts/0268.json (reasoning offset 5046; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc3 57+min(304,341)=361. yes\nc4 37+min(351,361)=388. yes\nc5 15+min(315,388)=330. yes\nc6 4+min(3'
+- **value** [inline, model (form owned 0)] `57+min(304,341)` = 304398; wrote 361; span None
+  - at /receipts/0268.json (reasoning offset 5074; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc4 37+min(351,361)=388. yes\nc5 15+min(315,388)=330. yes\nc6 4+min(349,330)=334. yes\nc7 74+min(3'
+- **value** [inline, model (form owned 0)] `37+min(351,361)` = 351398; wrote 388; span None
+  - at /receipts/0268.json (reasoning offset 5102; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc5 15+min(315,388)=330. yes\nc6 4+min(349,330)=334. yes\nc7 74+min(394,334)=408. yes\nc8 55+min(4'
+- **value** [inline, model (form owned 0)] `15+min(315,388)` = 315403; wrote 330; span None
+  - at /receipts/0268.json (reasoning offset 5130; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc6 4+min(349,330)=334. yes\nc7 74+min(394,334)=408. yes\nc8 55+min(415,408)=463. yes.\n\nSo answer'
+- **value** [inline, model (form owned 0)] `4+min(349,330)` = 349334; wrote 334; span None
+  - at /receipts/0268.json (reasoning offset 5157; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc7 74+min(394,334)=408. yes\nc8 55+min(415,408)=463. yes.\n\nSo answer 463. Need final bare JSON '
+- **value** [inline, model (form owned 0)] `74+min(394,334)` = 394408; wrote 408; span None
+  - at /receipts/0268.json (reasoning offset 5185; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes\nc8 55+min(415,408)=463. yes.\n\nSo answer 463. Need final bare JSON number.'
+- **value** [inline, model (form owned 0)] `55+min(415,408)` = 415463; wrote 463; span None
+  - at /receipts/0268.json (reasoning offset 5213; 1 receipt copies)
+  - model: reappears later 1x, in final content True, questioned False; next '. yes.\n\nSo answer 463. Need final bare JSON number.'
+- **value** [inline, model (form owned 0)] `0-1-12-13` = -26; wrote 45; span None
+  - at /receipts/0271.json (reasoning offset 1950; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. Could there be 0->1->2->3->11->12->8->9->13? higher. Minimum maybe 45.\n\nNeed final bare JSON numbe'
+- **value** [inline, model (form owned 0)] `min(138,133)+48` = 138181; wrote 181; span None
+  - at /receipts/0275.json (reasoning offset 8572; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(206,181)+71=252.\nc4 min(228,252)+11 =239 (yes because up 228 lower than left 252; note path'
+- **value** [inline, model (form owned 0)] `min(206,181)+71` = 206252; wrote 252; span None
+  - at /receipts/0275.json (reasoning offset 8596; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc4 min(228,252)+11 =239 (yes because up 228 lower than left 252; note path to c4 could up from r1c'
+- **value** [inline, model (form owned 0)] `min(236,239)+47` = 236286; wrote 283; span None
+  - at /receipts/0275.json (reasoning offset 8739; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(332,283)+56=339.\nc7 min(353,339)+72=411.\nc8 min(393,411)+76=469.\nc9 min(462,469)+32=494.\nc1'
+- **value** [inline, model (form owned 0)] `min(332,283)+56` = 332339; wrote 339; span None
+  - at /receipts/0275.json (reasoning offset 8763; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(353,339)+72=411.\nc8 min(393,411)+76=469.\nc9 min(462,469)+32=494.\nc10 min(557,494)+52=546. y'
+- **value** [inline, model (form owned 0)] `min(353,339)+72` = 353411; wrote 411; span None
+  - at /receipts/0275.json (reasoning offset 8787; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(393,411)+76=469.\nc9 min(462,469)+32=494.\nc10 min(557,494)+52=546. yes.\n\nRow3:\nc1 133+17=150'
+- **value** [inline, model (form owned 0)] `min(393,411)+76` = 393487; wrote 469; span None
+  - at /receipts/0275.json (reasoning offset 8811; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(462,469)+32=494.\nc10 min(557,494)+52=546. yes.\n\nRow3:\nc1 133+17=150.\nc2 min(181,150)+30=180'
+- **value** [inline, model (form owned 0)] `min(462,469)+32` = 462501; wrote 494; span None
+  - at /receipts/0275.json (reasoning offset 8835; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(557,494)+52=546. yes.\n\nRow3:\nc1 133+17=150.\nc2 min(181,150)+30=180.\nc3 min(252,180)+42=222'
+- **value** [inline, model (form owned 0)] `min(557,494)+52` = 557546; wrote 546; span None
+  - at /receipts/0275.json (reasoning offset 8860; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow3:\nc1 133+17=150.\nc2 min(181,150)+30=180.\nc3 min(252,180)+42=222.\nc4 min(239,222)+60=282.'
+- **value** [inline, model (form owned 0)] `min(181,150)+30` = 181180; wrote 180; span None
+  - at /receipts/0275.json (reasoning offset 8911; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(252,180)+42=222.\nc4 min(239,222)+60=282.\nc5 min(283,282)+88=370.\nc6 min(339,370)+79=418.\nc7'
+- **value** [inline, model (form owned 0)] `min(252,180)+42` = 252222; wrote 222; span None
+  - at /receipts/0275.json (reasoning offset 8935; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(239,222)+60=282.\nc5 min(283,282)+88=370.\nc6 min(339,370)+79=418.\nc7 min(411,418)+47=458.\nc8'
+- **value** [inline, model (form owned 0)] `min(239,222)+60` = 239282; wrote 282; span None
+  - at /receipts/0275.json (reasoning offset 8959; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(283,282)+88=370.\nc6 min(339,370)+79=418.\nc7 min(411,418)+47=458.\nc8 min(469,458)+7=465.\nc9 '
+- **value** [inline, model (form owned 0)] `min(283,282)+88` = 283370; wrote 370; span None
+  - at /receipts/0275.json (reasoning offset 8983; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(339,370)+79=418.\nc7 min(411,418)+47=458.\nc8 min(469,458)+7=465.\nc9 min(494,465)+40=505.\nc10'
+- **value** [inline, model (form owned 0)] `min(339,370)+79` = 339449; wrote 418; span None
+  - at /receipts/0275.json (reasoning offset 9007; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(411,418)+47=458.\nc8 min(469,458)+7=465.\nc9 min(494,465)+40=505.\nc10 min(546,505)+58=563. ye'
+- **value** [inline, model (form owned 0)] `min(411,418)+47` = 411465; wrote 458; span None
+  - at /receipts/0275.json (reasoning offset 9031; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(469,458)+7=465.\nc9 min(494,465)+40=505.\nc10 min(546,505)+58=563. yes.\n\nRow4:\nc1 150+98=248.'
+- **value** [inline, model (form owned 0)] `min(469,458)+7` = 469465; wrote 465; span None
+  - at /receipts/0275.json (reasoning offset 9054; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(494,465)+40=505.\nc10 min(546,505)+58=563. yes.\n\nRow4:\nc1 150+98=248.\nc2 min(180,248)+37=217'
+- **value** [inline, model (form owned 0)] `min(494,465)+40` = 494505; wrote 505; span None
+  - at /receipts/0275.json (reasoning offset 9078; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(546,505)+58=563. yes.\n\nRow4:\nc1 150+98=248.\nc2 min(180,248)+37=217.\nc3 min(222,217)+94=311'
+- **value** [inline, model (form owned 0)] `min(546,505)+58` = 546563; wrote 563; span None
+  - at /receipts/0275.json (reasoning offset 9103; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow4:\nc1 150+98=248.\nc2 min(180,248)+37=217.\nc3 min(222,217)+94=311.\nc4 min(282,311)+50=332.'
+- **value** [inline, model (form owned 0)] `min(180,248)+37` = 180285; wrote 217; span None
+  - at /receipts/0275.json (reasoning offset 9154; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(222,217)+94=311.\nc4 min(282,311)+50=332.\nc5 min(370,332)+27=359.\nc6 min(418,359)+69=428.\nc7'
+- **value** [inline, model (form owned 0)] `min(222,217)+94` = 222311; wrote 311; span None
+  - at /receipts/0275.json (reasoning offset 9178; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(282,311)+50=332.\nc5 min(370,332)+27=359.\nc6 min(418,359)+69=428.\nc7 min(458,428)+57=485.\nc8'
+- **value** [inline, model (form owned 0)] `min(282,311)+50` = 282361; wrote 332; span None
+  - at /receipts/0275.json (reasoning offset 9202; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(370,332)+27=359.\nc6 min(418,359)+69=428.\nc7 min(458,428)+57=485.\nc8 min(465,485)+83=548.\nc9'
+- **value** [inline, model (form owned 0)] `min(370,332)+27` = 370359; wrote 359; span None
+  - at /receipts/0275.json (reasoning offset 9226; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(418,359)+69=428.\nc7 min(458,428)+57=485.\nc8 min(465,485)+83=548.\nc9 min(505,548)+12=517.\nc1'
+- **value** [inline, model (form owned 0)] `min(418,359)+69` = 418428; wrote 428; span None
+  - at /receipts/0275.json (reasoning offset 9250; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(458,428)+57=485.\nc8 min(465,485)+83=548.\nc9 min(505,548)+12=517.\nc10 min(563,517)+1=518. ye'
+- **value** [inline, model (form owned 0)] `min(458,428)+57` = 458485; wrote 485; span None
+  - at /receipts/0275.json (reasoning offset 9274; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(465,485)+83=548.\nc9 min(505,548)+12=517.\nc10 min(563,517)+1=518. yes.\n\nRow5:\nc1 248+59=307.'
+- **value** [inline, model (form owned 0)] `min(465,485)+83` = 465568; wrote 548; span None
+  - at /receipts/0275.json (reasoning offset 9298; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(505,548)+12=517.\nc10 min(563,517)+1=518. yes.\n\nRow5:\nc1 248+59=307.\nc2 min(217,307)+64=281.'
+- **value** [inline, model (form owned 0)] `min(505,548)+12` = 505560; wrote 517; span None
+  - at /receipts/0275.json (reasoning offset 9322; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10 min(563,517)+1=518. yes.\n\nRow5:\nc1 248+59=307.\nc2 min(217,307)+64=281.\nc3 min(311,281)+71=352.'
+- **value** [inline, model (form owned 0)] `min(563,517)+1` = 563518; wrote 518; span None
+  - at /receipts/0275.json (reasoning offset 9346; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow5:\nc1 248+59=307.\nc2 min(217,307)+64=281.\nc3 min(311,281)+71=352.\nc4 min(332,352)+83=415.'
+- **value** [inline, model (form owned 0)] `min(217,307)+64` = 217371; wrote 281; span None
+  - at /receipts/0275.json (reasoning offset 9397; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(311,281)+71=352.\nc4 min(332,352)+83=415.\nc5 min(359,415)+44=403.\nc6 min(428,403)+37=440.\nc7'
+- **value** [inline, model (form owned 0)] `min(311,281)+71` = 311352; wrote 352; span None
+  - at /receipts/0275.json (reasoning offset 9421; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(332,352)+83=415.\nc5 min(359,415)+44=403.\nc6 min(428,403)+37=440.\nc7 min(485,440)+77=517.\nc8'
+- **value** [inline, model (form owned 0)] `min(332,352)+83` = 332435; wrote 415; span None
+  - at /receipts/0275.json (reasoning offset 9445; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(359,415)+44=403.\nc6 min(428,403)+37=440.\nc7 min(485,440)+77=517.\nc8 min(548,517)+23=540.\nc9'
+- **value** [inline, model (form owned 0)] `min(359,415)+44` = 359459; wrote 403; span None
+  - at /receipts/0275.json (reasoning offset 9469; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc6 min(428,403)+37=440.\nc7 min(485,440)+77=517.\nc8 min(548,517)+23=540.\nc9 min(517,540)+75=592.\nc1'
+- **value** [inline, model (form owned 0)] `min(428,403)+37` = 428440; wrote 440; span None
+  - at /receipts/0275.json (reasoning offset 9493; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(485,440)+77=517.\nc8 min(548,517)+23=540.\nc9 min(517,540)+75=592.\nc10 min(518,592)+26=544. y'
+- **value** [inline, model (form owned 0)] `min(485,440)+77` = 485517; wrote 517; span None
+  - at /receipts/0275.json (reasoning offset 9517; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(548,517)+23=540.\nc9 min(517,540)+75=592.\nc10 min(518,592)+26=544. yes.\n\nRow6:\nc1 307+30=337'
+- **value** [inline, model (form owned 0)] `min(548,517)+23` = 548540; wrote 540; span None
+  - at /receipts/0275.json (reasoning offset 9541; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(517,540)+75=592.\nc10 min(518,592)+26=544. yes.\n\nRow6:\nc1 307+30=337.\nc2 min(281,337)+19=300'
+- **value** [inline, model (form owned 0)] `min(517,540)+75` = 517615; wrote 592; span None
+  - at /receipts/0275.json (reasoning offset 9565; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10 min(518,592)+26=544. yes.\n\nRow6:\nc1 307+30=337.\nc2 min(281,337)+19=300.\nc3 min(352,300)+35=335'
+- **value** [inline, model (form owned 0)] `min(518,592)+26` = 518618; wrote 544; span None
+  - at /receipts/0275.json (reasoning offset 9590; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow6:\nc1 307+30=337.\nc2 min(281,337)+19=300.\nc3 min(352,300)+35=335.\nc4 min(415,335)+88=423.'
+- **value** [inline, model (form owned 0)] `min(281,337)+19` = 281356; wrote 300; span None
+  - at /receipts/0275.json (reasoning offset 9641; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(352,300)+35=335.\nc4 min(415,335)+88=423. Wait min(415,335)=335 +88=423 yes.\nc5 min(403,423)'
+- **value** [inline, model (form owned 0)] `min(352,300)+35` = 352335; wrote 335; span None
+  - at /receipts/0275.json (reasoning offset 9665; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc4 min(415,335)+88=423. Wait min(415,335)=335 +88=423 yes.\nc5 min(403,423)+36 =403+36=439 (not 439'
+- **value** [inline, model (form owned 0)] `min(415,335)+88` = 415423; wrote 423; span None
+  - at /receipts/0275.json (reasoning offset 9689; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned True; next '. Wait min(415,335)=335 +88=423 yes.\nc5 min(403,423)+36 =403+36=439 (not 439? yes; min up=403 vs lef'
+- **value** [inline, model (form owned 0)] `min(517,487)+47` = 517534; wrote 534; span None
+  - at /receipts/0275.json (reasoning offset 9851; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(540,534)+10=544.\nc9 min(592,544)+85=629.\nc10 min(544,629)+24=568. yes.\n\nRow7:\nc1 337+93=430'
+- **value** [inline, model (form owned 0)] `min(540,534)+10` = 540544; wrote 544; span None
+  - at /receipts/0275.json (reasoning offset 9875; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(592,544)+85=629.\nc10 min(544,629)+24=568. yes.\n\nRow7:\nc1 337+93=430.\nc2 min(300,430)+65=365'
+- **value** [inline, model (form owned 0)] `min(592,544)+85` = 592629; wrote 629; span None
+  - at /receipts/0275.json (reasoning offset 9899; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(544,629)+24=568. yes.\n\nRow7:\nc1 337+93=430.\nc2 min(300,430)+65=365.\nc3 min(335,365)+66=401'
+- **value** [inline, model (form owned 0)] `min(544,629)+24` = 544653; wrote 568; span None
+  - at /receipts/0275.json (reasoning offset 9924; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '. yes.\n\nRow7:\nc1 337+93=430.\nc2 min(300,430)+65=365.\nc3 min(335,365)+66=401.\nc4 min(423,401)+73=474.'
+- **value** [inline, model (form owned 0)] `min(300,430)+65` = 300495; wrote 365; span None
+  - at /receipts/0275.json (reasoning offset 9975; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(335,365)+66=401.\nc4 min(423,401)+73=474. (min left=401+73=474 vs up=423+73=496) yes.\nc5 min'
+- **value** [inline, model (form owned 0)] `min(335,365)+66` = 335431; wrote 401; span None
+  - at /receipts/0275.json (reasoning offset 9999; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc4 min(423,401)+73=474. (min left=401+73=474 vs up=423+73=496) yes.\nc5 min(439,474)+34=473.\nc6 min'
+- **value** [inline, model (form owned 0)] `min(423,401)+73` = 423474; wrote 474; span None
+  - at /receipts/0275.json (reasoning offset 10023; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. (min left=401+73=474 vs up=423+73=496) yes.\nc5 min(439,474)+34=473.\nc6 min(487,473)+6=479.\nc7 min('
+- **value** [inline, model (form owned 0)] `min(439,474)+34` = 439508; wrote 473; span None
+  - at /receipts/0275.json (reasoning offset 10091; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(487,473)+6=479.\nc7 min(534,479)+58=537.\nc8 min(544,537)+56=593.\nc9 min(629,593)+88=681.\nc10'
+- **value** [inline, model (form owned 0)] `min(487,473)+6` = 487479; wrote 479; span None
+  - at /receipts/0275.json (reasoning offset 10114; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc7 min(534,479)+58=537.\nc8 min(544,537)+56=593.\nc9 min(629,593)+88=681.\nc10 min(568,681)+24=592. y'
+- **value** [inline, model (form owned 0)] `min(534,479)+58` = 534537; wrote 537; span None
+  - at /receipts/0275.json (reasoning offset 10138; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(544,537)+56=593.\nc9 min(629,593)+88=681.\nc10 min(568,681)+24=592. yes.\n\nRow8:\nc1 430+31=461'
+- **value** [inline, model (form owned 0)] `min(544,537)+56` = 544593; wrote 593; span None
+  - at /receipts/0275.json (reasoning offset 10162; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc9 min(629,593)+88=681.\nc10 min(568,681)+24=592. yes.\n\nRow8:\nc1 430+31=461.\nc2 min(365,461)+92=457'
+- **value** [inline, model (form owned 0)] `min(629,593)+88` = 629681; wrote 681; span None
+  - at /receipts/0275.json (reasoning offset 10186; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(568,681)+24=592. yes.\n\nRow8:\nc1 430+31=461.\nc2 min(365,461)+92=457.\nc3 min(401,457)+22=423'
+- **value** [inline, model (form owned 0)] `min(568,681)+24` = 568705; wrote 592; span None
+  - at /receipts/0275.json (reasoning offset 10211; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow8:\nc1 430+31=461.\nc2 min(365,461)+92=457.\nc3 min(401,457)+22=423.\nc4 min(474,423)+63=486.'
+- **value** [inline, model (form owned 0)] `min(365,461)+92` = 365553; wrote 457; span None
+  - at /receipts/0275.json (reasoning offset 10262; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc3 min(401,457)+22=423.\nc4 min(474,423)+63=486.\nc5 min(473,486)+37=510.\nc6 min(479,510)+81=560.\nc7'
+- **value** [inline, model (form owned 0)] `min(401,457)+22` = 401479; wrote 423; span None
+  - at /receipts/0275.json (reasoning offset 10286; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(474,423)+63=486.\nc5 min(473,486)+37=510.\nc6 min(479,510)+81=560.\nc7 min(537,560)+44=581.\nc8'
+- **value** [inline, model (form owned 0)] `min(474,423)+63` = 474486; wrote 486; span None
+  - at /receipts/0275.json (reasoning offset 10310; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(473,486)+37=510.\nc6 min(479,510)+81=560.\nc7 min(537,560)+44=581.\nc8 min(593,581)+3=584.\nc9 '
+- **value** [inline, model (form owned 0)] `min(473,486)+37` = 473523; wrote 510; span None
+  - at /receipts/0275.json (reasoning offset 10334; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(479,510)+81=560.\nc7 min(537,560)+44=581.\nc8 min(593,581)+3=584.\nc9 min(681,584)+59=643.\nc10'
+- **value** [inline, model (form owned 0)] `min(479,510)+81` = 479591; wrote 560; span None
+  - at /receipts/0275.json (reasoning offset 10358; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(537,560)+44=581.\nc8 min(593,581)+3=584.\nc9 min(681,584)+59=643.\nc10 min(592,643)+14=606. ye'
+- **value** [inline, model (form owned 0)] `min(537,560)+44` = 537604; wrote 581; span None
+  - at /receipts/0275.json (reasoning offset 10382; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(593,581)+3=584.\nc9 min(681,584)+59=643.\nc10 min(592,643)+14=606. yes.\n\nRow9:\nc1 461+72=533.'
+- **value** [inline, model (form owned 0)] `min(593,581)+3` = 593584; wrote 584; span None
+  - at /receipts/0275.json (reasoning offset 10405; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(681,584)+59=643.\nc10 min(592,643)+14=606. yes.\n\nRow9:\nc1 461+72=533.\nc2 min(457,533)+56=513'
+- **value** [inline, model (form owned 0)] `min(681,584)+59` = 681643; wrote 643; span None
+  - at /receipts/0275.json (reasoning offset 10429; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc10 min(592,643)+14=606. yes.\n\nRow9:\nc1 461+72=533.\nc2 min(457,533)+56=513.\nc3 min(423,513)+34=457'
+- **value** [inline, model (form owned 0)] `min(592,643)+14` = 592657; wrote 606; span None
+  - at /receipts/0275.json (reasoning offset 10454; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow9:\nc1 461+72=533.\nc2 min(457,533)+56=513.\nc3 min(423,513)+34=457.\nc4 min(486,457)+32=489.'
+- **value** [inline, model (form owned 0)] `min(457,533)+56` = 457589; wrote 513; span None
+  - at /receipts/0275.json (reasoning offset 10505; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '.\nc3 min(423,513)+34=457.\nc4 min(486,457)+32=489.\nc5 min(510,489)+23=512.\nc6 min(560,512)+53=565.\nc7'
+- **value** [inline, model (form owned 0)] `min(423,513)+34` = 423547; wrote 457; span None
+  - at /receipts/0275.json (reasoning offset 10529; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc4 min(486,457)+32=489.\nc5 min(510,489)+23=512.\nc6 min(560,512)+53=565.\nc7 min(581,565)+3=568.\nc8 '
+- **value** [inline, model (form owned 0)] `min(486,457)+32` = 486489; wrote 489; span None
+  - at /receipts/0275.json (reasoning offset 10553; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc5 min(510,489)+23=512.\nc6 min(560,512)+53=565.\nc7 min(581,565)+3=568.\nc8 min(584,568)+75=643.\nc9 '
+- **value** [inline, model (form owned 0)] `min(510,489)+23` = 510512; wrote 512; span None
+  - at /receipts/0275.json (reasoning offset 10577; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc6 min(560,512)+53=565.\nc7 min(581,565)+3=568.\nc8 min(584,568)+75=643.\nc9 min(643,643)+42=685. (ti'
+- **value** [inline, model (form owned 0)] `min(560,512)+53` = 560565; wrote 565; span None
+  - at /receipts/0275.json (reasoning offset 10601; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc7 min(581,565)+3=568.\nc8 min(584,568)+75=643.\nc9 min(643,643)+42=685. (tie)\nc10 min(606,685)+69=6'
+- **value** [inline, model (form owned 0)] `min(581,565)+3` = 581568; wrote 568; span None
+  - at /receipts/0275.json (reasoning offset 10624; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc8 min(584,568)+75=643.\nc9 min(643,643)+42=685. (tie)\nc10 min(606,685)+69=675. yes.\n\nRow10:\nc1 533'
+- **value** [inline, model (form owned 0)] `min(584,568)+75` = 584643; wrote 643; span None
+  - at /receipts/0275.json (reasoning offset 10648; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc9 min(643,643)+42=685. (tie)\nc10 min(606,685)+69=675. yes.\n\nRow10:\nc1 533+54=587.\nc2 min(513,587)'
+- **value** [inline, model (form owned 0)] `min(643,643)+42` = 643685; wrote 685; span None
+  - at /receipts/0275.json (reasoning offset 10672; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. (tie)\nc10 min(606,685)+69=675. yes.\n\nRow10:\nc1 533+54=587.\nc2 min(513,587)+96=609. Wait min(up d9,'
+- **value** [inline, model (form owned 0)] `min(606,685)+69` = 606754; wrote 675; span None
+  - at /receipts/0275.json (reasoning offset 10703; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '. yes.\n\nRow10:\nc1 533+54=587.\nc2 min(513,587)+96=609. Wait min(up d9,2=513, left d10,1=587) = 513 + '
+- **value** [inline, model (form owned 0)] `min(513,587)+96` = 513683; wrote 609; span None
+  - at /receipts/0275.json (reasoning offset 10755; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned True; next '. Wait min(up d9,2=513, left d10,1=587) = 513 + 96 = 609. yes.\nc3 min(up d9,3=457,left d10,2=609)+2='
+- **value** [inline, model (form owned 0)] `min(206,181)+71` = 206252; wrote 252; span None
+  - at /receipts/0276.json (reasoning offset 6379; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 = min(228,252)+11=239.\nc5 = min(236,239)+47=283.\nc6 = min(332,283)+56=339.\nc7 = min(353,339)+72'
+- **value** [inline, model (form owned 0)] `min(228,252)+11` = 228263; wrote 239; span None
+  - at /receipts/0276.json (reasoning offset 6405; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 = min(236,239)+47=283.\nc6 = min(332,283)+56=339.\nc7 = min(353,339)+72=411.\nc8 = min(393,411)+76'
+- **value** [inline, model (form owned 0)] `min(236,239)+47` = 236286; wrote 283; span None
+  - at /receipts/0276.json (reasoning offset 6431; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc6 = min(332,283)+56=339.\nc7 = min(353,339)+72=411.\nc8 = min(393,411)+76=469.\nc9 = min(462,469)+32'
+- **value** [inline, model (form owned 0)] `min(332,283)+56` = 332339; wrote 339; span None
+  - at /receipts/0276.json (reasoning offset 6457; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 = min(353,339)+72=411.\nc8 = min(393,411)+76=469.\nc9 = min(462,469)+32=494.\nc10= min(557,494)+52'
+- **value** [inline, model (form owned 0)] `min(353,339)+72` = 353411; wrote 411; span None
+  - at /receipts/0276.json (reasoning offset 6483; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 = min(393,411)+76=469.\nc9 = min(462,469)+32=494.\nc10= min(557,494)+52=546.\nRow2 dp [133,181,252'
+- **value** [inline, model (form owned 0)] `min(393,411)+76` = 393487; wrote 469; span None
+  - at /receipts/0276.json (reasoning offset 6509; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 = min(462,469)+32=494.\nc10= min(557,494)+52=546.\nRow2 dp [133,181,252,239,283,339,411,469,494,5'
+- **value** [inline, model (form owned 0)] `min(462,469)+32` = 462501; wrote 494; span None
+  - at /receipts/0276.json (reasoning offset 6535; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10= min(557,494)+52=546.\nRow2 dp [133,181,252,239,283,339,411,469,494,546]. Good.\n\nRow3:\nc1=133+1'
+- **value** [inline, model (form owned 0)] `min(557,494)+52` = 557546; wrote 546; span None
+  - at /receipts/0276.json (reasoning offset 6561; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nRow2 dp [133,181,252,239,283,339,411,469,494,546]. Good.\n\nRow3:\nc1=133+17=150\nc2=min(181,150)+30=1'
+- **value** [inline, model (form owned 0)] `min(181,150)+30` = 181180; wrote 180; span None
+  - at /receipts/0276.json (reasoning offset 6663; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(252,180)+42=222\nc4=min(239,222)+60=282\nc5=min(283,282)+88=370\nc6=min(339,370)+79=418\nc7=min('
+- **value** [inline, model (form owned 0)] `min(252,180)+42` = 252222; wrote 222; span None
+  - at /receipts/0276.json (reasoning offset 6686; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(239,222)+60=282\nc5=min(283,282)+88=370\nc6=min(339,370)+79=418\nc7=min(411,418)+47=458\nc8=min('
+- **value** [inline, model (form owned 0)] `min(239,222)+60` = 239282; wrote 282; span None
+  - at /receipts/0276.json (reasoning offset 6709; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc5=min(283,282)+88=370\nc6=min(339,370)+79=418\nc7=min(411,418)+47=458\nc8=min(469,458)+7=465\nc9=min(4'
+- **value** [inline, model (form owned 0)] `min(283,282)+88` = 283370; wrote 370; span None
+  - at /receipts/0276.json (reasoning offset 6732; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc6=min(339,370)+79=418\nc7=min(411,418)+47=458\nc8=min(469,458)+7=465\nc9=min(494,465)+40=505\nc10=min('
+- **value** [inline, model (form owned 0)] `min(339,370)+79` = 339449; wrote 418; span None
+  - at /receipts/0276.json (reasoning offset 6755; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(411,418)+47=458\nc8=min(469,458)+7=465\nc9=min(494,465)+40=505\nc10=min(546,505)+58=563\nRow3 [1'
+- **value** [inline, model (form owned 0)] `min(411,418)+47` = 411465; wrote 458; span None
+  - at /receipts/0276.json (reasoning offset 6778; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(469,458)+7=465\nc9=min(494,465)+40=505\nc10=min(546,505)+58=563\nRow3 [150,180,222,282,370,418,'
+- **value** [inline, model (form owned 0)] `min(469,458)+7` = 469465; wrote 465; span None
+  - at /receipts/0276.json (reasoning offset 6800; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(494,465)+40=505\nc10=min(546,505)+58=563\nRow3 [150,180,222,282,370,418,458,465,505,563]. Chec'
+- **value** [inline, model (form owned 0)] `min(494,465)+40` = 494505; wrote 505; span None
+  - at /receipts/0276.json (reasoning offset 6823; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(546,505)+58=563\nRow3 [150,180,222,282,370,418,458,465,505,563]. Check c5: min 283 (from abo'
+- **value** [inline, model (form owned 0)] `min(546,505)+58` = 546563; wrote 563; span None
+  - at /receipts/0276.json (reasoning offset 6847; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow3 [150,180,222,282,370,418,458,465,505,563]. Check c5: min 283 (from above at c5) and current c4'
+- **value** [inline, model (form owned 0)] `min(180,248)+37` = 180285; wrote 217; span None
+  - at /receipts/0276.json (reasoning offset 7016; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(222,217)+94=311\nc4=min(282,311)+50=332\nc5=min(370,332)+27=359\nc6=min(418,359)+69=428\nc7=min('
+- **value** [inline, model (form owned 0)] `min(222,217)+94` = 222311; wrote 311; span None
+  - at /receipts/0276.json (reasoning offset 7039; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(282,311)+50=332\nc5=min(370,332)+27=359\nc6=min(418,359)+69=428\nc7=min(458,428)+57=485\nc8=min('
+- **value** [inline, model (form owned 0)] `min(282,311)+50` = 282361; wrote 332; span None
+  - at /receipts/0276.json (reasoning offset 7062; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(370,332)+27=359\nc6=min(418,359)+69=428\nc7=min(458,428)+57=485\nc8=min(465,485)+83=548\nc9=min('
+- **value** [inline, model (form owned 0)] `min(370,332)+27` = 370359; wrote 359; span None
+  - at /receipts/0276.json (reasoning offset 7085; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(418,359)+69=428\nc7=min(458,428)+57=485\nc8=min(465,485)+83=548\nc9=min(505,548)+12=517\nc10=min'
+- **value** [inline, model (form owned 0)] `min(418,359)+69` = 418428; wrote 428; span None
+  - at /receipts/0276.json (reasoning offset 7108; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(458,428)+57=485\nc8=min(465,485)+83=548\nc9=min(505,548)+12=517\nc10=min(563,517)+1=518\nRow4 [2'
+- **value** [inline, model (form owned 0)] `min(458,428)+57` = 458485; wrote 485; span None
+  - at /receipts/0276.json (reasoning offset 7131; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(465,485)+83=548\nc9=min(505,548)+12=517\nc10=min(563,517)+1=518\nRow4 [248,217,311,332,359,428,'
+- **value** [inline, model (form owned 0)] `min(465,485)+83` = 465568; wrote 548; span None
+  - at /receipts/0276.json (reasoning offset 7154; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(505,548)+12=517\nc10=min(563,517)+1=518\nRow4 [248,217,311,332,359,428,485,548,517,518].\nWait '
+- **value** [inline, model (form owned 0)] `min(505,548)+12` = 505560; wrote 517; span None
+  - at /receipts/0276.json (reasoning offset 7177; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc10=min(563,517)+1=518\nRow4 [248,217,311,332,359,428,485,548,517,518].\nWait c10: min(prev row c10=5'
+- **value** [inline, model (form owned 0)] `min(563,517)+1` = 563518; wrote 518; span None
+  - at /receipts/0276.json (reasoning offset 7200; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow4 [248,217,311,332,359,428,485,548,517,518].\nWait c10: min(prev row c10=563, current c9=517)+1 ='
+- **value** [inline, model (form owned 0)] `min(217,307)+64` = 217371; wrote 281; span None
+  - at /receipts/0276.json (reasoning offset 7389; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(311,281)+71=352\nc4=min(332,352)+83=415\nc5=min(359,415)+44=403\nc6=min(428,403)+37=440\nc7=min('
+- **value** [inline, model (form owned 0)] `min(311,281)+71` = 311352; wrote 352; span None
+  - at /receipts/0276.json (reasoning offset 7412; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(332,352)+83=415\nc5=min(359,415)+44=403\nc6=min(428,403)+37=440\nc7=min(485,440)+77=517\nc8=min('
+- **value** [inline, model (form owned 0)] `min(332,352)+83` = 332435; wrote 415; span None
+  - at /receipts/0276.json (reasoning offset 7435; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(359,415)+44=403\nc6=min(428,403)+37=440\nc7=min(485,440)+77=517\nc8=min(548,517)+23=540\nc9=min('
+- **value** [inline, model (form owned 0)] `min(359,415)+44` = 359459; wrote 403; span None
+  - at /receipts/0276.json (reasoning offset 7458; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(428,403)+37=440\nc7=min(485,440)+77=517\nc8=min(548,517)+23=540\nc9=min(517,540)+75=592\nc10=min'
+- **value** [inline, model (form owned 0)] `min(428,403)+37` = 428440; wrote 440; span None
+  - at /receipts/0276.json (reasoning offset 7481; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(485,440)+77=517\nc8=min(548,517)+23=540\nc9=min(517,540)+75=592\nc10=min(518,592)+26=544\nRow5 ['
+- **value** [inline, model (form owned 0)] `min(485,440)+77` = 485517; wrote 517; span None
+  - at /receipts/0276.json (reasoning offset 7504; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(548,517)+23=540\nc9=min(517,540)+75=592\nc10=min(518,592)+26=544\nRow5 [307,281,352,415,403,440'
+- **value** [inline, model (form owned 0)] `min(548,517)+23` = 548540; wrote 540; span None
+  - at /receipts/0276.json (reasoning offset 7527; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(517,540)+75=592\nc10=min(518,592)+26=544\nRow5 [307,281,352,415,403,440,517,540,592,544]. yes.'
+- **value** [inline, model (form owned 0)] `min(517,540)+75` = 517615; wrote 592; span None
+  - at /receipts/0276.json (reasoning offset 7550; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc10=min(518,592)+26=544\nRow5 [307,281,352,415,403,440,517,540,592,544]. yes.\n\nRow6:\nvalues 30,19,35'
+- **value** [inline, model (form owned 0)] `min(518,592)+26` = 518618; wrote 544; span None
+  - at /receipts/0276.json (reasoning offset 7574; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow5 [307,281,352,415,403,440,517,540,592,544]. yes.\n\nRow6:\nvalues 30,19,35,88,36,48,47,10,85,24\nc1'
+- **value** [inline, model (form owned 0)] `min(281,337)+19` = 281356; wrote 300; span None
+  - at /receipts/0276.json (reasoning offset 7708; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(352,300)+35=335\nc4=min(415,335)+88=423\nc5=min(403,423)+36=439\nc6=min(440,439)+48=487\nc7=min('
+- **value** [inline, model (form owned 0)] `min(352,300)+35` = 352335; wrote 335; span None
+  - at /receipts/0276.json (reasoning offset 7731; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(415,335)+88=423\nc5=min(403,423)+36=439\nc6=min(440,439)+48=487\nc7=min(517,487)+47=534\nc8=min('
+- **value** [inline, model (form owned 0)] `min(415,335)+88` = 415423; wrote 423; span None
+  - at /receipts/0276.json (reasoning offset 7754; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc5=min(403,423)+36=439\nc6=min(440,439)+48=487\nc7=min(517,487)+47=534\nc8=min(540,534)+10=544\nc9=min('
+- **value** [inline, model (form owned 0)] `min(403,423)+36` = 403459; wrote 439; span None
+  - at /receipts/0276.json (reasoning offset 7777; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(440,439)+48=487\nc7=min(517,487)+47=534\nc8=min(540,534)+10=544\nc9=min(592,544)+85=629\nc10=min'
+- **value** [inline, model (form owned 0)] `min(440,439)+48` = 440487; wrote 487; span None
+  - at /receipts/0276.json (reasoning offset 7800; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(517,487)+47=534\nc8=min(540,534)+10=544\nc9=min(592,544)+85=629\nc10=min(544,629)+24=568\nRow6 ['
+- **value** [inline, model (form owned 0)] `min(517,487)+47` = 517534; wrote 534; span None
+  - at /receipts/0276.json (reasoning offset 7823; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(540,534)+10=544\nc9=min(592,544)+85=629\nc10=min(544,629)+24=568\nRow6 [337,300,335,423,439,487'
+- **value** [inline, model (form owned 0)] `min(540,534)+10` = 540544; wrote 544; span None
+  - at /receipts/0276.json (reasoning offset 7846; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(592,544)+85=629\nc10=min(544,629)+24=568\nRow6 [337,300,335,423,439,487,534,544,629,568]. yes.'
+- **value** [inline, model (form owned 0)] `min(592,544)+85` = 592629; wrote 629; span None
+  - at /receipts/0276.json (reasoning offset 7869; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(544,629)+24=568\nRow6 [337,300,335,423,439,487,534,544,629,568]. yes.\n\nRow7:\nvalues 93,65,66'
+- **value** [inline, model (form owned 0)] `min(544,629)+24` = 544653; wrote 568; span None
+  - at /receipts/0276.json (reasoning offset 7893; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nRow6 [337,300,335,423,439,487,534,544,629,568]. yes.\n\nRow7:\nvalues 93,65,66,73,34,6,58,56,88,24\nc1='
+- **value** [inline, model (form owned 0)] `min(300,430)+65` = 300495; wrote 365; span None
+  - at /receipts/0276.json (reasoning offset 8026; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(335,365)+66=401\nc4=min(423,401)+73=474\nc5=min(439,474)+34=473\nc6=min(487,473)+6=479\nc7=min(5'
+- **value** [inline, model (form owned 0)] `min(335,365)+66` = 335431; wrote 401; span None
+  - at /receipts/0276.json (reasoning offset 8049; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(423,401)+73=474\nc5=min(439,474)+34=473\nc6=min(487,473)+6=479\nc7=min(534,479)+58=537\nc8=min(5'
+- **value** [inline, model (form owned 0)] `min(423,401)+73` = 423474; wrote 474; span None
+  - at /receipts/0276.json (reasoning offset 8072; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(439,474)+34=473\nc6=min(487,473)+6=479\nc7=min(534,479)+58=537\nc8=min(544,537)+56=593\nc9=min(6'
+- **value** [inline, model (form owned 0)] `min(439,474)+34` = 439508; wrote 473; span None
+  - at /receipts/0276.json (reasoning offset 8095; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(487,473)+6=479\nc7=min(534,479)+58=537\nc8=min(544,537)+56=593\nc9=min(629,593)+88=681\nc10=min('
+- **value** [inline, model (form owned 0)] `min(487,473)+6` = 487479; wrote 479; span None
+  - at /receipts/0276.json (reasoning offset 8117; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=min(534,479)+58=537\nc8=min(544,537)+56=593\nc9=min(629,593)+88=681\nc10=min(568,681)+24=592\nRow7 ['
+- **value** [inline, model (form owned 0)] `min(534,479)+58` = 534537; wrote 537; span None
+  - at /receipts/0276.json (reasoning offset 8140; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(544,537)+56=593\nc9=min(629,593)+88=681\nc10=min(568,681)+24=592\nRow7 [430,365,401,474,473,479'
+- **value** [inline, model (form owned 0)] `min(544,537)+56` = 544593; wrote 593; span None
+  - at /receipts/0276.json (reasoning offset 8163; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc9=min(629,593)+88=681\nc10=min(568,681)+24=592\nRow7 [430,365,401,474,473,479,537,593,681,592]. yes.'
+- **value** [inline, model (form owned 0)] `min(629,593)+88` = 629681; wrote 681; span None
+  - at /receipts/0276.json (reasoning offset 8186; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(568,681)+24=592\nRow7 [430,365,401,474,473,479,537,593,681,592]. yes.\n\nRow8:\nvalues 31,92,22'
+- **value** [inline, model (form owned 0)] `min(568,681)+24` = 568705; wrote 592; span None
+  - at /receipts/0276.json (reasoning offset 8210; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nRow7 [430,365,401,474,473,479,537,593,681,592]. yes.\n\nRow8:\nvalues 31,92,22,63,37,81,44,3,59,14\nc1='
+- **value** [inline, model (form owned 0)] `min(365,461)+92` = 365553; wrote 457; span None
+  - at /receipts/0276.json (reasoning offset 8343; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc3=min(401,457)+22=423\nc4=min(474,423)+63=486\nc5=min(473,486)+37=510\nc6=min(479,510)+81=560\nc7=min('
+- **value** [inline, model (form owned 0)] `min(401,457)+22` = 401479; wrote 423; span None
+  - at /receipts/0276.json (reasoning offset 8366; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(474,423)+63=486\nc5=min(473,486)+37=510\nc6=min(479,510)+81=560\nc7=min(537,560)+44=581\nc8=min('
+- **value** [inline, model (form owned 0)] `min(474,423)+63` = 474486; wrote 486; span None
+  - at /receipts/0276.json (reasoning offset 8389; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(473,486)+37=510\nc6=min(479,510)+81=560\nc7=min(537,560)+44=581\nc8=min(593,581)+3=584\nc9=min(6'
+- **value** [inline, model (form owned 0)] `min(473,486)+37` = 473523; wrote 510; span None
+  - at /receipts/0276.json (reasoning offset 8412; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(479,510)+81=560\nc7=min(537,560)+44=581\nc8=min(593,581)+3=584\nc9=min(681,584)+59=643\nc10=min('
+- **value** [inline, model (form owned 0)] `min(479,510)+81` = 479591; wrote 560; span None
+  - at /receipts/0276.json (reasoning offset 8435; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(537,560)+44=581\nc8=min(593,581)+3=584\nc9=min(681,584)+59=643\nc10=min(592,643)+14=606\nRow8 [4'
+- **value** [inline, model (form owned 0)] `min(537,560)+44` = 537604; wrote 581; span None
+  - at /receipts/0276.json (reasoning offset 8458; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(593,581)+3=584\nc9=min(681,584)+59=643\nc10=min(592,643)+14=606\nRow8 [461,457,423,486,510,560,'
+- **value** [inline, model (form owned 0)] `min(593,581)+3` = 593584; wrote 584; span None
+  - at /receipts/0276.json (reasoning offset 8480; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(681,584)+59=643\nc10=min(592,643)+14=606\nRow8 [461,457,423,486,510,560,581,584,643,606]. yes.'
+- **value** [inline, model (form owned 0)] `min(681,584)+59` = 681643; wrote 643; span None
+  - at /receipts/0276.json (reasoning offset 8503; 1 receipt copies)
+  - model: reappears later 7x, in final content False, questioned False; next '\nc10=min(592,643)+14=606\nRow8 [461,457,423,486,510,560,581,584,643,606]. yes.\n\nRow9:\nvalues 72,56,34'
+- **value** [inline, model (form owned 0)] `min(592,643)+14` = 592657; wrote 606; span None
+  - at /receipts/0276.json (reasoning offset 8527; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nRow8 [461,457,423,486,510,560,581,584,643,606]. yes.\n\nRow9:\nvalues 72,56,34,32,23,53,3,75,42,69\nc1='
+- **value** [inline, model (form owned 0)] `min(457,533)+56` = 457589; wrote 513; span None
+  - at /receipts/0276.json (reasoning offset 8660; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(423,513)+34=457\nc4=min(486,457)+32=489\nc5=min(510,489)+23=512\nc6=min(560,512)+53=565\nc7=min('
+- **value** [inline, model (form owned 0)] `min(423,513)+34` = 423547; wrote 457; span None
+  - at /receipts/0276.json (reasoning offset 8683; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(486,457)+32=489\nc5=min(510,489)+23=512\nc6=min(560,512)+53=565\nc7=min(581,565)+3=568\nc8=min(5'
+- **value** [inline, model (form owned 0)] `min(486,457)+32` = 486489; wrote 489; span None
+  - at /receipts/0276.json (reasoning offset 8706; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(510,489)+23=512\nc6=min(560,512)+53=565\nc7=min(581,565)+3=568\nc8=min(584,568)+75=643\nc9=min(6'
+- **value** [inline, model (form owned 0)] `min(510,489)+23` = 510512; wrote 512; span None
+  - at /receipts/0276.json (reasoning offset 8729; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(560,512)+53=565\nc7=min(581,565)+3=568\nc8=min(584,568)+75=643\nc9=min(643,643)+42=685 (min 643'
+- **value** [inline, model (form owned 0)] `min(560,512)+53` = 560565; wrote 565; span None
+  - at /receipts/0276.json (reasoning offset 8752; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(581,565)+3=568\nc8=min(584,568)+75=643\nc9=min(643,643)+42=685 (min 643 equal both? c8=643 fro'
+- **value** [inline, model (form owned 0)] `min(581,565)+3` = 581568; wrote 568; span None
+  - at /receipts/0276.json (reasoning offset 8774; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(584,568)+75=643\nc9=min(643,643)+42=685 (min 643 equal both? c8=643 from above row8 c9=643? W'
+- **value** [inline, model (form owned 0)] `min(584,568)+75` = 584643; wrote 643; span None
+  - at /receipts/0276.json (reasoning offset 8797; 1 receipt copies)
+  - model: reappears later 6x, in final content False, questioned False; next '\nc9=min(643,643)+42=685 (min 643 equal both? c8=643 from above row8 c9=643? Wait prev row c9 is 643,'
+- **value** [inline, model (form owned 0)] `min(606,685)+69` = 606754; wrote 675; span None
+  - at /receipts/0276.json (reasoning offset 8955; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nRow9 [533,513,457,489,512,565,568,643,685,675]. yes.\n\nRow10:\nvalues 54,96,2,20,77,47,25,29,4,30\nc1='
+- **value** [inline, model (form owned 0)] `min(513,587)+96` = 513683; wrote 609; span None
+  - at /receipts/0276.json (reasoning offset 9088; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(457,609)+2=459\nc4=min(489,459)+20=479\nc5=min(512,479)+77=556\nc6=min(565,556)+47=603\nc7=min(5'
+- **value** [inline, model (form owned 0)] `min(457,609)+2` = 457611; wrote 459; span None
+  - at /receipts/0276.json (reasoning offset 9110; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(489,459)+20=479\nc5=min(512,479)+77=556\nc6=min(565,556)+47=603\nc7=min(568,603)+25=593\nc8=min('
+- **value** [inline, model (form owned 0)] `min(489,459)+20` = 489479; wrote 479; span None
+  - at /receipts/0276.json (reasoning offset 9133; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(512,479)+77=556\nc6=min(565,556)+47=603\nc7=min(568,603)+25=593\nc8=min(643,593)+29=622\nc9=min('
+- **value** [inline, model (form owned 0)] `min(512,479)+77` = 512556; wrote 556; span None
+  - at /receipts/0276.json (reasoning offset 9156; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(565,556)+47=603\nc7=min(568,603)+25=593\nc8=min(643,593)+29=622\nc9=min(685,622)+4=626\nc10=min('
+- **value** [inline, model (form owned 0)] `min(565,556)+47` = 565603; wrote 603; span None
+  - at /receipts/0276.json (reasoning offset 9179; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(568,603)+25=593\nc8=min(643,593)+29=622\nc9=min(685,622)+4=626\nc10=min(675,626)+30=656.\nSeems '
+- **value** [inline, model (form owned 0)] `min(568,603)+25` = 568628; wrote 593; span None
+  - at /receipts/0276.json (reasoning offset 9202; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(643,593)+29=622\nc9=min(685,622)+4=626\nc10=min(675,626)+30=656.\nSeems consistent.\n\nNeed answe'
+- **value** [inline, model (form owned 0)] `min(643,593)+29` = 643622; wrote 622; span None
+  - at /receipts/0276.json (reasoning offset 9225; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(685,622)+4=626\nc10=min(675,626)+30=656.\nSeems consistent.\n\nNeed answer final as JSON integer'
+- **value** [inline, model (form owned 0)] `min(685,622)+4` = 685626; wrote 626; span None
+  - at /receipts/0276.json (reasoning offset 9247; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(675,626)+30=656.\nSeems consistent.\n\nNeed answer final as JSON integer. No explanation maybe'
+- **value** [inline, model (form owned 0)] `min(675,626)+30` = 675656; wrote 656; span None
+  - at /receipts/0276.json (reasoning offset 9271; 1 receipt copies)
+  - model: reappears later 2x, in final content True, questioned False; next '.\nSeems consistent.\n\nNeed answer final as JSON integer. No explanation maybe. \nFinal: 656. Ensure va'
+- **value** [inline, model (form owned 0)] `19-132` = -113; wrote -2508; span None
+  - at /receipts/0277.json (reasoning offset 318; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\n3 A 17 1183 = 17*1183 = 1183*10 11830 +*7 8281 =20111? 1183*7=8281, sum 20111.\n4 F 13 929 = 929*10 '
+- **value** [inline, model (form owned 0)] `7-483` = -476; wrote -3381; span None
+  - at /receipts/0277.json (reasoning offset 850; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\n24 F 7 -909 = -6363\n25 B 15 1535 = 1535*10 15350 +7675=23025\n26 B 9 1162 = 10458\n27 D 9 1742 = 1567'
+- **value** [inline, model (form owned 0)] `7-909` = -902; wrote -6363; span None
+  - at /receipts/0277.json (reasoning offset 870; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\n25 B 15 1535 = 1535*10 15350 +7675=23025\n26 B 9 1162 = 10458\n27 D 9 1742 = 15678\n28 E 20 -449 = -89'
+- **value** [inline, model (form owned 0)] `20-449` = -429; wrote -8980; span None
+  - at /receipts/0277.json (reasoning offset 972; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\n29 C 9 1347 = 12123\n30 F 8 401 = 3208\n31 B 1 974=974\n32 E 1 -428 = -428\n33 C 15 -757 = -11355 (757*'
+- **value** [inline, model (form owned 0)] `1-428` = -427; wrote -428; span None
+  - at /receipts/0277.json (reasoning offset 1045; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '\n33 C 15 -757 = -11355 (757*10=7570+3785)\n34 D 17 277 = 277*10 2770 +1939=4709\n35 D 19 -825 = -15675'
+- **value** [inline, model (form owned 0)] `10-718` = -708; wrote -7180; span None
+  - at /receipts/0277.json (reasoning offset 1184; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\n37 D 4 609=2436\n38 F 20 1779 = 35580\n39 E 3 189=567\n40 F 13 1371 = 1371*10=13710 +4113=17823\n41 A 8'
+- **value** [inline, model (form owned 0)] `15-213` = -198; wrote -3195; span None
+  - at /receipts/0277.json (reasoning offset 1334; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next "\n44 F 20 -350 = -7000\n\nNow sum per category.\n\nLet's sum A:\nA entries: 3:20111; 12:6552; 14:3720; 17:"
+- **value** [inline, model (form owned 0)] `20-350` = -330; wrote -7000; span None
+  - at /receipts/0277.json (reasoning offset 1355; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next "\n\nNow sum per category.\n\nLet's sum A:\nA entries: 3:20111; 12:6552; 14:3720; 17:2192; 18:19524; 23:-3"
+- **value** [inline, model (form owned 0)] `3+20111` = 20114; wrote 21905; span None
+  - at /receipts/0277.json (reasoning offset 3946; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n4 +12077=33982\n5 +4070=38052\n6 +9612=47664\n7 -11154=36510\n8 +25753=62263\n9 +214=62477\n10 +4623=6710'
+- **value** [inline, model (form owned 0)] `4+12077` = 12081; wrote 33982; span None
+  - at /receipts/0277.json (reasoning offset 3961; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n5 +4070=38052\n6 +9612=47664\n7 -11154=36510\n8 +25753=62263\n9 +214=62477\n10 +4623=67100\n11 +5600=7270'
+- **value** [inline, model (form owned 0)] `5+4070` = 4075; wrote 38052; span None
+  - at /receipts/0277.json (reasoning offset 3975; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n6 +9612=47664\n7 -11154=36510\n8 +25753=62263\n9 +214=62477\n10 +4623=67100\n11 +5600=72700\n12 +6552=792'
+- **value** [inline, model (form owned 0)] `6+9612` = 9618; wrote 47664; span None
+  - at /receipts/0277.json (reasoning offset 3989; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n7 -11154=36510\n8 +25753=62263\n9 +214=62477\n10 +4623=67100\n11 +5600=72700\n12 +6552=79252\n13 -14526=6'
+- **value** [inline, model (form owned 0)] `7-11154` = -11147; wrote 36510; span None
+  - at /receipts/0277.json (reasoning offset 4004; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n8 +25753=62263\n9 +214=62477\n10 +4623=67100\n11 +5600=72700\n12 +6552=79252\n13 -14526=64726\n14 +3720=6'
+- **value** [inline, model (form owned 0)] `8+25753` = 25761; wrote 62263; span None
+  - at /receipts/0277.json (reasoning offset 4019; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n9 +214=62477\n10 +4623=67100\n11 +5600=72700\n12 +6552=79252\n13 -14526=64726\n14 +3720=68446\n15 +25116='
+- **value** [inline, model (form owned 0)] `9+214` = 223; wrote 62477; span None
+  - at /receipts/0277.json (reasoning offset 4032; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n10 +4623=67100\n11 +5600=72700\n12 +6552=79252\n13 -14526=64726\n14 +3720=68446\n15 +25116=93562\n16 +515'
+- **value** [inline, model (form owned 0)] `10+4623` = 4633; wrote 67100; span None
+  - at /receipts/0277.json (reasoning offset 4047; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n11 +5600=72700\n12 +6552=79252\n13 -14526=64726\n14 +3720=68446\n15 +25116=93562\n16 +5151=98713\n17 +219'
+- **value** [inline, model (form owned 0)] `11+5600` = 5611; wrote 72700; span None
+  - at /receipts/0277.json (reasoning offset 4062; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n12 +6552=79252\n13 -14526=64726\n14 +3720=68446\n15 +25116=93562\n16 +5151=98713\n17 +2192=100905\n18 +19'
+- **value** [inline, model (form owned 0)] `12+6552` = 6564; wrote 79252; span None
+  - at /receipts/0277.json (reasoning offset 4077; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n13 -14526=64726\n14 +3720=68446\n15 +25116=93562\n16 +5151=98713\n17 +2192=100905\n18 +19524=120429\n19 +'
+- **value** [inline, model (form owned 0)] `13-14526` = -14513; wrote 64726; span None
+  - at /receipts/0277.json (reasoning offset 4093; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n14 +3720=68446\n15 +25116=93562\n16 +5151=98713\n17 +2192=100905\n18 +19524=120429\n19 +3252=123681\n20 +'
+- **value** [inline, model (form owned 0)] `14+3720` = 3734; wrote 68446; span None
+  - at /receipts/0277.json (reasoning offset 4108; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n15 +25116=93562\n16 +5151=98713\n17 +2192=100905\n18 +19524=120429\n19 +3252=123681\n20 +3610=127291\n21 '
+- **value** [inline, model (form owned 0)] `15+25116` = 25131; wrote 93562; span None
+  - at /receipts/0277.json (reasoning offset 4124; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n16 +5151=98713\n17 +2192=100905\n18 +19524=120429\n19 +3252=123681\n20 +3610=127291\n21 +208=127499\n22 +'
+- **value** [inline, model (form owned 0)] `16+5151` = 5167; wrote 98713; span None
+  - at /receipts/0277.json (reasoning offset 4139; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n17 +2192=100905\n18 +19524=120429\n19 +3252=123681\n20 +3610=127291\n21 +208=127499\n22 +1488=128987\n23 '
+- **value** [inline, model (form owned 0)] `17+2192` = 2209; wrote 100905; span None
+  - at /receipts/0277.json (reasoning offset 4154; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n18 +19524=120429\n19 +3252=123681\n20 +3610=127291\n21 +208=127499\n22 +1488=128987\n23 -3381=125606\n24 '
+- **value** [inline, model (form owned 0)] `18+19524` = 19542; wrote 120429; span None
+  - at /receipts/0277.json (reasoning offset 4171; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n19 +3252=123681\n20 +3610=127291\n21 +208=127499\n22 +1488=128987\n23 -3381=125606\n24 -6363=119243\n25 +'
+- **value** [inline, model (form owned 0)] `19+3252` = 3271; wrote 123681; span None
+  - at /receipts/0277.json (reasoning offset 4187; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n20 +3610=127291\n21 +208=127499\n22 +1488=128987\n23 -3381=125606\n24 -6363=119243\n25 +23025=142268\n26 '
+- **value** [inline, model (form owned 0)] `20+3610` = 3630; wrote 127291; span None
+  - at /receipts/0277.json (reasoning offset 4203; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n21 +208=127499\n22 +1488=128987\n23 -3381=125606\n24 -6363=119243\n25 +23025=142268\n26 +10458=152726\n27'
+- **value** [inline, model (form owned 0)] `21+208` = 229; wrote 127499; span None
+  - at /receipts/0277.json (reasoning offset 4218; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n22 +1488=128987\n23 -3381=125606\n24 -6363=119243\n25 +23025=142268\n26 +10458=152726\n27 +15678=168404\n'
+- **value** [inline, model (form owned 0)] `22+1488` = 1510; wrote 128987; span None
+  - at /receipts/0277.json (reasoning offset 4234; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n23 -3381=125606\n24 -6363=119243\n25 +23025=142268\n26 +10458=152726\n27 +15678=168404\n28 -8980=159424\n'
+- **value** [inline, model (form owned 0)] `23-3381` = -3358; wrote 125606; span None
+  - at /receipts/0277.json (reasoning offset 4250; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n24 -6363=119243\n25 +23025=142268\n26 +10458=152726\n27 +15678=168404\n28 -8980=159424\n29 +12123=171547'
+- **value** [inline, model (form owned 0)] `24-6363` = -6339; wrote 119243; span None
+  - at /receipts/0277.json (reasoning offset 4266; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n25 +23025=142268\n26 +10458=152726\n27 +15678=168404\n28 -8980=159424\n29 +12123=171547\n30 +3208=174755'
+- **value** [inline, model (form owned 0)] `25+23025` = 23050; wrote 142268; span None
+  - at /receipts/0277.json (reasoning offset 4283; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n26 +10458=152726\n27 +15678=168404\n28 -8980=159424\n29 +12123=171547\n30 +3208=174755\n31 +974=175729\n3'
+- **value** [inline, model (form owned 0)] `26+10458` = 10484; wrote 152726; span None
+  - at /receipts/0277.json (reasoning offset 4300; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n27 +15678=168404\n28 -8980=159424\n29 +12123=171547\n30 +3208=174755\n31 +974=175729\n32 -428=175301\n33 '
+- **value** [inline, model (form owned 0)] `27+15678` = 15705; wrote 168404; span None
+  - at /receipts/0277.json (reasoning offset 4317; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n28 -8980=159424\n29 +12123=171547\n30 +3208=174755\n31 +974=175729\n32 -428=175301\n33 -11355=163946\n34 '
+- **value** [inline, model (form owned 0)] `28-8980` = -8952; wrote 159424; span None
+  - at /receipts/0277.json (reasoning offset 4333; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n29 +12123=171547\n30 +3208=174755\n31 +974=175729\n32 -428=175301\n33 -11355=163946\n34 +4709=168655\n35 '
+- **value** [inline, model (form owned 0)] `29+12123` = 12152; wrote 171547; span None
+  - at /receipts/0277.json (reasoning offset 4350; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n30 +3208=174755\n31 +974=175729\n32 -428=175301\n33 -11355=163946\n34 +4709=168655\n35 -15675=152980\n36 '
+- **value** [inline, model (form owned 0)] `30+3208` = 3238; wrote 174755; span None
+  - at /receipts/0277.json (reasoning offset 4366; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n31 +974=175729\n32 -428=175301\n33 -11355=163946\n34 +4709=168655\n35 -15675=152980\n36 -7180=145800\n37 '
+- **value** [inline, model (form owned 0)] `31+974` = 1005; wrote 175729; span None
+  - at /receipts/0277.json (reasoning offset 4381; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n32 -428=175301\n33 -11355=163946\n34 +4709=168655\n35 -15675=152980\n36 -7180=145800\n37 +2436=148236\n38'
+- **value** [inline, model (form owned 0)] `32-428` = -396; wrote 175301; span None
+  - at /receipts/0277.json (reasoning offset 4396; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n33 -11355=163946\n34 +4709=168655\n35 -15675=152980\n36 -7180=145800\n37 +2436=148236\n38 +35580=183816\n'
+- **value** [inline, model (form owned 0)] `33-11355` = -11322; wrote 163946; span None
+  - at /receipts/0277.json (reasoning offset 4413; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n34 +4709=168655\n35 -15675=152980\n36 -7180=145800\n37 +2436=148236\n38 +35580=183816\n39 +567=184383\n40'
+- **value** [inline, model (form owned 0)] `34+4709` = 4743; wrote 168655; span None
+  - at /receipts/0277.json (reasoning offset 4429; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n35 -15675=152980\n36 -7180=145800\n37 +2436=148236\n38 +35580=183816\n39 +567=184383\n40 +17823=202206\n4'
+- **value** [inline, model (form owned 0)] `35-15675` = -15640; wrote 152980; span None
+  - at /receipts/0277.json (reasoning offset 4446; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n36 -7180=145800\n37 +2436=148236\n38 +35580=183816\n39 +567=184383\n40 +17823=202206\n41 +10400=212606\n4'
+- **value** [inline, model (form owned 0)] `36-7180` = -7144; wrote 145800; span None
+  - at /receipts/0277.json (reasoning offset 4462; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n37 +2436=148236\n38 +35580=183816\n39 +567=184383\n40 +17823=202206\n41 +10400=212606\n42 +14427=227033\n'
+- **value** [inline, model (form owned 0)] `37+2436` = 2473; wrote 148236; span None
+  - at /receipts/0277.json (reasoning offset 4478; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n38 +35580=183816\n39 +567=184383\n40 +17823=202206\n41 +10400=212606\n42 +14427=227033\n43 -3195=223838\n'
+- **value** [inline, model (form owned 0)] `38+35580` = 35618; wrote 183816; span None
+  - at /receipts/0277.json (reasoning offset 4495; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n39 +567=184383\n40 +17823=202206\n41 +10400=212606\n42 +14427=227033\n43 -3195=223838\n44 -7000=216838\n\n'
+- **value** [inline, model (form owned 0)] `39+567` = 606; wrote 184383; span None
+  - at /receipts/0277.json (reasoning offset 4510; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n40 +17823=202206\n41 +10400=212606\n42 +14427=227033\n43 -3195=223838\n44 -7000=216838\n\nTotal products '
+- **value** [inline, model (form owned 0)] `40+17823` = 17863; wrote 202206; span None
+  - at /receipts/0277.json (reasoning offset 4527; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n41 +10400=212606\n42 +14427=227033\n43 -3195=223838\n44 -7000=216838\n\nTotal products = 216,838. Sum pe'
+- **value** [inline, model (form owned 0)] `41+10400` = 10441; wrote 212606; span None
+  - at /receipts/0277.json (reasoning offset 4544; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n42 +14427=227033\n43 -3195=223838\n44 -7000=216838\n\nTotal products = 216,838. Sum per categories comp'
+- **value** [inline, model (form owned 0)] `42+14427` = 14469; wrote 227033; span None
+  - at /receipts/0277.json (reasoning offset 4561; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n43 -3195=223838\n44 -7000=216838\n\nTotal products = 216,838. Sum per categories computed: A59118+B661'
+- **value** [inline, model (form owned 0)] `43-3195` = -3152; wrote 223838; span None
+  - at /receipts/0277.json (reasoning offset 4577; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n44 -7000=216838\n\nTotal products = 216,838. Sum per categories computed: A59118+B66149=125267; +C(-1'
+- **value** [inline, model (form owned 0)] `44-7000` = -6956; wrote 216838; span None
+  - at /receipts/0277.json (reasoning offset 4593; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\n\nTotal products = 216,838. Sum per categories computed: A59118+B66149=125267; +C(-145)=125122; +D16'
+- **value** [inline, model (form owned 0)] `(-14526)` = -14526; wrote -20080; span None
+  - at /receipts/0278.json (reasoning offset 1889; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. +3252=-16828. +1488=-15340. +12123=-3217. +(-11355)= -14572. +14427 = -145? Wait compute carefully'
+- **value** [inline, model (form owned 0)] `(-11355)` = -11355; wrote -14572; span None
+  - at /receipts/0278.json (reasoning offset 1950; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next ". +14427 = -145? Wait compute carefully: -14572 + 14427 = -145. C=-145. Let's re-evaluate all C term"
+- **value** [inline, model (form owned 0)] `3+39` = 42; wrote 58; span None
+  - at /receipts/0286.json (reasoning offset 687; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '; 2->4 +29=48.\nQueue 3(58),4(48),7(40).\nPop 7 d=40 (before 4? d4=48). From 7:\n0 no improve (53>0)\n2 '
+- **value** [inline, model (form owned 0)] `4+29` = 33; wrote 48; span None
+  - at /receipts/0286.json (reasoning offset 700; 1 receipt copies)
+  - model: reappears later 9x, in final content False, questioned False; next '.\nQueue 3(58),4(48),7(40).\nPop 7 d=40 (before 4? d4=48). From 7:\n0 no improve (53>0)\n2 +39=79 >19\n8 '
+- **value** [inline, model (form owned 0)] `2+39` = 41; wrote 79; span None
+  - at /receipts/0286.json (reasoning offset 793; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' >19\n8 +22=62\n10 +24=64\nQueue d8=62,d10=64.\nPop 4 d=48. From 4:\n5 +14=62\n7 +28=76 >40\n8 +36=84 >62\n1'
+- **value** [inline, model (form owned 0)] `8+22` = 30; wrote 62; span None
+  - at /receipts/0286.json (reasoning offset 806; 1 receipt copies)
+  - model: reappears later 14x, in final content False, questioned False; next '\n10 +24=64\nQueue d8=62,d10=64.\nPop 4 d=48. From 4:\n5 +14=62\n7 +28=76 >40\n8 +36=84 >62\n10 +19=67 >64\n'
+- **value** [inline, model (form owned 0)] `10+24` = 34; wrote 64; span None
+  - at /receipts/0286.json (reasoning offset 816; 1 receipt copies)
+  - model: reappears later 13x, in final content False, questioned False; next '\nQueue d8=62,d10=64.\nPop 4 d=48. From 4:\n5 +14=62\n7 +28=76 >40\n8 +36=84 >62\n10 +19=67 >64\nQueue 5(62'
+- **value** [inline, model (form owned 0)] `5+14` = 19; wrote 62; span None
+  - at /receipts/0286.json (reasoning offset 865; 1 receipt copies)
+  - model: reappears later 12x, in final content False, questioned False; next '\n7 +28=76 >40\n8 +36=84 >62\n10 +19=67 >64\nQueue 5(62), d8 62,d3 58,d10 64.\nPop 3 d=58. From 3:\n4 +29='
+- **value** [inline, model (form owned 0)] `7+28` = 35; wrote 76; span None
+  - at /receipts/0286.json (reasoning offset 874; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' >40\n8 +36=84 >62\n10 +19=67 >64\nQueue 5(62), d8 62,d3 58,d10 64.\nPop 3 d=58. From 3:\n4 +29=87 >48\n6 '
+- **value** [inline, model (form owned 0)] `8+36` = 44; wrote 84; span None
+  - at /receipts/0286.json (reasoning offset 887; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next ' >62\n10 +19=67 >64\nQueue 5(62), d8 62,d3 58,d10 64.\nPop 3 d=58. From 3:\n4 +29=87 >48\n6 +8=66\n7 +7=65'
+- **value** [inline, model (form owned 0)] `10+19` = 29; wrote 67; span None
+  - at /receipts/0286.json (reasoning offset 901; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next ' >64\nQueue 5(62), d8 62,d3 58,d10 64.\nPop 3 d=58. From 3:\n4 +29=87 >48\n6 +8=66\n7 +7=65 >40\nQueue d6='
+- **value** [inline, model (form owned 0)] `4+29` = 33; wrote 87; span None
+  - at /receipts/0286.json (reasoning offset 967; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next " >48\n6 +8=66\n7 +7=65 >40\nQueue d6=66.\nPop d5=62? Also d8=62. Let's order. Pop maybe 5 at 62. From 5:"
+- **value** [inline, model (form owned 0)] `6+8` = 14; wrote 66; span None
+  - at /receipts/0286.json (reasoning offset 979; 1 receipt copies)
+  - model: reappears later 12x, in final content False, questioned False; next "\n7 +7=65 >40\nQueue d6=66.\nPop d5=62? Also d8=62. Let's order. Pop maybe 5 at 62. From 5:\n0 +29=29>0\n"
+- **value** [inline, model (form owned 0)] `7+7` = 14; wrote 65; span None
+  - at /receipts/0286.json (reasoning offset 987; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next " >40\nQueue d6=66.\nPop d5=62? Also d8=62. Let's order. Pop maybe 5 at 62. From 5:\n0 +29=29>0\n6 +18=80"
+- **value** [inline, model (form owned 0)] `6+18` = 24; wrote 80; span None
+  - at /receipts/0286.json (reasoning offset 1087; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' >66\n8 +21=83 >62\nNo.\nPop 8 d=62. From 8:\n2 +35=97>19\n9 +4=66\nQueue d9=66.\nPop d10=64. From 10:\n3 +3'
+- **value** [inline, model (form owned 0)] `8+21` = 29; wrote 83; span None
+  - at /receipts/0286.json (reasoning offset 1100; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next ' >62\nNo.\nPop 8 d=62. From 8:\n2 +35=97>19\n9 +4=66\nQueue d9=66.\nPop d10=64. From 10:\n3 +35=99>58\n4 +9='
+- **value** [inline, model (form owned 0)] `2+35` = 37; wrote 97; span None
+  - at /receipts/0286.json (reasoning offset 1137; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '>19\n9 +4=66\nQueue d9=66.\nPop d10=64. From 10:\n3 +35=99>58\n4 +9=57>48\n8 +35=99>62\nNo.\nPop d6=66? d9=6'
+- **value** [inline, model (form owned 0)] `9+4` = 13; wrote 66; span None
+  - at /receipts/0286.json (reasoning offset 1148; 1 receipt copies)
+  - model: reappears later 9x, in final content False, questioned False; next '\nQueue d9=66.\nPop d10=64. From 10:\n3 +35=99>58\n4 +9=57>48\n8 +35=99>62\nNo.\nPop d6=66? d9=66. d6=66. F'
+- **value** [inline, model (form owned 0)] `3+35` = 38; wrote 99; span None
+  - at /receipts/0286.json (reasoning offset 1191; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '>58\n4 +9=57>48\n8 +35=99>62\nNo.\nPop d6=66? d9=66. d6=66. From 6:\n0+20=20>0\n1+34=46>12\n7+24=90>40\n10+3'
+- **value** [inline, model (form owned 0)] `4+9` = 13; wrote 57; span None
+  - at /receipts/0286.json (reasoning offset 1202; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '>48\n8 +35=99>62\nNo.\nPop d6=66? d9=66. d6=66. From 6:\n0+20=20>0\n1+34=46>12\n7+24=90>40\n10+36=102>64\nNo'
+- **value** [inline, model (form owned 0)] `8+35` = 43; wrote 99; span None
+  - at /receipts/0286.json (reasoning offset 1214; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '>62\nNo.\nPop d6=66? d9=66. d6=66. From 6:\n0+20=20>0\n1+34=46>12\n7+24=90>40\n10+36=102>64\nNo.\nPop 9 d=66'
+- **value** [inline, model (form owned 0)] `1+34` = 35; wrote 46; span None
+  - at /receipts/0286.json (reasoning offset 1272; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '>12\n7+24=90>40\n10+36=102>64\nNo.\nPop 9 d=66. From 9:\n4 +21=87>48\n10 +16=82>64\nNo.\nMinimum d10=64.\n\nNe'
+- **value** [inline, model (form owned 0)] `7+24` = 31; wrote 90; span None
+  - at /receipts/0286.json (reasoning offset 1283; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '>40\n10+36=102>64\nNo.\nPop 9 d=66. From 9:\n4 +21=87>48\n10 +16=82>64\nNo.\nMinimum d10=64.\n\nNeed ensure n'
+- **value** [inline, model (form owned 0)] `10+36` = 46; wrote 102; span None
+  - at /receipts/0286.json (reasoning offset 1295; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '>64\nNo.\nPop 9 d=66. From 9:\n4 +21=87>48\n10 +16=82>64\nNo.\nMinimum d10=64.\n\nNeed ensure no alternative'
+- **value** [inline, model (form owned 0)] `4+21` = 25; wrote 87; span None
+  - at /receipts/0286.json (reasoning offset 1332; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '>48\n10 +16=82>64\nNo.\nMinimum d10=64.\n\nNeed ensure no alternative via 5 etc maybe d6 could improve et'
+- **value** [inline, model (form owned 0)] `10+16` = 26; wrote 82; span None
+  - at /receipts/0286.json (reasoning offset 1345; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '>64\nNo.\nMinimum d10=64.\n\nNeed ensure no alternative via 5 etc maybe d6 could improve etc. d10 via 7 '
+- **value** [inline, model (form owned 0)] `min(157,130)` = 157130; wrote 130; span None
+  - at /receipts/0289.json (reasoning offset 1705; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\nNext d9=130. Settle9. Edges:\n9->1 37=>167>22\n9->4 38=>168>76\n9->10 40=>170 d10\nNext d10=170. Settle'
+- **value** [inline, model (form owned 0)] `33+7+16` = 56; wrote 78; span None
+  - at /receipts/0289.json (reasoning offset 2406; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next ' yes. Or 0->1->2->3->4->5? 22+33+7+17+7=86. Maybe cycles can reduce? all positive, no. 0->1->2->4? 2'
+- **value** [inline, model (form owned 0)] `40+40+16` = 96; wrote 213; span None
+  - at /receipts/0290.json (reasoning offset 3519; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nfrom 8->9 cost2. To8 from7+11 =128, +2+40+16 =186.\nfrom 11->9 etc not.\nAnother route to 10 maybe n'
+- **value** [inline, model (form owned 0)] `2+40+16` = 58; wrote 186; span None
+  - at /receipts/0290.json (reasoning offset 3570; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nfrom 11->9 etc not.\nAnother route to 10 maybe none.\nTo 11 via 10 from 9 only edge 10->11. Could re'
+- **value** [inline, model (form owned 0)] `39+min(281,251)` = 281290; wrote 290; span None
+  - at /receipts/0293.json (reasoning offset 4263; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3=92+min(190,290)=282.\nc4=60+min(207,282)=267.\nc5=49+min(210,267)=259.\nc6=47+min(270,259)=306.\nc7'
+- **value** [inline, model (form owned 0)] `92+min(190,290)` = 190382; wrote 282; span None
+  - at /receipts/0293.json (reasoning offset 4287; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=60+min(207,282)=267.\nc5=49+min(210,267)=259.\nc6=47+min(270,259)=306.\nc7=78+min(319,306)=384. ye'
+- **value** [inline, model (form owned 0)] `60+min(207,282)` = 207342; wrote 267; span None
+  - at /receipts/0293.json (reasoning offset 4311; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=49+min(210,267)=259.\nc6=47+min(270,259)=306.\nc7=78+min(319,306)=384. yes.\n\nRow7 [53,69,40,17,89'
+- **value** [inline, model (form owned 0)] `49+min(210,267)` = 210316; wrote 259; span None
+  - at /receipts/0293.json (reasoning offset 4335; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=47+min(270,259)=306.\nc7=78+min(319,306)=384. yes.\n\nRow7 [53,69,40,17,89,88,76], prev [251,290,2'
+- **value** [inline, model (form owned 0)] `47+min(270,259)` = 270306; wrote 306; span None
+  - at /receipts/0293.json (reasoning offset 4359; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=78+min(319,306)=384. yes.\n\nRow7 [53,69,40,17,89,88,76], prev [251,290,282,267,259,306,384]:\nc1='
+- **value** [inline, model (form owned 0)] `78+min(319,306)` = 319384; wrote 384; span None
+  - at /receipts/0293.json (reasoning offset 4383; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow7 [53,69,40,17,89,88,76], prev [251,290,282,267,259,306,384]:\nc1=53+251=304.\nc2=69+min(29'
+- **value** [inline, model (form owned 0)] `69+min(290,304)` = 290373; wrote 359; span None
+  - at /receipts/0293.json (reasoning offset 4493; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3=40+min(282,359)=322.\nc4=17+min(267,322)=284.\nc5=89+min(259,284)=348.\nc6=88+min(306,348)=394.\nc7'
+- **value** [inline, model (form owned 0)] `40+min(282,359)` = 282399; wrote 322; span None
+  - at /receipts/0293.json (reasoning offset 4517; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=17+min(267,322)=284.\nc5=89+min(259,284)=348.\nc6=88+min(306,348)=394.\nc7=76+min(384,394)=460. ye'
+- **value** [inline, model (form owned 0)] `17+min(267,322)` = 267339; wrote 284; span None
+  - at /receipts/0293.json (reasoning offset 4541; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=89+min(259,284)=348.\nc6=88+min(306,348)=394.\nc7=76+min(384,394)=460. yes.\n\nRow8 [45,49,46,54,26'
+- **value** [inline, model (form owned 0)] `89+min(259,284)` = 259373; wrote 348; span None
+  - at /receipts/0293.json (reasoning offset 4565; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=88+min(306,348)=394.\nc7=76+min(384,394)=460. yes.\n\nRow8 [45,49,46,54,26,83,44], prev [304,359,3'
+- **value** [inline, model (form owned 0)] `88+min(306,348)` = 306436; wrote 394; span None
+  - at /receipts/0293.json (reasoning offset 4589; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=76+min(384,394)=460. yes.\n\nRow8 [45,49,46,54,26,83,44], prev [304,359,322,284,348,394,460]:\nc1='
+- **value** [inline, model (form owned 0)] `76+min(384,394)` = 384470; wrote 460; span None
+  - at /receipts/0293.json (reasoning offset 4613; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow8 [45,49,46,54,26,83,44], prev [304,359,322,284,348,394,460]:\nc1=45+304=349.\nc2=49+min(35'
+- **value** [inline, model (form owned 0)] `49+min(359,349)` = 359398; wrote 398; span None
+  - at /receipts/0293.json (reasoning offset 4723; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3=46+min(322,398)=368.\nc4=54+min(284,368)=338.\nc5=26+min(348,338)=364.\nc6=83+min(394,364)=447.\nc7'
+- **value** [inline, model (form owned 0)] `46+min(322,398)` = 322444; wrote 368; span None
+  - at /receipts/0293.json (reasoning offset 4747; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=54+min(284,368)=338.\nc5=26+min(348,338)=364.\nc6=83+min(394,364)=447.\nc7=44+min(460,447)=491. ye'
+- **value** [inline, model (form owned 0)] `54+min(284,368)` = 284422; wrote 338; span None
+  - at /receipts/0293.json (reasoning offset 4771; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=26+min(348,338)=364.\nc6=83+min(394,364)=447.\nc7=44+min(460,447)=491. yes.\n\nRow9 [89,8,66,92,3,6'
+- **value** [inline, model (form owned 0)] `26+min(348,338)` = 348364; wrote 364; span None
+  - at /receipts/0293.json (reasoning offset 4795; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=83+min(394,364)=447.\nc7=44+min(460,447)=491. yes.\n\nRow9 [89,8,66,92,3,62,52], prev [349,398,368'
+- **value** [inline, model (form owned 0)] `83+min(394,364)` = 394447; wrote 447; span None
+  - at /receipts/0293.json (reasoning offset 4819; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=44+min(460,447)=491. yes.\n\nRow9 [89,8,66,92,3,62,52], prev [349,398,368,338,364,447,491]:\nc1=89'
+- **value** [inline, model (form owned 0)] `44+min(460,447)` = 460491; wrote 491; span None
+  - at /receipts/0293.json (reasoning offset 4843; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow9 [89,8,66,92,3,62,52], prev [349,398,368,338,364,447,491]:\nc1=89+349=438.\nc2=8+min(398,4'
+- **value** [inline, model (form owned 0)] `8+min(398,438)` = 398446; wrote 406; span None
+  - at /receipts/0293.json (reasoning offset 4950; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3=66+min(368,406)=434.\nc4=92+min(338,434)=430.\nc5=3+min(364,430)=367.\nc6=62+min(447,367)=429.\nc7='
+- **value** [inline, model (form owned 0)] `66+min(368,406)` = 368472; wrote 434; span None
+  - at /receipts/0293.json (reasoning offset 4974; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4=92+min(338,434)=430.\nc5=3+min(364,430)=367.\nc6=62+min(447,367)=429.\nc7=52+min(491,429)=481. yes'
+- **value** [inline, model (form owned 0)] `92+min(338,434)` = 338526; wrote 430; span None
+  - at /receipts/0293.json (reasoning offset 4998; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5=3+min(364,430)=367.\nc6=62+min(447,367)=429.\nc7=52+min(491,429)=481. yes.\n\nNeed final answer onl'
+- **value** [inline, model (form owned 0)] `3+min(364,430)` = 364433; wrote 367; span None
+  - at /receipts/0293.json (reasoning offset 5021; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6=62+min(447,367)=429.\nc7=52+min(491,429)=481. yes.\n\nNeed final answer only integer bare JSON num'
+- **value** [inline, model (form owned 0)] `62+min(447,367)` = 447429; wrote 429; span None
+  - at /receipts/0293.json (reasoning offset 5045; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7=52+min(491,429)=481. yes.\n\nNeed final answer only integer bare JSON number.'
+- **value** [inline, model (form owned 0)] `52+min(491,429)` = 491481; wrote 481; span None
+  - at /receipts/0293.json (reasoning offset 5069; 1 receipt copies)
+  - model: reappears later 0x, in final content True, questioned False; next '. yes.\n\nNeed final answer only integer bare JSON number.'
+- **value** [inline, model (form owned 0)] `0-1` = -1; wrote 7; span None
+  - at /receipts/0295.json (reasoning offset 2444; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ", 1-12=12 total19. That's shortest likely. To 13 via12 cost45.\nAlternative to 13 only incoming from9"
+- **value** [inline, model (form owned 0)] `1-12` = -11; wrote 12; span None
+  - at /receipts/0295.json (reasoning offset 2452; 1 receipt copies)
+  - model: reappears later 19x, in final content False, questioned False; next " total19. That's shortest likely. To 13 via12 cost45.\nAlternative to 13 only incoming from9 and12. I"
+- **value** [inline, model (form owned 0)] `0-1-12` = -13; wrote 19; span None
+  - at /receipts/0295.json (reasoning offset 2734; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next ", to8=42, to9=49. Another route: 0-1-2-3-6? Let's compute dist9 potentially. Incoming to9 from8 only"
+- **value** [inline, model (form owned 0)] `57+min(108,106)` = 108163; wrote 163; span None
+  - at /receipts/0302.json (reasoning offset 4345; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd13=37+min(112,163)=149\nd14=13+min(128,149)=141\nd15=16+min(165,141)=157\nd16=55+min(220,157)=212\nd17'
+- **value** [inline, model (form owned 0)] `37+min(112,163)` = 112200; wrote 149; span None
+  - at /receipts/0302.json (reasoning offset 4369; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd14=13+min(128,149)=141\nd15=16+min(165,141)=157\nd16=55+min(220,157)=212\nd17=57+min(305,212)=269\nd18'
+- **value** [inline, model (form owned 0)] `13+min(128,149)` = 128162; wrote 141; span None
+  - at /receipts/0302.json (reasoning offset 4393; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd15=16+min(165,141)=157\nd16=55+min(220,157)=212\nd17=57+min(305,212)=269\nd18=82+min(361,269)=351\nd19'
+- **value** [inline, model (form owned 0)] `16+min(165,141)` = 165157; wrote 157; span None
+  - at /receipts/0302.json (reasoning offset 4417; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd16=55+min(220,157)=212\nd17=57+min(305,212)=269\nd18=82+min(361,269)=351\nd19=91+min(459,351)=442. ye'
+- **value** [inline, model (form owned 0)] `55+min(220,157)` = 220212; wrote 212; span None
+  - at /receipts/0302.json (reasoning offset 4441; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd17=57+min(305,212)=269\nd18=82+min(361,269)=351\nd19=91+min(459,351)=442. yes.\n\nRow2:\nd20=8+31=39\nd2'
+- **value** [inline, model (form owned 0)] `57+min(305,212)` = 305269; wrote 269; span None
+  - at /receipts/0302.json (reasoning offset 4465; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd18=82+min(361,269)=351\nd19=91+min(459,351)=442. yes.\n\nRow2:\nd20=8+31=39\nd21=38+min(106,39)=77\nd22='
+- **value** [inline, model (form owned 0)] `82+min(361,269)` = 361351; wrote 351; span None
+  - at /receipts/0302.json (reasoning offset 4489; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd19=91+min(459,351)=442. yes.\n\nRow2:\nd20=8+31=39\nd21=38+min(106,39)=77\nd22=99+min(163,77)=176\nd23=3'
+- **value** [inline, model (form owned 0)] `91+min(459,351)` = 459442; wrote 442; span None
+  - at /receipts/0302.json (reasoning offset 4513; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow2:\nd20=8+31=39\nd21=38+min(106,39)=77\nd22=99+min(163,77)=176\nd23=31+min(149,176)=180 (yes '
+- **value** [inline, model (form owned 0)] `12+min(141,180)` = 141192; wrote 153; span None
+  - at /receipts/0302.json (reasoning offset 4646; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd25=57+min(157,153)=210\nd26=67+min(212,210)=277\nd27=63+min(269,277)=332\nd28=39+min(351,332)=371\nd29'
+- **value** [inline, model (form owned 0)] `57+min(157,153)` = 157210; wrote 210; span None
+  - at /receipts/0302.json (reasoning offset 4670; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd26=67+min(212,210)=277\nd27=63+min(269,277)=332\nd28=39+min(351,332)=371\nd29=9+min(442,371)=380. yes'
+- **value** [inline, model (form owned 0)] `67+min(212,210)` = 212277; wrote 277; span None
+  - at /receipts/0302.json (reasoning offset 4694; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd27=63+min(269,277)=332\nd28=39+min(351,332)=371\nd29=9+min(442,371)=380. yes.\n\nRow3:\nd30=69+39=108\nd'
+- **value** [inline, model (form owned 0)] `63+min(269,277)` = 269340; wrote 332; span None
+  - at /receipts/0302.json (reasoning offset 4718; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd28=39+min(351,332)=371\nd29=9+min(442,371)=380. yes.\n\nRow3:\nd30=69+39=108\nd31=52+min(77,108)=129\nd3'
+- **value** [inline, model (form owned 0)] `39+min(351,332)` = 351371; wrote 371; span None
+  - at /receipts/0302.json (reasoning offset 4742; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nd29=9+min(442,371)=380. yes.\n\nRow3:\nd30=69+39=108\nd31=52+min(77,108)=129\nd32=19+min(176,129)=148\nd3'
+- **value** [inline, model (form owned 0)] `9+min(442,371)` = 442380; wrote 380; span None
+  - at /receipts/0302.json (reasoning offset 4765; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow3:\nd30=69+39=108\nd31=52+min(77,108)=129\nd32=19+min(176,129)=148\nd33=24+min(180,148)=172\nd'
+- **value** [inline, model (form owned 0)] `52+min(77,108)` = 77160; wrote 129; span None
+  - at /receipts/0302.json (reasoning offset 4815; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd32=19+min(176,129)=148\nd33=24+min(180,148)=172\nd34=22+min(153,172)=175\nd35=80+min(210,175)=255\nd36'
+- **value** [inline, model (form owned 0)] `19+min(176,129)` = 176148; wrote 148; span None
+  - at /receipts/0302.json (reasoning offset 4839; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd33=24+min(180,148)=172\nd34=22+min(153,172)=175\nd35=80+min(210,175)=255\nd36=71+min(277,255)=326\nd37'
+- **value** [inline, model (form owned 0)] `24+min(180,148)` = 180172; wrote 172; span None
+  - at /receipts/0302.json (reasoning offset 4863; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd34=22+min(153,172)=175\nd35=80+min(210,175)=255\nd36=71+min(277,255)=326\nd37=3+min(332,326)=329\nd38='
+- **value** [inline, model (form owned 0)] `22+min(153,172)` = 153194; wrote 175; span None
+  - at /receipts/0302.json (reasoning offset 4887; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd35=80+min(210,175)=255\nd36=71+min(277,255)=326\nd37=3+min(332,326)=329\nd38=69+min(371,329)=398\nd39='
+- **value** [inline, model (form owned 0)] `80+min(210,175)` = 210255; wrote 255; span None
+  - at /receipts/0302.json (reasoning offset 4911; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd36=71+min(277,255)=326\nd37=3+min(332,326)=329\nd38=69+min(371,329)=398\nd39=39+min(380,398)=419. yes'
+- **value** [inline, model (form owned 0)] `71+min(277,255)` = 277326; wrote 326; span None
+  - at /receipts/0302.json (reasoning offset 4935; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd37=3+min(332,326)=329\nd38=69+min(371,329)=398\nd39=39+min(380,398)=419. yes.\n\nRow4:\nd40=50+108=158\n'
+- **value** [inline, model (form owned 0)] `3+min(332,326)` = 332329; wrote 329; span None
+  - at /receipts/0302.json (reasoning offset 4958; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd38=69+min(371,329)=398\nd39=39+min(380,398)=419. yes.\n\nRow4:\nd40=50+108=158\nd41=31+min(129,158)=160'
+- **value** [inline, model (form owned 0)] `69+min(371,329)` = 371398; wrote 398; span None
+  - at /receipts/0302.json (reasoning offset 4982; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd39=39+min(380,398)=419. yes.\n\nRow4:\nd40=50+108=158\nd41=31+min(129,158)=160\nd42=92+min(148,160)=240'
+- **value** [inline, model (form owned 0)] `39+min(380,398)` = 380437; wrote 419; span None
+  - at /receipts/0302.json (reasoning offset 5006; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow4:\nd40=50+108=158\nd41=31+min(129,158)=160\nd42=92+min(148,160)=240\nd43=98+min(172,240)=270'
+- **value** [inline, model (form owned 0)] `31+min(129,158)` = 129189; wrote 160; span None
+  - at /receipts/0302.json (reasoning offset 5058; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd42=92+min(148,160)=240\nd43=98+min(172,240)=270\nd44=8+min(175,270)=183\nd45=47+min(255,183)=230\nd46='
+- **value** [inline, model (form owned 0)] `92+min(148,160)` = 148252; wrote 240; span None
+  - at /receipts/0302.json (reasoning offset 5082; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd43=98+min(172,240)=270\nd44=8+min(175,270)=183\nd45=47+min(255,183)=230\nd46=42+min(326,230)=272\nd47='
+- **value** [inline, model (form owned 0)] `98+min(172,240)` = 172338; wrote 270; span None
+  - at /receipts/0302.json (reasoning offset 5106; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd44=8+min(175,270)=183\nd45=47+min(255,183)=230\nd46=42+min(326,230)=272\nd47=69+min(329,272)=341\nd48='
+- **value** [inline, model (form owned 0)] `8+min(175,270)` = 175278; wrote 183; span None
+  - at /receipts/0302.json (reasoning offset 5129; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd45=47+min(255,183)=230\nd46=42+min(326,230)=272\nd47=69+min(329,272)=341\nd48=25+min(398,341)=366\nd49'
+- **value** [inline, model (form owned 0)] `47+min(255,183)` = 255230; wrote 230; span None
+  - at /receipts/0302.json (reasoning offset 5153; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd46=42+min(326,230)=272\nd47=69+min(329,272)=341\nd48=25+min(398,341)=366\nd49=97+min(419,366)=463. ye'
+- **value** [inline, model (form owned 0)] `42+min(326,230)` = 326272; wrote 272; span None
+  - at /receipts/0302.json (reasoning offset 5177; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nd47=69+min(329,272)=341\nd48=25+min(398,341)=366\nd49=97+min(419,366)=463. yes.\n\nRow5:\nd50=10+158=168'
+- **value** [inline, model (form owned 0)] `69+min(329,272)` = 329341; wrote 341; span None
+  - at /receipts/0302.json (reasoning offset 5201; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nd48=25+min(398,341)=366\nd49=97+min(419,366)=463. yes.\n\nRow5:\nd50=10+158=168\nd51=69+min(160,168)=229'
+- **value** [inline, model (form owned 0)] `25+min(398,341)` = 398366; wrote 366; span None
+  - at /receipts/0302.json (reasoning offset 5225; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd49=97+min(419,366)=463. yes.\n\nRow5:\nd50=10+158=168\nd51=69+min(160,168)=229\nd52=9+min(240,229)=238\n'
+- **value** [inline, model (form owned 0)] `97+min(419,366)` = 419463; wrote 463; span None
+  - at /receipts/0302.json (reasoning offset 5249; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nRow5:\nd50=10+158=168\nd51=69+min(160,168)=229\nd52=9+min(240,229)=238\nd53=87+min(270,238)=325 '
+- **value** [inline, model (form owned 0)] `69+min(160,168)` = 160237; wrote 229; span None
+  - at /receipts/0302.json (reasoning offset 5301; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd52=9+min(240,229)=238\nd53=87+min(270,238)=325 (from left 238+87=325)\nd54=38+min(183,325)=221 (from'
+- **value** [inline, model (form owned 0)] `9+min(240,229)` = 240238; wrote 238; span None
+  - at /receipts/0302.json (reasoning offset 5324; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nd53=87+min(270,238)=325 (from left 238+87=325)\nd54=38+min(183,325)=221 (from top)\nd55=55+min(230,22'
+- **value** [inline, model (form owned 0)] `55+min(230,221)` = 230276; wrote 276; span None
+  - at /receipts/0302.json (reasoning offset 5430; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nd56=98+min(272,276)=370 (from top 272+98=370; left 276+98=374)\nd57=56+min(341,370)=397\nd58=52+min(3'
+- **value** [inline, model (form owned 0)] `56+min(341,370)` = 341426; wrote 397; span None
+  - at /receipts/0302.json (reasoning offset 5517; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd58=52+min(366,397)=418\nd59=93+min(463,418)=511 (left)\nyes.\n\nRow6:\nd60=34+168=202\nd61=54+min(229,20'
+- **value** [inline, model (form owned 0)] `52+min(366,397)` = 366449; wrote 418; span None
+  - at /receipts/0302.json (reasoning offset 5541; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd59=93+min(463,418)=511 (left)\nyes.\n\nRow6:\nd60=34+168=202\nd61=54+min(229,202)=256\nd62=67+min(238,25'
+- **value** [inline, model (form owned 0)] `54+min(229,202)` = 229256; wrote 256; span None
+  - at /receipts/0302.json (reasoning offset 5623; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd62=67+min(238,256)=305\nd63=36+min(325,305)=341\nd64=38+min(221,341)=259\nd65=77+min(276,259)=336\nd66'
+- **value** [inline, model (form owned 0)] `67+min(238,256)` = 238323; wrote 305; span None
+  - at /receipts/0302.json (reasoning offset 5647; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd63=36+min(325,305)=341\nd64=38+min(221,341)=259\nd65=77+min(276,259)=336\nd66=35+min(370,336)=371\nd67'
+- **value** [inline, model (form owned 0)] `36+min(325,305)` = 325341; wrote 341; span None
+  - at /receipts/0302.json (reasoning offset 5671; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd64=38+min(221,341)=259\nd65=77+min(276,259)=336\nd66=35+min(370,336)=371\nd67=62+min(397,371)=433\nd68'
+- **value** [inline, model (form owned 0)] `38+min(221,341)` = 221379; wrote 259; span None
+  - at /receipts/0302.json (reasoning offset 5695; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd65=77+min(276,259)=336\nd66=35+min(370,336)=371\nd67=62+min(397,371)=433\nd68=50+min(418,433)=468\nd69'
+- **value** [inline, model (form owned 0)] `77+min(276,259)` = 276336; wrote 336; span None
+  - at /receipts/0302.json (reasoning offset 5719; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd66=35+min(370,336)=371\nd67=62+min(397,371)=433\nd68=50+min(418,433)=468\nd69=96+min(511,468)=564\nyes'
+- **value** [inline, model (form owned 0)] `35+min(370,336)` = 370371; wrote 371; span None
+  - at /receipts/0302.json (reasoning offset 5743; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd67=62+min(397,371)=433\nd68=50+min(418,433)=468\nd69=96+min(511,468)=564\nyes.\n\nRow7:\nd70=74+202=276\n'
+- **value** [inline, model (form owned 0)] `62+min(397,371)` = 397433; wrote 433; span None
+  - at /receipts/0302.json (reasoning offset 5767; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd68=50+min(418,433)=468\nd69=96+min(511,468)=564\nyes.\n\nRow7:\nd70=74+202=276\nd71=29+min(256,276)=285\n'
+- **value** [inline, model (form owned 0)] `50+min(418,433)` = 418483; wrote 468; span None
+  - at /receipts/0302.json (reasoning offset 5791; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd69=96+min(511,468)=564\nyes.\n\nRow7:\nd70=74+202=276\nd71=29+min(256,276)=285\nd72=68+min(305,285)=353\n'
+- **value** [inline, model (form owned 0)] `96+min(511,468)` = 511564; wrote 564; span None
+  - at /receipts/0302.json (reasoning offset 5815; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nyes.\n\nRow7:\nd70=74+202=276\nd71=29+min(256,276)=285\nd72=68+min(305,285)=353\nd73=7+min(341,353)=348\nd'
+- **value** [inline, model (form owned 0)] `29+min(256,276)` = 256305; wrote 285; span None
+  - at /receipts/0302.json (reasoning offset 5866; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd72=68+min(305,285)=353\nd73=7+min(341,353)=348\nd74=28+min(259,348)=287\nd75=78+min(336,287)=365\nd76='
+- **value** [inline, model (form owned 0)] `68+min(305,285)` = 305353; wrote 353; span None
+  - at /receipts/0302.json (reasoning offset 5890; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd73=7+min(341,353)=348\nd74=28+min(259,348)=287\nd75=78+min(336,287)=365\nd76=97+min(371,365)=462\nd77='
+- **value** [inline, model (form owned 0)] `7+min(341,353)` = 341360; wrote 348; span None
+  - at /receipts/0302.json (reasoning offset 5913; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd74=28+min(259,348)=287\nd75=78+min(336,287)=365\nd76=97+min(371,365)=462\nd77=83+min(433,462)=516\nd78'
+- **value** [inline, model (form owned 0)] `28+min(259,348)` = 259376; wrote 287; span None
+  - at /receipts/0302.json (reasoning offset 5937; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd75=78+min(336,287)=365\nd76=97+min(371,365)=462\nd77=83+min(433,462)=516\nd78=50+min(468,516)=518\nd79'
+- **value** [inline, model (form owned 0)] `78+min(336,287)` = 336365; wrote 365; span None
+  - at /receipts/0302.json (reasoning offset 5961; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd76=97+min(371,365)=462\nd77=83+min(433,462)=516\nd78=50+min(468,516)=518\nd79=98+min(564,518)=616. ye'
+- **value** [inline, model (form owned 0)] `97+min(371,365)` = 371462; wrote 462; span None
+  - at /receipts/0302.json (reasoning offset 5985; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd77=83+min(433,462)=516\nd78=50+min(468,516)=518\nd79=98+min(564,518)=616. yes.\n\nNeed final JSON inte'
+- **value** [inline, model (form owned 0)] `83+min(433,462)` = 433545; wrote 516; span None
+  - at /receipts/0302.json (reasoning offset 6009; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd78=50+min(468,516)=518\nd79=98+min(564,518)=616. yes.\n\nNeed final JSON integer only. Could include '
+- **value** [inline, model (form owned 0)] `50+min(468,516)` = 468566; wrote 518; span None
+  - at /receipts/0302.json (reasoning offset 6033; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nd79=98+min(564,518)=616. yes.\n\nNeed final JSON integer only. Could include no markdown? User says f'
+- **value** [inline, model (form owned 0)] `98+min(564,518)` = 564616; wrote 616; span None
+  - at /receipts/0302.json (reasoning offset 6057; 1 receipt copies)
+  - model: reappears later 1x, in final content True, questioned False; next '. yes.\n\nNeed final JSON integer only. Could include no markdown? User says final answer format JSON '
+- **value** [inline, model (form owned 0)] `2+5` = 7; wrote 11; span None
+  - at /receipts/0309.json (reasoning offset 604; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\n1->3 +2=8\n1->8 +20=26\nSo dist2=11, dist3=8, dist8=26.\n\nProcess 3 (8) next (since dist3=8): neighbor'
+- **value** [inline, model (form owned 0)] `3+2` = 5; wrote 8; span None
+  - at /receipts/0309.json (reasoning offset 615; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n1->8 +20=26\nSo dist2=11, dist3=8, dist8=26.\n\nProcess 3 (8) next (since dist3=8): neighbors\n3->4 +18'
+- **value** [inline, model (form owned 0)] `8+20` = 28; wrote 26; span None
+  - at /receipts/0309.json (reasoning offset 626; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '\nSo dist2=11, dist3=8, dist8=26.\n\nProcess 3 (8) next (since dist3=8): neighbors\n3->4 +18=26\n3->6 +1='
+- **value** [inline, model (form owned 0)] `4+18` = 22; wrote 26; span None
+  - at /receipts/0309.json (reasoning offset 717; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '\n3->6 +1=9\n3->9 +5=13\nUpdate dist4=26, dist6=9, dist9=13.\n\nProcess 6 (9): neighbor 6->7 +31=40. dist'
+- **value** [inline, model (form owned 0)] `6+1` = 7; wrote 9; span None
+  - at /receipts/0309.json (reasoning offset 728; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n3->9 +5=13\nUpdate dist4=26, dist6=9, dist9=13.\n\nProcess 6 (9): neighbor 6->7 +31=40. dist7=40.\n\nPro'
+- **value** [inline, model (form owned 0)] `9+5` = 14; wrote 13; span None
+  - at /receipts/0309.json (reasoning offset 738; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\nUpdate dist4=26, dist6=9, dist9=13.\n\nProcess 6 (9): neighbor 6->7 +31=40. dist7=40.\n\nProcess 2 (11)'
+- **value** [inline, model (form owned 0)] `7+31` = 38; wrote 40; span None
+  - at /receipts/0309.json (reasoning offset 811; 1 receipt copies)
+  - model: reappears later 5x, in final content False, questioned False; next '. dist7=40.\n\nProcess 2 (11): neighbors\n2->3 +32=43 no\n2->5 +4=15\n2->7 +36=47 no (40)\n2->8 +3=14 (bet'
+- **value** [inline, model (form owned 0)] `3+32` = 35; wrote 43; span None
+  - at /receipts/0309.json (reasoning offset 861; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next ' no\n2->5 +4=15\n2->7 +36=47 no (40)\n2->8 +3=14 (better than26)\n2->9 +1=12 (better than13)\nUpdate dist'
+- **value** [inline, model (form owned 0)] `5+4` = 9; wrote 15; span None
+  - at /receipts/0309.json (reasoning offset 875; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '\n2->7 +36=47 no (40)\n2->8 +3=14 (better than26)\n2->9 +1=12 (better than13)\nUpdate dist5=15, dist8=14'
+- **value** [inline, model (form owned 0)] `7+36` = 43; wrote 47; span None
+  - at /receipts/0309.json (reasoning offset 887; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' no (40)\n2->8 +3=14 (better than26)\n2->9 +1=12 (better than13)\nUpdate dist5=15, dist8=14, dist9=12.\n'
+- **value** [inline, model (form owned 0)] `0+11` = 11; wrote 23; span None
+  - at /receipts/0309.json (reasoning offset 1025; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' no\n9->6 +2=14 no (9)\nNo.\n\nProcess 8 (14): neighbors 8->9 +1=15 no.\nProcess 5 (15): neighbors\n5->2 +'
+- **value** [inline, model (form owned 0)] `6+2` = 8; wrote 14; span None
+  - at /receipts/0309.json (reasoning offset 1039; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next ' no (9)\nNo.\n\nProcess 8 (14): neighbors 8->9 +1=15 no.\nProcess 5 (15): neighbors\n5->2 +13=28 no\n5->6 '
+- **value** [inline, model (form owned 0)] `9+1` = 10; wrote 15; span None
+  - at /receipts/0309.json (reasoning offset 1088; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next ' no.\nProcess 5 (15): neighbors\n5->2 +13=28 no\n5->6 +34=49\n5->8 +14=28\n5->9 +18=33\nNo.\nProcess 4 (26)'
+- **value** [inline, model (form owned 0)] `2+13` = 15; wrote 28; span None
+  - at /receipts/0309.json (reasoning offset 1130; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next ' no\n5->6 +34=49\n5->8 +14=28\n5->9 +18=33\nNo.\nProcess 4 (26): neighbors etc maybe no improvement: 4->3'
+- **value** [inline, model (form owned 0)] `6+34` = 40; wrote 49; span None
+  - at /receipts/0309.json (reasoning offset 1145; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n5->8 +14=28\n5->9 +18=33\nNo.\nProcess 4 (26): neighbors etc maybe no improvement: 4->3 +6=32, 4->2 +4'
+- **value** [inline, model (form owned 0)] `8+14` = 22; wrote 28; span None
+  - at /receipts/0309.json (reasoning offset 1157; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\n5->9 +18=33\nNo.\nProcess 4 (26): neighbors etc maybe no improvement: 4->3 +6=32, 4->2 +40=66, 4->5 +'
+- **value** [inline, model (form owned 0)] `9+18` = 27; wrote 33; span None
+  - at /receipts/0309.json (reasoning offset 1169; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned True; next '\nNo.\nProcess 4 (26): neighbors etc maybe no improvement: 4->3 +6=32, 4->2 +40=66, 4->5 +36=62.\nProce'
+- **value** [inline, model (form owned 0)] `3+6` = 9; wrote 32; span None
+  - at /receipts/0309.json (reasoning offset 1236; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ', 4->2 +40=66, 4->5 +36=62.\nProcess 7 (40): neighbors\n7->1+19=59\n7->5+3=43\n7->8+19=59\n7->9+38=78\nNo.'
+- **value** [inline, model (form owned 0)] `2+40` = 42; wrote 66; span None
+  - at /receipts/0309.json (reasoning offset 1249; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ', 4->5 +36=62.\nProcess 7 (40): neighbors\n7->1+19=59\n7->5+3=43\n7->8+19=59\n7->9+38=78\nNo.\nMinimum dist'
+- **value** [inline, model (form owned 0)] `5+36` = 41; wrote 62; span None
+  - at /receipts/0309.json (reasoning offset 1262; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nProcess 7 (40): neighbors\n7->1+19=59\n7->5+3=43\n7->8+19=59\n7->9+38=78\nNo.\nMinimum dist9 = 12. But l'
+- **value** [inline, model (form owned 0)] `1+19` = 20; wrote 59; span None
+  - at /receipts/0309.json (reasoning offset 1300; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next "\n7->5+3=43\n7->8+19=59\n7->9+38=78\nNo.\nMinimum dist9 = 12. But let's ensure no other path through late"
+- **value** [inline, model (form owned 0)] `5+3` = 8; wrote 43; span None
+  - at /receipts/0309.json (reasoning offset 1310; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next "\n7->8+19=59\n7->9+38=78\nNo.\nMinimum dist9 = 12. But let's ensure no other path through later nodes to"
+- **value** [inline, model (form owned 0)] `8+19` = 27; wrote 59; span None
+  - at /receipts/0309.json (reasoning offset 1321; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "\n7->9+38=78\nNo.\nMinimum dist9 = 12. But let's ensure no other path through later nodes to 9? Dijkstr"
+- **value** [inline, model (form owned 0)] `9+38` = 47; wrote 78; span None
+  - at /receipts/0309.json (reasoning offset 1332; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned True; next "\nNo.\nMinimum dist9 = 12. But let's ensure no other path through later nodes to 9? Dijkstra done. Cou"
+- **value** [inline, model (form owned 0)] `17+min(138,172)` = 138189; wrote 155; span None
+  - at /receipts/0313.json (reasoning offset 1124; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nr2c5:52+min(219,155)=207.\nr2c6:69+min(282,207)=276.\nr2c7:87+min(295,276)=363.\nr2c8:20+min(309,363)'
+- **value** [inline, model (form owned 0)] `52+min(219,155)` = 219207; wrote 207; span None
+  - at /receipts/0313.json (reasoning offset 1150; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nr2c6:69+min(282,207)=276.\nr2c7:87+min(295,276)=363.\nr2c8:20+min(309,363)=329.\n\nRow3 r3 [49,61,82,6'
+- **value** [inline, model (form owned 0)] `69+min(282,207)` = 282276; wrote 276; span None
+  - at /receipts/0313.json (reasoning offset 1176; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nr2c7:87+min(295,276)=363.\nr2c8:20+min(309,363)=329.\n\nRow3 r3 [49,61,82,60,68,88,27,48]\nc1=49+85=13'
+- **value** [inline, model (form owned 0)] `87+min(295,276)` = 295363; wrote 363; span None
+  - at /receipts/0313.json (reasoning offset 1202; 1 receipt copies)
+  - model: reappears later 3x, in final content False, questioned False; next '.\nr2c8:20+min(309,363)=329.\n\nRow3 r3 [49,61,82,60,68,88,27,48]\nc1=49+85=134.\nc2=61+min(r2c2=118, c1='
+- **value** [inline, model (form owned 0)] `20+min(309,363)` = 309383; wrote 329; span None
+  - at /receipts/0313.json (reasoning offset 1228; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\n\nRow3 r3 [49,61,82,60,68,88,27,48]\nc1=49+85=134.\nc2=61+min(r2c2=118, c1=134)=179.\nc3=82+min(r2c3=1'
+- **value** [inline, model (form owned 0)] `-5413+104113` = 98700; wrote 986; span None
+  - at /receipts/0340.json (reasoning offset 6476; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next "... let's compute: 104113-5413=98700. +72460=171160. +9400=180560. +54233=234793. +73206=307999. Tot"
+- **value** [inline, model (form owned 0)] `min(95,187)+56` = 95243; wrote 151; span None
+  - at /receipts/0343.json (reasoning offset 4369; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next ' yes.\nc4 min(151,284)+30=181.\nc5 min(181,296)+68=249.\nc6 min(249,307)+80=329.\nc7 min(329,353)+80=409'
+- **value** [inline, model (form owned 0)] `min(151,284)+30` = 151314; wrote 181; span None
+  - at /receipts/0343.json (reasoning offset 4397; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(181,296)+68=249.\nc6 min(249,307)+80=329.\nc7 min(329,353)+80=409.\nc8 min(409,412)+30=439.\nc9'
+- **value** [inline, model (form owned 0)] `min(181,296)+68` = 181364; wrote 249; span None
+  - at /receipts/0343.json (reasoning offset 4421; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(249,307)+80=329.\nc7 min(329,353)+80=409.\nc8 min(409,412)+30=439.\nc9 min(439,444)+91=530.\nc1'
+- **value** [inline, model (form owned 0)] `min(249,307)+80` = 249387; wrote 329; span None
+  - at /receipts/0343.json (reasoning offset 4445; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(329,353)+80=409.\nc8 min(409,412)+30=439.\nc9 min(439,444)+91=530.\nc10 min(530,539)+41=571. y'
+- **value** [inline, model (form owned 0)] `min(329,353)+80` = 329433; wrote 409; span None
+  - at /receipts/0343.json (reasoning offset 4469; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(409,412)+30=439.\nc9 min(439,444)+91=530.\nc10 min(530,539)+41=571. yes.\n\nr3:\nc1 154+71=225.\n'
+- **value** [inline, model (form owned 0)] `min(409,412)+30` = 409442; wrote 439; span None
+  - at /receipts/0343.json (reasoning offset 4493; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(439,444)+91=530.\nc10 min(530,539)+41=571. yes.\n\nr3:\nc1 154+71=225.\nc2 min(225,95)+9=104.\nc3'
+- **value** [inline, model (form owned 0)] `min(439,444)+91` = 439535; wrote 530; span None
+  - at /receipts/0343.json (reasoning offset 4517; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(530,539)+41=571. yes.\n\nr3:\nc1 154+71=225.\nc2 min(225,95)+9=104.\nc3 min(104,151)+76=180.\nc4'
+- **value** [inline, model (form owned 0)] `min(530,539)+41` = 530580; wrote 571; span None
+  - at /receipts/0343.json (reasoning offset 4542; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr3:\nc1 154+71=225.\nc2 min(225,95)+9=104.\nc3 min(104,151)+76=180.\nc4 min(180,181)+97=277.\nc5 '
+- **value** [inline, model (form owned 0)] `min(104,151)+76` = 104227; wrote 180; span None
+  - at /receipts/0343.json (reasoning offset 4613; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(180,181)+97=277.\nc5 min(277,249)+62=311. yes.\nc6 min(311,329)+7=318.\nc7 min(318,409)+64=382'
+- **value** [inline, model (form owned 0)] `min(180,181)+97` = 180278; wrote 277; span None
+  - at /receipts/0343.json (reasoning offset 4637; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(277,249)+62=311. yes.\nc6 min(311,329)+7=318.\nc7 min(318,409)+64=382.\nc8 min(382,439)+1=383.'
+- **value** [inline, model (form owned 0)] `min(277,249)+62` = 277311; wrote 311; span None
+  - at /receipts/0343.json (reasoning offset 4661; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\nc6 min(311,329)+7=318.\nc7 min(318,409)+64=382.\nc8 min(382,439)+1=383.\nc9 min(383,530)+16=399.'
+- **value** [inline, model (form owned 0)] `min(311,329)+7` = 311336; wrote 318; span None
+  - at /receipts/0343.json (reasoning offset 4689; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(318,409)+64=382.\nc8 min(382,439)+1=383.\nc9 min(383,530)+16=399.\nc10 min(399,571)+75=474. ye'
+- **value** [inline, model (form owned 0)] `min(318,409)+64` = 318473; wrote 382; span None
+  - at /receipts/0343.json (reasoning offset 4713; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(382,439)+1=383.\nc9 min(383,530)+16=399.\nc10 min(399,571)+75=474. yes.\n\nr4:\nc1 225+80=305.\nc'
+- **value** [inline, model (form owned 0)] `min(382,439)+1` = 382440; wrote 383; span None
+  - at /receipts/0343.json (reasoning offset 4736; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(383,530)+16=399.\nc10 min(399,571)+75=474. yes.\n\nr4:\nc1 225+80=305.\nc2 min(305,104)+27=131.\n'
+- **value** [inline, model (form owned 0)] `min(383,530)+16` = 383546; wrote 399; span None
+  - at /receipts/0343.json (reasoning offset 4760; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(399,571)+75=474. yes.\n\nr4:\nc1 225+80=305.\nc2 min(305,104)+27=131.\nc3 min(131,180)+90=221.\n'
+- **value** [inline, model (form owned 0)] `min(399,571)+75` = 399646; wrote 474; span None
+  - at /receipts/0343.json (reasoning offset 4785; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr4:\nc1 225+80=305.\nc2 min(305,104)+27=131.\nc3 min(131,180)+90=221.\nc4 min(221,277)+70=291.\nc'
+- **value** [inline, model (form owned 0)] `min(305,104)+27` = 305131; wrote 131; span None
+  - at /receipts/0343.json (reasoning offset 4834; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(131,180)+90=221.\nc4 min(221,277)+70=291.\nc5 min(291,311)+54=345.\nc6 min(345,318)+43=361.\nc7'
+- **value** [inline, model (form owned 0)] `min(131,180)+90` = 131270; wrote 221; span None
+  - at /receipts/0343.json (reasoning offset 4858; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(221,277)+70=291.\nc5 min(291,311)+54=345.\nc6 min(345,318)+43=361.\nc7 min(361,382)+65=426.\nc8'
+- **value** [inline, model (form owned 0)] `min(221,277)+70` = 221347; wrote 291; span None
+  - at /receipts/0343.json (reasoning offset 4882; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(291,311)+54=345.\nc6 min(345,318)+43=361.\nc7 min(361,382)+65=426.\nc8 min(426,383)+72=455.\nc9'
+- **value** [inline, model (form owned 0)] `min(291,311)+54` = 291365; wrote 345; span None
+  - at /receipts/0343.json (reasoning offset 4906; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(345,318)+43=361.\nc7 min(361,382)+65=426.\nc8 min(426,383)+72=455.\nc9 min(455,399)+90=489.\nc1'
+- **value** [inline, model (form owned 0)] `min(345,318)+43` = 345361; wrote 361; span None
+  - at /receipts/0343.json (reasoning offset 4930; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(361,382)+65=426.\nc8 min(426,383)+72=455.\nc9 min(455,399)+90=489.\nc10 min(489,474)+83=557. y'
+- **value** [inline, model (form owned 0)] `min(361,382)+65` = 361447; wrote 426; span None
+  - at /receipts/0343.json (reasoning offset 4954; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(426,383)+72=455.\nc9 min(455,399)+90=489.\nc10 min(489,474)+83=557. yes.\n\nr5:\nc1 305+75=380.\n'
+- **value** [inline, model (form owned 0)] `min(426,383)+72` = 426455; wrote 455; span None
+  - at /receipts/0343.json (reasoning offset 4978; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(455,399)+90=489.\nc10 min(489,474)+83=557. yes.\n\nr5:\nc1 305+75=380.\nc2 min(380,131)+52=183.\n'
+- **value** [inline, model (form owned 0)] `min(455,399)+90` = 455489; wrote 489; span None
+  - at /receipts/0343.json (reasoning offset 5002; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc10 min(489,474)+83=557. yes.\n\nr5:\nc1 305+75=380.\nc2 min(380,131)+52=183.\nc3 min(183,221)+74=257.\n'
+- **value** [inline, model (form owned 0)] `min(489,474)+83` = 489557; wrote 557; span None
+  - at /receipts/0343.json (reasoning offset 5027; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr5:\nc1 305+75=380.\nc2 min(380,131)+52=183.\nc3 min(183,221)+74=257.\nc4 min(257,291)+77=334.\nc'
+- **value** [inline, model (form owned 0)] `min(380,131)+52` = 380183; wrote 183; span None
+  - at /receipts/0343.json (reasoning offset 5076; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(183,221)+74=257.\nc4 min(257,291)+77=334.\nc5 min(334,345)+90=424.\nc6 min(424,361)+46=407.\nc7'
+- **value** [inline, model (form owned 0)] `min(183,221)+74` = 183295; wrote 257; span None
+  - at /receipts/0343.json (reasoning offset 5100; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(257,291)+77=334.\nc5 min(334,345)+90=424.\nc6 min(424,361)+46=407.\nc7 min(407,426)+63=470.\nc8'
+- **value** [inline, model (form owned 0)] `min(257,291)+77` = 257368; wrote 334; span None
+  - at /receipts/0343.json (reasoning offset 5124; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(334,345)+90=424.\nc6 min(424,361)+46=407.\nc7 min(407,426)+63=470.\nc8 min(470,455)+68=523.\nc9'
+- **value** [inline, model (form owned 0)] `min(334,345)+90` = 334435; wrote 424; span None
+  - at /receipts/0343.json (reasoning offset 5148; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(424,361)+46=407.\nc7 min(407,426)+63=470.\nc8 min(470,455)+68=523.\nc9 min(523,489)+24=513.\nc1'
+- **value** [inline, model (form owned 0)] `min(424,361)+46` = 424407; wrote 407; span None
+  - at /receipts/0343.json (reasoning offset 5172; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(407,426)+63=470.\nc8 min(470,455)+68=523.\nc9 min(523,489)+24=513.\nc10 min(513,557)+91=604. y'
+- **value** [inline, model (form owned 0)] `min(407,426)+63` = 407489; wrote 470; span None
+  - at /receipts/0343.json (reasoning offset 5196; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(470,455)+68=523.\nc9 min(523,489)+24=513.\nc10 min(513,557)+91=604. yes.\n\nr6:\nc1 380+41=421.\n'
+- **value** [inline, model (form owned 0)] `min(470,455)+68` = 470523; wrote 523; span None
+  - at /receipts/0343.json (reasoning offset 5220; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(523,489)+24=513.\nc10 min(513,557)+91=604. yes.\n\nr6:\nc1 380+41=421.\nc2 min(421,183)+81=264.\n'
+- **value** [inline, model (form owned 0)] `min(523,489)+24` = 523513; wrote 513; span None
+  - at /receipts/0343.json (reasoning offset 5244; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(513,557)+91=604. yes.\n\nr6:\nc1 380+41=421.\nc2 min(421,183)+81=264.\nc3 min(264,257)+63=320.\n'
+- **value** [inline, model (form owned 0)] `min(513,557)+91` = 513648; wrote 604; span None
+  - at /receipts/0343.json (reasoning offset 5269; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr6:\nc1 380+41=421.\nc2 min(421,183)+81=264.\nc3 min(264,257)+63=320.\nc4 min(320,334)+81=401.\nc'
+- **value** [inline, model (form owned 0)] `min(421,183)+81` = 421264; wrote 264; span None
+  - at /receipts/0343.json (reasoning offset 5318; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(264,257)+63=320.\nc4 min(320,334)+81=401.\nc5 min(401,424)+42=443.\nc6 min(443,407)+40=447.\nc7'
+- **value** [inline, model (form owned 0)] `min(264,257)+63` = 264320; wrote 320; span None
+  - at /receipts/0343.json (reasoning offset 5342; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(320,334)+81=401.\nc5 min(401,424)+42=443.\nc6 min(443,407)+40=447.\nc7 min(447,470)+61=508.\nc8'
+- **value** [inline, model (form owned 0)] `min(320,334)+81` = 320415; wrote 401; span None
+  - at /receipts/0343.json (reasoning offset 5366; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(401,424)+42=443.\nc6 min(443,407)+40=447.\nc7 min(447,470)+61=508.\nc8 min(508,523)+58=566.\nc9'
+- **value** [inline, model (form owned 0)] `min(401,424)+42` = 401466; wrote 443; span None
+  - at /receipts/0343.json (reasoning offset 5390; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(443,407)+40=447.\nc7 min(447,470)+61=508.\nc8 min(508,523)+58=566.\nc9 min(566,513)+33=546.\nc1'
+- **value** [inline, model (form owned 0)] `min(443,407)+40` = 443447; wrote 447; span None
+  - at /receipts/0343.json (reasoning offset 5414; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(447,470)+61=508.\nc8 min(508,523)+58=566.\nc9 min(566,513)+33=546.\nc10 min(546,604)+59=605. y'
+- **value** [inline, model (form owned 0)] `min(447,470)+61` = 447531; wrote 508; span None
+  - at /receipts/0343.json (reasoning offset 5438; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(508,523)+58=566.\nc9 min(566,513)+33=546.\nc10 min(546,604)+59=605. yes.\n\nr7:\nc1 421+46=467.\n'
+- **value** [inline, model (form owned 0)] `min(508,523)+58` = 508581; wrote 566; span None
+  - at /receipts/0343.json (reasoning offset 5462; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(566,513)+33=546.\nc10 min(546,604)+59=605. yes.\n\nr7:\nc1 421+46=467.\nc2 min(467,264)+98=362.\n'
+- **value** [inline, model (form owned 0)] `min(566,513)+33` = 566546; wrote 546; span None
+  - at /receipts/0343.json (reasoning offset 5486; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(546,604)+59=605. yes.\n\nr7:\nc1 421+46=467.\nc2 min(467,264)+98=362.\nc3 min(362,320)+59=379.\n'
+- **value** [inline, model (form owned 0)] `min(546,604)+59` = 546663; wrote 605; span None
+  - at /receipts/0343.json (reasoning offset 5511; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr7:\nc1 421+46=467.\nc2 min(467,264)+98=362.\nc3 min(362,320)+59=379.\nc4 min(379,401)+41=420.\nc'
+- **value** [inline, model (form owned 0)] `min(467,264)+98` = 467362; wrote 362; span None
+  - at /receipts/0343.json (reasoning offset 5560; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(362,320)+59=379.\nc4 min(379,401)+41=420.\nc5 min(420,443)+0=420.\nc6 min(420,447)+64=484.\nc7 '
+- **value** [inline, model (form owned 0)] `min(362,320)+59` = 362379; wrote 379; span None
+  - at /receipts/0343.json (reasoning offset 5584; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(379,401)+41=420.\nc5 min(420,443)+0=420.\nc6 min(420,447)+64=484.\nc7 min(484,508)+5=489.\nc8 m'
+- **value** [inline, model (form owned 0)] `min(379,401)+41` = 379442; wrote 420; span None
+  - at /receipts/0343.json (reasoning offset 5608; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '.\nc5 min(420,443)+0=420.\nc6 min(420,447)+64=484.\nc7 min(484,508)+5=489.\nc8 min(489,566)+99=588.\nc9 m'
+- **value** [inline, model (form owned 0)] `min(420,443)+0` = 420443; wrote 420; span None
+  - at /receipts/0343.json (reasoning offset 5631; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(420,447)+64=484.\nc7 min(484,508)+5=489.\nc8 min(489,566)+99=588.\nc9 min(588,546)+80=626.\nc10'
+- **value** [inline, model (form owned 0)] `min(420,447)+64` = 420511; wrote 484; span None
+  - at /receipts/0343.json (reasoning offset 5655; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(484,508)+5=489.\nc8 min(489,566)+99=588.\nc9 min(588,546)+80=626.\nc10 min(626,605)+90=695. ye'
+- **value** [inline, model (form owned 0)] `min(484,508)+5` = 484513; wrote 489; span None
+  - at /receipts/0343.json (reasoning offset 5678; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(489,566)+99=588.\nc9 min(588,546)+80=626.\nc10 min(626,605)+90=695. yes.\n\nr8:\nc1 467+95=562.\n'
+- **value** [inline, model (form owned 0)] `min(489,566)+99` = 489665; wrote 588; span None
+  - at /receipts/0343.json (reasoning offset 5702; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(588,546)+80=626.\nc10 min(626,605)+90=695. yes.\n\nr8:\nc1 467+95=562.\nc2 min(562,362)+25=387.\n'
+- **value** [inline, model (form owned 0)] `min(588,546)+80` = 588626; wrote 626; span None
+  - at /receipts/0343.json (reasoning offset 5726; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(626,605)+90=695. yes.\n\nr8:\nc1 467+95=562.\nc2 min(562,362)+25=387.\nc3 min(387,379)+37=416.\n'
+- **value** [inline, model (form owned 0)] `min(626,605)+90` = 626695; wrote 695; span None
+  - at /receipts/0343.json (reasoning offset 5751; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr8:\nc1 467+95=562.\nc2 min(562,362)+25=387.\nc3 min(387,379)+37=416.\nc4 min(416,420)+62=478.\nc'
+- **value** [inline, model (form owned 0)] `min(562,362)+25` = 562387; wrote 387; span None
+  - at /receipts/0343.json (reasoning offset 5800; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(387,379)+37=416.\nc4 min(416,420)+62=478.\nc5 min(478,420)+78=498.\nc6 min(498,484)+85=569.\nc7'
+- **value** [inline, model (form owned 0)] `min(387,379)+37` = 387416; wrote 416; span None
+  - at /receipts/0343.json (reasoning offset 5824; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(416,420)+62=478.\nc5 min(478,420)+78=498.\nc6 min(498,484)+85=569.\nc7 min(569,489)+40=529.\nc8'
+- **value** [inline, model (form owned 0)] `min(416,420)+62` = 416482; wrote 478; span None
+  - at /receipts/0343.json (reasoning offset 5848; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(478,420)+78=498.\nc6 min(498,484)+85=569.\nc7 min(569,489)+40=529.\nc8 min(529,588)+21=550.\nc9'
+- **value** [inline, model (form owned 0)] `min(478,420)+78` = 478498; wrote 498; span None
+  - at /receipts/0343.json (reasoning offset 5872; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(498,484)+85=569.\nc7 min(569,489)+40=529.\nc8 min(529,588)+21=550.\nc9 min(550,626)+72=622.\nc1'
+- **value** [inline, model (form owned 0)] `min(498,484)+85` = 498569; wrote 569; span None
+  - at /receipts/0343.json (reasoning offset 5896; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(569,489)+40=529.\nc8 min(529,588)+21=550.\nc9 min(550,626)+72=622.\nc10 min(622,695)+84=706. y'
+- **value** [inline, model (form owned 0)] `min(569,489)+40` = 569529; wrote 529; span None
+  - at /receipts/0343.json (reasoning offset 5920; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(529,588)+21=550.\nc9 min(550,626)+72=622.\nc10 min(622,695)+84=706. yes.\n\nr9:\nc1 562+95=657.\n'
+- **value** [inline, model (form owned 0)] `min(529,588)+21` = 529609; wrote 550; span None
+  - at /receipts/0343.json (reasoning offset 5944; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(550,626)+72=622.\nc10 min(622,695)+84=706. yes.\n\nr9:\nc1 562+95=657.\nc2 min(657,387)+71=458.\n'
+- **value** [inline, model (form owned 0)] `min(550,626)+72` = 550698; wrote 622; span None
+  - at /receipts/0343.json (reasoning offset 5968; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(622,695)+84=706. yes.\n\nr9:\nc1 562+95=657.\nc2 min(657,387)+71=458.\nc3 min(458,416)+40=456.\n'
+- **value** [inline, model (form owned 0)] `min(622,695)+84` = 622779; wrote 706; span None
+  - at /receipts/0343.json (reasoning offset 5993; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. yes.\n\nr9:\nc1 562+95=657.\nc2 min(657,387)+71=458.\nc3 min(458,416)+40=456.\nc4 min(456,478)+65=521.\nc'
+- **value** [inline, model (form owned 0)] `min(657,387)+71` = 657458; wrote 458; span None
+  - at /receipts/0343.json (reasoning offset 6042; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc3 min(458,416)+40=456.\nc4 min(456,478)+65=521.\nc5 min(521,498)+84=582.\nc6 min(582,569)+93=662.\nc7'
+- **value** [inline, model (form owned 0)] `min(458,416)+40` = 458456; wrote 456; span None
+  - at /receipts/0343.json (reasoning offset 6066; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc4 min(456,478)+65=521.\nc5 min(521,498)+84=582.\nc6 min(582,569)+93=662.\nc7 min(662,529)+78=607.\nc8'
+- **value** [inline, model (form owned 0)] `min(456,478)+65` = 456543; wrote 521; span None
+  - at /receipts/0343.json (reasoning offset 6090; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc5 min(521,498)+84=582.\nc6 min(582,569)+93=662.\nc7 min(662,529)+78=607.\nc8 min(607,550)+8=558.\nc9 '
+- **value** [inline, model (form owned 0)] `min(521,498)+84` = 521582; wrote 582; span None
+  - at /receipts/0343.json (reasoning offset 6114; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc6 min(582,569)+93=662.\nc7 min(662,529)+78=607.\nc8 min(607,550)+8=558.\nc9 min(558,622)+6=564.\nc10 '
+- **value** [inline, model (form owned 0)] `min(582,569)+93` = 582662; wrote 662; span None
+  - at /receipts/0343.json (reasoning offset 6138; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc7 min(662,529)+78=607.\nc8 min(607,550)+8=558.\nc9 min(558,622)+6=564.\nc10 min(564,706)+13=577. yes'
+- **value** [inline, model (form owned 0)] `min(662,529)+78` = 662607; wrote 607; span None
+  - at /receipts/0343.json (reasoning offset 6162; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc8 min(607,550)+8=558.\nc9 min(558,622)+6=564.\nc10 min(564,706)+13=577. yes.\n\nNeed final only integ'
+- **value** [inline, model (form owned 0)] `min(607,550)+8` = 607558; wrote 558; span None
+  - at /receipts/0343.json (reasoning offset 6185; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc9 min(558,622)+6=564.\nc10 min(564,706)+13=577. yes.\n\nNeed final only integer bare JSON number.'
+- **value** [inline, model (form owned 0)] `min(558,622)+6` = 558628; wrote 564; span None
+  - at /receipts/0343.json (reasoning offset 6208; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nc10 min(564,706)+13=577. yes.\n\nNeed final only integer bare JSON number.'
+- **value** [inline, model (form owned 0)] `min(564,706)+13` = 564719; wrote 577; span None
+  - at /receipts/0343.json (reasoning offset 6233; 1 receipt copies)
+  - model: reappears later 0x, in final content True, questioned False; next '. yes.\n\nNeed final only integer bare JSON number.'
+- **value** [inline, model (form owned 0)] `4+18` = 22; wrote 25; span None
+  - at /receipts/0351.json (reasoning offset 1848; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\n8 27 via5 then 24 via7.\n\nCould there be path to 6 shorter via 5? 0->3->4->5 =11, +21=32. Then 6->2'
+- **value** [inline, model (form owned 0)] `min(431,410)` = 431410; wrote 410; span None
+  - at /receipts/0353.json (reasoning offset 4916; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next ', plus21=431. It chose left r7c6. So from r7c6 right.\nr7c6 dp=410: val19 + min(up dp6c6=398, left dp'
+- **value** [inline, model (form owned 0)] `min(111,127)+49` = 111176; wrote 160; span None
+  - at /receipts/0355.json (reasoning offset 5178; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3 min(133,160)+18=151\nc4 min(171,151)+57=208\nc5 min(255,208)+37=245\nc6 min(315,245)+6=251\nc7 min(3'
+- **value** [inline, model (form owned 0)] `min(133,160)+18` = 133178; wrote 151; span None
+  - at /receipts/0355.json (reasoning offset 5201; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4 min(171,151)+57=208\nc5 min(255,208)+37=245\nc6 min(315,245)+6=251\nc7 min(347,251)+55=306\nc8 min(4'
+- **value** [inline, model (form owned 0)] `min(171,151)+57` = 171208; wrote 208; span None
+  - at /receipts/0355.json (reasoning offset 5224; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5 min(255,208)+37=245\nc6 min(315,245)+6=251\nc7 min(347,251)+55=306\nc8 min(411,306)+7=313\nc9 min(46'
+- **value** [inline, model (form owned 0)] `min(255,208)+37` = 255245; wrote 245; span None
+  - at /receipts/0355.json (reasoning offset 5247; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6 min(315,245)+6=251\nc7 min(347,251)+55=306\nc8 min(411,306)+7=313\nc9 min(463,313)+92=405\nc10 min(4'
+- **value** [inline, model (form owned 0)] `min(315,245)+6` = 315251; wrote 251; span None
+  - at /receipts/0355.json (reasoning offset 5269; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7 min(347,251)+55=306\nc8 min(411,306)+7=313\nc9 min(463,313)+92=405\nc10 min(464,405)+97=502.\nOk.\n\nR'
+- **value** [inline, model (form owned 0)] `min(347,251)+55` = 347306; wrote 306; span None
+  - at /receipts/0355.json (reasoning offset 5292; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8 min(411,306)+7=313\nc9 min(463,313)+92=405\nc10 min(464,405)+97=502.\nOk.\n\nRow3:\nc1=127+48=175\nc2=m'
+- **value** [inline, model (form owned 0)] `min(411,306)+7` = 411313; wrote 313; span None
+  - at /receipts/0355.json (reasoning offset 5314; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9 min(463,313)+92=405\nc10 min(464,405)+97=502.\nOk.\n\nRow3:\nc1=127+48=175\nc2=min(160,175)+10=170\nc3='
+- **value** [inline, model (form owned 0)] `min(463,313)+92` = 463405; wrote 405; span None
+  - at /receipts/0355.json (reasoning offset 5337; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10 min(464,405)+97=502.\nOk.\n\nRow3:\nc1=127+48=175\nc2=min(160,175)+10=170\nc3=min(151,170)+28=179\nc4='
+- **value** [inline, model (form owned 0)] `min(464,405)+97` = 464502; wrote 502; span None
+  - at /receipts/0355.json (reasoning offset 5361; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '.\nOk.\n\nRow3:\nc1=127+48=175\nc2=min(160,175)+10=170\nc3=min(151,170)+28=179\nc4=min(208,179)+23=202\nc5=m'
+- **value** [inline, model (form owned 0)] `min(160,175)+10` = 160185; wrote 170; span None
+  - at /receipts/0355.json (reasoning offset 5410; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(151,170)+28=179\nc4=min(208,179)+23=202\nc5=min(245,202)+8=210\nc6=min(251,210)+14=224\nc7=min(3'
+- **value** [inline, model (form owned 0)] `min(151,170)+28` = 151198; wrote 179; span None
+  - at /receipts/0355.json (reasoning offset 5433; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(208,179)+23=202\nc5=min(245,202)+8=210\nc6=min(251,210)+14=224\nc7=min(306,224)+71=295\nc8=min(3'
+- **value** [inline, model (form owned 0)] `min(208,179)+23` = 208202; wrote 202; span None
+  - at /receipts/0355.json (reasoning offset 5456; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(245,202)+8=210\nc6=min(251,210)+14=224\nc7=min(306,224)+71=295\nc8=min(313,295)+53=348\nc9=min(4'
+- **value** [inline, model (form owned 0)] `min(245,202)+8` = 245210; wrote 210; span None
+  - at /receipts/0355.json (reasoning offset 5478; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(251,210)+14=224\nc7=min(306,224)+71=295\nc8=min(313,295)+53=348\nc9=min(405,348)+97=445\nc10=min'
+- **value** [inline, model (form owned 0)] `min(251,210)+14` = 251224; wrote 224; span None
+  - at /receipts/0355.json (reasoning offset 5501; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(306,224)+71=295\nc8=min(313,295)+53=348\nc9=min(405,348)+97=445\nc10=min(502,445)+17=462. ok.\n\n'
+- **value** [inline, model (form owned 0)] `min(306,224)+71` = 306295; wrote 295; span None
+  - at /receipts/0355.json (reasoning offset 5524; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(313,295)+53=348\nc9=min(405,348)+97=445\nc10=min(502,445)+17=462. ok.\n\nRow4:\nc1=175+50=225\nc2='
+- **value** [inline, model (form owned 0)] `min(313,295)+53` = 313348; wrote 348; span None
+  - at /receipts/0355.json (reasoning offset 5547; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(405,348)+97=445\nc10=min(502,445)+17=462. ok.\n\nRow4:\nc1=175+50=225\nc2=min(170,225)+55=225\nc3='
+- **value** [inline, model (form owned 0)] `min(405,348)+97` = 405445; wrote 445; span None
+  - at /receipts/0355.json (reasoning offset 5570; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(502,445)+17=462. ok.\n\nRow4:\nc1=175+50=225\nc2=min(170,225)+55=225\nc3=min(179,225)+7=186\nc4=m'
+- **value** [inline, model (form owned 0)] `min(502,445)+17` = 502462; wrote 462; span None
+  - at /receipts/0355.json (reasoning offset 5594; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. ok.\n\nRow4:\nc1=175+50=225\nc2=min(170,225)+55=225\nc3=min(179,225)+7=186\nc4=min(202,186)+54=240\nc5=mi'
+- **value** [inline, model (form owned 0)] `min(170,225)+55` = 170280; wrote 225; span None
+  - at /receipts/0355.json (reasoning offset 5643; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc3=min(179,225)+7=186\nc4=min(202,186)+54=240\nc5=min(210,240)+61=271\nc6=min(224,271)+40=264\nc7=min(2'
+- **value** [inline, model (form owned 0)] `min(179,225)+7` = 179232; wrote 186; span None
+  - at /receipts/0355.json (reasoning offset 5665; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(202,186)+54=240\nc5=min(210,240)+61=271\nc6=min(224,271)+40=264\nc7=min(295,264)+97=361\nc8=min('
+- **value** [inline, model (form owned 0)] `min(202,186)+54` = 202240; wrote 240; span None
+  - at /receipts/0355.json (reasoning offset 5688; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(210,240)+61=271\nc6=min(224,271)+40=264\nc7=min(295,264)+97=361\nc8=min(348,361)+25=373\nc9=min('
+- **value** [inline, model (form owned 0)] `min(210,240)+61` = 210301; wrote 271; span None
+  - at /receipts/0355.json (reasoning offset 5711; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(224,271)+40=264\nc7=min(295,264)+97=361\nc8=min(348,361)+25=373\nc9=min(445,373)+10=383\nc10=min'
+- **value** [inline, model (form owned 0)] `min(224,271)+40` = 224311; wrote 264; span None
+  - at /receipts/0355.json (reasoning offset 5734; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc7=min(295,264)+97=361\nc8=min(348,361)+25=373\nc9=min(445,373)+10=383\nc10=min(462,383)+32=415. ok.\n\n'
+- **value** [inline, model (form owned 0)] `min(295,264)+97` = 295361; wrote 361; span None
+  - at /receipts/0355.json (reasoning offset 5757; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(348,361)+25=373\nc9=min(445,373)+10=383\nc10=min(462,383)+32=415. ok.\n\nRow5:\nc1=225+87=312\nc2='
+- **value** [inline, model (form owned 0)] `min(348,361)+25` = 348386; wrote 373; span None
+  - at /receipts/0355.json (reasoning offset 5780; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(445,373)+10=383\nc10=min(462,383)+32=415. ok.\n\nRow5:\nc1=225+87=312\nc2=min(225,312)+90=315\nc3='
+- **value** [inline, model (form owned 0)] `min(445,373)+10` = 445383; wrote 383; span None
+  - at /receipts/0355.json (reasoning offset 5803; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc10=min(462,383)+32=415. ok.\n\nRow5:\nc1=225+87=312\nc2=min(225,312)+90=315\nc3=min(186,315)+45=231\nc4='
+- **value** [inline, model (form owned 0)] `min(462,383)+32` = 462415; wrote 415; span None
+  - at /receipts/0355.json (reasoning offset 5827; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. ok.\n\nRow5:\nc1=225+87=312\nc2=min(225,312)+90=315\nc3=min(186,315)+45=231\nc4=min(240,231)+98=329\nc5=m'
+- **value** [inline, model (form owned 0)] `min(225,312)+90` = 225402; wrote 315; span None
+  - at /receipts/0355.json (reasoning offset 5876; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(186,315)+45=231\nc4=min(240,231)+98=329\nc5=min(271,329)+92=363\nc6=min(264,363)+30=294\nc7=min('
+- **value** [inline, model (form owned 0)] `min(186,315)+45` = 186360; wrote 231; span None
+  - at /receipts/0355.json (reasoning offset 5899; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(240,231)+98=329\nc5=min(271,329)+92=363\nc6=min(264,363)+30=294\nc7=min(361,294)+49=343\nc8=min('
+- **value** [inline, model (form owned 0)] `min(240,231)+98` = 240329; wrote 329; span None
+  - at /receipts/0355.json (reasoning offset 5922; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(271,329)+92=363\nc6=min(264,363)+30=294\nc7=min(361,294)+49=343\nc8=min(373,343)+39=382\nc9=min('
+- **value** [inline, model (form owned 0)] `min(271,329)+92` = 271421; wrote 363; span None
+  - at /receipts/0355.json (reasoning offset 5945; 1 receipt copies)
+  - model: reappears later 2x, in final content False, questioned False; next '\nc6=min(264,363)+30=294\nc7=min(361,294)+49=343\nc8=min(373,343)+39=382\nc9=min(383,382)+14=396\nc10=min'
+- **value** [inline, model (form owned 0)] `min(264,363)+30` = 264393; wrote 294; span None
+  - at /receipts/0355.json (reasoning offset 5968; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(361,294)+49=343\nc8=min(373,343)+39=382\nc9=min(383,382)+14=396\nc10=min(415,396)+33=429. ok.\n\n'
+- **value** [inline, model (form owned 0)] `min(361,294)+49` = 361343; wrote 343; span None
+  - at /receipts/0355.json (reasoning offset 5991; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(373,343)+39=382\nc9=min(383,382)+14=396\nc10=min(415,396)+33=429. ok.\n\nRow6:\nc1=312+51=363\nc2='
+- **value** [inline, model (form owned 0)] `min(373,343)+39` = 373382; wrote 382; span None
+  - at /receipts/0355.json (reasoning offset 6014; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(383,382)+14=396\nc10=min(415,396)+33=429. ok.\n\nRow6:\nc1=312+51=363\nc2=min(315,363)+17=332\nc3='
+- **value** [inline, model (form owned 0)] `min(383,382)+14` = 383396; wrote 396; span None
+  - at /receipts/0355.json (reasoning offset 6037; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(415,396)+33=429. ok.\n\nRow6:\nc1=312+51=363\nc2=min(315,363)+17=332\nc3=min(231,332)+33=264\nc4='
+- **value** [inline, model (form owned 0)] `min(415,396)+33` = 415429; wrote 429; span None
+  - at /receipts/0355.json (reasoning offset 6061; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. ok.\n\nRow6:\nc1=312+51=363\nc2=min(315,363)+17=332\nc3=min(231,332)+33=264\nc4=min(329,264)+57=321\nc5=m'
+- **value** [inline, model (form owned 0)] `min(315,363)+17` = 315380; wrote 332; span None
+  - at /receipts/0355.json (reasoning offset 6110; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(231,332)+33=264\nc4=min(329,264)+57=321\nc5=min(363,321)+53=374\nc6=min(294,374)+65=359\nc7=min('
+- **value** [inline, model (form owned 0)] `min(231,332)+33` = 231365; wrote 264; span None
+  - at /receipts/0355.json (reasoning offset 6133; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(329,264)+57=321\nc5=min(363,321)+53=374\nc6=min(294,374)+65=359\nc7=min(343,359)+36=379\nc8=min('
+- **value** [inline, model (form owned 0)] `min(329,264)+57` = 329321; wrote 321; span None
+  - at /receipts/0355.json (reasoning offset 6156; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(363,321)+53=374\nc6=min(294,374)+65=359\nc7=min(343,359)+36=379\nc8=min(382,379)+4=383\nc9=min(3'
+- **value** [inline, model (form owned 0)] `min(363,321)+53` = 363374; wrote 374; span None
+  - at /receipts/0355.json (reasoning offset 6179; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(294,374)+65=359\nc7=min(343,359)+36=379\nc8=min(382,379)+4=383\nc9=min(396,383)+12=395\nc10=min('
+- **value** [inline, model (form owned 0)] `min(294,374)+65` = 294439; wrote 359; span None
+  - at /receipts/0355.json (reasoning offset 6202; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(343,359)+36=379\nc8=min(382,379)+4=383\nc9=min(396,383)+12=395\nc10=min(429,395)+64=459. ok.\n\nR'
+- **value** [inline, model (form owned 0)] `min(343,359)+36` = 343395; wrote 379; span None
+  - at /receipts/0355.json (reasoning offset 6225; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(382,379)+4=383\nc9=min(396,383)+12=395\nc10=min(429,395)+64=459. ok.\n\nRow7:\nc1=363+38=401\nc2=m'
+- **value** [inline, model (form owned 0)] `min(382,379)+4` = 382383; wrote 383; span None
+  - at /receipts/0355.json (reasoning offset 6247; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(396,383)+12=395\nc10=min(429,395)+64=459. ok.\n\nRow7:\nc1=363+38=401\nc2=min(332,401)+13=345\nc3='
+- **value** [inline, model (form owned 0)] `min(396,383)+12` = 396395; wrote 395; span None
+  - at /receipts/0355.json (reasoning offset 6270; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(429,395)+64=459. ok.\n\nRow7:\nc1=363+38=401\nc2=min(332,401)+13=345\nc3=min(264,345)+80=344\nc4='
+- **value** [inline, model (form owned 0)] `min(429,395)+64` = 429459; wrote 459; span None
+  - at /receipts/0355.json (reasoning offset 6294; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. ok.\n\nRow7:\nc1=363+38=401\nc2=min(332,401)+13=345\nc3=min(264,345)+80=344\nc4=min(321,344)+67=388\nc5=m'
+- **value** [inline, model (form owned 0)] `min(332,401)+13` = 332414; wrote 345; span None
+  - at /receipts/0355.json (reasoning offset 6343; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(264,345)+80=344\nc4=min(321,344)+67=388\nc5=min(374,388)+18=392\nc6=min(359,392)+88=447\nc7=min('
+- **value** [inline, model (form owned 0)] `min(264,345)+80` = 264425; wrote 344; span None
+  - at /receipts/0355.json (reasoning offset 6366; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(321,344)+67=388\nc5=min(374,388)+18=392\nc6=min(359,392)+88=447\nc7=min(379,447)+75=454\nc8=min('
+- **value** [inline, model (form owned 0)] `min(321,344)+67` = 321411; wrote 388; span None
+  - at /receipts/0355.json (reasoning offset 6389; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(374,388)+18=392\nc6=min(359,392)+88=447\nc7=min(379,447)+75=454\nc8=min(383,454)+58=441\nc9=min('
+- **value** [inline, model (form owned 0)] `min(374,388)+18` = 374406; wrote 392; span None
+  - at /receipts/0355.json (reasoning offset 6412; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(359,392)+88=447\nc7=min(379,447)+75=454\nc8=min(383,454)+58=441\nc9=min(395,441)+99=494\nc10=min'
+- **value** [inline, model (form owned 0)] `min(359,392)+88` = 359480; wrote 447; span None
+  - at /receipts/0355.json (reasoning offset 6435; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(379,447)+75=454\nc8=min(383,454)+58=441\nc9=min(395,441)+99=494\nc10=min(459,494)+56=515. ok.\n\n'
+- **value** [inline, model (form owned 0)] `min(379,447)+75` = 379522; wrote 454; span None
+  - at /receipts/0355.json (reasoning offset 6458; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(383,454)+58=441\nc9=min(395,441)+99=494\nc10=min(459,494)+56=515. ok.\n\nRow8:\nc1=401+30=431\nc2='
+- **value** [inline, model (form owned 0)] `min(383,454)+58` = 383512; wrote 441; span None
+  - at /receipts/0355.json (reasoning offset 6481; 1 receipt copies)
+  - model: reappears later 1x, in final content False, questioned False; next '\nc9=min(395,441)+99=494\nc10=min(459,494)+56=515. ok.\n\nRow8:\nc1=401+30=431\nc2=min(345,431)+35=380\nc3='
+- **value** [inline, model (form owned 0)] `min(395,441)+99` = 395540; wrote 494; span None
+  - at /receipts/0355.json (reasoning offset 6504; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(459,494)+56=515. ok.\n\nRow8:\nc1=401+30=431\nc2=min(345,431)+35=380\nc3=min(344,380)+97=441\nc4='
+- **value** [inline, model (form owned 0)] `min(459,494)+56` = 459550; wrote 515; span None
+  - at /receipts/0355.json (reasoning offset 6528; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '. ok.\n\nRow8:\nc1=401+30=431\nc2=min(345,431)+35=380\nc3=min(344,380)+97=441\nc4=min(388,441)+25=413\nc5=m'
+- **value** [inline, model (form owned 0)] `min(345,431)+35` = 345466; wrote 380; span None
+  - at /receipts/0355.json (reasoning offset 6577; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc3=min(344,380)+97=441\nc4=min(388,441)+25=413\nc5=min(392,413)+14=406\nc6=min(447,406)+93=499\nc7=min('
+- **value** [inline, model (form owned 0)] `min(344,380)+97` = 344477; wrote 441; span None
+  - at /receipts/0355.json (reasoning offset 6600; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc4=min(388,441)+25=413\nc5=min(392,413)+14=406\nc6=min(447,406)+93=499\nc7=min(454,499)+84=538\nc8=min('
+- **value** [inline, model (form owned 0)] `min(388,441)+25` = 388466; wrote 413; span None
+  - at /receipts/0355.json (reasoning offset 6623; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc5=min(392,413)+14=406\nc6=min(447,406)+93=499\nc7=min(454,499)+84=538\nc8=min(441,538)+9=450\nc9=min(4'
+- **value** [inline, model (form owned 0)] `min(392,413)+14` = 392427; wrote 406; span None
+  - at /receipts/0355.json (reasoning offset 6646; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc6=min(447,406)+93=499\nc7=min(454,499)+84=538\nc8=min(441,538)+9=450\nc9=min(494,450)+53=503\nc10=min('
+- **value** [inline, model (form owned 0)] `min(447,406)+93` = 447499; wrote 499; span None
+  - at /receipts/0355.json (reasoning offset 6669; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc7=min(454,499)+84=538\nc8=min(441,538)+9=450\nc9=min(494,450)+53=503\nc10=min(515,503)+63=566. Yes.\n\n'
+- **value** [inline, model (form owned 0)] `min(454,499)+84` = 454583; wrote 538; span None
+  - at /receipts/0355.json (reasoning offset 6692; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc8=min(441,538)+9=450\nc9=min(494,450)+53=503\nc10=min(515,503)+63=566. Yes.\n\nNeed final JSON integer'
+- **value** [inline, model (form owned 0)] `min(441,538)+9` = 441547; wrote 450; span None
+  - at /receipts/0355.json (reasoning offset 6714; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc9=min(494,450)+53=503\nc10=min(515,503)+63=566. Yes.\n\nNeed final JSON integer. Could include no mar'
+- **value** [inline, model (form owned 0)] `min(494,450)+53` = 494503; wrote 503; span None
+  - at /receipts/0355.json (reasoning offset 6737; 1 receipt copies)
+  - model: reappears later 0x, in final content False, questioned False; next '\nc10=min(515,503)+63=566. Yes.\n\nNeed final JSON integer. Could include no markdown. The prompt: Fina'
+- **value** [inline, model (form owned 0)] `min(515,503)+63` = 515566; wrote 566; span None
+  - at /receipts/0355.json (reasoning offset 6761; 1 receipt copies)
+  - model: reappears later 1x, in final content True, questioned False; next '. Yes.\n\nNeed final JSON integer. Could include no markdown. The prompt: Final answer format: a JSON '
+- **value** [inline, model (form owned 0)] `min(118,110)` = 118110; wrote 110; span None
+  - at /receipts/0359.json (reasoning offset 813; 1 receipt copies)
+  - model: reappears later 4x, in final content False, questioned False; next '; +92=202.\nc3 = min(r1c3=183, left 202)+86 =183+86=269.\nc4 = min(r1c4=238, left269)+5=238+5=243.\nc5 '
+- **value** [inline, model (form owned 0)] `min(331,463)+0` = 331463; wrote 331; span None
+  - at /receipts/0359.json (reasoning offset 2671; 1 receipt copies)
+  - model: reappears later 10x, in final content True, questioned False; next "\nFinal min cost 331.\n\nNeed ensure no arithmetic errors. Let's verify via backward? Could compute pat"
+- **value** [inline, model (form owned 0)] `min(331,463)+0` = 331463; wrote 331; span None
+  - at /receipts/0360.json (reasoning offset 2666; 1 receipt copies)
+  - model: reappears later 11x, in final content True, questioned False; next "\nFinal min 331. Need ensure no mistake. Let's maybe verify path sum 331. Need find path to c7 row7? "

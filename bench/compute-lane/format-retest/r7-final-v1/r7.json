@@ -1,0 +1,46 @@
+{
+  "qualified": true,
+  "oracle_sha256": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "input_rows_sha256": "0d316dc939f51e8c21f3caa7a07fb53efb7f28fd8a7fef45a06836f075af2901",
+  "observations": 360,
+  "runner_owned_count": 0,
+  "verdict": {
+    "pass": true,
+    "verdict": "PASS",
+    "live_receipts": [],
+    "records": 0,
+    "ok": 0,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "unparsed": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "text_owned_mismatches": 0,
+    "marks": {
+      "engine-inline": 0,
+      "engine-inline-partial": 0,
+      "engine-other-output": 0,
+      "model-imitation": 0
+    },
+    "wrong": []
+  },
+  "wrong_values": 0,
+  "wrong_bytes": 0,
+  "not_in_text": 0,
+  "cuts": 0,
+  "unknowns": 0,
+  "provenance": {
+    "gate_path": "<rank0-work>/stdbench/format-retest/r7-final-v1/oracle-output/gate.json",
+    "gate_sha256": "ef2c3acb2e2635f57a3ecd1af0d0a3bb958db71cfb2a5d5f41b8760c0ef8f53f",
+    "source_sha256": "0cfa6d5262360b178071228934f426e7230adbd4afce68879b60554ac8ed530c",
+    "oracle_path": "<rank0-work>/owned-oracle/tool/oracle.py",
+    "container_name": "stdbench-format-r7-82e0adb1719d42f4b112928f4bb4002c",
+    "image_id": "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+    "subprocess_rc": 0
+  },
+  "limitation": "r7 covers owned runner cells; zero owned cells is unexercised coverage. Native compute results are separately source/frame/isolated-CPython/presentation audited."
+}

@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "at_utc": "2026-11-06T20:44:19.966310+00:00",
+  "models_http_status": 200,
+  "model_id": "DeepSeek-V4.1-Flash-TF",
+  "G_engine_sha": "58bece1d3184269059fd3f7f755c52f4f295113d",
+  "G_run": "efast2-20261106T203019Z",
+  "ranks": [
+    {
+      "rank": 0,
+      "image_id": "sha256:e6cf428b02d188ceda5859b2f25839d4c305ad1f66b758b634b5d07dbe9da4f5",
+      "host_pid": 4053707,
+      "running": true
+    },
+    {
+      "rank": 1,
+      "image_id": "sha256:ca6feff3164a67710816be940968403f938947e4974ff04f61717d8f0f5688f9",
+      "host_pid": 59602,
+      "running": true
+    }
+  ],
+  "steps_path": "<rank0-work>/stdbench/format-retest/runtime/runs/stdbench-format-20261107-v1-format/steps.jsonl",
+  "steps_sha256": "f5f8745a5f87110a534062090343b1390aaefe30d0f17d256a9ddfd5cd751585",
+  "restore_log_path": "<rank0-work>/stdbench/format-retest/runtime/runs/stdbench-format-20261107-v1-format/G-restore.log",
+  "restore_log_sha256": "c6cd1e7efd695bb1a38ef77accc833c1b847f4ca8bb0ed6f5e3790b575de99ce",
+  "status_path": "<rank0-work>/dsv41-bench/out/efast2-20261106T203019Z/status.json",
+  "status_sha256": "2cbea6992a921570f565474fe86de87b8e3a0d4a943db46a10e63ab79dda5d18",
+  "source_sha256": "a842e869bc11eef76e8a87331c5ff53fddda387572413b53b48e963d4b51e3c7",
+  "inference_requests": 0
+}

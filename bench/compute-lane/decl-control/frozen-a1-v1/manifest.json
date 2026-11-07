@@ -1,0 +1,91 @@
+{
+  "base_spec_sha256": "adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6",
+  "spec_sha256": "e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89",
+  "boots": [
+    {
+      "boot": "t01-plain",
+      "arm": "plain",
+      "file": "boots/t01-plain.json",
+      "sha256": "7825230d826a14e9866018bc938718a22901fcf4d96504576ebfce9de3b68485"
+    },
+    {
+      "boot": "t01-declared_off",
+      "arm": "declared_off",
+      "file": "boots/t01-declared_off.json",
+      "sha256": "4b0d5e8fddf5740a2a015307af2cd49b5ae1e4bd0bae5d9575c9a7b39fadf60c"
+    },
+    {
+      "boot": "t01-lane",
+      "arm": "lane",
+      "file": "boots/t01-lane.json",
+      "sha256": "a0c36b80c12f53b819715b77e0e0c57a801f8f350a394af80983bc2edda1db8d"
+    },
+    {
+      "boot": "t02-declared_off",
+      "arm": "declared_off",
+      "file": "boots/t02-declared_off.json",
+      "sha256": "0b0d13a9b80eee6540abad0c97b50727e334bb9dfe634c9603b9bd91bf502452"
+    },
+    {
+      "boot": "t02-lane",
+      "arm": "lane",
+      "file": "boots/t02-lane.json",
+      "sha256": "9c847edcd0b91922a061711cc6776274760b461ad64991e773167d6885810fc3"
+    },
+    {
+      "boot": "t02-plain",
+      "arm": "plain",
+      "file": "boots/t02-plain.json",
+      "sha256": "07fed4e5e331557a947c529b8daf4fe71cb774cd4b0ddb9fee63ef516daed571"
+    },
+    {
+      "boot": "t03-lane",
+      "arm": "lane",
+      "file": "boots/t03-lane.json",
+      "sha256": "bd90e896060c7eb210ca0202a17b216f634db488e5fb684a1b5a1942b7ec7ac3"
+    },
+    {
+      "boot": "t03-plain",
+      "arm": "plain",
+      "file": "boots/t03-plain.json",
+      "sha256": "060cd73efc3ecac8d8ca7652a332e76eef62f583a3cda8d4435c22501bd91491"
+    },
+    {
+      "boot": "t03-declared_off",
+      "arm": "declared_off",
+      "file": "boots/t03-declared_off.json",
+      "sha256": "7b21ab6455b06ee9d2f4b8c1ffe0c2664cf4197c304527f229589cb309137692"
+    }
+  ],
+  "turns": [
+    {
+      "name": "t01",
+      "boots": [
+        "t01-plain",
+        "t01-declared_off",
+        "t01-lane"
+      ]
+    },
+    {
+      "name": "t02",
+      "boots": [
+        "t02-declared_off",
+        "t02-lane",
+        "t02-plain"
+      ]
+    },
+    {
+      "name": "t03",
+      "boots": [
+        "t03-lane",
+        "t03-plain",
+        "t03-declared_off"
+      ]
+    }
+  ],
+  "fresh_replies": 552,
+  "reserve": "only unmeasured fixed units; no automatic replacement",
+  "cpu_prompt_arrays_sha256": "7887963d2c6b3f4de450792ba5b89655b3ab80f64e9cc1f4a5300d12ac7187db",
+  "draft_sha256": "765f26b4e1e2f93ed7bf401e6148f7ae1783b0182b1cadb076b268a04b128021",
+  "analysis_manifest_sha256": "ea5503902745f56df60f4b275370a6ec7bfaa24e6a2d88dd04848dc5d78e36e3"
+}

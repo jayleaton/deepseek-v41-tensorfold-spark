@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "rank": 0,
+  "prefix": "stdbench-compute-a2-20261106-v1",
+  "spec_sha256": "8eaa9575592f519b504d08022d400602e4b552874c8424b02c59c34f4af174e2",
+  "stage_manifest_sha256": "119e7a8585f203225c83374c2b161107ab291d9f3096ad1817acbe0741de1261",
+  "files": {
+    "retention.json": "8af323b86bcc4be7d0d1c49ec97c3fe63af2d673dc6da688d903c15d7f24a59f",
+    "frozen-v1/boots/A2-plain-P.json": "a910505fc7fb6009ae699f4b9ece43e26271df4cf6a5d426eded20b681de2c88",
+    "configs/A2-plain-P-r0.env": "4fffd6cfc12b31e8188dcebed386d5da4f5393b952f67930c7b93d0f9d6557a2",
+    "rank0/boots/A2-plain-P/manifest.json": "57c6dd6c27a5f88feca1b9dffbffb795d4d2db3359b611dd0e461ab12b762592",
+    "rank1/boots/A2-plain-P/manifest.json": "9c4d3104144ebf4de420e413266acd8f4936c8b42133fb79ffe39b7d8352ba93",
+    "frozen-v1/manifest.json": "b8aa2560d4ab003ee08861cb60fc59cd537c1da49cc4af27e8bd0e9bd6bc8fd8",
+    "prompt-inputs.json": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+    "adoption.json": "8497486e0b22828d0a4fc7f248e91fd8e761b1fb1089dbf31d33d43559d5a6f4",
+    "stage-campaign.json": "763f4b6b13712cac6e919cd4aaaa40127c09dcacac7122ed6154161d16116a36",
+    "source-hashes.json": "10bed9ab695f9ca618f54c918fc07767c6d1a7ab1718eaa523482a1e877a3988"
+  },
+  "collection_qualified": false
+}

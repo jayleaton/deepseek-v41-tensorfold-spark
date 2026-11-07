@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "rank": 0,
+  "prefix": "stdbench-compute-a1-20261105-v1",
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "stage_manifest_sha256": "e91cc367fd5556edfc0f87aa79aebe8c87658dfbc27847c054767a54838b24ff",
+  "files": {
+    "retention.json": "8af323b86bcc4be7d0d1c49ec97c3fe63af2d673dc6da688d903c15d7f24a59f",
+    "frozen-v1/boots/A1-resume-L.json": "bd4cf14a18da01c0ffdf9d33bf2454401edbeeb1f4639ec245f0788259f3d8f6",
+    "configs/A1-resume-L-r0.env": "58a2fc0ca94c58f11da24878894742ac95ad459ec38e3cf4484fe952cb15f361",
+    "rank0/boots/A1-resume-L/manifest.json": "4ebd600271e478e0e815ad82f58dcd7e0db2fe65bbe92f9c6dc86f8ee02beb97",
+    "rank1/boots/A1-resume-L/manifest.json": "de9c434d90608dd2d722ddb953e0918392c5c87a4a8cada1fb874461139f5790",
+    "frozen-v1/boots/A1-resume-D.json": "3c4601f04fbfd043a1d2c772100d0bbfa9dc4983a4e77697a93a6d412bc24460",
+    "configs/A1-resume-D-r0.env": "dbdd20b66ee3069b42588b8bb230de7f5584a2af9091ac109a1e61ea914f0c5d",
+    "rank0/boots/A1-resume-D/manifest.json": "9198fdb2a697c8f3936bb9340c763a865fbd6134d853a364c025b16e1c3fab61",
+    "rank1/boots/A1-resume-D/manifest.json": "3c6e69f53ca96fc10e61b4c2ccfeaa6c75775e10cb27722104e7026c06229f1b",
+    "frozen-v1/boots/A1-plain-P.json": "f70dd22f422b597eec0fd3480268491a6064b72b322dba25994848ba079916df",
+    "configs/A1-plain-P-r0.env": "eef7d07d1caea0276735b252e19a4013364f716d67a0d1fb03b2d80dc9f33a0d",
+    "rank0/boots/A1-plain-P/manifest.json": "7e5c1c6a411701d12392988eed239a143a48b9eda566c4838cb3fc507b50ac36",
+    "rank1/boots/A1-plain-P/manifest.json": "9fa63900edec66324fb55371544ab260abed5fa65da7774182ee464913cffdf1",
+    "frozen-v1/manifest.json": "0d15be3aeb0b0fba5367a6e8edb502739fd66b69ba3336347429489d293cc765",
+    "prompt-inputs.json": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+    "stage-campaign.json": "6311c75cadcb1308050838a45c0309ec58503516430272406df174c87b7dd2b0",
+    "source-hashes.json": "9cafadd8ae3df3a1c8ecc84b886d4db22a0cb730a2dbb3f650e0a07da9c8649e"
+  },
+  "collection_qualified": false
+}

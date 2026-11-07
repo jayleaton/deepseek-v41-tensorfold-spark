@@ -1,0 +1,62 @@
+{
+  "verdict": "PASS",
+  "rank": 1,
+  "real_adapter_dry_runs": 9,
+  "GPU": false,
+  "receipts": [
+    {
+      "boot": "t01-plain",
+      "rank": 1,
+      "manifest_sha256": "cc01c02e6997e781a996addc5a36c7d6dc59f81b762d12ded91781122be4547f",
+      "log_sha256": "1835af47795779559ed7edf07626f60f11ae2ebdc7a1fd91960dbbbff57c11d5"
+    },
+    {
+      "boot": "t01-declared_off",
+      "rank": 1,
+      "manifest_sha256": "e4cb4c79948f4817004325e944367544b91362766c2cd5b0ccd4353ebfea2bd9",
+      "log_sha256": "4032643384d767a0ab09b1e9b0815d5f1267dd6916b495dd22b886caf8476022"
+    },
+    {
+      "boot": "t01-lane",
+      "rank": 1,
+      "manifest_sha256": "4bee7a37ce3c925c35d73b251f5753e7b04fef72d5d02cc6dfd7c1721c344561",
+      "log_sha256": "25e7c866337e79031a9ee97db32529cbe3cb2872f448d6d7c64026dba820f7c6"
+    },
+    {
+      "boot": "t02-declared_off",
+      "rank": 1,
+      "manifest_sha256": "03330bbbb281cc502f8608a21f06768942dd0311a853f0a25df7584bbab57224",
+      "log_sha256": "f5d54c451f72fbd17b2af8bce570f3aa722d153474b3af6d11a1fa3b7a900c7d"
+    },
+    {
+      "boot": "t02-lane",
+      "rank": 1,
+      "manifest_sha256": "f1b714d83003b72a263e7cdcd83eb69be76351775ee875c74283abac2c7311e1",
+      "log_sha256": "3d6e3a547a5d8b0a540e225fc503aa1b80106cad80b3da7314543399ef6235a6"
+    },
+    {
+      "boot": "t02-plain",
+      "rank": 1,
+      "manifest_sha256": "49a62c015c99923f2f2403114e3d17623949f6ec04641c3609a23ca5828d3aa3",
+      "log_sha256": "39913034bb1c3c4c33d96c7ab269bf85d808a94f3e4b3b4045e20c852d7a2725"
+    },
+    {
+      "boot": "t03-lane",
+      "rank": 1,
+      "manifest_sha256": "c81c50024d7e1964a71127552e777a0fe3a4eb5343320c9a09d64f84cf30eca6",
+      "log_sha256": "58fb5c0bc5813db1a0cb70c6635f96faff6e8ec233d7fcc73d6ea281d9be049c"
+    },
+    {
+      "boot": "t03-plain",
+      "rank": 1,
+      "manifest_sha256": "38aeb0b067ef0267a6b7d1525f864f29df01c32d99a0763aede98887ea05a9f5",
+      "log_sha256": "2270f0dbce5ca494cd4a4a1dd237b8f22745a0e247362d84c02ff00a7929ab4d"
+    },
+    {
+      "boot": "t03-declared_off",
+      "rank": 1,
+      "manifest_sha256": "ba37ba8ce926530b45d13ecb68d5b5c9e8a6f496c4695a68e6c8188af739a293",
+      "log_sha256": "684572cc682a5ec24bf7248eddd9858c7762bd8ef65a6b429462b7db548b9190"
+    }
+  ]
+}
