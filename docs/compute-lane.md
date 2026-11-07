@@ -6,21 +6,28 @@ decoding), runs the code in a sandbox, renders the chat template's own tool-resu
 those tokens. The model continues from the same ids a client round trip would send, without a re-prefill and without
 the client in the loop. The client gets one reply: the answer, plus the calls in a non-standard `compute` field.
 
+**The flash17 profile's default is the in-thinking "tool-full" profile** with `TF_DSV41_COMPUTE_LANE_DEFAULT=1`: the
+model computes inside its thinking (the in-model runner writes the values of the cells it can run) and through the
+built-in tool, for every chat whatever the client sends ([Compute in every chat](#compute-in-every-chat)). Arm L, the
+lane alone with the runner off, is an opt-in block in the same profile.
+
 [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) covers the sandbox, its
-limits, the boot self-test and how to turn the lane off. This page covers the measured configurations, what they
-showed and how to rerun them. The kits, specs, checkers and results are in
+limits, the boot self-test and how to turn the lane off. This page covers the default, the measured configurations,
+what they showed and how to rerun them. The kits, specs, checkers and results are in
 [`bench/compute-lane/`](../bench/compute-lane/README.md).
 
 ## Engine
 
 | | |
 | --- | --- |
-| Pin | `07106059c0d985dc352e126fe960941fbadc0166`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
-| Tree | `c3636e6da0d871470490830bb7860bb1a379c577`, identical to the measured source `3a429d6f1` |
-| Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus this source's two binaries and the runner's frontend layer, circuit and graph banks) |
+| Pin | `e5172c4a2e73a01d6812d16cd1f57ec908e8f8bf`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
+| Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
+| Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
-The release branch holds the same 303 commits over upstream `0d51120a8` as the measured branch, with the same trees,
-messages and dates, re-recorded under one author. Counterparts of commits named in this recipe's docs:
+The pin is `07106059c` plus one commit, `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
+chat](#compute-in-every-chat)); with that setting unset it renders and serves requests exactly as `07106059c` does.
+Below it, the release branch holds the same 303 commits over upstream `0d51120a8` as the measured branch, with the
+same trees, messages and dates, re-recorded under one author. Counterparts of commits named in this recipe's docs:
 
 | measured | release branch | what |
 | --- | --- | --- |
@@ -36,10 +43,10 @@ Every study ran on two GB10 Sparks (TP2) with the flash17 K6 MTP pack (DeepSeek-
 four slots, 1M context and the release candidate G settings of the flash17 profile.
 
 **Requests** (all lane-only studies): thinking on, `reasoning_effort` high, temperature 1.0, top-p 0.95, top-k 20,
-`max_tokens` 8192, `"deadline_s": 270`, seeds 101 and 102, one request at a time, streamed with
-`return_token_ids`. The tool declaration is a client function named `python`, byte-equal to the engine's built-in
-definition ([`decl-control/canonical-python-tools.json`](../bench/compute-lane/decl-control/canonical-python-tools.json)),
-which arms the lane when it is on.
+`max_tokens` 8192, `"deadline_s": 270`, seeds 101 and 102, one request at a time, streamed with `return_token_ids`.
+The tool declaration is a client function named `python`, byte-equal to the engine's built-in definition
+([`decl-control/canonical-python-tools.json`](../bench/compute-lane/decl-control/canonical-python-tools.json)), which
+arms the lane when it is on.
 
 | arm | engine | request | what it measures |
 | --- | --- | --- | --- |
@@ -61,9 +68,16 @@ used `tools: [{"type": "code_interpreter"}]` (tool definition sha256 `eec0577c�
 `max_tokens` 32768, `deadline_s` 300, three seeds and four streams at a time. Its arms were plain, lane (L's engine
 lines with this request shape), full and runner-only.
 
-### The flash17 profile against arm L
+### The flash17 profile against the measured arms
 
-The profile's default is arm L. Its engine settings equal L's effective environment except:
+The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1`. AB3's requests
+sent `tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the
+engine supplies both to every chat, so a client sends neither. `max_tokens` and `deadline_s` stay the client's (AB3
+sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the
+default has not itself been measured at the pin. Arm L is the commented opt-in block below it (nine lines that
+replace the default's nineteen) and runs on the plain image.
+
+Both blocks share the rest of the profile, which equals L's effective environment except:
 
 | setting | L | profile | why |
 | --- | --- | --- | --- |
@@ -71,9 +85,9 @@ The profile's default is arm L. Its engine settings equal L's effective environm
 | `TF_DSV41_PREPARED_WRITE` | 0 | 1 | the studies mounted an already written prepared pack read-only; a first boot has to write it |
 | `TF_DSV41_ACCEPT_LOG` | `/state/acclog.jsonl` | unset | draft-acceptance telemetry for the harness |
 
-`TF_CUDA_SCHED` is unset in the profile because the studies ran with it unset. Names the bench launcher passed that
-this engine no longer reads (`GLM53_TF_ROCE_*`, `TF_DSV41_PLAN_*`, `TF_DSV41_DRAIN_S` and the like) have their
-current names in the profile with the same values, or are fixed engine behaviour; `TF_TP_ROCE_POLLERS=1` and
+`TF_CUDA_SCHED` is unset in the profile because the studies (L and AB3) ran with it unset. Names the bench launcher
+passed that this engine no longer reads (`GLM53_TF_ROCE_*`, `TF_DSV41_PLAN_*`, `TF_DSV41_DRAIN_S` and the like) have
+their current names in the profile with the same values, or are fixed engine behaviour; `TF_TP_ROCE_POLLERS=1` and
 `TF_TP_ROCE_STAGGER_NS=150` are the engine defaults.
 
 ## Results
@@ -140,34 +154,77 @@ point boundaries. Tool-full has not been measured again at the pin.
 
 ### Which configuration produced which number
 
-| result | configuration | engine |
+| configuration | result | engine |
 | --- | --- | --- |
-| 187/240 vs 120/240, ~93% fewer IDs and less time | lane only (L vs P), runner off | `3a429d6f1` |
-| 120/120 vs 86/120; 78% fewer IDs, 77% less time | lane only (L vs P), runner off | `3a429d6f1` |
-| identical outputs with execution on or off; 23.7/21.9/27.4% from the declaration | D vs L vs P, runner off | `3a429d6f1` |
-| 81.1% fewer returned tokens than plain; 174/180 vs 170/180 | tool-full, runner on | `3bf584af1` |
-| lane 78.2% fewer tokens than plain (AB3) | AB3's lane arm, runner off | `3bf584af1` |
+| lane (arm L; AB3's lane arm), runner off | 78.2% fewer returned tokens than plain in AB3 | `3bf584af1` |
+| lane (L vs P), runner off | 187/240 vs 120/240 strictly formatted correct (compute-DL) | `3a429d6f1` |
+| lane (L vs P), runner off | 120/120 vs 86/120; on the fresh tasks also run plain, 78% fewer IDs and 77% less response time (format-retest) | `3a429d6f1` |
+| lane (D vs L vs P), runner off | identical outputs with execution on or off; 23.7%, 21.9% and 27.4% fewer tokens from the declaration (decl-control) | `3a429d6f1` |
+| tool-full (in-thinking: runner, built-in tool, S3, trust guide) | 81.1% fewer returned tokens than plain (CI95 76.6%–84.7%), 174/180 vs 170/180; descriptive secondary | `3bf584af1` |
+| tool-full against lane | 13.17% fewer returned tokens than lane, CI95 26.08% fewer to 0.98% more: the interval crosses zero, and this primary comparison failed | `3bf584af1` |
+
+The default profile is the tool-full configuration. No study measured it against arm L with a passing interval; the
+lane numbers come from arm L.
 
 ## Limits
 
 - These are generated six-template development cohorts and short fixed subsets, not standard benchmark scores.
 - Returned IDs are not full processed-token or compute savings: the lane's multi-round inputs were not measured.
-- No serving-default claim follows from any of these studies; the profile turns the lane on as an operator choice
-  made before them ([OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)).
+- No serving-default claim follows from any of these studies. The in-thinking default is an operator choice: AB3 did
+  not meet its frozen spec, and the default's engine (with `TF_DSV41_COMPUTE_LANE_DEFAULT`) has only its smoke boot
+  ([Compute in every chat](#compute-in-every-chat)).
 - One pair of Sparks, one pack.
 
 ## Experimental settings
 
-Off in the flash17 profile; measured only where stated:
+On in the default profile, measured only where stated:
 
 | setting | status |
 | --- | --- |
-| `TF_DSV41_RUNNER` and `TF_DSV41_RUNNER_*` | the in-model runner; on only in AB3's tool-full arm |
-| `TF_DSV41_COMPUTE_LANE_RUNNER` and `_*` | S3, runner-first lane calls; on only in tool-full |
-| request `runner_guide` | the trust guide; tool-full only, read only with the runner on |
-| `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_INLINE_ARITH`, `_INLINE_MOD`, `_SETTLE_US`, `_COMMIT` (on) | never on in an adjudicated arm |
+| `TF_DSV41_RUNNER` and the default's `TF_DSV41_RUNNER_*` lines | the in-model runner; measured only in AB3's tool-full arm |
+| `TF_DSV41_COMPUTE_LANE_RUNNER` and `_*` | S3, runner-first lane calls; tool-full only |
+| `TF_DSV41_COMPUTE_LANE_DEFAULT` | every chat gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
 
-The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_s` are the measured path.
+Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_INLINE_ARITH`,
+`_INLINE_MOD`, `_COMMIT` (on), `_STATED`, `_INLINE_CHAIN`, `_INLINE_MARK` and `_SYNC_GRAPH`.
+
+The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_s` are the measured path of arm L.
+
+## Compute in every chat
+
+`TF_DSV41_COMPUTE_LANE_DEFAULT=1` (needs `TF_DSV41_COMPUTE_LANE=1`; any other value, or the setting without the lane,
+stops the boot) makes the engine read every chat request as the tool-full request, whatever the client sends:
+
+- `tools` gets the built-in `{"type": "code_interpreter"}` entry once. A client that lists it, or sends a byte-equal
+  copy of the built-in `python` function, still gets one declaration; a different function named `python` is
+  refused. A `tool_choice` of `"none"` keeps the built-in tool; `"required"` or a named function leave it out, as
+  they do for a request that opts in.
+- The runner's guide is the boot's (`TF_DSV41_RUNNER_GUIDE`, or AB3's trust guide when unset, sha256 `53ed328f…`); a
+  request's own `runner_guide` is ignored.
+- The client's own function tools are kept and their calls go back to the client as usual. Only built-in calls and
+  the runner's in-thinking cells run in the engine.
+- No request field turns it off.
+
+Each reply's `tensorfold` object then carries `compute_executed`: `calls` (built-in calls run), `runner_cells`
+(runner cells the engine wrote a value for, all forms) and `total`, 0 when nothing ran. With the setting unset no
+reply carries it and requests are rendered exactly as before.
+
+## Runner image
+
+The default needs the runner's frontend (clang-18 and lld-18), circuit and graph bank in the image. Build the image at
+the pin, then layer them over it:
+
+```sh
+TENSORFOLD_SOURCE=/path/to/TensorFold scripts/build-native.sh -t tensorfold-dsv41-recipe:<tag>
+scripts/build-runner-image.sh tensorfold-dsv41-recipe:<tag> /path/to/runner-assets -t tensorfold-dsv41-recipe:<tag>-runner
+```
+
+`/path/to/runner-assets` holds `calc.tfpc` and `graph-v7-powmod/bank/`, the files AB3's image served;
+[`config/runner-assets.sha256`](../config/runner-assets.sha256) lists each with its sha256 and the build refuses any
+other set. The circuit is exported from Qwenputer (MIT; its license ships in the bank and the image) with the engine's
+`tools/runner_export.py`, and the bank with its `tools/runner_graph_*` tools. The layer fails to build unless the
+image's circuit route computes the engine's probe cells (`tf-runner-frontend-check --require --circuit`). The image
+`scripts/build-native.sh` builds alone serves arm L and the rollback profile.
 
 ## Reproducing
 
@@ -175,9 +232,10 @@ The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_
 host paths are placeholders. In short:
 
 1. Build the image at the pin (`scripts/build-native.sh`, [ENGINE](ENGINE.md)) and boot the pair with the flash17
-   profile, or with the measured environment in `bench/compute-lane/configs/` for a strict replay. Tool-full also
-   needs the runner layer, circuit and graph bank (`packaging/runner/` in the engine; the shas are in
-   `bench/compute-lane/ab3/AB3-FREEZE.json`).
+   profile, or with the measured environment in `bench/compute-lane/configs/` for a strict replay. Tool-full and the
+   default need the runner image ([Runner image](#runner-image)); AB3's shas are in
+   `bench/compute-lane/ab3/AB3-FREEZE.json`. A strict AB3 replay sets `TF_DSV41_COMPUTE_LANE_DEFAULT=0` and sends the
+   request fields of `bench/compute-lane/configs/requests-ab3-tool-full.json`.
 2. Check the task sets, references and specs against `bench/compute-lane/MANIFEST.sha256`.
 3. Run each study's controller for its arms and seeds, then its grader and analysis. Raw receipts are listed by sha256
    in `bench/compute-lane/RAW-RECEIPTS.sha256`.

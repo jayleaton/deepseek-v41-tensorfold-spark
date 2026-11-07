@@ -18,10 +18,13 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `07106059c` on
-`dsv41/compute-lane-release`, byte-for-byte the engine source the [compute-lane studies](docs/compute-lane.md) ran:
-release candidate G (`58bece1d3`, fallback; F `56200688d` before it) plus `deadline_s`, the engine-held compute lane
-and the experimental in-model runner (off in the profile). Its history holds the stable DeepSeek head H
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `e5172c4a2` on
+`dsv41/compute-lane-release`: the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
+byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT`. That is release candidate G (`58bece1d3`, fallback; F
+`56200688d` before it) plus `deadline_s`, the engine-held compute lane and the experimental in-model runner. The
+flash17 profile's default is the in-thinking "tool-full" profile, run for every chat whatever the client sends; it
+needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block.
+The pin's history holds the stable DeepSeek head H
 (`20ad77878`, re-recorded there as `b073317ab`) and includes flash17’s `dsq-1` admission support. The pin is not on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
 until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
 

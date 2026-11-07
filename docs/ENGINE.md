@@ -21,11 +21,14 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `07106059c` on `dsv41/compute-lane-release`: the exact engine source of the compute-lane studies
-([compute lane](compute-lane.md)). Its tree is byte-identical to the measured source `3a429d6f1` (tree `c3636e6da`),
-with the same history re-recorded under one author. It is G plus `deadline_s`, the engine-held compute lane with its
-sandbox, and the experimental in-model runner, which stays off unless its settings are set (off in the flash17
-profile). [compute lane](compute-lane.md) lists the measured G commits' counterparts on this branch.
+The current pin is `e5172c4a2` on `dsv41/compute-lane-release`: `07106059c`, the exact engine source of the
+compute-lane studies ([compute lane](compute-lane.md)), plus one commit. `07106059c`'s tree is byte-identical to the
+measured source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus
+`deadline_s`, the engine-held compute lane with its sandbox, and the experimental in-model runner, which stays off
+unless its settings are set. The added commit is `TF_DSV41_COMPUTE_LANE_DEFAULT` (unset: no change), which gives every
+chat the built-in tool and the runner's guide and reports `compute_executed`; the flash17 profile turns it on with the
+runner ([compute lane](compute-lane.md#compute-in-every-chat)). [compute lane](compute-lane.md) lists the measured G
+commits' counterparts on this branch.
 
 The previous pin is release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,
 the same tree). G is candidate F (`56200688d`, the

@@ -33,30 +33,44 @@ def test_rollback_profile_leaves_the_compute_lane_off():
     assert not [line for line in lines if line.startswith("TF_DSV41_COMPUTE_LANE")]
 
 
-def test_flash17_profile_turns_the_compute_lane_on_with_default_limits():
-    lines = (ROOT / "config/prod-zig-flash17.env.example").read_text().splitlines()
-    assert [line for line in lines if line.startswith("TF_DSV41_COMPUTE_LANE")] == [
-        "TF_DSV41_COMPUTE_LANE=1", "TF_DSV41_COMPUTE_LANE_RUNNER=0"]
+TOOL_FULL = {
+    "TF_DSV41_COMPUTE_LANE": "1", "TF_DSV41_RUNNER": "1",
+    "TF_DSV41_RUNNER_CIRCUIT": "/opt/tensorfold/share/runner/calc.tfpc",
+    "TF_DSV41_RUNNER_FORMS": "fence,repl,inline,trace", "TF_DSV41_RUNNER_BACKEND": "graph",
+    "TF_DSV41_RUNNER_GRAPH_BANK": "/opt/tensorfold/share/runner/graph-v7-powmod/bank/bank.json",
+    "TF_DSV41_RUNNER_STATED": "0", "TF_DSV41_RUNNER_INLINE_CHAIN": "0", "TF_DSV41_RUNNER_INLINE_MARK": "0",
+    "TF_DSV41_RUNNER_SYNC_GRAPH": "0", "TF_DSV41_RUNNER_COMPILE_STEPS": "10522", "TF_DSV41_RUNNER_CELLS": "1",
+    "TF_DSV41_COMPUTE_LANE_RUNNER": "1",
+    "TF_DSV41_COMPUTE_LANE_RUNNER_CIRCUIT": "/opt/tensorfold/share/runner/calc.tfpc",
+    "TF_DSV41_COMPUTE_LANE_RUNNER_BACKEND": "graph",
+    "TF_DSV41_COMPUTE_LANE_RUNNER_GRAPH_BANK": "/opt/tensorfold/share/runner/graph-v7-powmod/bank/bank.json",
+    "TF_DSV41_COMPUTE_LANE_RUNNER_SETTLE_US": "3000", "TF_DSV41_RUNNER_COMMIT": "0",
+}
+LANE = {
+    "TF_DSV41_COMPUTE_LANE": "1", "TF_DSV41_COMPUTE_LANE_RUNNER": "0", "TF_DSV41_RUNNER": "0",
+    "TF_DSV41_RUNNER_COMMIT": "0", "TF_DSV41_RUNNER_STATED": "0", "TF_DSV41_RUNNER_INLINE_CHAIN": "0",
+    "TF_DSV41_RUNNER_INLINE_MARK": "0", "TF_DSV41_RUNNER_SYNC_GRAPH": "0", "TF_DSV41_RUNNER_FORMS": "fence,repl,inline",
+}
+COMPUTE = ("TF_DSV41_COMPUTE_LANE", "TF_DSV41_RUNNER")
 
 
-def test_flash17_profile_is_the_measured_lane_arm_with_the_runner_off():
-    lines = (ROOT / "config/prod-zig-flash17.env.example").read_text().splitlines()
-    runner = dict(line.split("=", 1) for line in lines if line.startswith("TF_DSV41_RUNNER"))
-    assert runner == {
-        "TF_DSV41_RUNNER": "0", "TF_DSV41_RUNNER_COMMIT": "0", "TF_DSV41_RUNNER_STATED": "0",
-        "TF_DSV41_RUNNER_INLINE_CHAIN": "0", "TF_DSV41_RUNNER_INLINE_MARK": "0", "TF_DSV41_RUNNER_SYNC_GRAPH": "0",
-        "TF_DSV41_RUNNER_FORMS": "fence,repl,inline"}
-    assert not [line for line in lines if line.startswith("TF_CUDA_SCHED")]
+def flash17():
+    return (ROOT / "config/prod-zig-flash17.env.example").read_text().splitlines()
 
 
-def test_flash17_tool_full_profile_is_commented_out_and_complete():
-    lines = (ROOT / "config/prod-zig-flash17.env.example").read_text().splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith('# Opt-in "tool-full" profile'))
-    block = [line[2:] for line in lines[start:] if line.startswith("# TF_DSV41_")]
-    settings = dict(line.split("=", 1) for line in block[:18])
-    assert settings["TF_DSV41_RUNNER"] == "1" and settings["TF_DSV41_COMPUTE_LANE_RUNNER"] == "1"
-    assert settings["TF_DSV41_RUNNER_GRAPH_BANK"].endswith("graph-v7-powmod/bank/bank.json")
-    assert len(settings) == 18
+def test_flash17_default_is_the_tool_full_profile_for_every_chat():
+    settings = [line.split("=", 1) for line in flash17() if line.startswith(COMPUTE)]
+    assert len(settings) == len(TOOL_FULL) + 1
+    assert dict(settings) == {**TOOL_FULL, "TF_DSV41_COMPUTE_LANE_DEFAULT": "1"}
+    assert not [line for line in flash17() if line.startswith("TF_CUDA_SCHED")]
+
+
+def test_flash17_lane_arm_is_a_commented_opt_in_that_replaces_the_default():
+    lines = flash17()
+    start = next(i for i, line in enumerate(lines) if line.startswith("# Opt-in: arm L"))
+    assert "Replace the nineteen lines above" in " ".join(lines[start:start + 4])
+    block = [line[2:].split("=", 1) for line in lines[start:] if line.startswith("# TF_DSV41_")]
+    assert dict(block[:len(LANE)]) == LANE and len(block[:len(LANE)]) == len(LANE)
 
 
 def test_flash17_profile_sets_the_release_candidate_settings():

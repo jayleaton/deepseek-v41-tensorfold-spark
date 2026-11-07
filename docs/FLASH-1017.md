@@ -91,8 +91,9 @@ each one does.
 | `TF_DSV41_TOKENIZER_MESSAGE_MEMO` | `1` | |
 | `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
 
-The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`): a built-in, sandboxed Python tool for requests
-that ask for `code_interpreter`. In the 2026-11-01 window on G it measured plain coding about 2 % lower (0.980, one
+The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`) with its in-thinking default: the in-model runner
+and a built-in, sandboxed Python tool for every chat ([compute lane](compute-lane.md)).
+In the 2026-11-01 window on G the lane alone measured plain coding about 2 % lower (0.980, one
 run; the lane-off boots varied 2.2 %); see
 [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it off.
 

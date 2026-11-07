@@ -36,6 +36,7 @@ SOURCES = {
     'scripts/guard-watch-zig.sh': {'"$safe_dir/safe_shell.sh"', '"$config"'},
     'scripts/build-native.sh': {'"$safe_dir/safe_shell.sh"'},
     'scripts/check-zig-image.sh': {'"$safe_dir/safe_shell.sh"'},
+    'scripts/build-runner-image.sh': {'"$safe_dir/safe_shell.sh"'},
     'docker/zig/fetch-source.sh': {'"$safe_dir/../../scripts/safe_shell.sh"'},
     'scripts/fetch-reference.sh': {'"$safe_dir/safe_shell.sh"'},
 }
