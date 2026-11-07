@@ -59,6 +59,13 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def keep_dir_mode(member, path):
+    """tarfile's 'data' filter, keeping the archive's directory modes: it leaves them to the umask, and the runner image
+    layer (and with it the pair identity) would then differ between builders."""
+    kept = tarfile.data_filter(member, path)
+    return kept.replace(mode=member.mode & 0o755, deep=False) if member.isdir() else kept
+
+
 def unpack(archive, dest, url):
     """Only plain files and directories under relative names; anything else stops before a byte is written there."""
     try:
@@ -68,7 +75,7 @@ def unpack(archive, dest, url):
                 parts = PurePosixPath(m.name).parts
                 if not (m.isfile() or m.isdir()) or m.name.startswith('/') or '..' in parts:
                     raise AssetError(f'{archive.name} from {url} holds an unsafe entry: {m.name}')
-            tar.extractall(dest, members=members, filter='data')
+            tar.extractall(dest, members=members, filter=keep_dir_mode)
     except tarfile.TarError as error:
         raise AssetError(f'cannot unpack {archive.name} from {url}: {error}') from error
 

@@ -1,6 +1,7 @@
 import gzip
 import hashlib
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -108,6 +109,31 @@ def test_download_checks_the_archive_and_every_file(tmp_path, monkeypatch):
     fetch_runner_assets.fetch(tmp_path / "runner", rel, manifest)
     assert (tmp_path / "runner/calc.tfpc").read_bytes() == b"circuit"
     assert not list(tmp_path.glob(".runner-*"))  # the downloaded archive does not stay
+
+
+def test_unpacked_modes_come_from_the_archive_not_the_umask(tmp_path):
+    files = {"graph-v7-powmod/bank/bank.json": b"{}"}
+    manifest, rel, _ = pinned(tmp_path, files)
+    archive = tmp_path / "local.tar.gz"
+    raw = io.BytesIO()
+    with gzip.GzipFile(fileobj=raw, mode="wb", mtime=0) as gz, tarfile.open(fileobj=gz, mode="w") as tar:
+        for name in ("graph-v7-powmod", "graph-v7-powmod/bank"):
+            info = tarfile.TarInfo(name)
+            info.type, info.mode = tarfile.DIRTYPE, 0o755
+            tar.addfile(info)
+        info = tarfile.TarInfo("graph-v7-powmod/bank/bank.json")
+        info.size, info.mode = 2, 0o644
+        tar.addfile(info, io.BytesIO(b"{}"))
+    archive.write_bytes(raw.getvalue())
+    rel.write_text(f"url {URL}\nsha256 {hashlib.sha256(archive.read_bytes()).hexdigest()}\n")
+    old = os.umask(0o002)
+    try:
+        fetch_runner_assets.fetch(tmp_path / "runner", rel, manifest, archive=archive)
+    finally:
+        os.umask(old)
+    modes = {p.relative_to(tmp_path / "runner").as_posix(): p.stat().st_mode & 0o777
+             for p in (tmp_path / "runner").rglob("*")}
+    assert modes == {"graph-v7-powmod": 0o755, "graph-v7-powmod/bank": 0o755, "graph-v7-powmod/bank/bank.json": 0o644}
 
 
 def test_a_failed_download_names_the_file_and_the_url(tmp_path, monkeypatch):
