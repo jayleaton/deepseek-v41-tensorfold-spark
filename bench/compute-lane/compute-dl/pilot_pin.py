@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Pin original pilot requests in place; never read generated replies as tasks."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 from exclusion_sources import PILOT_IDS
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root=Path(__file__).resolve().parent
 base=Path('<rank0-work>/dsv41-bench/out/imr-measure-20261104T074954Z/ab-a-plain-lane/a-s4')

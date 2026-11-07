@@ -18,10 +18,23 @@
 # selftest/t5-r6/*.json: T5's r6 boundary; bad-record-span-*: a display or echo that is not the span (rc 1).
 # selftest/t5-r5/*.json: T5's r5 matrix, each gated alone against its rc in selftest/t5-r5/EXPECTED.
 # selftest/t5-r3/*.json: T5's r3 review fixtures (T5-ORACLE-R3-REVIEW.md), each gated alone against its rc below.
-#   selftest.sh [OUT]       default OUT ~/work/owned-oracle/out/selftest
+#   selftest.sh [OUT]       default OUT ./oracle-selftest
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-out=${1:-$HOME/work/owned-oracle/out/selftest}
+source "$here/cpu-scope.sh"
+oracle_require_scope || exit 2
+out=${1:-$PWD/oracle-selftest}
+# Missing synthetic cases must fail before starting any evaluation, including the EXPECTED matrices.
+[[ -s "$here/selftest/fixtures.sha256" ]] || { echo 'selftest: missing fixture hash inventory' >&2; exit 1; }
+(cd "$here/selftest" && sha256sum --quiet -c fixtures.sha256) || { echo 'selftest: fixture hashes failed' >&2; exit 1; }
+for matrix in t5-r5 t5-r6; do
+  [[ -s "$here/selftest/$matrix/EXPECTED" ]] || { echo "selftest: missing $matrix/EXPECTED" >&2; exit 1; }
+  for pair in $(< "$here/selftest/$matrix/EXPECTED"); do
+    n=${pair%:*}; want=${pair#*:}
+    [[ -f "$here/selftest/$matrix/$n.json" && "$want" =~ ^[0-3]$ ]] || { echo "selftest: invalid $matrix fixture $n" >&2; exit 1; }
+  done
+done
+compgen -G "$here/selftest/receipts/*.json" >/dev/null || { echo 'selftest: missing receipt fixtures' >&2; exit 1; }
 bash "$here/run.sh" "$out" "$here/selftest/receipts" >/dev/null || { echo "selftest: run failed"; exit 1; }
 fail=0
 for f in "$here"/selftest/receipts/*.json; do

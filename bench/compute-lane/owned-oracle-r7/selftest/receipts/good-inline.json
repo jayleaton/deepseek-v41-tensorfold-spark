@@ -1,0 +1,11 @@
+{
+ "reasoning": "So 3^400 mod 10^18 = 192443283334088001.\nAnd 2^10*3 = 3072.\n",
+ "content": "",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 2
+   }
+  }
+ }
+}

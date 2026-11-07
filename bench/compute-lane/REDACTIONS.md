@@ -1,9 +1,14 @@
 # Redactions
 
-Every included text file was copied through one replacement pass (no other edits). This file lists, for each file
+This table describes the initial archive export at recipe `2f5b423`, before the
+[published-layout adaptations](README.md#published-layout-adaptations). Its staged hashes are historical;
+`MANIFEST.sha256` records the current published bytes. Later adaptations and restored synthetic fixtures are
+listed in that README; this table does not claim they were part of the original replacement pass.
+
+Every initially included text file was copied through one replacement pass (no other edits). This file lists, for each file
 whose bytes changed, the original sha256 (the value the frozen manifests, seals and adjudications refer to), the
-staged sha256 and the kinds of values replaced with counts. Files not listed here are byte-identical to the original;
-their sha256 in `MANIFEST.sha256` is also the original sha256.
+staged sha256 and the kinds of values replaced with counts. Files not listed here were byte-identical to the original
+at that export; consult the adaptation list before treating a current manifest hash as an original study hash.
 
 ## Replacement rules
 

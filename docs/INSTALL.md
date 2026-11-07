@@ -11,6 +11,44 @@ receipt that this pin has loaded the recommended weights. Start with an
 empty prepared directory for cold-start qualification; do not reuse prepared blobs
 as a substitute for actual pack admission and width-class coverage on both ranks.
 
+## Build-host prerequisites
+
+Use an isolated ARM64 Linux build environment with Git, Bash, curl, xz, Docker/NVIDIA
+build tools and writable model, asset and state directories. The native compiler is
+Zig **0.17.0**, pinned by the engine's `.zig-version` and the native Dockerfile; the
+Docker build installs its own compiler, not a host `zig` executable.
+Install that exact ARM64 Zig compiler for the host token-map step as well. Set
+`EDITOR` to your editor executable (for example `export EDITOR=vi`) before using
+the README's copy-and-edit command.
+
+For Engram packing and asset generation, retain the historical generator environment:
+Python **3.12**, the NumPy and Torch supplied by `nvcr.io/nvidia/pytorch:26.07-py3`
+(the base in `docker/Dockerfile` at recipe commit `391d677b`), Triton **3.7.1**, and
+ptxas **13.3.73**. The retained generator documents the Python path, Triton and ptxas
+in [`triton_fill.py`](../engine/zig/tools/zig/triton_fill.py); RoPE uses Torch's CPU
+arithmetic. No independent exact NumPy or Torch wheel pin is recorded here: preserve
+that base environment and record its actual package versions with generated assets,
+rather than substituting an arbitrary current Torch wheel. This is a build-only
+environment, separate from native serving and its sandbox interpreter.
+
+Inside that generator environment, preserve its NumPy/Torch packages while creating
+a separate environment for the CLI and pinned compiler dependencies:
+
+```bash
+python3.12 -m venv --system-site-packages /absolute/generator-venv
+source /absolute/generator-venv/bin/activate
+python -m pip install huggingface_hub 'triton==3.7.1' 'nvidia-cuda-nvcc==13.3.73'
+hf --help
+python -m pip freeze > /absolute/generator-requirements.txt
+```
+
+Set both `TRITON_PTXAS_PATH` and `TRITON_PTXAS_BLACKWELL_PATH` to the absolute
+`ptxas` path from that compiler package (or the matching CUDA toolkit), and verify
+`"$TRITON_PTXAS_PATH" --version` reports **13.3.73**. Follow
+[asset generation](ZIG-SERVE.md#generate-runtime-assets) for the reference source,
+native token-map tool and output directories. Download the selected model before
+packing Engram weights; `$MODEL/config.json` below must already exist.
+
 ## Engram source setup (#68)
 
 EXL3 packs do not carry the Engram tables (layers 1 and 14, about 101 GB each).

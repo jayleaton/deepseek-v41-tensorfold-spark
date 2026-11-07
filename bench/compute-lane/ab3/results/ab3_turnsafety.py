@@ -3,10 +3,17 @@
 vs the frozen plan, finish counts (deadline/timeout/length/error), id-hash integrity, boot pass and measure rc, and the
 run's r7 gate. Deliberately prints no token, solve or tool-call figures.
 Usage: python3 -I ab3_turnsafety.py LAYOUT TURN RUN_COPY"""
+
+import sys as _archive_sys
 import collections
 import json
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 layout, turn, run = json.loads(Path(sys.argv[1]).read_text()), int(sys.argv[2]), Path(sys.argv[3])
 t = next(x for x in layout['turns'] if x['turn'] == turn)

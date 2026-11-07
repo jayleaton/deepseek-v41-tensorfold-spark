@@ -1,7 +1,11 @@
 """Writes selftest/receipts/*-check-*.json: trace records with S2 R7's opt-in check (runner_trace_check) after `]`, the
 negative controls that must fail, and a model-written checked line with no record. Expected lines are worked by hand:
   python3 -I selftest/make_check_receipts.py"""
+import sys
 import json, os
+if __name__ == '__main__' and sys.argv[1:] == ['--help']:
+    print(__doc__)
+    raise SystemExit(0)
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'receipts')
 HEAD = '[exact, computed by the engine: '

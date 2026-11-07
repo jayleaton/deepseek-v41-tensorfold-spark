@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Retain actual shell preflight output without queue or GPU actions."""
+
+import sys as _archive_sys
 import hashlib
 import json
 from pathlib import Path
 import subprocess
 from runtime_stage import PREFIX,SPEC_SHA256
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 HERE=Path(__file__).resolve().parent
 ROOT=HERE/PREFIX
 sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()

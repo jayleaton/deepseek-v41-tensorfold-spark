@@ -1,0 +1,14 @@
+{
+ "id": "selftest-measure", "arm": "r",
+ "reasoning": "So 3^400 mod 10^18 = 1000000000000000000? Wait.\n",
+ "content": "",
+ "extra": {
+  "tensorfold": {
+   "runner": {
+    "inline": {
+     "owned": 1
+    }
+   }
+  }
+ }
+}

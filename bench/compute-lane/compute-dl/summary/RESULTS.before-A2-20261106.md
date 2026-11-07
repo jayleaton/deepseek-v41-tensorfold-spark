@@ -1,5 +1,9 @@
 # Compute study A1 — BLOCKED / INCOMPLETE (2026-11-06)
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **NEEDS-T5. G is not currently restored.** The A1 continuation stopped before any
 new inference because <rank1-host> `/tmp/<rank1-host>-gpu.lock` is absent. The queued G
 restoration failed on the same required read-only open. Both new GO markers are
@@ -13,8 +17,8 @@ L tasks have verified activation. All378 new replies remain uncollected
 Parent SHA: `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`.
 A1 SHA: `0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453`.
 
-- [A1 results, CPU qualification and failed restoration evidence](compute-dl/a1-results/RESULTS.md)
-- [NEEDS-T5 and required infrastructure recovery](compute-dl/a1-results/NEEDS-T5.md)
+- [A1 results, CPU qualification and failed restoration evidence](../a1-results/RESULTS.md)
+- [NEEDS-T5 and required infrastructure recovery](../a1-results/NEEDS-T5.md)
 
 The following original summary is preserved as a **historical snapshot before
 A1**. Its serving-state statement does not describe the current state above.
@@ -38,12 +42,12 @@ point estimate, confidence interval and test are withheld.
 
 Spec SHA256: `c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141`.
 
-- [Per-family results, tokens, wall time, missingness and paired sensitivities](compute-dl/RESULTS.md)
-- [480-row per-problem ledger](compute-dl/per-problem.csv)
-- [Exact native clipping proof](compute-dl/diagnosis-v1/truncation-proof.json)
-- [T5 adjudication request and completion constraints](compute-dl/NEEDS-T5.md)
-- [138 remaining original requests](compute-dl/remaining-collection.json)
-- [Prior declaration-control results](decl-control/RESULTS.md)
-- [DeepSeek published scores — historical reference only](PUBLISHED.md)
+- [Per-family results, tokens, wall time, missingness and paired sensitivities](../RESULTS.md)
+- [480-row per-problem ledger](../per-problem.csv)
+- [Exact native clipping proof](../diagnosis-v1/truncation-proof.json)
+- [T5 adjudication request and completion constraints](../NEEDS-T5.md)
+- [138 remaining original requests](../remaining-collection.json)
+- [Prior declaration-control results](../../decl-control/RESULTS.md)
+- DeepSeek published scores — historical reference only (`PUBLISHED.md`, omitted from this export)
 
 **Default: keep collection stopped until JJ steers a frozen T5 amendment SHA.**

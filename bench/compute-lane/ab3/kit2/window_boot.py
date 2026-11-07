@@ -7,11 +7,18 @@
    runner boots' owned cells.
 Usage: python3 -B window_boot.py OUT/<config> '<config json>'
 Env: T4_SETS (comma list, default all); T4_BASE and T4_LIMIT only for the dry run (a fake server, N tasks a set)."""
+
+import sys as _archive_sys
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 HERE = Path(__file__).resolve().parent
 out = Path(sys.argv[1])

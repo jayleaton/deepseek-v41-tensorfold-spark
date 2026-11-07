@@ -1,0 +1,28 @@
+{
+ "reasoning": "Compute 2*3*4 = 6",
+ "finish": "length",
+ "tensorfold": {
+  "finish": "length",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "inline",
+     "span": "2*3",
+     "ids": 4,
+     "landed": 1,
+     "field": "reasoning",
+     "at": 15,
+     "value": " 6",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 1
+    }
+   ]
+  }
+ }
+}

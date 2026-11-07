@@ -2,6 +2,8 @@
 import hashlib
 import json
 from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 import a1_budget
 
 A1_PREFIX=a1_budget.RUN_PREFIX

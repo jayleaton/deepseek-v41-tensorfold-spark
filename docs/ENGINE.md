@@ -168,8 +168,13 @@ version and execute clean, finding and empty-list cases. The all-ok preflight te
 injects measured latencies; real disk latency remains an operator measurement,
 with the production 300 µs warning threshold unchanged.
 
+The core lint command reads `.ruff.toml`, which excludes only the frozen,
+hash-pinned study records in `bench/compute-lane/`. Do not add `--isolated` to that
+command: it would ignore the archive policy. The archive's import, link, manifest
+and oracle checks remain separate gates; the exclusion does not qualify them.
+
 ```bash
-ruff check --isolated --select E4,E7,E9,F .
+ruff check --select E4,E7,E9,F .
 ruff format --isolated --check bench/speed.py scripts/preflight.py tests/bench/test_speed.py tests/scripts/test_preflight.py
 ```
 

@@ -2,11 +2,18 @@
 """Known-answer tests for ab3_analysis.py on synthetic full-shape AB3 runs built from the frozen layout (no AB3
 outcome exists). Each scenario writes runs under WORK/<name>, runs the analysis and checks verdict and gates.
 Usage: python3 -I test_ab3_analysis.py LAYOUT UNITS WORK"""
+
+import sys as _archive_sys
 import json
 import random
 import subprocess
 import sys
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 HERE = Path(__file__).resolve().parent
 layout, units_path, work = json.loads(Path(sys.argv[1]).read_text()), Path(sys.argv[2]), Path(sys.argv[3])

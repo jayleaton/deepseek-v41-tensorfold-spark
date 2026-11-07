@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """One-off reporting persistence regression, run only in the guarded Spark scope."""
+
+import sys as _archive_sys
 import json
 from pathlib import Path
 import client3
 import post3
 import reconciliation
 from audit_records import Inputs
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 root=Path(__file__).resolve().parent
 inputs=Inputs()

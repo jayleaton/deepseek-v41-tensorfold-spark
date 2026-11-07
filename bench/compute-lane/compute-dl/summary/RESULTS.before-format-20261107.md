@@ -1,5 +1,9 @@
 # Computation study — COMPLETE / NEEDS-T5
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 All **720/720** scheduled replies are collected and audited: 120 tasks × two seeds × P/D/L. Strict lane-enabled L solved **187/240 (77.92%)**, versus plain P **120/240 (50.00%)**. The amended primary paired difference is **+27.92 percentage points**, 95% family-stratified task-cluster bootstrap interval **[22.92, 32.92] points**; exact task-cluster sign-flip p = **6.38259e-7**. This is an outcome-informed amended study on a generated six-family mixture, with mostly earlier L collection, cold boots and one P restoration break. It is not an originally blinded confirmatory or public-benchmark result.
 
 | Arm | Strict solves | Returned native IDs/reply | Wall seconds/reply | Cap replies | Deadlines |
@@ -24,14 +28,14 @@ The overall accuracy gain combines 89 paired wins and 22 paired losses. P solved
 
 ## Review artifacts
 
-- [Full results: per-family accuracy, tokens, wall time and paired statistics](compute-dl/a2-results-v1/RESULTS.md)
-- [Analysis: coverage, censoring, all classifications and qualification](compute-dl/a2-results-v1/analysis.json)
-- [Strict/sensitivity residuals, clipping and P break batches](compute-dl/a2-results-v1/report.json)
-- [720-row per-problem ledger](compute-dl/a2-results-v1/per-problem.csv)
-- [Operational timeline, budget and interpretation limits](compute-dl/a2-report/OPERATIONS.md)
-- [Raw audit](compute-dl/a2-report/final-audit-v1/audit.json) and [independent G verification](compute-dl/a2-report/final-G-after-report.json)
-- [NEEDS-T5 handoff](compute-dl/a2-results-v1/NEEDS-T5.md)
+- [Full results: per-family accuracy, tokens, wall time and paired statistics](../a2-results-v1/RESULTS.md)
+- Analysis: coverage, censoring, all classifications and qualification (`compute-dl/a2-results-v1/analysis.json`, omitted from this export)
+- Strict/sensitivity residuals, clipping and P break batches (`compute-dl/a2-results-v1/report.json`, omitted from this export)
+- [720-row per-problem ledger](../a2-results-v1/per-problem.csv)
+- [Operational timeline, budget and interpretation limits](../a2-report/OPERATIONS.md)
+- [Raw audit](../a2-report/final-audit-v1/audit.json) and [independent G verification](../a2-report/final-G-after-report.json)
+- [NEEDS-T5 handoff](../a2-results-v1/NEEDS-T5.md)
 - [Previous blocked report, preserved unchanged](RESULTS.before-A2-20261106.md)
-- [DeepSeek published benchmarks — historical reference only](PUBLISHED.md)
+- DeepSeek published benchmarks — historical reference only (`PUBLISHED.md`, omitted from this export)
 
 This generated mixture has no matched DeepSeek published score. Actual served prompt arrays were not captured: CPU equality, wire identity and server prompt-count reconciliation leave same-length rendering differences possible. Original observations, failed audits, raw/native receipts and earlier reports remain preserved. Collection is complete; no benchmark/check job remains pending and GO is revoked on both nodes.

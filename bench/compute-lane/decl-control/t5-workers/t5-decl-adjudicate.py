@@ -1,5 +1,12 @@
+
+import sys as _archive_sys
 import pathlib,json,sys,hashlib,random,collections,re,datetime
 from fractions import Fraction
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 H=pathlib.Path.home();B=H/'work/stdbench/decl-control';F=B/'frozen-a1-v1';O=pathlib.Path(sys.argv[1]);O.mkdir(parents=True,exist_ok=True);J=lambda p:json.loads(p.read_text());L=lambda p:[json.loads(x) for x in p.read_text().splitlines() if x.strip()];sha=lambda b:hashlib.sha256(b).hexdigest()
 summary={};inputs={};read=lambda p:p.read_bytes()
 for f,h in [('T5-DECL-CONTROL-SPEC.md','adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6'),('T5-DECL-CONTROL-SPEC-A1.md','e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89')]:assert sha(read(B/f))==h

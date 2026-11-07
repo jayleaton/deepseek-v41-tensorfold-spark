@@ -164,5 +164,214 @@ paths reject repeats.
 ## Configs
 
 [`configs/README.md`](configs/README.md) lists the files. `configs/arm-L-effective.env` was read from the arm-L boot's
-container snapshot (format-retest, rank 0); the recipe profile differs from it only as
-[docs/compute-lane.md](../../docs/compute-lane.md#the-flash17-profile-against-arm-l) lists.
+container snapshot (format-retest, rank 0). The recipe defaults to tool-full plus forced tool declaration;
+arm L is the commented opt-in. Their shared base and compute-setting differences are described in
+[docs/compute-lane.md](../../docs/compute-lane.md#the-flash17-profile-against-the-measured-arms).
+
+## Published-layout adaptations
+
+The archive preserves frozen study code and historical hashes; it is excluded only from the core
+Ruff style gate in the recipe's `.ruff.toml`. It still needs its import/help, link, manifest and
+oracle checks. Historical source hashes in the specs, adjudications and REDACTIONS table remain
+historical; they are not silently replaced by claims about this publication repair.
+`MANIFEST.sha256` pins the **current published bytes**, including the adaptations below. Its rows
+are regular files; Git additionally pins the relative directory aliases `kit -> stdbench-kit` and
+`phase2 -> stdbench-kit/phase2`. These aliases restore the historical import layout without copying
+or reformatting the analysis/grader implementations. Minimal adapters supply omitted shared modules.
+
+Safe `--help` exits prevent archival host scripts from launching collection, reading private state
+or writing outputs merely to inspect usage. Modules with a normal main guard are imported instead.
+This proves source/import availability, not that historical campaigns can run without their frozen
+inputs, authorized hosts, queue controllers and omitted raw receipts. It grants no collection approval.
+The statistical methods, seeds, datasets, strict grading and `owned-oracle-r7/oracle.py` are unchanged.
+The portable oracle wrappers are publication adaptations; the evaluation algorithm remains the frozen one.
+Its restored synthetic cases and EXPECTED files are independently listed in
+[`owned-oracle-r7/selftest/fixtures.sha256`](owned-oracle-r7/selftest/fixtures.sha256). The initial
+RAW-RECEIPTS exclusion inventory is retained for provenance even for those now-restored test inputs.
+
+Exact files adapted or restored in this repair (paths relative to this directory):
+
+| File | Why |
+| --- | --- |
+| `MANIFEST.sha256` | Refresh current published-byte hashes and include restored inputs/adapters; omit the manifest itself and directory aliases. |
+| `RAW-RECEIPTS.sha256` | Mark initial export hashes/exclusions as historical; retain original entries unchanged. |
+| `README.md` | Correct exported navigation/configuration wording and record this exact adaptation inventory. |
+| `REDACTIONS.md` | Mark initial export hashes/exclusions as historical; retain original entries unchanged. |
+| `ab3/T5-AB3-ADJUDICATION.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `ab3/ab3_freeze.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/ab3_check2.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/make_window_driver.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/run_cells.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/stale_live.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/test_ab3_analysis.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/tokalign.py` | safe --help exit before historical top-level work |
+| `ab3/kit2/window_boot.py` | safe --help exit before historical top-level work |
+| `ab3/results/ab3_turnsafety.py` | safe --help exit before historical top-level work |
+| `ab3/t5-ab3-adjudication/ab3-adjudicate-read4/audit/script.py` | safe --help exit before historical top-level work |
+| `ab3/t5-ab3-adjudication/ab3-adjudicate-stats1/rank1-host/audit/script.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t01/imr-measure.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t02/imr-measure.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t03/imr-measure.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t04/imr-measure.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t05/imr-measure.py` | safe --help exit before historical top-level work |
+| `ab3/turns/t06/imr-measure.py` | safe --help exit before historical top-level work |
+| `compute-dl/PREVIOUS-DECL-CONTROL-SUMMARY.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/ROOT-SUMMARY.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/a1-continuation/lifecycle_probe.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-continuation/qualify_rank.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-prep/env_check.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-prep/p_verify_stage.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-prep/preflight_check.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-results/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/a1-runtime/qualify_rank.py` | safe --help exit before historical top-level work |
+| `compute-dl/a1-runtime/rank_ops.py` | Repair the published import path; preserve experiment computation. |
+| `compute-dl/a2-continuation/a1_budget.py` | resolve retained dependencies at the published layout without changing study algorithms |
+| `compute-dl/a2-continuation/coordination.py` | resolve retained dependencies at the published layout without changing study algorithms |
+| `compute-dl/a2-continuation/pre-mirror-source-v1/adoption.py` | resolve shared parent modules while preserving snapshot-local precedence |
+| `compute-dl/a2-continuation/pre-mirror-source-v1/cpu_check.py` | resolve shared parent modules while preserving snapshot-local precedence |
+| `compute-dl/a2-continuation/pre-mirror-source-v1/finalize_cpu.py` | resolve shared parent modules while preserving snapshot-local precedence |
+| `compute-dl/a2-continuation/pre-opaque-mirror-source-v2/cpu_check.py` | resolve shared parent modules while preserving snapshot-local precedence |
+| `compute-dl/a2-continuation/qualify_rank.py` | safe --help exit before historical top-level work |
+| `compute-dl/a2-continuation/request_adapter.py` | resolve retained dependencies at the published layout without changing study algorithms |
+| `compute-dl/a2-results-v1/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/baseline_check.py` | safe --help exit before historical top-level work |
+| `compute-dl/pilot_pin.py` | safe --help exit before historical top-level work |
+| `compute-dl/preflight_cpu.py` | safe --help exit before historical top-level work |
+| `compute-dl/prepare_adjudication.py` | safe --help exit before historical top-level work |
+| `compute-dl/publication-v1/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/source_inventory.py` | safe --help exit before historical top-level work |
+| `compute-dl/summary/RESULTS.before-A2-20261106.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `compute-dl/summary/RESULTS.before-format-20261107.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `configs/README.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `decl-control/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `decl-control/T5-DECL-CONTROL-ADJUDICATION.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `decl-control/clashes3.py` | safe --help exit before historical top-level work |
+| `decl-control/cleanup_compiler_caches3.py` | safe --help exit before historical top-level work |
+| `decl-control/cpu_probe.py` | safe --help exit before historical top-level work |
+| `decl-control/cpu_seal3.py` | safe --help exit before historical top-level work |
+| `decl-control/cpu_stage3.py` | safe --help exit before historical top-level work |
+| `decl-control/deploy_verify3.py` | safe --help exit before historical top-level work |
+| `decl-control/dispatch-high/run_dispatch.py` | safe --help exit before historical top-level work |
+| `decl-control/environment_audit3.py` | safe --help exit before historical top-level work |
+| `decl-control/export_csv3.py` | safe --help exit before historical top-level work |
+| `decl-control/identity_check3.py` | safe --help exit before historical top-level work |
+| `decl-control/post-comparison-check3.py` | safe --help exit before historical top-level work |
+| `decl-control/prepare_campaign3.py` | safe --help exit before historical top-level work |
+| `decl-control/prepare_dispatch.py` | safe --help exit before historical top-level work |
+| `decl-control/prepare_dispatch_high.py` | safe --help exit before historical top-level work |
+| `decl-control/rank_preflight3.py` | safe --help exit before historical top-level work |
+| `decl-control/restored_native3.py` | safe --help exit before historical top-level work |
+| `decl-control/summary/NEEDS-T5-DECL-CONTROL-A1.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `decl-control/t5-workers/t5-decl-adjudicate.py` | safe --help exit before historical top-level work |
+| `decl-control/t5-workers/t5-decl-support.py` | safe --help exit before historical top-level work |
+| `decl-control/verify_exports3.py` | safe --help exit before historical top-level work |
+| `decl-control/verify_feasibility.py` | safe --help exit before historical top-level work |
+| `format-retest/NEEDS-T5.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `format-retest/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `format-retest/results-v1/NEEDS-T5.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `format-retest/runtime/coordination.py` | resolve retained dependencies at the published layout without changing study algorithms |
+| `format-retest/runtime/lifecycle_probe.py` | safe --help exit before historical top-level work |
+| `format-retest/spec/T5-FORMAT-RETEST-SPEC.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `format-retest/summary/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `kit` | Restore published relative layout alias → `stdbench-kit`; Git pins the link target. |
+| `owned-oracle-r7/README.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `owned-oracle-r7/cpu-scope.sh` | Portable bounded CPU entry point, explicit image/QUIET handling, owned cleanup or fail-closed fixture preflight. |
+| `owned-oracle-r7/gate.sh` | Portable bounded CPU entry point, explicit image/QUIET handling, owned cleanup or fail-closed fixture preflight. |
+| `owned-oracle-r7/run.sh` | Portable bounded CPU entry point, explicit image/QUIET handling, owned cleanup or fail-closed fixture preflight. |
+| `owned-oracle-r7/selftest.sh` | Portable bounded CPU entry point, explicit image/QUIET handling, owned cleanup or fail-closed fixture preflight. |
+| `owned-oracle-r7/selftest/fixtures.sha256` | Pin the complete synthetic input set; self-test fails closed before evaluation. |
+| `owned-oracle-r7/selftest/make_check_receipts.py` | safe --help exit before historical top-level work |
+| `owned-oracle-r7/selftest/make_cut_receipts.py` | safe --help exit before historical top-level work |
+| `owned-oracle-r7/selftest/receipts/bad-inline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-list-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-list-repl.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-measure-inline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-deadline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-check1000.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-check9.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-mod1000.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-mod9.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-quotient.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-remainder-word.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-divmod-remainder.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-nocap.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-notlast.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-sign.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-span.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-timeout.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-trace.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-capcut-wrong.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-cut.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-divmod.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-mark-shifted.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-mark.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-missing.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span-divmod-display-cut.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span-divmod-display-whole.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span-divmod-echo-whole.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span-plain-display-whole.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span-plain-echo-whole.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-span.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-trace-new.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-unparsed.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-record-value.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-trace-engine.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/bad-trace.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-deadline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-digits.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-check1000.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-check9.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-mod1000.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-mod9.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-quotient.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-remainder-word.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-divmod-remainder.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-mark.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-s1.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-trace-head.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/cut-record-trace.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-inline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-list-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-list-repl.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-mark-imitation-norecords.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-mark-imitation-wrong.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-mark-imitation.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-divmod.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-fence.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-inline.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-mark.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-model.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-span-divmod-whole.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-trace-new.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-record-trace-wording3.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-spaced-word.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-trace-engine.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/good-trace.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/live-record-divmod.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/receipts/live-record-timeout.json` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/t5-r5/EXPECTED` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `owned-oracle-r7/selftest/t5-r6/EXPECTED` | Restore original synthetic oracle fixture/expectations, not a model-run transcript. |
+| `phase2` | Restore published relative layout alias → `stdbench-kit/phase2`; Git pins the link target. |
+| `stdbench-kit/phase2/T5-STDBENCH-SPEC.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `stdbench-kit/phase2/audit_envs.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/bench.py` | resolve retained dependencies at the published layout without changing study algorithms |
+| `stdbench-kit/phase2/cpu_final.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/cpu_postreview.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/cpu_stage1.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/cpu_stage2.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/cpu_stage3.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/export_check.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/finalize.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/prepare_campaign.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/rank_preflight.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/recovery_cpu.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/render_results.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/report_details.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/review_disputes.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/phase2/seal_math_early.py` | safe --help exit before historical top-level work |
+| `stdbench-kit/project/PLAN.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `stdbench-kit/project/README.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |

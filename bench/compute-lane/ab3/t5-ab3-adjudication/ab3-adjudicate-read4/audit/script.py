@@ -1,4 +1,11 @@
+
+import sys as _archive_sys
 import json,pathlib,sys,hashlib,collections,random,subprocess,datetime,math
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 H=pathlib.Path.home();O=pathlib.Path(sys.argv[1]);O.mkdir(parents=True,exist_ok=True);ROOT=H/'work/ab3-20261104';KIT=ROOT/'kit2'
 J=lambda p:json.loads(p.read_text());L=lambda p:[json.loads(x) for x in p.read_text().splitlines() if x.strip()];sha=lambda b:hashlib.sha256(b).hexdigest()
 f=J(ROOT/'AB3-FREEZE.json');layout=J(KIT/'ab3-layout.json');assert sha((H/'work/imr-t5-w9/T5-AB3-SPEC.md').read_bytes())==f['spec_sha256']=='81b34c1a79a754efca01ebee85f47c74490a029f23e4e0533799205b60dd524e'

@@ -1,0 +1,29 @@
+{
+ "content": "```python\nprint(min([2, 3]))\n```\nResult:\n4\nDone.",
+ "tensorfold": {
+  "runner": {
+   "fence": {
+    "owned": 1
+   },
+   "cells": [
+    {
+     "cell": 0,
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "field": "content",
+     "at": 40,
+     "token": 40,
+     "drafted": 0,
+     "path": "held",
+     "form": "fence",
+     "span": "print(min([2, 3]))\n",
+     "value": "\n4\n",
+     "ids": 3,
+     "landed": 3,
+     "forced": 3
+    }
+   ]
+  }
+ }
+}

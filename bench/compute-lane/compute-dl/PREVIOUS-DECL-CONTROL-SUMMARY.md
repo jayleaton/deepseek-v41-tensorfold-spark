@@ -1,5 +1,9 @@
 # Declaration-control A1 results — NEEDS-T5
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 **No detected incremental execution-enabled effect on this cohort.** All three suites are **DECLARED BUT UNUSED**: zero dataset calls, despite six successful, authenticated and independently checked lane diagnostic calls. Declared-off (D) and declared+lane (L) have the same strict accuracy and returned-token totals. Their wall-time ratio intervals include 1. This does not establish equivalence or an execution benefit.
 
 All **552 fresh scheduled replies** are retained: 184 per arm, with seeds 101/102 over 48 GSM8K, 20 MATH-500 and 24 original HumanEval tasks. These tasks/seeds were previously observed; this is a fixed-cohort configuration study. Eighteen excluded diagnostics and all three scheduled GPU turns completed. No reserve turn was used. Each turn restored G; final direct checks passed on both ranks, with all 18 experiment container names absent and no experiment job pending.
@@ -49,7 +53,7 @@ Reduced returned tokens versus P already occur with execution OFF. The declarati
 
 GSM strict accuracy is sensitive to answer formatting. The preregistered one-numeral final-span secondary changes D−P to +2.0833 pp (marginal exact p=.5); it does not replace the primary score. All changed/residual extractions are retained. The single capped plain HumanEval reply contributes 89.5% of the net returned-token savings and more than 82% of the apparent wall savings versus P; the registered censor guard blocks an uncensored efficiency claim. All 120 MATH finals received two independent blinded reviewer **agent** reviews, with no disagreements or unresolved cases; no human review is claimed.
 
-Published figures below are **REFERENCE ONLY**, retrieved 2026-11-04. They are historical BASE protocols, not matched instruct/quantized baselines; MATH is not MATH-500. Unpublished sampling/caps are unknown. Full source dates/settings and the exact current Flash/full-model distinction are in [PUBLISHED.md](PUBLISHED.md).
+Published figures below are **REFERENCE ONLY**, retrieved 2026-11-04. They are historical BASE protocols, not matched instruct/quantized baselines; MATH is not MATH-500. Unpublished sampling/caps are unknown. Full source dates/settings and the exact current Flash/full-model distinction are in `PUBLISHED.md` (omitted from this export).
 
 | Published checkpoint / protocol | GSM8K | MATH | Original HumanEval |
 | --- | --- | --- | --- |
@@ -57,6 +61,6 @@ Published figures below are **REFERENCE ONLY**, retrieved 2026-11-04. They are h
 | [September V4.1-Flash-BASE](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/README.md), historical reference | 93.0, 8-shot exact match | 61.1, 4-shot exact match | 79.4, 0-shot pass@1 |
 | [V4-Pro-BASE preview card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/README.md), historical reference | 92.6, 8-shot exact match | 64.5, 4-shot exact match | 76.8, 0-shot pass@1 |
 
-The [full generated report](decl-control/RESULTS.md) includes L−P secondary comparisons, all metric intervals, per-seed outcomes, activation/unknown coverage, censor sensitivities, boot/restore timing and grader/source hashes. [Per-request CSV](decl-control/finalized-a1-v1/per-request.csv), [analysis](decl-control/finalized-a1-v1/analysis.json), [retained-evidence audit](decl-control/finalized-a1-v1/audit.json), [finalization receipt](decl-control/finalized-a1-v1/finalize-receipt.json), and [run ledger](LEDGER.md) are local artifacts. The [earlier two-arm study](RESULTS-PHASE2-TWO-ARM.md) is preserved separately and is not pooled with these results.
+The [full generated report](../decl-control/RESULTS.md) includes L−P secondary comparisons, all metric intervals, per-seed outcomes, activation/unknown coverage, censor sensitivities, boot/restore timing and grader/source hashes. [Per-request CSV](../decl-control/finalized-a1-v1/per-request.csv), [analysis](../decl-control/finalized-a1-v1/analysis.json), retained-evidence audit (`decl-control/finalized-a1-v1/audit.json`, omitted from this export), [finalization receipt](../decl-control/finalized-a1-v1/finalize-receipt.json), and [run ledger](LEDGER.md) are local artifacts. The earlier two-arm study (`RESULTS-PHASE2-TWO-ARM.md`, omitted from this export) is preserved separately and is not pooled with these results.
 
 Postcollection reporting adapters are outside the 87-file precollection seal. A reporting-only tuple/list persistence comparison was corrected after preserving its failed receipt; all 570 corrected attestation checks and changed-count/order negative controls passed. Repeated frozen grading produced identical grades; HumanEval grading metadata changed on rerun. Frozen collection, grading, extraction, statistical and MATH-seal mechanisms remained unchanged. All checks ran in guarded 2 GiB/no-swap Spark scopes. Status: **NEEDS-T5**, local handoff only.

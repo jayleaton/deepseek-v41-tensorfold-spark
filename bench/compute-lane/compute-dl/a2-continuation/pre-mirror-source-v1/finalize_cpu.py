@@ -3,6 +3,8 @@
 import hashlib
 import json
 from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 import protocol
 from budget import HeldBudget, campaign_kwargs
 HERE=Path(__file__).resolve().parent;ROOT=HERE.parent;TARGET=ROOT/protocol.PREFIX

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+import sys as _archive_sys
 import hashlib
 import json
 import py_compile
@@ -11,6 +13,11 @@ root = Path('<rank1-work>/stdbench/phase2')
 sys.path.insert(0, str(root))
 import client
 from jail import Jail
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 with tempfile.TemporaryDirectory(prefix='stdbench-bytecode-') as tmp:
     for name in ('generate_envs.py','rank_ops.py','client.py','freeze.py','cpu_guard.py','jail.py','jail_worker.py','controller.py'):

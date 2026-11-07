@@ -3,6 +3,12 @@
 import hashlib
 import json
 from pathlib import Path
+
+# Export adapter: help must not execute this historical host script.
+import sys as _archive_sys
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__)
+    raise SystemExit(0)
 HERE=Path(__file__).resolve().parent
 sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
 load=lambda p:json.loads(Path(p).read_text())

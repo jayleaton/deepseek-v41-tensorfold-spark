@@ -1,0 +1,3 @@
+# Frozen, hash-pinned study records retain their historical source formatting.
+# Adaptations and their replacement hashes are recorded in the archive README/MANIFEST.
+extend-exclude = ["bench/compute-lane"]

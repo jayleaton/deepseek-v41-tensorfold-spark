@@ -1,4 +1,11 @@
+
+import sys as _archive_sys
 import json,pathlib,sys,math,statistics,random,collections
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 H=pathlib.Path.home();O=pathlib.Path(sys.argv[1]);O.mkdir(parents=True,exist_ok=True);rows=json.loads((H/'work/imr-t5-s1/transport/ab3-pairs.json').read_text());families=sorted({r['family'] for r in rows});tasks={f:sorted({r['id'] for r in rows if r['family']==f}) for f in families};data={(r['id'],r['seed']):r for r in rows};arms=['plain','lane','full','only'];rng=random.Random(20261104);contrasts=[('full','lane'),('full','plain'),('lane','plain'),('only','plain'),('only','lane'),('full','only')];boot={a+'/'+b:[] for a,b in contrasts};solves=[];family_effect={f:[] for f in families};F=sum(r['full']['T'] for r in rows);L=sum(r['lane']['T'] for r in rows);R=F/L
 for draw in range(20000):
  sums={a:0 for a in arms};sf=sl=0

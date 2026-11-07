@@ -1,5 +1,9 @@
 # Declaration-control A1 results — NEEDS-T5
 
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
 Base protocol SHA256: `adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6`.
 
 Amendment A1 SHA256: `e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89`.
@@ -604,7 +608,7 @@ GSM ONE-NUMERAL FINAL-SPAN is the preregistered secondary extraction sensitivity
 
 Numerical flags are the frozen analysis outputs, not a safety or serving-default verdict. Qualified local efficiency also requires full safety/accounting, no net primary solve decrease, returned-ID/wall CI uppers<1, no censor reversal and ≤25% net/positive censor contribution. Total-token savings additionally require a complete prompt+returned ratio CI upper<1. Where L/D is flat, use “no detected incremental execution-enabled effect on this cohort”; neither a flat result nor a nonsignificant test establishes equivalence.
 
-Published reference comparison — REFERENCE ONLY. Retrieved2026-11-04; see [PUBLISHED.md](../PUBLISHED.md), [September Flash card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/README.md), [Pro card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/README.md), and [exact1017 revision card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/blob/1bae0e1088993b9b82de08f59de5be5a34e42170/README.md).
+Published reference comparison — REFERENCE ONLY. Retrieved2026-11-04; see PUBLISHED.md (`../PUBLISHED.md`, omitted from this export), [September Flash card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/README.md), [Pro card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/README.md), and [exact1017 revision card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/blob/1bae0e1088993b9b82de08f59de5be5a34e42170/README.md).
 
 | Checkpoint / protocol | GSM8K | MATH / MATH-500 | Original HumanEval |
 | --- | --- | --- | --- |

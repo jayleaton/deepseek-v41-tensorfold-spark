@@ -1,0 +1,29 @@
+{
+ "reasoning": "And 2^10 = 1024.\n",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 1
+   },
+   "cells": [
+    {
+     "cell": 0,
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "field": "reasoning",
+     "at": 10,
+     "token": 10,
+     "drafted": 0,
+     "path": "held",
+     "form": "inline",
+     "span": "2^10",
+     "value": " 1024",
+     "ids": 2,
+     "landed": 1,
+     "forced": 1
+    }
+   ]
+  }
+ }
+}

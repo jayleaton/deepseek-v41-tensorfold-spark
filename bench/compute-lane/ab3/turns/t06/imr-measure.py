@@ -7,6 +7,8 @@ K6 pack (arms-ehx base) or the K4 pack (arms-ek4 base: H's prepared identity, no
 ({"name": ..., "pack": "k6"|"k4", "extra": ["KEY=V", ...]}): stop, restart with that config, gate, measure, serve.
 out/<run>/STOP ends it (ranks cancelled, holds and foreign jobs restored).
 Usage: [EF_SHA=<slot-D sha>] [EF_BASE=<K6 base label, default ehx>] efast2.py <run_id> <first-config.json>   Status in out/<run_id>/status.json; one dir per config."""
+
+import sys as _archive_sys
 import hashlib
 import json
 import os
@@ -17,6 +19,11 @@ import subprocess
 import sys
 import time
 import urllib.request
+
+# Export adapter: help must not execute this historical host script.
+if __name__ == "__main__" and "--help" in _archive_sys.argv[1:]:
+    print(__doc__ or "Historical study script; requires its original inputs and host prerequisites.")
+    raise SystemExit(0)
 
 ROOT = Path('<rank0-work>/dsv41-bench')
 WORKER = '<rank1-work>/dsv41-bench'
