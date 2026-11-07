@@ -1,0 +1,12 @@
+# gitleaks' default rules, plus one allowlist: the compute-lane study records cite files by sha256 under names such as
+# token_sha256 or tokenizer.zig, which the generic-api-key rule reads as keys. Only a bare 64-digit lowercase hex
+# value in bench/compute-lane/ is allowed; every other finding there still reports.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "sha256 digests in the compute-lane study records"
+condition = "AND"
+paths = ['''^bench/compute-lane/''']
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{64}$''']
