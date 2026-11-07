@@ -74,8 +74,8 @@ The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMP
 sent `tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the
 engine supplies both to every chat, so a client sends neither. `max_tokens` and `deadline_s` stay the client's (AB3
 sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the
-default has not itself been measured at the pin. Arm L is the commented opt-in block below it (nine lines that
-replace the default's nineteen) and runs on the plain image.
+default has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's nineteen
+names with the runner off, so no default value survives from an exported shell) and runs on the plain image.
 
 Both blocks share the rest of the profile, which equals L's effective environment except:
 

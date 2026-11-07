@@ -408,7 +408,8 @@ def test_pair_identity_uses_the_image_content_not_the_store_specific_id(launcher
                             capture_output=True, check=False)
     # The fixture has no pack, so the asset check is the first refusal after the image's identity was captured.
     assert "control parse failed" not in result.stderr
-    assert result.stderr.startswith("native asset check:"), result.stderr
+    refusals = [line for line in result.stderr.splitlines() if not line.startswith("warning: ")]
+    assert refusals[0].startswith("native asset check:"), result.stderr
     formats = [call[call.index("-f") + 1] for call in map(json.loads, Path(str(argv_file) + ".inspect").read_text().splitlines())]
     identity = [f for f in formats if f.startswith('{"config":')]
     assert identity and all(part in identity[0] for part in ("{{json .Config}}", "{{json .RootFS.Layers}}", "{{json .Architecture}}"))

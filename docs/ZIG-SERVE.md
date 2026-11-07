@@ -83,6 +83,12 @@ PYTHONPATH="$PY_SOURCE" python engine/zig/tools/zig/dsv41_rope_tables.py --confi
   --out "$ASSETS_DIR/rope.bin"   # rows: TF_DSV41_CONTEXT + 2048
 ```
 
+The `set -a` line leaves the profile's settings exported in that shell, and `scripts/run-zig.sh` forwards engine
+settings from the calling shell as well as from `CONFIG`; a setting `CONFIG` does not assign keeps the shell's value.
+Launch from a new shell (or one that sourced the same profile). The launcher warns about every engine setting that
+comes from the shell rather than `CONFIG`, and `--effective-profile` marks it `[caller]`. Every shipped profile sets
+all the compute-lane and runner names, so switching between them does not carry those over.
+
 `TF_REFERENCE_FETCH=1 pytest tests/scripts/test_reference_source.py` repeats the fetch on a clean host and generates
 `rope.bin` and `sigs.json` from it when Torch and Triton are installed.
 
