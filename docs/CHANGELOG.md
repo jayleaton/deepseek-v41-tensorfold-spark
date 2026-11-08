@@ -5,6 +5,10 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Bugs fixed
 
+- **NVMe session restores failed with `BadBlob`** (pin `7b79ef92d`, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
+  `Disk.validate` required a stash span of at most the ring and no drafter offset without drafter rings; neither holds
+  under `TF_DSV41_PREFILL=replay`, so every restore off the NVMe tier re-prefilled. Upstream #2182 by goshi, reported
+  and confirmed by crystal8194; [ENGINE](ENGINE.md#session-restore-at-this-pin) has the measurement.
 - **A duplicate image in one request killed both ranks** (G16). The vision row store counted a reference per
   occurrence of an image, so an agent history that resends the same screenshot released it early; the next request
   with that image raised `KeyError` inside rank 0's prefill forward, rank 1 waited in the exchange, and both ranks
