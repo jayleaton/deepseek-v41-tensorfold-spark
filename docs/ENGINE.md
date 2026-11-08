@@ -87,11 +87,27 @@ tokens, `--ignore-eos`, cold then the same 16 prompts warm (TTFT from the engine
 | `BadBlob`, both ranks | 16 | 0 | **0** |
 | `resumed ... from NVMe` / `from RAM` (rank 0) | 0 / 0 | 0 / 0 | 0 / **16** (60,496 of 60,512 tokens each) |
 
-The warm cell resumed from the RAM tier, so this boot did not read the NVMe tier; the disk path is covered by the
-upstream host tests (13 `session_codec` cases, `zig build test-dsv41-device-host` 240/240 here against 227/227 before)
-and the two measurements above. The issue's G figures come from crystal8194's profile, not this one. vLLM's client
-marked 2 of the 16 cold requests failed ("never received a valid chunk") although the engine logged all 16 complete
-(256 tokens, HTTP 200); its own cold median over the other 14 is 28.73 s.
+The issue's G figures come from crystal8194's profile, not this one. The warm cell resumed from the RAM tier. vLLM's client marked 2 of the 16 cold requests failed ("never received a
+valid chunk") although the engine logged all 16 complete (256 tokens, HTTP 200); its own cold median over the other 14
+is 28.73 s.
+
+To force the NVMe tier, the same profile with only `TF_DSV41_SESSION_RAM_MIB=16` added (no 60k entry fits in RAM;
+goshi's recipe on #86) was booted on the previous pin and on this one, the same day: 6 distinct prompts of 60,000 +
+512 tokens cold, then the same 6 warm, otherwise as above (engine TTFT, all 6 requests of each cell):
+
+| `SESSION_RAM_MIB=16` | `01a62132c` (previous pin) | `7b79ef92d` (this pin) |
+| --- | --- | --- |
+| cold TTFT median | 24.84 s | 25.61 s |
+| warm TTFT median | 25.23 s (prefilled from 0) | **0.353 s** (0.300-0.371) |
+| `BadBlob`, rank 0 / rank 1 | 6 / 6 | **0 / 0** |
+| warm `resumed ... from NVMe` / `from RAM` (rank 0) | 0 / 0 | **5** / 1 |
+| entries that "did not come back" (rank 0) | 6 | 0 |
+
+The previous pin reproduces #86 on this pair; this pin restores five of the six from NVMe (60,496 of 60,512 tokens
+each) and the sixth from RAM. Rank 1 logs `BadBlob` but not resumes, so resumes are counted on rank 0. The upstream
+host tests add 13 `session_codec` cases (`zig build test-dsv41-device-host` 240/240 here against 227/227 before).
+vLLM's client marked 2, 4 and 1 requests failed in the old pin's cold and warm cells and the new pin's cold cell; the
+engine logged every request complete.
 
 ## Results at this pin (2026-10-29/30)
 
