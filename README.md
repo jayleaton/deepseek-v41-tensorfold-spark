@@ -24,9 +24,10 @@ byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client
 `compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
 for half an expression). That is release
 candidate G (`58bece1d3`, fallback; F `56200688d` before it) plus `deadline_s`, the engine-held compute lane and the
-experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, run for every
-thinking chat whatever the client sends; it needs the runner image (`scripts/build-runner-image.sh`). The measured
-lane-only arm is an opt-in block. The pin's history holds the stable DeepSeek head H (`20ad77878`, re-recorded there as
+experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, whose runner and
+trust guide run for every thinking chat whatever the client sends (the built-in tool only when its reply has room for a
+call); it needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block. The
+pin's history holds the stable DeepSeek head H (`20ad77878`, re-recorded there as
 `b073317ab`) and includes flash17’s `dsq-1` admission support. The pin is not on upstream main yet, so the build fetches
 it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo)) until the upstream PRs merge; a local
 checkout or bundle also works. See [ENGINE](docs/ENGINE.md).

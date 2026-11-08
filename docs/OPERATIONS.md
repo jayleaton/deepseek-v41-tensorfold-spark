@@ -124,10 +124,13 @@ also arms the lane (any other `python` function next to `code_interpreter` is re
 "deadline"` and keeps its tokens and usage.
 
 The flash17 profile's default is the in-thinking "tool-full" profile: the in-model runner on (experimental), lane calls
-on the runner first with the sandbox as fallback, and `TF_DSV41_COMPUTE_LANE_DEFAULT=1`, so every thinking chat with
-room for a call is served as if it listed `code_interpreter` and sent the runner's trust guide, whatever the client
-sends ([when the built-in tool is offered](compute-lane.md#when-the-built-in-tool-is-offered)). The client's own
-function tools still return their calls to the client. A client that offers its own function named `python` keeps it:
+on the runner first with the sandbox as fallback, and `TF_DSV41_COMPUTE_LANE_DEFAULT=1`, so every thinking chat is
+served as if it sent the runner's trust guide, and a thinking chat with room for a call as if it also listed
+`code_interpreter`, whatever the client sends ([when the built-in tool is
+offered](compute-lane.md#when-the-built-in-tool-is-offered)).
+A thinking chat whose reply cannot hold a call still gets the guide and the runner, so its prompt is not the
+default-off one. The client's own function tools still return their calls to the client. A client that offers its own
+function named `python` keeps it:
 for that request the built-in tool is left out and its `python` calls go back to the client, while the runner's
 in-thinking cells stay on. Each reply's `tensorfold.compute_executed` counts the built-in calls that ran and the runner
 cells (0 when none); a call with no code, or past the call cap, is not counted. It needs the runner image

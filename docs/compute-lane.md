@@ -6,9 +6,10 @@ decoding), runs the code in a sandbox, renders the chat template's own tool-resu
 those tokens. The model continues from the same ids a client round trip would send, without a re-prefill and without
 the client in the loop. The client gets one reply: the answer, plus the calls in a non-standard `compute` field.
 
-**The flash17 profile's default is the in-thinking "tool-full" profile** with `TF_DSV41_COMPUTE_LANE_DEFAULT=1`: the
-model computes inside its thinking (the in-model runner writes the values of the cells it can run) and through the
-built-in tool, for every thinking chat whatever the client sends ([Compute in every chat](#compute-in-every-chat)).
+**The flash17 profile's default is the in-thinking "tool-full" profile** with `TF_DSV41_COMPUTE_LANE_DEFAULT=1`: for
+every thinking chat whatever the client sends, the model computes inside its thinking (the in-model runner writes the
+values of the cells it can run) and, when its reply has room for a call, through the built-in tool ([Compute in every
+chat](#compute-in-every-chat)).
 Arm L, the lane alone with the runner off, is an opt-in block in the same profile.
 
 [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) covers the sandbox, its
@@ -77,7 +78,8 @@ lines with this request shape), full and runner-only.
 
 The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1`. AB3's requests sent
 `tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the engine
-supplies both to every thinking chat, so a client sends neither. `max_tokens` and `deadline_s` stay the client's (AB3
+supplies the guide to every thinking chat and the tool to a thinking chat with room for a call, so a client need not
+send either. `max_tokens` and `deadline_s` stay the client's (AB3
 sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the default
 has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's nineteen names with
 the runner off, so no default value survives from an exported shell) and runs on the plain image.
@@ -188,7 +190,7 @@ Configured in the default profile, measured only where stated:
 | --- | --- |
 | `TF_DSV41_RUNNER` and the default's `TF_DSV41_RUNNER_*` lines | the in-model runner; measured only in AB3's tool-full arm |
 | `TF_DSV41_COMPUTE_LANE_RUNNER` and `_*` | S3, runner-first lane calls; tool-full only |
-| `TF_DSV41_COMPUTE_LANE_DEFAULT` | every thinking chat with room for a call gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
+| `TF_DSV41_COMPUTE_LANE_DEFAULT` | every thinking chat keeps the runner and the trust guide; the built-in tool only when its reply has room for a call; not in any study (AB3's requests sent both) |
 | `TF_DSV41_RUNNER_INLINE_ARITH` and `_INLINE_MOD` | not set in either block, so the engine defaults both to `1` and inline arithmetic and modulo cells run (the profile's `TF_DSV41_RUNNER_FORMS` includes `inline`); on in AB3 (mapped source `00b66d9f6`) |
 
 Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_COMMIT`, `_STATED`,
@@ -201,7 +203,8 @@ The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_
 
 `TF_DSV41_COMPUTE_LANE_DEFAULT=1` (needs `TF_DSV41_COMPUTE_LANE=1`; any other value, or the setting without the lane,
 stops the boot) makes the engine read every thinking chat request as the tool-full request, whatever the client
-sends:
+sends: the runner and the boot's guide stay on for all of them, and one whose reply has room for a call also gets the
+built-in tool:
 
 - `tools` gets the built-in `{"type": "code_interpreter"}` entry once, when the chat thinks and its reply can run a
   call ([When the built-in tool is offered](#when-the-built-in-tool-is-offered)). A client that lists it, or sends a
@@ -213,9 +216,9 @@ sends:
   `tool_choice` of `"none"` keeps the built-in tool; `"required"` or a named function leave it out, as they do for a
   request that opts in.
 - The runner's guide is the boot's (`TF_DSV41_RUNNER_GUIDE`, or AB3's trust guide when unset, sha256 `53ed328f…`), for
-  thinking chats only: it was measured inside thinking, and in a visible answer it makes the model write `<expr> =`
-  cells where the client expects the answer. A thinking-off chat gets no guide. A request's own `runner_guide` is
-  ignored.
+  thinking chats only and whatever their reply's budget, stop strings, logprobs or output format: it was measured
+  inside thinking, and in a visible answer it makes the model write `<expr> =` cells where the client expects the
+  answer. A thinking-off chat gets no guide. A request's own `runner_guide` is ignored.
 - The client's own function tools are kept and their calls go back to the client as usual. Only built-in calls and
   the runner's in-thinking cells run in the engine.
 - No request field turns it off.
@@ -240,9 +243,12 @@ answer:
 - No `stop` strings, no `logprobs` or `prompt_logprobs`, and no structured output (`response_format`, `guided_json`,
   `guided_regex`, `guided_choice`, `guided_grammar`, `structured_outputs`). These replies cannot hold at a call.
 
-Any other request is served as with the default off: no built-in tool and the same prompt (thinking off: no guide
-either). The client's own tools are kept as usual. A request that lists `code_interpreter` itself is not affected by
-these rules: a thinking-off client that wants the tool can still opt in.
+Any other request gets no built-in tool, but it is not otherwise served as with the default off: every thinking chat
+still gets the boot's trust guide and keeps the runner, so a thinking chat whose reply cannot hold a call (a short
+`max_tokens`, stop strings, logprobs or structured output) has a longer prompt than the default-off one. Only a
+thinking-off chat drops the guide and renders as with the default off. The client's own tools are kept as usual. A
+request that lists `code_interpreter` itself is not affected by these rules: a thinking-off client that wants the tool
+can still opt in.
 
 If a built-in call still cannot finish inside `max_tokens`, it never reaches the client: no `tool_calls`, no DSML
 markup in the content. The reply keeps the prose before the call and ends with `finish_reason` `"length"`.

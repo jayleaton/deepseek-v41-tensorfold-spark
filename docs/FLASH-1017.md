@@ -92,8 +92,9 @@ each one does.
 | `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
 
 The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`) with its in-thinking default: the in-model runner
-and a built-in, sandboxed Python tool for every thinking chat ([compute
-lane](compute-lane.md#when-the-built-in-tool-is-offered)). In the 2026-11-01 window on G the lane alone measured plain
+and its trust guide for every thinking chat, and a built-in, sandboxed Python tool when the reply has room for a call
+([compute lane](compute-lane.md#when-the-built-in-tool-is-offered)). In the 2026-11-01 window on G the lane alone
+measured plain
 coding about 2 % lower (0.980, one run; the lane-off boots varied 2.2 %); see
 [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it
 off.
