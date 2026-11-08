@@ -1,0 +1,34 @@
+{
+  "reasoning": "prefix-timeout: Compute 47*83 = 39",
+  "content": "",
+  "finish": "timeout",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "live": true,
+        "inline": {
+          "owned": 1
+        },
+        "cells": [
+          {
+            "cell": 0,
+            "form": "inline",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 31,
+            "token": 3,
+            "path": "held",
+            "span": "47*83",
+            "value": " 39",
+            "ids": 4,
+            "landed": 1,
+            "drafted": 0,
+            "forced": 1
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "dispatch_fixture_count": 8,
+  "unchanged_source_hashes_vs_pinned_snapshot": 3436,
+  "compiled_guard_mutant": "behavioral invalid-transition crash, not compile failure",
+  "diagnostic_statuses": {
+    "declared_off:policy_terminated": 6,
+    "lane:ok": 6,
+    "plain:ok": 6
+  },
+  "diagnostic_attempts": {
+    "declared_off": 6,
+    "lane": 0,
+    "plain": 0
+  },
+  "diagnostic_calls": [
+    {
+      "boot": "t02-lane",
+      "id": "python-17x19",
+      "source": "print(17*19)",
+      "output": "323"
+    },
+    {
+      "boot": "t02-lane",
+      "id": "python-sum11",
+      "source": "print(sum(range(11)))",
+      "output": "55"
+    },
+    {
+      "boot": "t01-lane",
+      "id": "python-17x19",
+      "source": "print(17*19)",
+      "output": "323"
+    },
+    {
+      "boot": "t01-lane",
+      "id": "python-sum11",
+      "source": "print(sum(range(11)))",
+      "output": "55"
+    },
+    {
+      "boot": "t03-lane",
+      "id": "python-17x19",
+      "source": "print(17*19)",
+      "output": "323"
+    },
+    {
+      "boot": "t03-lane",
+      "id": "python-sum11",
+      "source": "print(sum(range(11)))",
+      "output": "55"
+    }
+  ],
+  "math_review_pairs": 120,
+  "planning": {
+    "tasks": 120,
+    "seeds": 2,
+    "replies": 480,
+    "solve_effect_80pct_proxy_q_point2": 0.11430952132988165,
+    "token_reduction_80pct_proxy_logsd_point5": 0.11997233111072303,
+    "wall_hours_10s": 1.3333333333333333,
+    "wall_hours_20s": 2.6666666666666665,
+    "deadline_hours": 36.0
+  }
+}

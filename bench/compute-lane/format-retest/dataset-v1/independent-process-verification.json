@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "tasks": 60,
+  "separate_nodes": [
+    "rank0-host:A",
+    "rank1-host:B"
+  ],
+  "tasks_sha256": "a697b7e556d793f3f712bbc043b496b1f1ed7a343289c2f32358e4d6b00238c6",
+  "source_sha256": {
+    "<rank0-work>/stdbench/compute-dl/reference_a.py": "22909fc48f6f0d1fc80a43c83e96a1c55f1d1f6aabec119d971e8a53d9c63a15",
+    "<rank0-work>/stdbench/compute-dl/reference_b.py": "27c29675a9459733148b446b519dfe2c8646f95a3bd02c80f44149fa99f1e0c8"
+  },
+  "artifact_sha256": {
+    "<rank0-work>/stdbench/format-retest/dataset-v1/generation-audit.json": "5085c09cf74ae8ff2e0f60bb932893ce2f7884afca66573b3b0e7c6055949c8f",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/process-reference-a.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-a.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/process-reference-b.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/process-reference-b.json.receipt.json": "70b82b9da82942341a321ca10985fa5e31da119f4ac47f751a5ee5428209895b",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/process-reference-a.json.receipt.json": "e4f4efc07444a6315b44fcccd6b4f54df9ef7fa312a6f32832c9870092c434a6",
+    "<rank0-work>/stdbench/format-retest/dataset-v1/reference-b.json": "9f5e91d0f2612c7671bf9992409096dbe5ae7d942984bbe5c51fd756638d8c4d"
+  }
+}

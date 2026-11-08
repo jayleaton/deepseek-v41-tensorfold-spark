@@ -1,0 +1,129 @@
+{
+  "task": {
+    "id": "t6-arithmetic-012",
+    "category": "arithmetic",
+    "prompt": "Calculate 12345 squared minus 12344 squared."
+  },
+  "request": {
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Calculate 12345 squared minus 12344 squared."
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 32768,
+    "stream": false,
+    "return_token_ids": true,
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "started_utc": "2026-11-01T06:22:01.833265+00:00",
+  "elapsed_s": 0.8043904280057177,
+  "response": {
+    "id": "chatcmpl-cb95786adeb46ee8daa680a775d8f0c3",
+    "object": "chat.completion",
+    "created": 1793514121,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "24689",
+          "reasoning_content": "We need answer. Need calculate. Could use difference squares: (12345-12344)(12345+12344)=1*24689=24689. Need concise."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 41,
+      "completion_tokens": 40,
+      "total_tokens": 81,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 37
+      }
+    },
+    "exact_mode": "exact",
+    "tensorfold": {
+      "enable_thinking": true,
+      "reasoning_effort": null,
+      "engine": "dsv41-cuda",
+      "tokens_per_second": 68.7253118855098,
+      "seconds": 0.567476508,
+      "prefill_seconds": 0.22010051,
+      "prefill_widths": [],
+      "prefill_raised": [],
+      "time_to_first_token": 0.279209263,
+      "sampling": "greedy",
+      "drafts": true,
+      "token_sha": "e805a4da5a54",
+      "token_sha256": "e805a4da5a54ce8c2466571bafbd7515a0b203b3fdbf80de0dde72e5d2da1ba0",
+      "token_ids": [
+        2581,
+        1309,
+        3287,
+        16,
+        21017,
+        9352,
+        16,
+        29034,
+        1347,
+        5335,
+        23256,
+        28,
+        343,
+        6895,
+        1883,
+        15,
+        6895,
+        2240,
+        5796,
+        6895,
+        1883,
+        13,
+        6895,
+        2240,
+        6912,
+        19,
+        12,
+        16256,
+        4362,
+        31,
+        16256,
+        4362,
+        16,
+        21017,
+        47468,
+        16,
+        128822,
+        16256,
+        4362,
+        1
+      ],
+      "min_rows": 2,
+      "prompt": 41,
+      "cached": 0,
+      "ttft_s": 0.2792,
+      "finish": "done",
+      "completion": 40,
+      "prefill_s": 0.2201,
+      "decode_s": 0.5675,
+      "rounds": 12,
+      "drafted": 40,
+      "accepted": 29
+    },
+    "speculative": {
+      "rounds": 12,
+      "drafted": 40,
+      "accepted": 29,
+      "acceptance_rate": 0.725,
+      "tokens_per_round": 3.3333333333333335
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "diagnosis_only": true,
+  "frozen_gate_still_failed": true,
+  "GPU_requests": 0,
+  "case": {
+    "suite": "compute_dl",
+    "id": "compute-dl-v1-aggregation-015",
+    "seed": 101,
+    "arm": "lane",
+    "boot": "t02-L"
+  },
+  "classification": "NATIVE_RESULT_CAP_NOT_APPLIED_BY_FROZEN_REPLAY_COMPARISON",
+  "full_reference_body_tokens": 554,
+  "retained_prefix_tokens": 512,
+  "native_cap": 512,
+  "exact_source_policy_reconciles_delivered_bytes": true,
+  "complete_first_line_matches_task_reference": true,
+  "native_output_sha256": "99d65cefb912e03a8bbe8cec9efcf830ce0195597a00fe08624e7270f783a9bf",
+  "full_reference_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+  "expected_clipped_output_sha256": "99d65cefb912e03a8bbe8cec9efcf830ce0195597a00fe08624e7270f783a9bf",
+  "production_source_sha256": "aff4528535c761e95d1237f3b1e288cbfb1b8d257346550853cc8d73fc25c204",
+  "production_source_path": "<rank0-work>/stdbench/decl-control/dispatch-high/zig/src/server/compute_segments.zig",
+  "native_renderer_sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "native_arrays_sha256": "c6f573ddd516373484716ebee37949fcbb592c9471935ff097f147de909ac6a4",
+  "source_sha256": "332ca1ad247954379e2e048bce66096ad7021e5656a86509d453994baab57862",
+  "limitation": "Diagnostic confirmation only. No observed reply was replaced, gate changed, or collection resumed."
+}

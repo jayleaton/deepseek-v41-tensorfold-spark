@@ -1,0 +1,45 @@
+{
+  "native_byte_at": 61,
+  "native_contains_full_record": true,
+  "full_record_in_content": false,
+  "without_LF_in_content": true,
+  "content": "[exact, computed by the engine: 2^66 = 73786976294838206464]2^66 = 73786976294838206464\n\nThe sum of its decimal digits is **109**.",
+  "record_cells": [
+    {
+      "cell": 0,
+      "form": "trace",
+      "route": "graph",
+      "status": "ok",
+      "lang": "python",
+      "span": "2**66",
+      "display": "2^66",
+      "value": "[exact, computed by the engine: 2^66 = 73786976294838206464]\n",
+      "field": "content",
+      "at": 0,
+      "token": 16,
+      "ids": 23,
+      "landed": 23,
+      "drafted": 0,
+      "forced": 23,
+      "path": "held"
+    },
+    {
+      "cell": 2,
+      "form": "inline",
+      "route": "graph",
+      "status": "ok",
+      "lang": "python",
+      "span": "2^66",
+      "value": " 73786976294838206464",
+      "field": "content",
+      "at": 303,
+      "token": 120,
+      "ids": 8,
+      "landed": 8,
+      "drafted": 0,
+      "forced": 8,
+      "path": "held"
+    }
+  ],
+  "token_hash": "fe8b7fe0c86269aa3a57369d3b5122f73ef55acbecb203eb872d738f6c964a08"
+}

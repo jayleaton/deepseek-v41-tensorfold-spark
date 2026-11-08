@@ -1,0 +1,34 @@
+{
+  "reasoning": "Compute 47*83 = 3902",
+  "content": "",
+  "finish": "deadline",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "cells": [
+          {
+            "cell": 0,
+            "form": "inline",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 15,
+            "token": 3,
+            "path": "held",
+            "span": "47*83",
+            "value": " 3902",
+            "ids": 100,
+            "landed": 1,
+            "drafted": 0,
+            "forced": 1
+          }
+        ],
+        "inline": {
+          "owned": 1
+        },
+        "live": true
+      }
+    }
+  }
+}

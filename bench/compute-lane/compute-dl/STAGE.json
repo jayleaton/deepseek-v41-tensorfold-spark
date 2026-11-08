@@ -1,0 +1,14 @@
+{
+  "status": "CPU_COLLECTION_GATES_PENDING",
+  "spec": "T5-COMPUTE-DL-SPEC.md",
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "real_tasks_generated": 120,
+  "collection_authorized": false,
+  "generation_rules": "compute-dl-v1; prospectively pinned Python 3.12.3 and generator; zero collisions",
+  "arms": ["D", "L"],
+  "seeds": [101, 102],
+  "turns": ["t01: D then L; slots 0-9", "t02: L then D; slots 10-19"],
+  "request_settings": null,
+  "answer_verifiers": null,
+  "cpu_gates": null
+}

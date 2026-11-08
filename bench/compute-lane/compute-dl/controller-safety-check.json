@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "status": "FAKE_NOT_COLLECTION",
+  "delivered_error_mismatch_stops": true,
+  "post_cooling_and_memory_cutoffs": true,
+  "pre_STOP_own_queue_withdrawal": true,
+  "real_network": false
+}

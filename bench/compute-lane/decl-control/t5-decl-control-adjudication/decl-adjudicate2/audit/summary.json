@@ -1,0 +1,574 @@
+{
+  "presealed_code_files": 87,
+  "replies": 552,
+  "matched_declared_wire_pairs": 190,
+  "cpu_arrays": 186,
+  "actual_rank_snapshots": 18,
+  "D_L_native_and_text_identity": {
+    "gsm8k": 96,
+    "math500": 40,
+    "humaneval": 48
+  },
+  "prior_plain_lane_native_and_text_identity": 368,
+  "diagnostics": {
+    "plain": {
+      "replies": 6,
+      "executed_calls": 0
+    },
+    "declared_off": {
+      "replies": 6,
+      "executed_calls": 0
+    },
+    "lane": {
+      "replies": 6,
+      "executed_calls": 6
+    }
+  },
+  "suites": {
+    "gsm8k": {
+      "arms": {
+        "plain": {
+          "solves": 54,
+          "returned": 26949,
+          "prompt": 9294,
+          "wall": 449.18523657973856,
+          "caps": 0,
+          "sensitivity_solves": 89
+        },
+        "declared_off": {
+          "solves": 52,
+          "returned": 20563,
+          "prompt": 38670,
+          "wall": 338.4838577960618,
+          "caps": 0,
+          "sensitivity_solves": 91
+        },
+        "lane": {
+          "solves": 52,
+          "returned": 20563,
+          "prompt": 38670,
+          "wall": 338.04571206704713,
+          "caps": 0,
+          "sensitivity_solves": 91
+        }
+      },
+      "contrasts": {
+        "D-P": {
+          "p": 0.75390625,
+          "losses": [
+            [
+              "105",
+              101
+            ],
+            [
+              "1148",
+              102
+            ],
+            [
+              "320",
+              102
+            ],
+            [
+              "654",
+              101
+            ],
+            [
+              "688",
+              101
+            ],
+            [
+              "819",
+              101
+            ],
+            [
+              "856",
+              101
+            ],
+            [
+              "953",
+              102
+            ]
+          ],
+          "gains": [
+            [
+              "1051",
+              102
+            ],
+            [
+              "188",
+              101
+            ],
+            [
+              "207",
+              102
+            ],
+            [
+              "320",
+              101
+            ],
+            [
+              "559",
+              101
+            ],
+            [
+              "654",
+              102
+            ]
+          ],
+          "metrics": {
+            "returned": {
+              "ratio": 0.763033878808119,
+              "ci": [
+                0.6093848879888621,
+                0.9777508440827634
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 0.763033878808119,
+              "net_censor_share": 0.0
+            },
+            "total": {
+              "ratio": 1.6343293877438403,
+              "ci": [
+                1.3150878168958118,
+                2.132792004996877
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 1.6343293877438403,
+              "net_censor_share": -0.0
+            },
+            "wall": {
+              "ratio": 0.7535507185708111,
+              "ci": [
+                0.6008683432808232,
+                0.9698704329566932
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 0.7535507185708111,
+              "net_censor_share": 0.0
+            }
+          }
+        },
+        "L-D": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [],
+          "metrics": {
+            "returned": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "total": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "wall": {
+              "ratio": 0.998705563887544,
+              "ci": [
+                0.9940692305247604,
+                1.0020522169251336
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 0.998705563887544,
+              "net_censor_share": 0.0
+            }
+          }
+        },
+        "L-P": {
+          "p": 0.75390625,
+          "losses": [
+            [
+              "105",
+              101
+            ],
+            [
+              "1148",
+              102
+            ],
+            [
+              "320",
+              102
+            ],
+            [
+              "654",
+              101
+            ],
+            [
+              "688",
+              101
+            ],
+            [
+              "819",
+              101
+            ],
+            [
+              "856",
+              101
+            ],
+            [
+              "953",
+              102
+            ]
+          ],
+          "gains": [
+            [
+              "1051",
+              102
+            ],
+            [
+              "188",
+              101
+            ],
+            [
+              "207",
+              102
+            ],
+            [
+              "320",
+              101
+            ],
+            [
+              "559",
+              101
+            ],
+            [
+              "654",
+              102
+            ]
+          ],
+          "metrics": {
+            "returned": {
+              "ratio": 0.763033878808119,
+              "ci": [
+                0.6093848879888621,
+                0.9777508440827634
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 0.763033878808119,
+              "net_censor_share": 0.0
+            },
+            "total": {
+              "ratio": 1.6343293877438403,
+              "ci": [
+                1.3150878168958118,
+                2.132792004996877
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 1.6343293877438403,
+              "net_censor_share": -0.0
+            },
+            "wall": {
+              "ratio": 0.7525752953081258,
+              "ci": [
+                0.5999945988636514,
+                0.9680967618927575
+              ],
+              "complete_pairs": 96,
+              "complete_ratio": 0.7525752953081258,
+              "net_censor_share": 0.0
+            }
+          }
+        }
+      }
+    },
+    "math500": {
+      "arms": {
+        "plain": {
+          "solves": 40,
+          "returned": 30176,
+          "prompt": 3828,
+          "wall": 441.9733573026024,
+          "caps": 0
+        },
+        "declared_off": {
+          "solves": 40,
+          "returned": 23562,
+          "prompt": 16068,
+          "wall": 338.0805353720207,
+          "caps": 0
+        },
+        "lane": {
+          "solves": 40,
+          "returned": 23562,
+          "prompt": 16068,
+          "wall": 339.55999927106313,
+          "caps": 0
+        }
+      },
+      "contrasts": {
+        "D-P": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [],
+          "metrics": {
+            "returned": {
+              "ratio": 0.7808191940615058,
+              "ci": [
+                0.695946300277938,
+                0.874468085106383
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 0.7808191940615058,
+              "net_censor_share": 0.0
+            },
+            "total": {
+              "ratio": 1.1654511233972473,
+              "ci": [
+                0.9954909600315195,
+                1.570484198318353
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 1.1654511233972473,
+              "net_censor_share": -0.0
+            },
+            "wall": {
+              "ratio": 0.7649341974714321,
+              "ci": [
+                0.6665856900517786,
+                0.8749491769827444
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 0.7649341974714321,
+              "net_censor_share": 0.0
+            }
+          }
+        },
+        "L-D": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [],
+          "metrics": {
+            "returned": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "total": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "wall": {
+              "ratio": 1.0043760694398287,
+              "ci": [
+                0.9993124917369476,
+                1.0080991612787862
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 1.0043760694398287,
+              "net_censor_share": -0.0
+            }
+          }
+        },
+        "L-P": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [],
+          "metrics": {
+            "returned": {
+              "ratio": 0.7808191940615058,
+              "ci": [
+                0.695946300277938,
+                0.874468085106383
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 0.7808191940615058,
+              "net_censor_share": 0.0
+            },
+            "total": {
+              "ratio": 1.1654511233972473,
+              "ci": [
+                0.9954909600315195,
+                1.570484198318353
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 1.1654511233972473,
+              "net_censor_share": -0.0
+            },
+            "wall": {
+              "ratio": 0.7682816026364668,
+              "ci": [
+                0.6681571127815696,
+                0.8796868917977608
+              ],
+              "complete_pairs": 40,
+              "complete_ratio": 0.7682816026364668,
+              "net_censor_share": 0.0
+            }
+          }
+        }
+      }
+    },
+    "humaneval": {
+      "arms": {
+        "plain": {
+          "solves": 47,
+          "returned": 30167,
+          "prompt": 7882,
+          "wall": 477.7740814178251,
+          "caps": 1
+        },
+        "declared_off": {
+          "solves": 48,
+          "returned": 21916,
+          "prompt": 22570,
+          "wall": 330.6328027427662,
+          "caps": 0
+        },
+        "lane": {
+          "solves": 48,
+          "returned": 21916,
+          "prompt": 22570,
+          "wall": 332.02618614118546,
+          "caps": 0
+        }
+      },
+      "contrasts": {
+        "D-P": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [
+            [
+              "HumanEval/163",
+              101
+            ]
+          ],
+          "metrics": {
+            "returned": {
+              "ratio": 0.7264892100639772,
+              "ci": [
+                0.6058936691150753,
+                1.0034654377880183
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 0.9605915813424346,
+              "net_censor_share": 0.8950430250878681
+            },
+            "total": {
+              "ratio": 1.1691765880837868,
+              "ci": [
+                0.9299289459161147,
+                1.59071283095723
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 1.4549003769520732,
+              "net_censor_share": -1.099735901817617
+            },
+            "wall": {
+              "ratio": 0.6920274991929078,
+              "ci": [
+                0.5639874819378569,
+                0.9888752149293253
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 0.926306997671224,
+              "net_censor_share": 0.8272249744118241
+            }
+          }
+        },
+        "L-D": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [],
+          "metrics": {
+            "returned": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 48,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "total": {
+              "ratio": 1.0,
+              "ci": [
+                1.0,
+                1.0
+              ],
+              "complete_pairs": 48,
+              "complete_ratio": 1.0,
+              "net_censor_share": null
+            },
+            "wall": {
+              "ratio": 1.0042142926741098,
+              "ci": [
+                0.9993043448188855,
+                1.0077855528869812
+              ],
+              "complete_pairs": 48,
+              "complete_ratio": 1.0042142926741098,
+              "net_censor_share": -0.0
+            }
+          }
+        },
+        "L-P": {
+          "p": 1.0,
+          "losses": [],
+          "gains": [
+            [
+              "HumanEval/163",
+              101
+            ]
+          ],
+          "metrics": {
+            "returned": {
+              "ratio": 0.7264892100639772,
+              "ci": [
+                0.6058936691150753,
+                1.0034654377880183
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 0.9605915813424346,
+              "net_censor_share": 0.8950430250878681
+            },
+            "total": {
+              "ratio": 1.1691765880837868,
+              "ci": [
+                0.9299289459161147,
+                1.59071283095723
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 1.4549003769520732,
+              "net_censor_share": -1.099735901817617
+            },
+            "wall": {
+              "ratio": 0.6949439056130391,
+              "ci": [
+                0.56798666951826,
+                0.9880524541812994
+              ],
+              "complete_pairs": 47,
+              "complete_ratio": 0.9298461187585954,
+              "net_censor_share": 0.8339500869178812
+            }
+          }
+        }
+      }
+    }
+  },
+  "old_report_sha256": "1734382684968c9072765fcafd0991caf7c1704a918782560e7604a914d7eab8",
+  "old_report_byte_identical_copies": 4
+}

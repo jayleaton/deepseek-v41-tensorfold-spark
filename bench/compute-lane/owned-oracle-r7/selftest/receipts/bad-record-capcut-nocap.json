@@ -1,0 +1,62 @@
+{
+ "reasoning": "We compute pieces. 314159*271000 = 85137089000. Then 271828*300000 = 81548400000. And 271828*14000 = 3",
+ "finish": "stop",
+ "tensorfold": {
+  "finish": "done",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "inline",
+     "span": "314159*271000",
+     "ids": 5,
+     "landed": 5,
+     "field": "reasoning",
+     "at": 34,
+     "value": " 85137089000",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 5
+    },
+    {
+     "cell": 1,
+     "form": "inline",
+     "span": "271828*300000",
+     "ids": 5,
+     "landed": 5,
+     "field": "reasoning",
+     "at": 68,
+     "value": " 81548400000",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 2,
+     "forced": 5
+    },
+    {
+     "cell": 2,
+     "form": "inline",
+     "span": "271828*14000",
+     "ids": 5,
+     "landed": 1,
+     "field": "reasoning",
+     "at": 100,
+     "value": " ",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 3,
+     "forced": 1
+    }
+   ]
+  }
+ }
+}

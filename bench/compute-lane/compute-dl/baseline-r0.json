@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "rank": 0,
+  "status": "REUSED_A1_EVIDENCE_ONLY",
+  "old_sealed_files_unchanged": 87,
+  "production_source_hashes_rechecked": 3436,
+  "image_id": "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+  "dispatch_proof_sha256": "77e43ebc13afdc16a8304836869953f8ceadfc8c6775b8f551aceb3b15af0436",
+  "dispatch_fixture_freshly_rerun": false,
+  "collection_authorized": false,
+  "source_sha256": "6ec266d28ab021241bd5db45a6fab99906a986097a065d1e218320fe06921ad2"
+}

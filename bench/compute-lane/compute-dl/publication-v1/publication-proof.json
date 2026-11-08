@@ -1,0 +1,10 @@
+{
+  "presentation_source_sha256": "0291679d8507f6dfefbe20f38bd5300c195eb04868b67d6c2bf475c6567e2f31",
+  "frozen_report_sha256": "9cf1b078a18478131185f5bc08349bba39730c2372694909b3b21ca212e23170",
+  "frozen_analysis_sha256": "0e9d2496302da794b55df92a5827010dfc4d46af2c6beba3da0bf501e5bf48a1",
+  "truncation_proof_sha256": "275881ae6ae3beb116c71313365dc4c2943c427a5ac509ea26a04ac5183f6240",
+  "results_sha256": "8fb098209f2f7a87c51fd7b6074ac7e30729e5e720b28ed22b32b33d6ee226dc",
+  "per_problem_sha256": "8f2a229b8cecb1421abb8608b4bd197ea44e5c25527007ab8bed5cbd0240b094",
+  "supplementary_telemetry_sha256": "c9dd8c6e0e74f58e7edf8f85758151b4ddd9a1011de50bb042001588df9fcd26",
+  "primary_analysis_changed": false
+}

@@ -1,0 +1,100 @@
+{
+  "provenance_files_hash_checked": 4375,
+  "P_exact_original_order": true,
+  "P_prefix_suffix": [
+    116,
+    124
+  ],
+  "exact_task_signflip_p": 6.382590167485932e-07,
+  "presentations": 243,
+  "presentation_keys": [
+    "authenticates",
+    "call_id",
+    "classification",
+    "full_reference_bytes",
+    "full_reference_sha256",
+    "full_reference_tokens",
+    "identity",
+    "landed_body_bytes",
+    "landed_body_sha256",
+    "marker_bytes",
+    "qualified",
+    "retained_prefix_tokens"
+  ],
+  "clipped": [
+    {
+      "authenticates": "landed presentation, not invisible tail or complete uncropped answer",
+      "call_id": "call_8e022ce20c4745055975a97f",
+      "classification": "presentation-verified clipped",
+      "full_reference_bytes": 971,
+      "full_reference_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+      "full_reference_tokens": 554,
+      "identity": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-015",
+        101,
+        "lane",
+        "t02-L"
+      ],
+      "landed_body_bytes": 930,
+      "landed_body_sha256": "99d65cefb912e03a8bbe8cec9efcf830ce0195597a00fe08624e7270f783a9bf",
+      "marker_bytes": [
+        10,
+        91,
+        111,
+        117,
+        116,
+        112,
+        117,
+        116,
+        32,
+        116,
+        114,
+        117,
+        110,
+        99,
+        97,
+        116,
+        101,
+        100,
+        32,
+        97,
+        116,
+        32,
+        53,
+        49,
+        50,
+        32,
+        116,
+        111,
+        107,
+        101,
+        110,
+        115,
+        93
+      ],
+      "qualified": true,
+      "retained_prefix_tokens": 512
+    }
+  ],
+  "nonwrapper_residuals": [
+    {
+      "id": "compute-dl-v1-modular-005",
+      "seed": 101,
+      "family": "modular",
+      "reason": "no_complete_json",
+      "content": "{\"997375194580461993\"}",
+      "wrapper_payload_equal_reference": false,
+      "sensitivity_rescue": false
+    },
+    {
+      "id": "compute-dl-v1-aggregation-010",
+      "seed": 101,
+      "family": "aggregation",
+      "reason": "no_complete_json",
+      "content": "I'll verify by grouping per category:```json\n{\"A\": 8364, \"B\": 58273, \"C\": 40126, \"D\": 46271, \"E\": -23653, \"F\": 71559}\n```",
+      "wrapper_payload_equal_reference": false,
+      "sensitivity_rescue": false
+    }
+  ]
+}

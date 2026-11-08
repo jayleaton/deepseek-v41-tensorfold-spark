@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "rows": 596,
+  "projection_preserves": "strict grade, all costs, safety and activation",
+  "source_sha256": "f447dd9ceb0cdf302635781a3eb88abaef9e0e49595ef76df1dfd9674756ef48",
+  "audited_rows_sha256": "5ba08191aa427d68d650625ae189cb87d7813fa41614956eef3b286c94d95111",
+  "GPU_requests": 0
+}

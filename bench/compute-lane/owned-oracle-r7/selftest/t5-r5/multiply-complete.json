@@ -1,0 +1,34 @@
+{
+  "reasoning": "[exact, computed by the engine: 1000*7 = 7000] check: 1*7 \u2261 7 (mod 9), 000*7 \u2261 000 (mod 1000)\n",
+  "content": "",
+  "finish": "stop",
+  "extra": {
+    "tensorfold": {
+      "runner": {
+        "cells": [
+          {
+            "cell": 0,
+            "form": "trace",
+            "route": "graph",
+            "status": "ok",
+            "lang": "python",
+            "field": "reasoning",
+            "at": 0,
+            "token": 3,
+            "path": "held",
+            "span": "1000*7",
+            "value": "[exact, computed by the engine: 1000*7 = 7000] check: 1*7 \u2261 7 (mod 9), 000*7 \u2261 000 (mod 1000)\n",
+            "ids": 100,
+            "landed": 100,
+            "drafted": 0,
+            "forced": 1,
+            "display": "1000*7"
+          }
+        ],
+        "trace": {
+          "owned": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "status": "FAKE_NOT_COLLECTION",
+  "real_network": false,
+  "real_tasks_generated": 0,
+  "D_call_no_external_execution": true,
+  "spec_drift_and_missing_gate_rejected": true,
+  "declared_wire_identity": true
+}

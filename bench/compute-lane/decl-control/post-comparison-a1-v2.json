@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "stored_live_attestations": 570,
+  "changed_count_rejected": true,
+  "array_order_preserved": true,
+  "post_wrapper_sha256": "0c7a9b1913ebbb4bb47b9e28e9568c56b42dd0ccc953f2e074d246c1f9849f3f",
+  "sealed_sources_unchanged": 87
+}

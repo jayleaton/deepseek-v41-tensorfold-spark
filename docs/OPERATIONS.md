@@ -83,7 +83,8 @@ neighboring off blocks. Keep both options off until those device gates pass.
 The flash17 profile turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`); the engine's own default is off, and the
 q28-v2 rollback profile leaves it off. A request that lists `{"type": "code_interpreter"}` in `tools` gets a
 `python(code)` tool that the engine runs itself and answers inside the same reply, so the client makes no tool round
-trip. Requests without that entry are unchanged, and the lane is not armed for requests with stop strings. The lane's
+trip. Requests without that entry are unchanged unless `TF_DSV41_COMPUTE_LANE_DEFAULT=1` (on in the flash17
+profile; below), and the lane is not armed for requests with stop strings. The lane's
 calls are not returned as `tool_calls`: they are reported in a non-standard `compute` field (`message.compute` in a
 chat reply). Clients that do not read it see only the answer.
 
@@ -117,10 +118,37 @@ The profile keeps every limit at its default: two sandboxes at a time, 10 s and 
 with 512 result-body tokens each. The cap applies per call, so a reply with several calls can insert several capped
 results plus truncation notes, bounded by the request's output-token budget.
 
-**Turning it off.** Set `TF_DSV41_COMPUTE_LANE=0` (or delete the line) in `config/prod-zig.env` on both nodes and
-restart the pair. Nothing else changes: the lane-off rows in the measurement below served the same tokens. The lane
-runs model-written code on the serving host inside the sandbox above; turn it off if no client sends
-`code_interpreter` or if that is not acceptable for your host.
+At the current pin (`01a62132c`) a client function named `python` that is byte-equal to the built-in definition
+also arms the lane (any other `python` function next to `code_interpreter` is refused), and a request may set
+`deadline_s` (seconds, more than 0 and at most 1000000): at the deadline the reply ends with `finish_reason:
+"deadline"` and keeps its tokens and usage.
+
+The flash17 profile's default is the in-thinking "tool-full" profile: the in-model runner on (experimental), lane calls
+on the runner first with the sandbox as fallback, and `TF_DSV41_COMPUTE_LANE_DEFAULT=1`, so every thinking chat is
+served as if it sent the runner's trust guide, and a thinking chat with room for a call as if it also listed
+`code_interpreter`, whatever the client sends ([when the built-in tool is
+offered](compute-lane.md#when-the-built-in-tool-is-offered)).
+A thinking chat whose reply cannot hold a call still gets the guide and the runner, so its prompt is not the
+default-off one. The client's own function tools still return their calls to the client. A client that offers its own
+function named `python` keeps it:
+for that request the built-in tool is left out and its `python` calls go back to the client, while the runner's
+in-thinking cells stay on. Each reply's `tensorfold.compute_executed` counts the built-in calls that ran and the runner
+cells (0 when none); a call with no code, or past the call cap, is not counted. It needs the runner image
+(`scripts/build-runner-image.sh`; the boot stops on an image without the circuit). The log line `compute default: every
+thinking chat gets the built-in tool and the runner's guide, whatever it sends` confirms it. The opt-in arm L block in
+the profile sets the runner and its options off, which is how the lane-only studies ran. The studies, their exact
+configurations, results and how to rerun them are in [compute lane](compute-lane.md).
+
+**Turning it off.** The sandbox lane and the in-thinking runner are separate switches. To disable only the sandbox
+lane, set `TF_DSV41_COMPUTE_LANE=0` and `TF_DSV41_COMPUTE_LANE_DEFAULT=0` (or delete both lines) in
+`config/prod-zig.env` on both nodes and restart the pair; the engine refuses the default without the lane, and the
+in-thinking runner (`TF_DSV41_RUNNER=1`) still computes inside the model's thinking. To disable the whole compute
+default and restore plain generation, also set `TF_DSV41_RUNNER=0` and `TF_DSV41_COMPUTE_LANE_RUNNER=0` on both nodes
+and restart: no cells run and the runner loads neither its circuit nor its bank.
+`scripts/run-zig.sh 0 --effective-profile` reports both runner switches as `0` for that environment. To keep the lane
+only for clients that ask for it, use the profile's arm L block instead. Nothing else changes: the lane-off rows in
+the measurement below served the same tokens. The lane runs model-written code on the serving host inside the sandbox
+above; turn it off if no client sends `code_interpreter` or if that is not acceptable for your host.
 
 **Measured on G (`58bece1d3`), 2026-11-01** (TP2, flash17 K6 MTP, the bench settings of
 [BENCHMARKS](BENCHMARKS.md#release-candidate-g); the only change between arms is `TF_DSV41_COMPUTE_LANE`):

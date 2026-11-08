@@ -1,0 +1,22 @@
+{
+  "sources": {
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/T5-COMPUTE-DL-SPEC-A1.md": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+    "<rank0-work>/stdbench/compute-dl/T5-COMPUTE-DL-SPEC.md": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+    "<rank0-work>/stdbench/compute-dl/remaining-collection.json": "6fdf99b3dbfd5d77e9ae3c04c3a23c85c18e78a0762933561aa34c1fbd57da43",
+    "<rank0-work>/stdbench/compute-dl/LEDGER.md": "2a5f4956181f843342c65329b64815c579c43da8054c4cd99d83e0d66b4ecf72",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/protocol.py": "3ad276e7cf68816f404a8b903f3e24b7cbbca7fcc2e02f71d59d13bf5e57eecf",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/rank_ops.py": "020263299eba5291c20c1496b50b36b32d32263083b5704ab581e4f679717771",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/controller.py": "5e17c81ca1f3dddc9964c784ef657448f30fe9ad4a0e5d754250ebf1e1f6b1d7",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/render_prompts.py": "108f88cffd7cc0bfc263f4f12f53f69e00f74c19e64d0399defc9f303069708d",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/clipping.py": "3f1c71d14ba0ab58029767ee14facaa4a98c12765ee830fdcd826b60eb95c373",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/request_adapter.py": "d1b4da6f4fdf3d0bce6d89d2bae04de258f451671a4c9335051bf7abe3cc2b67",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/budget.py": "52bf57f933a8b7e4691eda2d1ed241fa9ae28474b5a98d5eac5c14ad2558c9bb",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/runtime_stage.py": "f58deb09b8e897b2fd6058c841e0faada8ae35393d8ce71ff841b5745281b975",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/cpu_check.py": "2bc6c98b79ac43d7fd8b1d6cb1f90b65e6220ef84e4a4b0a5773e84159a11728",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/fake_client_check.py": "d6bf93a4548b2d0cc7f8b62119e6c6d0d4571ebd3b30e4b8ab02435768b3233a",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/fence.sh": "4613ab2c4dda5cebe02bbbe278204f9bdd27990c21bc66a8965e7e0d6987278a",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/turn.sh": "92163a25aa23c4f2a371cf217b45d33d42df826fa1ac04bd523ec3918fabc19e",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/launch.sh": "efd12e4f9dab428e3f6adcb1ba63ad57de9092c5ab71bddcc0eb2fd818c41327",
+    "<rank0-work>/stdbench/compute-dl/a1-runtime/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed"
+  }
+}

@@ -31,7 +31,8 @@ RUN set -eu; test "$(cat .zig-version)" = "$ZIG_VERSION"; \
     zig build dsv41-serve -Dtarget="$ZIG_TARGET" -Dcpu="$ZIG_CPU" \
         -Dnvcc=/usr/local/cuda/bin/nvcc -Ddsv41-nvcc=/usr/local/cuda/bin/nvcc \
         -Dtp-fatbin=/tp_mailbox.fatbin -Dsm=121 -Doptimize=ReleaseSafe -j2 --prefix /out; \
-    test -x /out/bin/tensorfold-dsv41 && test -x /out/bin/tf-dsv41
+    zig build runner-frontend-check -Dtarget="$ZIG_TARGET" -Dcpu="$ZIG_CPU" -Doptimize=ReleaseSafe -j2 --prefix /out; \
+    test -x /out/bin/tensorfold-dsv41 && test -x /out/bin/tf-dsv41 && test -x /out/bin/tf-runner-frontend-check
 # The engine loads these from lib/ beside bin/ (packaging/RUNTIME.md): libtfgrammar for structured output and required
 # tool calls (HTTP 400 without it), over the xgrammar release the engine pins; the pinned JPEG and WebP decoders for
 # native image input.
@@ -88,7 +89,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends libnccl2 libibv
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /ctx/src/LICENSE /ctx/src/NOTICE /ctx/src/THIRD_PARTY_NOTICES.md /opt/tensorfold/licenses/
 COPY --from=build /ctx/src/LICENSES/ /opt/tensorfold/licenses/LICENSES/
-COPY --from=build /out/bin/tensorfold-dsv41 /out/bin/tf-dsv41 /opt/tensorfold/bin/
+# tf-runner-frontend-check is the in-model runner's compiler self-test; scripts/build-runner-image.sh adds the compiler,
+# circuit and bank it checks (the default profile's runner needs them; this image alone serves the rollback profiles).
+COPY --from=build /out/bin/tensorfold-dsv41 /out/bin/tf-dsv41 /out/bin/tf-runner-frontend-check /opt/tensorfold/bin/
 COPY --from=build /out/lib/ /opt/tensorfold/lib/
 COPY --from=build /out/licenses/ /opt/tensorfold/licenses/runtime-deps/
 COPY --from=build /tp_mailbox.fatbin /opt/tensorfold/share/tp_mailbox.fatbin

@@ -70,7 +70,7 @@ are all unchanged.
 | `TF_DSV41_BIAS_VL` | `/cache/dsv41-bias-vl` | **`/model`** | the 1017 learned image biases |
 | `TF_DSV41_POOL_TOKENS` | 3000000 | **2100000** | memory headroom ([below](#memory-the-21m-pool)) |
 | `TF_DSV41_PF_WS_FLOOR_GIB` | 3.5 | **4.75** | a planned 4K workspace stays above the 4 GiB floor |
-| `TF_CUDA_SCHED` | unset | **`blocking`** | the host sleeps instead of spinning while it waits for the GPU |
+| `TF_CUDA_SCHED` | unset | unset (`blocking` optional) | `blocking` makes the host sleep instead of spinning while it waits for the GPU; the compute-lane studies ([compute lane](compute-lane.md)) ran unset, so the profile keeps it unset |
 | `CPUSET_CPUS` | unset | optional, **host CPUs from your topology** | keeps a numeric `TF_TP_PLAN_PIN` and the engine on chosen CPUs |
 
 We suggest a 2100-2200 MHz GPU clock cap (`nvidia-smi -lgc 300,2100`) to help with temperature control.
@@ -91,10 +91,13 @@ each one does.
 | `TF_DSV41_TOKENIZER_MESSAGE_MEMO` | `1` | |
 | `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
 
-The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`): a built-in, sandboxed Python tool for requests
-that ask for `code_interpreter`. In the 2026-11-01 window on G it measured plain coding about 2 % lower (0.980, one
-run; the lane-off boots varied 2.2 %); see
-[OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it off.
+The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`) with its in-thinking default: the in-model runner
+and its trust guide for every thinking chat, and a built-in, sandboxed Python tool when the reply has room for a call
+([compute lane](compute-lane.md#when-the-built-in-tool-is-offered)). In the 2026-11-01 window on G the lane alone
+measured plain
+coding about 2 % lower (0.980, one run; the lane-off boots varied 2.2 %); see
+[OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it
+off.
 
 On the exported engine, this profile with the #48 guard (engine on 8001, guard on 8000, the plan thread pinned to
 one CPU inside `CPUSET_CPUS`) was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM

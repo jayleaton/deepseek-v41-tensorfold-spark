@@ -1,0 +1,28 @@
+{
+ "reasoning": "Run it:\n```python\nprint(271828 * 14000)\n```\n38056",
+ "finish": "length",
+ "tensorfold": {
+  "finish": "length",
+  "runner": {
+   "cells": [
+    {
+     "cell": 0,
+     "form": "fence",
+     "span": "print(271828 * 14000)\n",
+     "ids": 4,
+     "landed": 2,
+     "field": "reasoning",
+     "at": 43,
+     "value": "\n38056",
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "drafted": 0,
+     "path": "held",
+     "token": 1,
+     "forced": 2
+    }
+   ]
+  }
+ }
+}

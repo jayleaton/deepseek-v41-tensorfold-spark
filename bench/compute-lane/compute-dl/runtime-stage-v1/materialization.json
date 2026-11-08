@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "prefix": "stdbench-compute-dl-20261105-v1",
+  "ranks": {
+    "0": {
+      "frozen-v1/boots/t01-D.json": "frozen-v1/boots/t01-D.json",
+      "rank0/configs/t01-D-r0.env": "configs/t01-D-r0.env",
+      "rank0/boots/t01-D/manifest.json": "rank0/boots/t01-D/manifest.json",
+      "rank1/boots/t01-D/manifest.json": "rank1/boots/t01-D/manifest.json",
+      "frozen-v1/boots/t01-L.json": "frozen-v1/boots/t01-L.json",
+      "rank0/configs/t01-L-r0.env": "configs/t01-L-r0.env",
+      "rank0/boots/t01-L/manifest.json": "rank0/boots/t01-L/manifest.json",
+      "rank1/boots/t01-L/manifest.json": "rank1/boots/t01-L/manifest.json",
+      "frozen-v1/boots/t02-L.json": "frozen-v1/boots/t02-L.json",
+      "rank0/configs/t02-L-r0.env": "configs/t02-L-r0.env",
+      "rank0/boots/t02-L/manifest.json": "rank0/boots/t02-L/manifest.json",
+      "rank1/boots/t02-L/manifest.json": "rank1/boots/t02-L/manifest.json",
+      "frozen-v1/boots/t02-D.json": "frozen-v1/boots/t02-D.json",
+      "rank0/configs/t02-D-r0.env": "configs/t02-D-r0.env",
+      "rank0/boots/t02-D/manifest.json": "rank0/boots/t02-D/manifest.json",
+      "rank1/boots/t02-D/manifest.json": "rank1/boots/t02-D/manifest.json",
+      "frozen-v1/manifest.json": "frozen-v1/manifest.json",
+      "prompt-inputs.json": "prompt-inputs.json",
+      "stage-campaign.json": "stage-campaign.json",
+      "source-hashes.json": "source-hashes.json"
+    },
+    "1": {
+      "frozen-v1/boots/t01-D.json": "frozen-v1/boots/t01-D.json",
+      "rank1/configs/t01-D-r1.env": "configs/t01-D-r1.env",
+      "rank1/boots/t01-D/manifest.json": "rank1/boots/t01-D/manifest.json",
+      "frozen-v1/boots/t01-L.json": "frozen-v1/boots/t01-L.json",
+      "rank1/configs/t01-L-r1.env": "configs/t01-L-r1.env",
+      "rank1/boots/t01-L/manifest.json": "rank1/boots/t01-L/manifest.json",
+      "frozen-v1/boots/t02-L.json": "frozen-v1/boots/t02-L.json",
+      "rank1/configs/t02-L-r1.env": "configs/t02-L-r1.env",
+      "rank1/boots/t02-L/manifest.json": "rank1/boots/t02-L/manifest.json",
+      "frozen-v1/boots/t02-D.json": "frozen-v1/boots/t02-D.json",
+      "rank1/configs/t02-D-r1.env": "configs/t02-D-r1.env",
+      "rank1/boots/t02-D/manifest.json": "rank1/boots/t02-D/manifest.json",
+      "frozen-v1/manifest.json": "frozen-v1/manifest.json",
+      "prompt-inputs.json": "prompt-inputs.json",
+      "stage-campaign.json": "stage-campaign.json",
+      "source-hashes.json": "source-hashes.json"
+    }
+  },
+  "campaign_note": "stage-campaign.json is preliminary; parent binds rank-local campaign-v1.json after CPU seals"
+}

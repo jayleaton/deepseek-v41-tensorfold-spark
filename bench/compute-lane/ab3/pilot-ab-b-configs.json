@@ -1,0 +1,62 @@
+[
+ {
+  "name": "ab-b-runner",
+  "pack": "k6",
+  "extra": [
+   "TF_DSV41_COMPUTE_LANE=1",
+   "TF_DSV41_RUNNER=1",
+   "TF_DSV41_RUNNER_CIRCUIT=/opt/tensorfold/share/runner/calc.tfpc",
+   "TF_DSV41_RUNNER_FORMS=fence,repl,inline,trace",
+   "TF_DSV41_RUNNER_BACKEND=graph",
+   "TF_DSV41_RUNNER_GRAPH_BANK=/opt/tensorfold/share/runner/graph-v7-powmod/bank/bank.json",
+   "TF_DSV41_RUNNER_STATED=0",
+   "TF_DSV41_RUNNER_INLINE_CHAIN=0",
+   "TF_DSV41_RUNNER_INLINE_MARK=0",
+   "TF_DSV41_RUNNER_SYNC_GRAPH=0",
+   "TF_DSV41_RUNNER_COMPILE_STEPS=10522",
+   "TF_DSV41_RUNNER_CELLS=1",
+   "TF_DSV41_COMPUTE_LANE_RUNNER=1",
+   "TF_DSV41_COMPUTE_LANE_RUNNER_CIRCUIT=/opt/tensorfold/share/runner/calc.tfpc",
+   "TF_DSV41_COMPUTE_LANE_RUNNER_BACKEND=graph",
+   "TF_DSV41_COMPUTE_LANE_RUNNER_GRAPH_BANK=/opt/tensorfold/share/runner/graph-v7-powmod/bank/bank.json",
+   "TF_DSV41_COMPUTE_LANE_RUNNER_SETTLE_US=3000",
+   "TF_DSV41_RUNNER_COMMIT=0"
+  ],
+  "loose": true,
+  "measure": {
+   "tasks": "units.jsonl",
+   "sample": "all",
+   "concurrency": 4,
+   "max_tokens": 32768,
+   "request_deadline_s": 300,
+   "cap_s": 600,
+   "token_ids": true,
+   "no_count_fallback": true,
+   "server_deadline_field": "deadline_s",
+   "deadline_grace_s": 30,
+   "decode_check": false,
+   "arms": "rt:s4,rn:s4",
+   "forms": "fence,repl,inline,trace",
+   "place": "on",
+   "arm_opts": {
+    "rt": {
+     "temperature": 1.0,
+     "top_p": 0.95,
+     "top_k": 20,
+     "runner_guide": "@trust"
+    },
+    "rn": {
+     "temperature": 1.0,
+     "top_p": 0.95,
+     "top_k": 20,
+     "runner_guide": "@trust",
+     "tools": [
+      {
+       "type": "code_interpreter"
+      }
+     ]
+    }
+   }
+  }
+ }
+]

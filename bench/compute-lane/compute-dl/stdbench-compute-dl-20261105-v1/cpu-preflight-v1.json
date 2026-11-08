@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "checks": [
+    {
+      "script": "<rank0-work>/stdbench/compute-dl/launch.sh",
+      "sha256": "9b4bf8228ccfdc8f44593c4cfa7a5f9a636eec3b5fa9875439724ba1e3a9b4f5",
+      "returncode": 0,
+      "stdout": "preflight <rank0-work>/stdbench/compute-dl/launch.sh: 4 literal paths checked, 0 refused, 0 notes\n",
+      "stderr": ""
+    },
+    {
+      "script": "<rank0-work>/stdbench/compute-dl/turn.sh",
+      "sha256": "8832261de01300df0b0e876ecf5b6ac4abfc456e3e093232bb8f353b8bc31f12",
+      "returncode": 0,
+      "stdout": "preflight <rank0-work>/stdbench/compute-dl/turn.sh: 4 literal paths checked, 0 refused, 0 notes\n",
+      "stderr": ""
+    },
+    {
+      "script": "<rank0-work>/stdbench/compute-dl/fence.sh",
+      "sha256": "b77780264d01733a9906649905ba04fb00d951708c383b36406afcf50fadc3e1",
+      "returncode": 0,
+      "stdout": "preflight <rank0-work>/stdbench/compute-dl/fence.sh: 0 literal paths checked, 0 refused, 0 notes\n",
+      "stderr": ""
+    }
+  ],
+  "source_sha256": "8c66ac6b4a69ecdcccef6ddf47d35ead88755c3e3a324ee38efe4dfb6d906390"
+}

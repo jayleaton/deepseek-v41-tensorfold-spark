@@ -1,0 +1,21 @@
+{
+  "model": "__QUALIFIED_MODEL__",
+  "max_tokens": 32768,
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "chat_template_kwargs": {
+    "enable_thinking": true
+  },
+  "seed": "<101|102|103>",
+  "temperature": 1.0,
+  "top_p": 0.95,
+  "top_k": 20,
+  "tools": [
+    {
+      "type": "code_interpreter"
+    }
+  ],
+  "runner_guide": "Think and compute in small chunks. As soon as a sub-computation is needed, write its complete expression as `<expr> =` and continue from the returned value. Do not finish a manual trace before requesting it. For a short integer program, use a Python fenced cell with print, then `Result:`. Unsupported cells leave your continuation. Verify the setup, program semantics and non-computational reasoning. Engine values after `=` or `Result:` are computed exactly; use as given; do not re-derive or re-check by hand."
+}

@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "rank": 1,
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "sealed_files_unchanged": 3723,
+  "G_image_id": "sha256:ca6feff3164a67710816be940968403f938947e4974ff04f61717d8f0f5688f9",
+  "G_native_pid_namespace": 57,
+  "G_native_role": "follow",
+  "owned_study_containers": 0,
+  "collection_GO_revoked": true,
+  "source_sha256": "caeea88c75bff28e034fc8aeacc40e085f6ded3e559f9b6818af1ed1d436f071"
+}

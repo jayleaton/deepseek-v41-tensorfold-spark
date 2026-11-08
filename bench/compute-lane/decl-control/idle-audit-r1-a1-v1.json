@@ -1,0 +1,19 @@
+{
+  "qualified": true,
+  "rank": 1,
+  "G_running_image_id": "sha256:ca6feff3164a67710816be940968403f938947e4974ff04f61717d8f0f5688f9",
+  "G_serving_run": null,
+  "owned_container_names_absent": [
+    "stdbench-decl-a1-20261105-v1-t01-plain-r1",
+    "stdbench-decl-a1-20261105-v1-t01-declared_off-r1",
+    "stdbench-decl-a1-20261105-v1-t01-lane-r1",
+    "stdbench-decl-a1-20261105-v1-t02-declared_off-r1",
+    "stdbench-decl-a1-20261105-v1-t02-lane-r1",
+    "stdbench-decl-a1-20261105-v1-t02-plain-r1",
+    "stdbench-decl-a1-20261105-v1-t03-lane-r1",
+    "stdbench-decl-a1-20261105-v1-t03-plain-r1",
+    "stdbench-decl-a1-20261105-v1-t03-declared_off-r1"
+  ],
+  "owned_turn_services_pending": false,
+  "GPU_operation": false
+}

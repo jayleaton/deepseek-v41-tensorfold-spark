@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "GPU_requests": 0,
+  "preflight_stdout": "preflight <rank0-work>/stdbench/compute-dl/a1-prep/launch.sh: 3 literal paths checked, 0 refused, 0 notes\npreflight <rank0-work>/stdbench/compute-dl/a1-prep/turn.sh: 3 literal paths checked, 0 refused, 0 notes\n",
+  "preflight_stderr": "",
+  "preparation": {
+    "passed": true,
+    "stage": "CPU_PREP_ONLY",
+    "spec_sha256": null,
+    "collection_authorized": false,
+    "P_requests": 240,
+    "remaining_original": 138,
+    "layout": "ORDER_NOT_FROZEN",
+    "GPU_requests": 0
+  },
+  "unapproved_entries_refused": 2,
+  "checked_source_sha256": {
+    "clip_check.py": "1a48bb9b33a849f4be04987697c3721c4504126198470bc28248c87b74ca746c",
+    "p_verify_stage.py": "9a1f17a49bdb7629c2ca379dc60445b9bb0f46330d9f501c132edf38e355073c",
+    "turn.sh": "c46fc34e98036120b08885761fe618c925d210ab3db2f0ac8f8f90a895672dd8",
+    "stage_control.py": "8704f56d9ee096637f6f718bdc55aea3840a2fad37828832ebec61c8dd07d51e",
+    "launch.sh": "35c671fd0aef68c56bac75758da8e1c88efa49abba8e37a02420f4a775d99af9",
+    "p_check.py": "55b9bc56f57ed8fd9dd8cd7213aed7badc779bb78f963f5caaa5b9ac20de1f87",
+    "build.zig": "ac01853afcf7a9a56562bd3d9936e1abdfb406030264bd6dccaf00d548f5a330",
+    "env_check.py": "b96857bf5d385a16a0f9015685759efeb11b4851182a6c9fa2fef5c8505ac4ed",
+    "prepare_native.py": "c9a0a4a931c3f56d2bb726efa62d4a0e096f07103247ff3abfb4c4cf6e38b269",
+    "cap_function.zig": "287b407dfc87723e304f44f04ceeee4d4206fbb11028dbc71911cf4a8896cded",
+    "reference_policy.py": "c80631ef33dac47967e439add4ad7bffac4d5e554c17cefe00d20579fe9b3bab",
+    "p_stage.py": "89621a89e82025ccdad514ca66ba1f78ed24d7aa919393fe0dda75934335508e",
+    "preflight_check.py": "f21623b64bd1d7c6b3d1c740c866bdc98f6e11cfd3af04dab142e344bcd03255",
+    "cap_main.zig": "553c56016dce767221725c3383b9aac8706b157200b3f392942ef0ec7ade08bc"
+  }
+}

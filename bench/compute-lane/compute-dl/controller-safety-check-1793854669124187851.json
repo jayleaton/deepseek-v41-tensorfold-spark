@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "status": "FAKE_NOT_COLLECTION",
+  "delivered_error_mismatch_stops": true,
+  "post_cooling_and_memory_cutoffs": true,
+  "pre_STOP_own_queue_withdrawal": true,
+  "cooling_stalled_sensor_and_readiness_cutoffs": true,
+  "revoked_GO_and_source_drift_cleanup": true,
+  "cleanup_exact_owned_identity": true,
+  "start_snapshot_still_qualified": true,
+  "real_network": false
+}

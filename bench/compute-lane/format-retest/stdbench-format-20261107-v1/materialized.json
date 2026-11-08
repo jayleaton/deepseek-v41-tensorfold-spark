@@ -1,0 +1,18 @@
+{
+  "rank": 0,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "stage_manifest_sha256": "5111b481fefb9b2bb7fad5a630a4109a6104b5993f01e360f55004bc47aeb353",
+  "files": {
+    "frozen-v1/boots/format-L.json": "40f4379669b9641cbc550cba9691d8b275b046b98ffc55b5e8e642b2867a9ffb",
+    "configs/format-L-r0.env": "d959d269d5f0f5c67276664d999c64bb4d531ae8b6cbe8b56feeabda0ebabc79",
+    "rank0/boots/format-L/manifest.json": "e3c7a4ceb4bb6255fd3c9725ec4959231861ef06de1048ea09af3be41d2018f4",
+    "rank1/boots/format-L/manifest.json": "a514bb7a91fcbafaf53b904ee2e7fee3c4408bc8a799d7cdd92c3078f7c50d8b",
+    "frozen-v1/boots/format-P.json": "6f7fd7ba7e2c4661e9d361d6353daeb5518fecf737d66cc68988a786c2152aaa",
+    "configs/format-P-r0.env": "f450f1eef3f10d566c71081e5826b15f31ed90c5b8c1abd213cb5708b4c28fc4",
+    "rank0/boots/format-P/manifest.json": "25fc56fc22490ca418650ddd38b2ff6864440bda7ed740a182b064bc04738f14",
+    "rank1/boots/format-P/manifest.json": "b3c33fc1fa3f57356f0dfc6a5670639f644dce9a7a449ccf32725df4fa44ebb4",
+    "frozen-v1/manifest.json": "72bf0826d63710072f52ffbd2007e54f217788a17d78e7422dce058d2197b316",
+    "prompt-inputs.json": "bfd9dabac3b31255e85d7305db799f0b1ba025e12a5661c0635fdbbe9f65aaeb",
+    "stage-campaign.json": "8f99c976082aefd5b7c1d841df40273141bfb785ebfdb8385818369ec27ce03e"
+  }
+}

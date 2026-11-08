@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "rank": 1,
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "checks": [
+    {
+      "boot": "t01-D",
+      "rank": 1,
+      "proof": "<rank1-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/proof/t01-D/verify-d46022b5c5d344359c2e66abfa58ce61.json",
+      "sha256": "52212acbad721c3e4f026aa03d0db6f0ab48655890c32b97fd67ea8ab6a797ef",
+      "manifest_sha256": "e579d07bcaf5500a3e8a4072e5d8c173102c4330ac8da31158dbf8a6d8dd2d17",
+      "log_sha256": "25576f9d2bd7d18798e78dd58ac544be5e696b70947c0c6dec6e0df7141b740e"
+    },
+    {
+      "boot": "t01-L",
+      "rank": 1,
+      "proof": "<rank1-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/proof/t01-L/verify-8457517a8ad348a3ab7fc2eb7da9f281.json",
+      "sha256": "f792570ef4f8e5d134e2a1b5964f124f88b4adf1d9e758e5e402519c68033fef",
+      "manifest_sha256": "fa50c05a358ceda78fdb7d451eb4c984e22af3864c9cfe4c7e57c85dd266d302",
+      "log_sha256": "e24fb0de21a33f749873f5c90762d9ba6fdc9391aade84b15b0d371bf4192236"
+    },
+    {
+      "boot": "t02-L",
+      "rank": 1,
+      "proof": "<rank1-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/proof/t02-L/verify-9fe63f1781054b4ea9b0716174f5bc2c.json",
+      "sha256": "0cfc42ddf6f381dca70fcfef37608e850dd9ddaf79ce47f19413aabd36a11ac6",
+      "manifest_sha256": "563114e7ecf45841f7b490dbaca660336903f47c718a74a92c31d6470561eea7",
+      "log_sha256": "62e63181e5023422167f1844ef551d150f0d3da9e82bf51c26a86f7a5a43e43c"
+    },
+    {
+      "boot": "t02-D",
+      "rank": 1,
+      "proof": "<rank1-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/proof/t02-D/verify-58439b87821443daa03e747e264b2cb9.json",
+      "sha256": "bd8370a3a5b7e8f0d1444c17f709230d2b03e27ecf019c0c227a9e456f2ae39b",
+      "manifest_sha256": "634fa5c1c1660e69421d9db3a26bf2bea2c5db4479b400c90a0f058d0fe0b34f",
+      "log_sha256": "f6bc0fae4926efcf7caf81225c520ed713fb3bf48c9ed917222a6d1e3decf774"
+    }
+  ],
+  "source_sha256": "0274f33aad8b17cd000fbc2cf81cbdcd075ef84c0d312768c259edb5b892eb7f",
+  "runner_sha256": "ef33ee25b3ad09b8845f668f6ab4c1ccd8902ec8c48e3ee81ac4145443ee9ed9"
+}

@@ -1,0 +1,20 @@
+{
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-plain/responses.jsonl": "d195840bce96528507a27a32eeac4871ffa77949e685bdfef4502ad4e1e9a246",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-plain/diagnostics.jsonl": "58ee951424ce314f19700372aca87ea25a29240fa5618003c9403311f5f7b3ff",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-declared_off/responses.jsonl": "7c49f823b9141072e5e1cf5a8152a4e5c5ee67ee2ee14b0e2289872d862fda51",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-declared_off/diagnostics.jsonl": "b0f135e9d63c5964f3e09d13023dd437fdc5d28daa91becc5d675ea115f84871",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-lane/responses.jsonl": "6e4389f1b72a506573632bee10e7f54ad4397e463b7a38485844289e0faf7d73",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t01/t01-lane/diagnostics.jsonl": "c525cd94fb2da6b14d58af663e4474d9f1f335bab8fa201be7fcf23a627a2e7b",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-declared_off/responses.jsonl": "98387aa3eb6c2df0b961556031e823e205a816d964a0db0345977f7f700e19ef",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-declared_off/diagnostics.jsonl": "7b75bc71ba04544673be9e8e23afdbcfa320e37b498b3770e3cb26ff596ed495",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-lane/responses.jsonl": "6077255f9453589fd208af20cbe411ce28f583fce46f9b762019cf5a8415ac30",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-lane/diagnostics.jsonl": "05fca646b6b398a521531f3380bb73934f8b78907e7e27ad830f4c2eb6939f6e",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-plain/responses.jsonl": "8df9f9332e920c868610447a85bd233f550d271cd5ed0264cd6d6bdb33e8f5b6",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t02/t02-plain/diagnostics.jsonl": "cc753b13ffb6088e805829a90a92ca38a324a66d260c135941db70bb667d7364",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-lane/responses.jsonl": "141a1c59b933f59ede8cd73b5f636eedc508eaff5f98dca473fed8583b379d55",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-lane/diagnostics.jsonl": "b6657a736a703b6d542b3d4af4a99306e2075951e7eac14223e714299253909a",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-plain/responses.jsonl": "457b75e867bd25d070c5e92e38d696d9e2a541799c107039c999d884f06db215",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-plain/diagnostics.jsonl": "1f0ac3b5f46be4d68803f7fc85d89b5ef36dd2bb6d4bafd7ecc6f6c71c4f4321",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-declared_off/responses.jsonl": "32eb1788692196ef62f93f88ed14d0b840ce94340408880b5974d384d8352c39",
+  "<rank0-work>/stdbench/decl-control/runs/stdbench-decl-a1-20261105-v1-t03/t03-declared_off/diagnostics.jsonl": "d5ed09d1be967efe3ddc3ae87bdb22dce6fe1ef4fe2ade5b89b2adb1164996da"
+}

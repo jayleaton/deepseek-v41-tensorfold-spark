@@ -1,0 +1,104 @@
+{
+  "identity": {
+    "suite": "compute_dl",
+    "id": "compute-dl-v1-aggregation-015",
+    "seed": 101,
+    "arm": "lane",
+    "boot": "t02-L"
+  },
+  "response_file": "<rank0-work>/stdbench/compute-dl/runs/stdbench-compute-dl-20261105-v1-t02/t02-L/responses.jsonl",
+  "response_file_sha256": "a1c20470c4a21e3b61b9585f180b5280130c33f4bc674b8447613b57367ec096",
+  "safety_file_sha256": "c0620725f8ba5f5a8469c7f9a1c06ce1727571f70990ae2b0b7da2a5855fdbea",
+  "safety": {
+    "arm": "lane",
+    "binding": {
+      "calls": [
+        {
+          "delivered": true,
+          "executor": "code tool",
+          "id": "call_8e022ce20c4745055975a97f",
+          "native_bound": true,
+          "native_frame": 0,
+          "output_at": 1219,
+          "output_end": 2149,
+          "output_sha256": "99d65cefb912e03a8bbe8cec9efcf830ce0195597a00fe08624e7270f783a9bf",
+          "source_at": 163,
+          "source_encoding": "literal",
+          "source_end": 1103,
+          "source_sha256": "82f034b1982fff335ba8bda40f95619d7eef75d49c18cae53d1cdc2dd1318572",
+          "status": "ok"
+        }
+      ],
+      "delivered_successes": 1,
+      "external_attempt_source_native_bound": null,
+      "external_attempts_present": false,
+      "frames": [
+        {
+          "assistant_token": 1026,
+          "call_indices": [
+            0
+          ],
+          "end_token": 1028,
+          "eos_token": 495,
+          "inserted_tokens": 532,
+          "user_content_at": 1206,
+          "user_content_end": 2163,
+          "user_token": 496
+        }
+      ],
+      "inserted_tokens_bound": 532,
+      "native_frame_count": 1,
+      "qualified": true,
+      "reason": "exact native call/frame binding"
+    },
+    "boot": "t02-L",
+    "id": "compute-dl-v1-aggregation-015",
+    "qualified": false,
+    "references": [
+      {
+        "call_id": "call_8e022ce20c4745055975a97f",
+        "matches": false,
+        "result": {
+          "cpu_job": null,
+          "elapsed_seconds": 0.020440059015527368,
+          "exit_code": 0,
+          "harness_receipt": false,
+          "image": {
+            "id": "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+            "revision": "3a429d6f122d9eb2900c43e622933d311e4be44f",
+            "tag": "tensorfold-dsv41-imr:r-3a429d6f122d"
+          },
+          "native_error_validation_separate": false,
+          "native_result_token_cap": 512,
+          "needs_native_token_cap_check": true,
+          "normalized_body": "{'A': 10977, 'B': 23135, 'C': 50566, 'D': 73170, 'E': 57772, 'F': 20441}\nA 10977 [(16, 901, 14416), (20, -966, -19320), (8, 5, 40), (4, 1142, 4568), (11, -307, -3377), (20, 166, 3320), (10, 1133, 11330)]\nB 23135 [(16, 1440, 23040), (15, 867, 13005), (11, 746, 8206), (17, -875, -14875), (4, 859, 3436), (9, 317, 2853), (14, -895, -12530)]\nC 50566 [(12, 579, 6948), (9, 869, 7821), (1, -726, -726), (5, 1636, 8180), (12, 345, 4140), (10, -332, -3320), (20, 214, 4280), (11, 1525, 16775), (7, 924, 6468)]\nD 73170 [(14, 1043, 14602), (5, 1117, 5585), (11, -546, -6006), (6, 730, 4380), (15, 1990, 29850), (7, 1739, 12173), (14, 899, 12586)]\nE 57772 [(10, 1711, 17110), (4, -235, -940), (6, 581, 3486), (18, 1632, 29376), (19, 460, 8740)]\nF 20441 [(12, 1736, 20832), (5, 159, 795), (10, -592, -5920), (15, -828, -12420), (16, 860, 13760), (9, -822, -7398), (1, 203, 203), (9, 178, 1602), (6, 1585, 9510), (2, 885, 1770), (16, -348, -5568), (11, -287, -3157), (16, 402, 6432)]",
+          "normalized_body_base64": "eydBJzogMTA5NzcsICdCJzogMjMxMzUsICdDJzogNTA1NjYsICdEJzogNzMxNzAsICdFJzogNTc3NzIsICdGJzogMjA0NDF9CkEgMTA5NzcgWygxNiwgOTAxLCAxNDQxNiksICgyMCwgLTk2NiwgLTE5MzIwKSwgKDgsIDUsIDQwKSwgKDQsIDExNDIsIDQ1NjgpLCAoMTEsIC0zMDcsIC0zMzc3KSwgKDIwLCAxNjYsIDMzMjApLCAoMTAsIDExMzMsIDExMzMwKV0KQiAyMzEzNSBbKDE2LCAxNDQwLCAyMzA0MCksICgxNSwgODY3LCAxMzAwNSksICgxMSwgNzQ2LCA4MjA2KSwgKDE3LCAtODc1LCAtMTQ4NzUpLCAoNCwgODU5LCAzNDM2KSwgKDksIDMxNywgMjg1MyksICgxNCwgLTg5NSwgLTEyNTMwKV0KQyA1MDU2NiBbKDEyLCA1NzksIDY5NDgpLCAoOSwgODY5LCA3ODIxKSwgKDEsIC03MjYsIC03MjYpLCAoNSwgMTYzNiwgODE4MCksICgxMiwgMzQ1LCA0MTQwKSwgKDEwLCAtMzMyLCAtMzMyMCksICgyMCwgMjE0LCA0MjgwKSwgKDExLCAxNTI1LCAxNjc3NSksICg3LCA5MjQsIDY0NjgpXQpEIDczMTcwIFsoMTQsIDEwNDMsIDE0NjAyKSwgKDUsIDExMTcsIDU1ODUpLCAoMTEsIC01NDYsIC02MDA2KSwgKDYsIDczMCwgNDM4MCksICgxNSwgMTk5MCwgMjk4NTApLCAoNywgMTczOSwgMTIxNzMpLCAoMTQsIDg5OSwgMTI1ODYpXQpFIDU3NzcyIFsoMTAsIDE3MTEsIDE3MTEwKSwgKDQsIC0yMzUsIC05NDApLCAoNiwgNTgxLCAzNDg2KSwgKDE4LCAxNjMyLCAyOTM3NiksICgxOSwgNDYwLCA4NzQwKV0KRiAyMDQ0MSBbKDEyLCAxNzM2LCAyMDgzMiksICg1LCAxNTksIDc5NSksICgxMCwgLTU5MiwgLTU5MjApLCAoMTUsIC04MjgsIC0xMjQyMCksICgxNiwgODYwLCAxMzc2MCksICg5LCAtODIyLCAtNzM5OCksICgxLCAyMDMsIDIwMyksICg5LCAxNzgsIDE2MDIpLCAoNiwgMTU4NSwgOTUxMCksICgyLCA4ODUsIDE3NzApLCAoMTYsIC0zNDgsIC01NTY4KSwgKDExLCAtMjg3LCAtMzE1NyksICgxNiwgNDAyLCA2NDMyKV0=",
+          "normalized_body_sha256": "0f2f6207173a2a1b37df230ed5aa0ddbd3c2a55497452559bc911b8ac7f4f05e",
+          "output_limited": false,
+          "payload_sha256": "92b0ce7bb026cbb28a3272b7ed15a830dc79388a8fe12ec341ddec3499c83a24",
+          "receipt": null,
+          "status": "ok",
+          "stderr": "",
+          "stderr_base64": "",
+          "stdout": "{'A': 10977, 'B': 23135, 'C': 50566, 'D': 73170, 'E': 57772, 'F': 20441}\nA 10977 [(16, 901, 14416), (20, -966, -19320), (8, 5, 40), (4, 1142, 4568), (11, -307, -3377), (20, 166, 3320), (10, 1133, 11330)]\nB 23135 [(16, 1440, 23040), (15, 867, 13005), (11, 746, 8206), (17, -875, -14875), (4, 859, 3436), (9, 317, 2853), (14, -895, -12530)]\nC 50566 [(12, 579, 6948), (9, 869, 7821), (1, -726, -726), (5, 1636, 8180), (12, 345, 4140), (10, -332, -3320), (20, 214, 4280), (11, 1525, 16775), (7, 924, 6468)]\nD 73170 [(14, 1043, 14602), (5, 1117, 5585), (11, -546, -6006), (6, 730, 4380), (15, 1990, 29850), (7, 1739, 12173), (14, 899, 12586)]\nE 57772 [(10, 1711, 17110), (4, -235, -940), (6, 581, 3486), (18, 1632, 29376), (19, 460, 8740)]\nF 20441 [(12, 1736, 20832), (5, 159, 795), (10, -592, -5920), (15, -828, -12420), (16, 860, 13760), (9, -822, -7398), (1, 203, 203), (9, 178, 1602), (6, 1585, 9510), (2, 885, 1770), (16, -348, -5568), (11, -287, -3157), (16, 402, 6432)]\n",
+          "stdout_base64": "eydBJzogMTA5NzcsICdCJzogMjMxMzUsICdDJzogNTA1NjYsICdEJzogNzMxNzAsICdFJzogNTc3NzIsICdGJzogMjA0NDF9CkEgMTA5NzcgWygxNiwgOTAxLCAxNDQxNiksICgyMCwgLTk2NiwgLTE5MzIwKSwgKDgsIDUsIDQwKSwgKDQsIDExNDIsIDQ1NjgpLCAoMTEsIC0zMDcsIC0zMzc3KSwgKDIwLCAxNjYsIDMzMjApLCAoMTAsIDExMzMsIDExMzMwKV0KQiAyMzEzNSBbKDE2LCAxNDQwLCAyMzA0MCksICgxNSwgODY3LCAxMzAwNSksICgxMSwgNzQ2LCA4MjA2KSwgKDE3LCAtODc1LCAtMTQ4NzUpLCAoNCwgODU5LCAzNDM2KSwgKDksIDMxNywgMjg1MyksICgxNCwgLTg5NSwgLTEyNTMwKV0KQyA1MDU2NiBbKDEyLCA1NzksIDY5NDgpLCAoOSwgODY5LCA3ODIxKSwgKDEsIC03MjYsIC03MjYpLCAoNSwgMTYzNiwgODE4MCksICgxMiwgMzQ1LCA0MTQwKSwgKDEwLCAtMzMyLCAtMzMyMCksICgyMCwgMjE0LCA0MjgwKSwgKDExLCAxNTI1LCAxNjc3NSksICg3LCA5MjQsIDY0NjgpXQpEIDczMTcwIFsoMTQsIDEwNDMsIDE0NjAyKSwgKDUsIDExMTcsIDU1ODUpLCAoMTEsIC01NDYsIC02MDA2KSwgKDYsIDczMCwgNDM4MCksICgxNSwgMTk5MCwgMjk4NTApLCAoNywgMTczOSwgMTIxNzMpLCAoMTQsIDg5OSwgMTI1ODYpXQpFIDU3NzcyIFsoMTAsIDE3MTEsIDE3MTEwKSwgKDQsIC0yMzUsIC05NDApLCAoNiwgNTgxLCAzNDg2KSwgKDE4LCAxNjMyLCAyOTM3NiksICgxOSwgNDYwLCA4NzQwKV0KRiAyMDQ0MSBbKDEyLCAxNzM2LCAyMDgzMiksICg1LCAxNTksIDc5NSksICgxMCwgLTU5MiwgLTU5MjApLCAoMTUsIC04MjgsIC0xMjQyMCksICgxNiwgODYwLCAxMzc2MCksICg5LCAtODIyLCAtNzM5OCksICgxLCAyMDMsIDIwMyksICg5LCAxNzgsIDE2MDIpLCAoNiwgMTU4NSwgOTUxMCksICgyLCA4ODUsIDE3NzApLCAoMTYsIC0zNDgsIC01NTY4KSwgKDExLCAtMjg3LCAtMzE1NyksICgxNiwgNDAyLCA2NDMyKV0K",
+          "worker_sha256": "703ee5a019b4b3a454f35c5dd914a5a01990095a47ad43aef54d2695fc0a61a8"
+        }
+      }
+    ],
+    "seed": 101,
+    "suite": "compute_dl"
+  },
+  "calls": [
+    {
+      "code": "transactions = [[\"E\",10,1711],[\"D\",14,1043],[\"C\",12,579],[\"F\",12,1736],[\"E\",4,-235],[\"E\",6,581],[\"F\",5,159],[\"F\",10,-592],[\"D\",5,1117],[\"F\",15,-828],[\"A\",16,901],[\"D\",11,-546],[\"D\",6,730],[\"B\",16,1440],[\"C\",9,869],[\"B\",15,867],[\"C\",1,-726],[\"D\",15,1990],[\"C\",5,1636],[\"B\",11,746],[\"B\",17,-875],[\"B\",4,859],[\"A\",20,-966],[\"F\",16,860],[\"A\",8,5],[\"C\",12,345],[\"A\",4,1142],[\"A\",11,-307],[\"C\",10,-332],[\"A\",20,166],[\"F\",9,-822],[\"B\",9,317],[\"F\",1,203],[\"E\",18,1632],[\"F\",9,178],[\"F\",6,1585],[\"F\",2,885],[\"F\",16,-348],[\"C\",20,214],[\"A\",10,1133],[\"B\",14,-895],[\"C\",11,1525],[\"D\",7,1739],[\"C\",7,924],[\"F\",11,-287],[\"D\",14,899],[\"E\",19,460],[\"F\",16,402]]\nfrom collections import defaultdict\nsums=defaultdict(int)\nfor cat,q,u in transactions:\n    sums[cat]+=q*u\nprint({k:sums[k] for k in \"ABCDEF\"})\n# show per category detail maybe\nfor k in \"ABCDEF\":\n    vals=[(q,u,q*u) for c,q,u in transactions if c==k]\n    print(k, sum(v[2] for v in vals), vals)\n",
+      "exec_ms": 14.482085,
+      "exit_code": null,
+      "id": "call_8e022ce20c4745055975a97f",
+      "inserted": true,
+      "name": "python",
+      "output": "{'A': 10977, 'B': 23135, 'C': 50566, 'D': 73170, 'E': 57772, 'F': 20441}\nA 10977 [(16, 901, 14416), (20, -966, -19320), (8, 5, 40), (4, 1142, 4568), (11, -307, -3377), (20, 166, 3320), (10, 1133, 11330)]\nB 23135 [(16, 1440, 23040), (15, 867, 13005), (11, 746, 8206), (17, -875, -14875), (4, 859, 3436), (9, 317, 2853), (14, -895, -12530)]\nC 50566 [(12, 579, 6948), (9, 869, 7821), (1, -726, -726), (5, 1636, 8180), (12, 345, 4140), (10, -332, -3320), (20, 214, 4280), (11, 1525, 16775), (7, 924, 6468)]\nD 73170 [(14, 1043, 14602), (5, 1117, 5585), (11, -546, -6006), (6, 730, 4380), (15, 1990, 29850), (7, 1739, 12173), (14, 899, 12586)]\nE 57772 [(10, 1711, 17110), (4, -235, -940), (6, 581, 3486), (18, 1632, 29376), (19, 460, 8740)]\nF 20441 [(12, 1736, 20832), (5, 159, 795), (10, -592, -5920), (15, -828, -12420), (16, 860, 13760), (9, -822, -7398), (1, 203, 203), (9, 178, 1602), (6, 1585, 951\n[output truncated at 512 tokens]",
+      "status": "ok"
+    }
+  ]
+}

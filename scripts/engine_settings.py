@@ -9,8 +9,10 @@ itself. It refuses renamed or removed settings, so an old profile cannot silentl
 back to an engine default.
 
 Commands (names arrive on stdin, one per line; values are never read from argv):
-  forward               print the names to forward; refuse legacy names (exit 2)
-  profile ARGV...       print the effective container environment of a docker run argv
+  forward               print the names to forward; refuse legacy names (exit 2); warn about names
+                        that come from the calling shell rather than $CONFIG
+  profile ARGV...       print the effective container environment of a docker run argv, marking
+                        names that come from the calling shell rather than $CONFIG as [caller]
   generate SRC [OUT]    write the manifest from an engine checkout at config/tensorfold.rev
   check SRC             exit 1 when the manifest differs from the engine checkout
 """
@@ -27,6 +29,9 @@ MANIFEST = ROOT / "config/tensorfold-settings.txt"
 REV_FILE = ROOT / "config/tensorfold.rev"
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 ENGINE_NAME = re.compile(r"(?:TF|TENSORFOLD)_[A-Z0-9_]+")
+ASSIGNED = re.compile(r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=", re.M)
+# Names the launcher exports itself before forwarding (scripts/run-zig.sh), not from the calling shell.
+CALLER_EXPECTED = frozenset({"TF_EXPERIMENTAL", "NCCL_CUMEM_ENABLE", "NCCL_CUMEM_HOST_ENABLE"})
 # Names the launcher sets itself with an explicit value (scripts/run-zig.sh).
 LAUNCHER_OWNED = frozenset({
     "TF_TP_WORLD", "TF_TP_RANK", "TF_TP_DEVICE", "TF_TP_MASTER", "TF_TP_PORT", "TF_COMM_BACKEND",
@@ -128,6 +133,15 @@ def ignored(names, settings):
                   and not n.startswith(RECIPE_PREFIXES) and not secret_name(n))
 
 
+def config_names():
+    """Names $CONFIG assigns, or None without one. The launcher sources it over the calling shell's exported variables,
+    so a name it does not assign keeps the shell's value (e.g. after `set -a; source` of another profile)."""
+    config = os.environ.get("CONFIG")
+    if not config or not Path(config).is_file():
+        return None
+    return frozenset(ASSIGNED.findall(Path(config).read_text(errors="replace")))
+
+
 def _stdin_names():
     names = [line.strip() for line in sys.stdin if line.strip()]
     return [n for n in names if NAME.fullmatch(n)]
@@ -143,7 +157,13 @@ def forward_command():
     revision, settings = manifest()
     for name in ignored(names, settings):
         print(f"warning: {name} is not read by TensorFold {revision[:9]}; it is not forwarded", file=sys.stderr)
-    for name in forwarded(names, settings):
+    sent = forwarded(names, settings)
+    own = config_names()
+    caller = [n for n in sent if own is not None and n not in own and n not in CALLER_EXPECTED]
+    if caller:
+        print("warning: from the calling shell, not CONFIG (unless intended, unset them or start from a clean shell): "
+              + " ".join(caller), file=sys.stderr)
+    for name in sent:
         print(name)
     return 0
 
@@ -153,11 +173,14 @@ def profile_command(argv):
     from redact import secret_name
     names = _stdin_names()
     revision, settings = manifest()
+    own = config_names()
     env, i = [], 0
     while i < len(argv):
         if argv[i] == "-e" and i + 1 < len(argv):
             name, eq, value = argv[i + 1].partition("=")
-            env.append((name, value if eq else os.environ.get(name, ""), "launcher" if eq else "profile"))
+            source = ("launcher" if eq else "profile" if own is None or name in own or name in CALLER_EXPECTED
+                      else "caller")
+            env.append((name, value if eq else os.environ.get(name, ""), source))
             i += 2
             continue
         i += 1

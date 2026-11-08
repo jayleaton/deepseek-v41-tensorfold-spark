@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "rank": 0,
+  "prefix": "stdbench-compute-a1-20261105-v2",
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "stage_manifest_sha256": "047c86fe8788048d2b6f7a966635ba9b2e36a2d3c841cc4705ae4c71a9fca9a5",
+  "files": {
+    "retention.json": "8af323b86bcc4be7d0d1c49ec97c3fe63af2d673dc6da688d903c15d7f24a59f",
+    "frozen-v1/boots/A1-resume-L.json": "bd4cf14a18da01c0ffdf9d33bf2454401edbeeb1f4639ec245f0788259f3d8f6",
+    "configs/A1-resume-L-r0.env": "591516a0e695f1952358f0f3b3b2ab883d2500d01b9a225b7d879df7a52b1d34",
+    "rank0/boots/A1-resume-L/manifest.json": "565d1a72e1570ea276f25488665e7cf7601ebb8b97492443bc7ee7ae642aba8c",
+    "rank1/boots/A1-resume-L/manifest.json": "04cb734306ffbcdad2d2993187831d8d7dd795b02b26f5736dc2803307e9b39c",
+    "frozen-v1/boots/A1-resume-D.json": "3c4601f04fbfd043a1d2c772100d0bbfa9dc4983a4e77697a93a6d412bc24460",
+    "configs/A1-resume-D-r0.env": "c851fd28d66ec018591a233dd26df8fba7cc0e6a87cae2a7734b4dfcd6713d48",
+    "rank0/boots/A1-resume-D/manifest.json": "f1f88688bc6a830dfe8125bcc219dd5e797bdf128c7fb12e683b8f7391f822cd",
+    "rank1/boots/A1-resume-D/manifest.json": "bc20b456978f41cf9fd4cda44af829017fc3a8a5b1c09e4a4c4654dbd0f21d67",
+    "frozen-v1/boots/A1-plain-P.json": "f70dd22f422b597eec0fd3480268491a6064b72b322dba25994848ba079916df",
+    "configs/A1-plain-P-r0.env": "4c90fdb795ee7908a17719a30b02fd2614eb09a394edb0776e059f7c76f988de",
+    "rank0/boots/A1-plain-P/manifest.json": "6e83c5bed4d77c8d65b0e3d4ecaecc89a9224bc5c186e03c7e083a979cf515d8",
+    "rank1/boots/A1-plain-P/manifest.json": "d2b34fd7588e29dcd37f05b3dca6cecef400e769ce96c75c80393e0fabb879ef",
+    "frozen-v1/manifest.json": "33b0b22e48268a2cb50fddad8ed33ee636e22e0885a524d147b2a95207089a80",
+    "prompt-inputs.json": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+    "stage-campaign.json": "29227ae649f3026c3539fd580c7acd461c9a9ecfe013edb44136dadb9d665d26",
+    "source-hashes.json": "86708f27d1c6b036e35be1a3520bc2881965b2f7013a3a33e5009a5d9a73990a"
+  },
+  "collection_qualified": false
+}

@@ -18,10 +18,19 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `58bece1d3`, release candidate
-G of the `dsv41/candidate-g` branch (fallback F, `56200688d`). It descends from the stable DeepSeek head H
-(`20ad77878`) and includes flash17’s `dsq-1` admission support. G is not on upstream main yet, so the build fetches it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo))
-until the upstream PRs merge; a local checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `01a62132c` on
+`dsv41/compute-lane-release`: the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
+byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client's own `python` function keeps the name;
+`compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
+for half an expression). That is release
+candidate G (`58bece1d3`, fallback; F `56200688d` before it) plus `deadline_s`, the engine-held compute lane and the
+experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, whose runner and
+trust guide run for every thinking chat whatever the client sends (the built-in tool only when its reply has room for a
+call); it needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block. The
+pin's history holds the stable DeepSeek head H (`20ad77878`, re-recorded there as
+`b073317ab`) and includes flash17’s `dsq-1` admission support. The pin is not on upstream main yet, so the build fetches
+it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo)) until the upstream PRs merge; a local
+checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
@@ -70,6 +79,8 @@ The full guide is [ZIG-SERVE](docs/ZIG-SERVE.md). Build the image and the per-ra
 ```bash
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
+scripts/build-native.sh -t tensorfold-dsv41:local                                    # the engine at the pin
+scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner  # + runner assets (downloaded, sha256-checked)
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
 scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting

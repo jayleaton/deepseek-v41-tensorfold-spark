@@ -1,0 +1,132 @@
+{
+  "task": {
+    "id": "t6-arithmetic-001",
+    "category": "arithmetic",
+    "prompt": "What is 47 times 83?"
+  },
+  "request": {
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is 47 times 83?"
+      }
+    ],
+    "temperature": 0,
+    "max_tokens": 32768,
+    "stream": false,
+    "return_token_ids": true,
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    }
+  },
+  "started_utc": "2026-11-01T06:21:29.733910+00:00",
+  "elapsed_s": 0.7981928560184315,
+  "response": {
+    "id": "chatcmpl-2a51ed5abd3c3a6f2635a9fc65b7589a",
+    "object": "chat.completion",
+    "created": 1793514089,
+    "model": "DeepSeek-V4.1-Flash-TF",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "47 × 83 = **3,901**",
+          "reasoning_content": "We need answer simple. Need compute 47*83 = 47*(80+3)=3760+141=3901. Need final concise."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 38,
+      "completion_tokens": 43,
+      "total_tokens": 81,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 32
+      }
+    },
+    "exact_mode": "exact",
+    "tensorfold": {
+      "enable_thinking": true,
+      "reasoning_effort": null,
+      "engine": "dsv41-cuda",
+      "tokens_per_second": 76.37364561590843,
+      "seconds": 0.549927919,
+      "prefill_seconds": 0.217691364,
+      "prefill_widths": [],
+      "prefill_raised": [],
+      "time_to_first_token": 0.275340049,
+      "sampling": "greedy",
+      "drafts": true,
+      "token_sha": "3fe13e1d3152",
+      "token_sha256": "3fe13e1d3152cbf089dcd14abd93363c10b2d6ae128525c51042f7cfb3cd9aca",
+      "token_ids": [
+        2581,
+        1309,
+        3287,
+        4654,
+        16,
+        21017,
+        23917,
+        223,
+        2491,
+        12,
+        6131,
+        438,
+        223,
+        2491,
+        18390,
+        1892,
+        13,
+        21,
+        6912,
+        20980,
+        18,
+        13,
+        9926,
+        31,
+        19124,
+        19,
+        16,
+        21017,
+        4087,
+        47468,
+        16,
+        128822,
+        2491,
+        2863,
+        223,
+        6131,
+        438,
+        2619,
+        21,
+        14,
+        25622,
+        666,
+        1
+      ],
+      "min_rows": 2,
+      "prompt": 38,
+      "cached": 0,
+      "ttft_s": 0.2753,
+      "finish": "done",
+      "completion": 43,
+      "prefill_s": 0.2177,
+      "decode_s": 0.5499,
+      "rounds": 11,
+      "drafted": 43,
+      "accepted": 33
+    },
+    "speculative": {
+      "rounds": 11,
+      "drafted": 43,
+      "accepted": 33,
+      "acceptance_rate": 0.7674418604651163,
+      "tokens_per_round": 3.909090909090909
+    }
+  }
+}

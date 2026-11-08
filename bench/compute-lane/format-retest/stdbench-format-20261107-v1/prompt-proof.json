@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "pairs": 362,
+  "dataset_pairs": 360,
+  "diagnostic_pairs": 2,
+  "arrays_sha256": "ecfbe3b2e5f05009a31f17751f99403ecc44e290a1000756672a585333cb747c",
+  "input_sha256": "bfd9dabac3b31255e85d7305db799f0b1ba025e12a5661c0635fdbbe9f65aaeb",
+  "binary_sha256": "c8403a7b6529960a030fc7118b3be762b2abec5caee923aaf48673222690f3e1",
+  "tokenizer_sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b",
+  "source_sha256": {
+    "<rank0-work>/stdbench/format-retest/runtime/render_prompts.py": "34b8753cafe3f825b80ae799d9ba690e2423c29eeb12f3a3767cc48713a4a097"
+  },
+  "actual_served_array_equality_observed": false,
+  "limitation": "CPU-matched/count-checked prompts; same-length server rendering differences remain unobserved."
+}

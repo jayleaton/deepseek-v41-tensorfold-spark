@@ -1,0 +1,143 @@
+{
+ "root": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T115045Z",
+ "gate": {
+  "pass": true,
+  "verdict": "PASS",
+  "live_receipts": [],
+  "records": 0,
+  "ok": 0,
+  "wrong-value": 0,
+  "wrong-span": 0,
+  "not-in-text": 0,
+  "unparsed": 0,
+  "wrong-check": 0,
+  "cut": 0,
+  "inconclusive": 0,
+  "short": 0,
+  "unknown": 0,
+  "text_owned_mismatches": 0,
+  "marks": {
+   "engine-inline": 0,
+   "engine-inline-partial": 0,
+   "engine-other-output": 0,
+   "model-imitation": 0
+  }
+ },
+ "wrong": [],
+ "arms": [
+  {
+   "arm": "a:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 35962,
+   "reasoning_mean": 1798.1,
+   "completion_total": 36959,
+   "completion_mean": 1848.0,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 2,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "a:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 36551,
+   "reasoning_mean": 1827.5,
+   "completion_total": 37625,
+   "completion_mean": 1881.2,
+   "solve": 18,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 1,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "a:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 38233,
+   "reasoning_mean": 1911.7,
+   "completion_total": 39235,
+   "completion_mean": 1961.8,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 3,
+   "mental_only": 1,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "d:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 3912,
+   "reasoning_mean": 195.6,
+   "completion_total": 6498,
+   "completion_mean": 324.9,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "d:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 3589,
+   "reasoning_mean": 179.4,
+   "completion_total": 6371,
+   "completion_mean": 318.6,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": null,
+   "recheck": null
+  },
+  {
+   "arm": "d:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 4102,
+   "reasoning_mean": 205.1,
+   "completion_total": 7495,
+   "completion_mean": 374.8,
+   "solve": 18,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": null,
+   "recheck": null
+  }
+ ]
+}

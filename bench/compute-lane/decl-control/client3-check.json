@@ -1,0 +1,15 @@
+{
+  "verdict": "PASS",
+  "fake_sends": 4,
+  "D_attempt_retained_incorrect_no_execution": true,
+  "wire_bytes_exact": true,
+  "multi_round_totals_withheld": true,
+  "real_network": false,
+  "dispatch_proof": "separate mandatory native harness",
+  "sha256": {
+    "client3.py": "56d1f10bc125182dfc8d52fbf6ccf595e92a089f827357d848fd269d6442aef7",
+    "controller3.py": "9d24005e5aeff4e541415b1255c872f57a887be7b05ad0386f11b3be963fa731",
+    "reconciliation.py": "c5c081c1f5a2d1cb6561d85aa5de1b7ce61722d6c4812b7f9c2c614b4e79928c",
+    "client3_check.py": "b7ac130fa5e4e5aeaa3d6c2cd03e72a384a104af493bb668cefaee489078237b"
+  }
+}

@@ -1,0 +1,2084 @@
+{
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "frozen_report_sha256": "9cf1b078a18478131185f5bc08349bba39730c2372694909b3b21ca212e23170",
+  "source_sha256": "7cfaebea5aac3c7e30e0bc73b9bd98c50b5b7bab9e374aa3a8d3f9ff7e5bff04",
+  "collection_authorized": false,
+  "existing_observations_may_be_replaced": false,
+  "count": 138,
+  "counts": {
+    "D": 120,
+    "L": 18
+  },
+  "remaining_original_requests": [
+    {
+      "id": "compute-dl-v1-aggregation-018",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-018",
+        101
+      ],
+      "wire_sha256": "ad7b611482c727a9b0c79553e23d9a39bb066e2e13b11c0ed63163edb24daa3f",
+      "task_sha256": "99e5120947d3a7ad5733c68fa8382bcf65892581ed1f8cc46584bc119f4e1ee7",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-017",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-017",
+        101
+      ],
+      "wire_sha256": "541d96cd1a49ec18579e26be72ee53c8ee6e0702e83411a029b200800557a49e",
+      "task_sha256": "90e0bf53b1c8550044361c312c05b9402d482eda34dd982f880f5f942fae95df",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-015",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-015",
+        102
+      ],
+      "wire_sha256": "85b46e7c88e2bbd11fce617c929b53d18cbab53d512a7f9a426b6b516f0b8986",
+      "task_sha256": "ed6246321d1c7bee02dd229640aaf5b2b8812f604225c56461f60b3d0f1f0e03",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-011",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-011",
+        101
+      ],
+      "wire_sha256": "7217e19fcd59b6d9bb42517692ca3bf5de7013d5e539942c4ea3956d3759fcf0",
+      "task_sha256": "d00a80e9531660bed7fcfd9237d2c80654ccab5db0ecc3d078ada8e471746d2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-011",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-011",
+        102
+      ],
+      "wire_sha256": "c8f5f04c9d7c3e06ae607da61188e494a2e8fc99023f3dd6ce449dc300e09ad3",
+      "task_sha256": "d00a80e9531660bed7fcfd9237d2c80654ccab5db0ecc3d078ada8e471746d2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-016",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-016",
+        102
+      ],
+      "wire_sha256": "3cc94d077e9ee7e8cabde8fa7571f615d5c326f54068c9fd507a79b47340aea1",
+      "task_sha256": "13c380064e4591c950152e9555c7e402019cea20f103dc606fa0e97662941760",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-018",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-018",
+        102
+      ],
+      "wire_sha256": "cb0df79d6846184f78572a7f41ca6f33b18df1c7769881b363d3383f1d2fbf7b",
+      "task_sha256": "99e5120947d3a7ad5733c68fa8382bcf65892581ed1f8cc46584bc119f4e1ee7",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-014",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-014",
+        102
+      ],
+      "wire_sha256": "35769d165ec4453f68beea979ad798a187cccaa5f718bcbb3089e93f688fb1b1",
+      "task_sha256": "3475a72161dc95275143998fd929c2fe0e368ae4293904d8b53cd4e6f6625086",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-016",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-016",
+        101
+      ],
+      "wire_sha256": "c87bb4bdbb60f16c0fda35fb530bc24902ba3138ff24c3495f4a9b4ed995bddb",
+      "task_sha256": "13c380064e4591c950152e9555c7e402019cea20f103dc606fa0e97662941760",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-012",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-012",
+        101
+      ],
+      "wire_sha256": "09630ee01ce226d6ab438023d401b74301160a930f8585709166d41ba7d201f6",
+      "task_sha256": "cca51c20bad491bcddc07cf8f11d7f2424f09f02f4c2e7aa72249106e8ac7827",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-020",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-020",
+        101
+      ],
+      "wire_sha256": "4e0a7102bba1ed5b8c9e56c27abe878ab56893522d9096c77ce92309c207c8b1",
+      "task_sha256": "94e188a20c37465514662c73e9ac5cc7117ef4ddac72119ee280e4b62d9ad314",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-019",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-019",
+        101
+      ],
+      "wire_sha256": "feb341b1333848bc438859e78e98e3df62f7b476bdca1460a547d1b552453c39",
+      "task_sha256": "423d41b47741cc4ac3d726bce5450afe2d8fca9861e587a05e01a3473a6db51d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-014",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-014",
+        101
+      ],
+      "wire_sha256": "b4e8fa3544e019f6e0063e5713429b3b488f592e718f3b67767a1f6e4f33bb41",
+      "task_sha256": "3475a72161dc95275143998fd929c2fe0e368ae4293904d8b53cd4e6f6625086",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-013",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-013",
+        102
+      ],
+      "wire_sha256": "0b3d20885fd516e0ef58eda0210385b3d1ac9b6deac997aa247c6397739cf489",
+      "task_sha256": "b86202a3cf4a175db8b9da1bf802030afe237cf43add2acaac86ca39bf6a7c2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-017",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-017",
+        102
+      ],
+      "wire_sha256": "e5610c9d01996ea96b49bb9fafe39c4489cc050a66b45febf72bc407f08eafe6",
+      "task_sha256": "90e0bf53b1c8550044361c312c05b9402d482eda34dd982f880f5f942fae95df",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-012",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-012",
+        102
+      ],
+      "wire_sha256": "0a1ae2d921cc459a9d895ee0b5cad5a02158657fb0d5b277e2591cd909dfda3f",
+      "task_sha256": "cca51c20bad491bcddc07cf8f11d7f2424f09f02f4c2e7aa72249106e8ac7827",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-020",
+      "seed": 102,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-020",
+        102
+      ],
+      "wire_sha256": "b85736aaba86327a4b8a990ff437b495b7fc7c0408a25453d1f739f927b1ca09",
+      "task_sha256": "94e188a20c37465514662c73e9ac5cc7117ef4ddac72119ee280e4b62d9ad314",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-013",
+      "seed": 101,
+      "arm": "L",
+      "original_boot": "t02-L",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-013",
+        101
+      ],
+      "wire_sha256": "5f4e6626a2c90aa97172d877733ea2b41f2c20a7f2cd5ef80946737ee6477e07",
+      "task_sha256": "b86202a3cf4a175db8b9da1bf802030afe237cf43add2acaac86ca39bf6a7c2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-L.json",
+      "original_boot_sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "id": "compute-dl-v1-integer-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-019",
+        102
+      ],
+      "wire_sha256": "468c0ee95f4f7d4916c40899d51348e8583ec57701aa71bb321155a17f20ccc2",
+      "task_sha256": "10d0f1df8a50afd862f7eb9a8e17c2f3af76d696f44e08e95ba643c75ca56f14",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-015",
+        101
+      ],
+      "wire_sha256": "debd46b34a8e799f76c66521357f8310a244701034922dc80954f19725e4c4c6",
+      "task_sha256": "c45d7adc3bbfdbdb2f2c9627fde3a5ef51ddc4acf25299e4f6255d224a757eac",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-018",
+        101
+      ],
+      "wire_sha256": "dfb7b8a26db1de2ef5cd50af7c94d25468b2baf3d3b2954755c13e8ea5c513de",
+      "task_sha256": "e3c18da28620a6c562dd5b47709b442302254d5511b2a847beb03e8e209f5b57",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-017",
+        101
+      ],
+      "wire_sha256": "e5ddd54dae9b17c1c109bbe9f9f8d5163d2d513aeda8668944ddd920e4efddf2",
+      "task_sha256": "4aa9bf1df14701218fe13c45df7c13a7cc5102ebadeba938912f79b38dd057d3",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-015",
+        102
+      ],
+      "wire_sha256": "530d83e093b9ca69810107ef0cd020ffdbcb8c2ab885c83cac587ea42f5c0776",
+      "task_sha256": "c45d7adc3bbfdbdb2f2c9627fde3a5ef51ddc4acf25299e4f6255d224a757eac",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-011",
+        101
+      ],
+      "wire_sha256": "4d36d700642f90c90020213275153b99ff88a2f80cd2c8a5ffdda5e207c03095",
+      "task_sha256": "364e6e1b644753f2c2aeeae2123bede85fd3079aa92caac70890c23bc8b4c013",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-011",
+        102
+      ],
+      "wire_sha256": "e08893d355fcf3936a2d6ee8d231db0cda00f55e99866d2d9b29b4b56c05c518",
+      "task_sha256": "364e6e1b644753f2c2aeeae2123bede85fd3079aa92caac70890c23bc8b4c013",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-016",
+        102
+      ],
+      "wire_sha256": "05265bb53464ee5d3a30e5470c0e83d77b6940376f70f128eb6bc514077c0ff8",
+      "task_sha256": "78e7519a7e02f562733dc0350968da7b845b34b3530b50237894aa4ceb45676d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-018",
+        102
+      ],
+      "wire_sha256": "78ea4f04d5304aa247611f11bb99f521ca5222585e158c2e95d80e14ba87aadf",
+      "task_sha256": "e3c18da28620a6c562dd5b47709b442302254d5511b2a847beb03e8e209f5b57",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-014",
+        102
+      ],
+      "wire_sha256": "6bf00797c95193046df580ab091d8577242b716fd1d3d6234b77c5968867c8da",
+      "task_sha256": "b2e800323d63580f68e2d3d39e10bd192d8294cd43170242749d6934fcc7002f",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-016",
+        101
+      ],
+      "wire_sha256": "cf7803f97b9e51ad4459c7253a3ed8621a43cdcec027432681fd7460b42b3937",
+      "task_sha256": "78e7519a7e02f562733dc0350968da7b845b34b3530b50237894aa4ceb45676d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-012",
+        101
+      ],
+      "wire_sha256": "e635fdb84cc07ece515d86917acc85f98bc5128042b008e14b10f635974c494c",
+      "task_sha256": "ee9f7d4669a40ceb27f100a492333df61411aef92d414bf722b50ff94db37a1d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-020",
+        101
+      ],
+      "wire_sha256": "029e20542758ec29131fa7ba3ea90888777446b7068d6750965b49ce965092da",
+      "task_sha256": "aa83e1cfdf37b57f6add146c30cac5cc4cf136e9693d10e0aa7f30af7c472509",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-019",
+        101
+      ],
+      "wire_sha256": "228c60ed767994d68218888d03ad16ecb5951c2ec27b13c888a9dd729d983f3d",
+      "task_sha256": "10d0f1df8a50afd862f7eb9a8e17c2f3af76d696f44e08e95ba643c75ca56f14",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-014",
+        101
+      ],
+      "wire_sha256": "1c6cfd07dd10c39814ee4007220d2954bd1a6b701e718fe29d702fcc7a096899",
+      "task_sha256": "b2e800323d63580f68e2d3d39e10bd192d8294cd43170242749d6934fcc7002f",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-013",
+        102
+      ],
+      "wire_sha256": "a193848f35fcf47e76ae01733184ddb437f1355bbe53b40171406ee401b782bc",
+      "task_sha256": "9229f78953e1eb4609b2642341dc9f319136dd7c32bd5c4b508a552b58318454",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-017",
+        102
+      ],
+      "wire_sha256": "039a7477d72828330b171a583a9acfcefb2b5e6c5403448ef58ca3cebbb9c252",
+      "task_sha256": "4aa9bf1df14701218fe13c45df7c13a7cc5102ebadeba938912f79b38dd057d3",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-012",
+        102
+      ],
+      "wire_sha256": "7986ded39e6d6acced729638c5469072a177fb215c15d6a76ad6cc2fe5c5d1fa",
+      "task_sha256": "ee9f7d4669a40ceb27f100a492333df61411aef92d414bf722b50ff94db37a1d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-020",
+        102
+      ],
+      "wire_sha256": "5b8bc8be09d642483a73cdf33d8bd3949ba44c681979cf6998d76d28d518720b",
+      "task_sha256": "aa83e1cfdf37b57f6add146c30cac5cc4cf136e9693d10e0aa7f30af7c472509",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-integer-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-integer-013",
+        101
+      ],
+      "wire_sha256": "59fa8239f2dcd5849044ef2b1a812e9293ae44433e08c615b62851d4b7cc4aa1",
+      "task_sha256": "9229f78953e1eb4609b2642341dc9f319136dd7c32bd5c4b508a552b58318454",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-019",
+        102
+      ],
+      "wire_sha256": "ed4b384a3ff93f06dd112ebb5286a4661848f2ed5f611717d91171b19ce3f6cb",
+      "task_sha256": "27676fefd959ab6f9476fb824e769765751e0ef400cb53ab85e06c5dd6b7f450",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-015",
+        101
+      ],
+      "wire_sha256": "9b44fb960f2860384b6e6246cdd454b003b2e1490d86a7ad3cd97bbf539b8f82",
+      "task_sha256": "d12485bd46bf1c9ae130e710baa9a61d7293ea20a7d96d55a8e9f2f7fed12a0a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-018",
+        101
+      ],
+      "wire_sha256": "d3a5cfdefe895c02b866359c02f9e0196b452414a6f4331f2a567613c8acd674",
+      "task_sha256": "e12a2ca73bff7b5a1288d80844bceeb3543a959b04e8d567a3b28dcbf988e898",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-017",
+        101
+      ],
+      "wire_sha256": "f298fd3a1e1ee6074dc0eb02f1f0068d5e74505b2da658c264338d602d0c805a",
+      "task_sha256": "21b19d0538cbee917b7daa21a2413d254f6e8045425c34d2fb045e590b83661f",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-015",
+        102
+      ],
+      "wire_sha256": "f4672c2ef09919b3a01a04ce0ef4ee61d52cc1eb04c6f175babe57e5320dfa7d",
+      "task_sha256": "d12485bd46bf1c9ae130e710baa9a61d7293ea20a7d96d55a8e9f2f7fed12a0a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-011",
+        101
+      ],
+      "wire_sha256": "101da2e1abd751239431cb2c8384d55db260b96dc12860541e7773f3f8b6fe69",
+      "task_sha256": "d0c201cd64a3fc6bb0c652703ed1a47ea6ad11c72d068da25ee639e7aaa15f37",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-011",
+        102
+      ],
+      "wire_sha256": "eb8408377a78bbf7f4e2ecb79f921134d0011fc3acfbf59e782ea4dd0030f531",
+      "task_sha256": "d0c201cd64a3fc6bb0c652703ed1a47ea6ad11c72d068da25ee639e7aaa15f37",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-016",
+        102
+      ],
+      "wire_sha256": "84e5d25e3fb205cd3295ac098c4eb11884090a5e0afbf01920fe88c105303270",
+      "task_sha256": "7b2573fe63e26e1068cd960d26a27a30c6caace0c65e3d8511d576f42a06b0e1",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-018",
+        102
+      ],
+      "wire_sha256": "ad5918216d4725e89dc2f24700580272ddb6550bdbd065cb426dcc002c20a98d",
+      "task_sha256": "e12a2ca73bff7b5a1288d80844bceeb3543a959b04e8d567a3b28dcbf988e898",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-014",
+        102
+      ],
+      "wire_sha256": "51e028649b6e5e51141dc00487a2263ec873f3750da51306fa57b0ecbc6b5545",
+      "task_sha256": "ffab4229ae9b8abda243a3ee9f4e454c926b24aea33b1ee4993bbb074892f194",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-016",
+        101
+      ],
+      "wire_sha256": "6a80122a7882d82d6a89acebf133eec153d33aa6604845010a012e5ed17482a2",
+      "task_sha256": "7b2573fe63e26e1068cd960d26a27a30c6caace0c65e3d8511d576f42a06b0e1",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-012",
+        101
+      ],
+      "wire_sha256": "2abdfc7b727d6bef54a4ceea948704ead510ed1472bbb24308825d4fd24d3412",
+      "task_sha256": "c7858dcd9e6414c1af3217c8794d5249d8784ee9bb501798ed616f10580708c9",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-020",
+        101
+      ],
+      "wire_sha256": "11181fce0cbd0d332c17742670c57e77de9087915839d59544bb4fb0910ccd41",
+      "task_sha256": "319874e53b04a9932d160facb99659451fee3599bb6a39d40a0b84d926bf7709",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-019",
+        101
+      ],
+      "wire_sha256": "87940c8926a47d8f499f9b4c06c433298d059c47096dce7430b66b97dbb925ce",
+      "task_sha256": "27676fefd959ab6f9476fb824e769765751e0ef400cb53ab85e06c5dd6b7f450",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-014",
+        101
+      ],
+      "wire_sha256": "08f3128c337147cb1db030f6f7244837060474b783b19d10feaa65c42dbb4670",
+      "task_sha256": "ffab4229ae9b8abda243a3ee9f4e454c926b24aea33b1ee4993bbb074892f194",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-013",
+        102
+      ],
+      "wire_sha256": "d76780e95d0eea38bedd71ef32c5bb9a53b2d1d950956fc4ff6309a515238f5a",
+      "task_sha256": "821db63509a7378c283c3a4f30152d7b16cb7695f9e939909d86474b2740cd63",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-017",
+        102
+      ],
+      "wire_sha256": "65c204795c39381cee9b406dcfd1ada06cfc1ea370b07dbd2c7e23a2597e4cdd",
+      "task_sha256": "21b19d0538cbee917b7daa21a2413d254f6e8045425c34d2fb045e590b83661f",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-012",
+        102
+      ],
+      "wire_sha256": "4d5b32b4eec9d8513c23f4252edfe8964269f34b148657049e41abefe815e049",
+      "task_sha256": "c7858dcd9e6414c1af3217c8794d5249d8784ee9bb501798ed616f10580708c9",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-020",
+        102
+      ],
+      "wire_sha256": "cc32034c00d46bb7f93dc89704ed92095eeddbd92e32b42bd6338e41ebc96469",
+      "task_sha256": "319874e53b04a9932d160facb99659451fee3599bb6a39d40a0b84d926bf7709",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-modular-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-modular-013",
+        101
+      ],
+      "wire_sha256": "0c70be2c3d9d001426225602b9578ca9a499985de0afb1bd1b3d8bc88066cd52",
+      "task_sha256": "821db63509a7378c283c3a4f30152d7b16cb7695f9e939909d86474b2740cd63",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-019",
+        102
+      ],
+      "wire_sha256": "9925780d006d838cc46d0946e10b7d7cd7a8c59642d3742d75069325af3b8c9e",
+      "task_sha256": "41ac3c2af8876294b152dc17cd4c259001614f185be344777976c49970ab4deb",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-015",
+        101
+      ],
+      "wire_sha256": "74923109ac8188627b89dbf999649112e47039e9bdd91a8c8498e921cef2b789",
+      "task_sha256": "e45097cc370f88407d5146f4d63d4c8df2cd46c4149a3ffc3fafbe782c704c38",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-018",
+        101
+      ],
+      "wire_sha256": "491bcf1d05bf1e9d5c816e335cac80342f4abd764e32c0bb330fe591de53eb21",
+      "task_sha256": "c9c38426605ea65b31ccb0643044feaa41ad3004630e60675c948fb829859238",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-017",
+        101
+      ],
+      "wire_sha256": "4779aacebb9a8bc5f73e0dcaf9465fe23095277fe3b5573d221dceb0f9bd55a8",
+      "task_sha256": "bb12a4e8c74b34f98bcb13c19977c3e4a3b23dd6893b7b3c93e34e289295a432",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-015",
+        102
+      ],
+      "wire_sha256": "5c4475a2944fb829667a85e5bd95451334c7226ae99ac95ef658b49325bce217",
+      "task_sha256": "e45097cc370f88407d5146f4d63d4c8df2cd46c4149a3ffc3fafbe782c704c38",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-011",
+        101
+      ],
+      "wire_sha256": "820d5dc11bdaf12856b2aeb84fbc4f6e23f70bff115ebd2bd91620cda4dcd416",
+      "task_sha256": "535b5f9365eff92fcbc3b28780121b14aa91e68561167b87d06c41ce45b1f3bc",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-011",
+        102
+      ],
+      "wire_sha256": "40e151d7cefb7354316cc3a17feb3a33b8711080ad5a4b056ac5836a7a16c92b",
+      "task_sha256": "535b5f9365eff92fcbc3b28780121b14aa91e68561167b87d06c41ce45b1f3bc",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-016",
+        102
+      ],
+      "wire_sha256": "a1a489672d04417ed9cec809703e29dfe79c63752ed7ebedd5e3fc24645f0d4f",
+      "task_sha256": "5f587663ec10f81d1a23e5ab2e4c7b5f9fc03c56c4539d7c559e58c480a30f6d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-018",
+        102
+      ],
+      "wire_sha256": "755b5626c20c84c90bdab16c42c0b6daecb45b34ee35585bbcd241ffae737bb1",
+      "task_sha256": "c9c38426605ea65b31ccb0643044feaa41ad3004630e60675c948fb829859238",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-014",
+        102
+      ],
+      "wire_sha256": "1c270870205c9a0d49f18e8680e45e0ad162b47a7a84e5052ac92c30b597b4bd",
+      "task_sha256": "6c26a794f423d71b6161c51002257fda2e6ec5aa963ccc57812bc5a719e9dea5",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-016",
+        101
+      ],
+      "wire_sha256": "1ecdac1c0d3ac665730992e38e74a74c4fc9f32d119b7cdde857cb4a29e34344",
+      "task_sha256": "5f587663ec10f81d1a23e5ab2e4c7b5f9fc03c56c4539d7c559e58c480a30f6d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-012",
+        101
+      ],
+      "wire_sha256": "23b74d7de7192b7b8e3f495e714afc874f366ad08fcfc6093ab806ec68586caf",
+      "task_sha256": "5c6194be0ee928b406204458478f4c9a35d7e8c7e88f73b22f12f8ca5fc5813a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-020",
+        101
+      ],
+      "wire_sha256": "93342592e3c3dd9104e4f172186a41cc65176e1a0eca92997b85823e209890f9",
+      "task_sha256": "1d86abfbdfb1de98654ba2aecc65ed173edde8d37aeec11530412bdee2594983",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-019",
+        101
+      ],
+      "wire_sha256": "476dee103f2969e66b894669dae19d7e90ee98f8cab184a1196842941c8c6aef",
+      "task_sha256": "41ac3c2af8876294b152dc17cd4c259001614f185be344777976c49970ab4deb",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-014",
+        101
+      ],
+      "wire_sha256": "f8f0324fb874d9bbdddbfb1ab470308e6878b55e9a7cb795bc051ff10ceea9e0",
+      "task_sha256": "6c26a794f423d71b6161c51002257fda2e6ec5aa963ccc57812bc5a719e9dea5",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-013",
+        102
+      ],
+      "wire_sha256": "54369e4335cedfbd0ec9f26254979f8168be50292af14ae08e0300298f8242ba",
+      "task_sha256": "83989feadae0a85ce5907e8041da0ab53fcfb62c50817bb0e9c66e196bb572a9",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-017",
+        102
+      ],
+      "wire_sha256": "4d07e580cec49245e8bd2a9e97f2703083cfbbcb315e067f96b774185501d4de",
+      "task_sha256": "bb12a4e8c74b34f98bcb13c19977c3e4a3b23dd6893b7b3c93e34e289295a432",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-012",
+        102
+      ],
+      "wire_sha256": "23e077e606b67d36f190b711db1ae1a73ad37104827a6b1c75c31942e9d01da4",
+      "task_sha256": "5c6194be0ee928b406204458478f4c9a35d7e8c7e88f73b22f12f8ca5fc5813a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-020",
+        102
+      ],
+      "wire_sha256": "e7c080340d09da5b1d8baa67911d4258649f3c93571e171849c8dc75b1490162",
+      "task_sha256": "1d86abfbdfb1de98654ba2aecc65ed173edde8d37aeec11530412bdee2594983",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-division-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-division-013",
+        101
+      ],
+      "wire_sha256": "2a8eb7854c8250cd8ed0503813dbb235d19fa963aabb6276b60bb9af0f3e69ae",
+      "task_sha256": "83989feadae0a85ce5907e8041da0ab53fcfb62c50817bb0e9c66e196bb572a9",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-019",
+        102
+      ],
+      "wire_sha256": "00b7c8e5bdda05f1a51bc6337d18a4ef860648b0dc6c5eb0385d0d03c25b035c",
+      "task_sha256": "3c57cd237b515b3db02a8ad2e2fa1c902a45b2fd1a699889e0a47bd816395b0a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-015",
+        101
+      ],
+      "wire_sha256": "3f842117e9d3e09673e3107ef2e48bae444383c6e75cd8f98a8c6dd92b387bee",
+      "task_sha256": "761a28895c2a4223ece8186a06c20e2f25ba537320e0567184076831c9e7009b",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-018",
+        101
+      ],
+      "wire_sha256": "2c88cb0e177bf3def328405d01759d9ecd5c780e8c095803ae8e755b00c1cfe0",
+      "task_sha256": "1b5c291ae9a810a07dca3851bc8898664a10a4300c0f537db978a2056f47beae",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-017",
+        101
+      ],
+      "wire_sha256": "790b3a04bc42457fda3339f04aae0f80a5a5a8a991e8962e7d43b972f27a6ddd",
+      "task_sha256": "bac5d8a3cb22fb8c3fe465639f07b1538a1817fd65f6e1dc157efa15b2d7de94",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-015",
+        102
+      ],
+      "wire_sha256": "ab745b20402d4dc1ace208747c85d60a76523556af95ab750bae7414981e2a99",
+      "task_sha256": "761a28895c2a4223ece8186a06c20e2f25ba537320e0567184076831c9e7009b",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-011",
+        101
+      ],
+      "wire_sha256": "1a110870498f349f7b3432db5e66a668fbd012c7326297c53accc4a194b84db5",
+      "task_sha256": "5c3bcb7a6ddb81f4b07f99930d23cb536980ed9a16680af3778b9ced2eb22d1a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-011",
+        102
+      ],
+      "wire_sha256": "f463114569c7a3e0a34a1fca7e62e59625f3298669963ccf75fcc78af4439603",
+      "task_sha256": "5c3bcb7a6ddb81f4b07f99930d23cb536980ed9a16680af3778b9ced2eb22d1a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-016",
+        102
+      ],
+      "wire_sha256": "7c2810dadfad346fdf71ed588f152bd7b6c1600d30a92431f1853a28b4a420a0",
+      "task_sha256": "bc2eca59378db76a56110ce5b977acd3a89e2ca1125d74e7259227561427be95",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-018",
+        102
+      ],
+      "wire_sha256": "5befad4c003a831bcd414dd3e929dc156f98700dd47893e6074b1e9075e3f38c",
+      "task_sha256": "1b5c291ae9a810a07dca3851bc8898664a10a4300c0f537db978a2056f47beae",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-014",
+        102
+      ],
+      "wire_sha256": "dc14ea8bdd2c3d89823cee245e3ac2e1726c1f6eac951a4a0a1f0024a19c8514",
+      "task_sha256": "436b6e68f8b5689cfb24fed568d3b9f3cbf3be435180697d1f2a1e61fdfc90cd",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-016",
+        101
+      ],
+      "wire_sha256": "5f77abf2b5cfd265d21793023b9cf174598b6479b56d877565c5cda34c026621",
+      "task_sha256": "bc2eca59378db76a56110ce5b977acd3a89e2ca1125d74e7259227561427be95",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-012",
+        101
+      ],
+      "wire_sha256": "f5cc085edd3142eed402b715cfa1324c37858aa6c9f5f2857a28a108c53f9d1b",
+      "task_sha256": "5f6780fcb4777efe8f782e1259a018b6c99b62b71ca4e975f491158f939a101d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-020",
+        101
+      ],
+      "wire_sha256": "06901aaa028927b662067736245534a63c5361e4b0e6964f608a08c293bb775f",
+      "task_sha256": "d9d8a0f7e3d6c6a1505e743581529a0b334245b774ba1e32a29db9c16129d267",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-019",
+        101
+      ],
+      "wire_sha256": "8fbe46f1d380a8172c4cf7a57c7294e8859add2cf48b01b67d4f22b4b98840cb",
+      "task_sha256": "3c57cd237b515b3db02a8ad2e2fa1c902a45b2fd1a699889e0a47bd816395b0a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-014",
+        101
+      ],
+      "wire_sha256": "64419b9429dd3fe1b0ce8dd61e76e3c07f3e41011a51edc9e295e06c0607d54d",
+      "task_sha256": "436b6e68f8b5689cfb24fed568d3b9f3cbf3be435180697d1f2a1e61fdfc90cd",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-013",
+        102
+      ],
+      "wire_sha256": "3f5d0f4817691f72c5c4466ebc8826817b0bfa45ab8a91935adb2acdca500a79",
+      "task_sha256": "bb61bd3393347e0ac488aaffecdf82d6860138343d6e2c460900e1a5b1c178ba",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-017",
+        102
+      ],
+      "wire_sha256": "6b1097b9a8429425355de5c791ca849e616b41be038caf476001aeb36affe8d5",
+      "task_sha256": "bac5d8a3cb22fb8c3fe465639f07b1538a1817fd65f6e1dc157efa15b2d7de94",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-012",
+        102
+      ],
+      "wire_sha256": "e8c765e4360b4d5a5b78a41440919280c82c4a5428a247955fc60f59e1147f82",
+      "task_sha256": "5f6780fcb4777efe8f782e1259a018b6c99b62b71ca4e975f491158f939a101d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-020",
+        102
+      ],
+      "wire_sha256": "7ac25913c2c20e74ba17499fa2cf79f7342ecdc9a5cb0efacf821d9a1eae464a",
+      "task_sha256": "d9d8a0f7e3d6c6a1505e743581529a0b334245b774ba1e32a29db9c16129d267",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-dp-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-dp-013",
+        101
+      ],
+      "wire_sha256": "056b27b4daa5d60d29f5edb3c5a66b1b24cf322f509c4ee9ffcc1c6eccb75f0f",
+      "task_sha256": "bb61bd3393347e0ac488aaffecdf82d6860138343d6e2c460900e1a5b1c178ba",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-019",
+        102
+      ],
+      "wire_sha256": "5d76c25382147825b31d2699c50bf3dfa4726b1153c423618f5fbec5800d3ea4",
+      "task_sha256": "1291c5d8cad4ebbae8910f958615f2fb20a46139e8f9ae609fa2b74439a33d94",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-015",
+        101
+      ],
+      "wire_sha256": "34549a8f00edf917bfef6b208ce8635a3e4fd53351d8ca563d109d211a8103e1",
+      "task_sha256": "b7af924cec6321ad5397dd0e130d18e9c7a9c42703377512e0349e302bffad43",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-018",
+        101
+      ],
+      "wire_sha256": "8534f7b1b7c1c0aafe47fb2c2bed57092ee396b22b202860c10f266284d02edc",
+      "task_sha256": "aedc346554d120e4a93e9f647f3fe34cddbfe41785a4c5b30719669a46d58129",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-017",
+        101
+      ],
+      "wire_sha256": "92f88ecb99f4aa99704d469ae02bd428ce629b58773190298a15d57de9317764",
+      "task_sha256": "dd3cf5fd6f6cbcd16a41d2a0aadf177cdc856c91c24db8a005682c5e6acf7374",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-015",
+        102
+      ],
+      "wire_sha256": "0c64a4a4af0cff5d5d18b48a50bce8445789a9a154592eb6d2cbe93db113b948",
+      "task_sha256": "b7af924cec6321ad5397dd0e130d18e9c7a9c42703377512e0349e302bffad43",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-011",
+        101
+      ],
+      "wire_sha256": "993c6219773ce8d50ad4c27693bd356c8d55c68f693254d05afdb2feed4fddbe",
+      "task_sha256": "1dc0ebeb61c2c12a5066709b5594847cf1fdd0fe585e89fe8e915ae5a777fa24",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-011",
+        102
+      ],
+      "wire_sha256": "0231ac39e74f3572301aeb087130b20d1840b009e4ad4c3e83442e2a080a9b6e",
+      "task_sha256": "1dc0ebeb61c2c12a5066709b5594847cf1fdd0fe585e89fe8e915ae5a777fa24",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-016",
+        102
+      ],
+      "wire_sha256": "a1032a2265c1405c23b6f69e66e5566a22012bc98c872d77fc41fe099466c265",
+      "task_sha256": "dfc1353d0b0821ad7aa78f0281c69ddbda064235c393048c36ea107954ffe209",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-018",
+        102
+      ],
+      "wire_sha256": "2965fcc82ce264e1cf08be0a9d4a8b71d28ce5068210b64600bbf002bbfd959b",
+      "task_sha256": "aedc346554d120e4a93e9f647f3fe34cddbfe41785a4c5b30719669a46d58129",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-014",
+        102
+      ],
+      "wire_sha256": "0bb75e60ebeeffbbb24f7faa5f5ea669302914878b06c8000dbcc7ffc926c889",
+      "task_sha256": "f4b3910fd3ab886498f4d04358f932063d6feae60b0c06cae64a5b4b06082a4a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-016",
+        101
+      ],
+      "wire_sha256": "39c6fb9d59a607995fa7972a88d84a924707ac8f4cf49ec9a484525c245d82f6",
+      "task_sha256": "dfc1353d0b0821ad7aa78f0281c69ddbda064235c393048c36ea107954ffe209",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-012",
+        101
+      ],
+      "wire_sha256": "d723f5fee08cace1d401731031bf624017f4c1b754b3fa8c06a1aafffecd95f0",
+      "task_sha256": "0d91503a2dbadb0787cd00ebb694f737ce597ace1d10c3862828d739dc67c6fa",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-020",
+        101
+      ],
+      "wire_sha256": "9f3a759d00f87d0207c77747626cee293aef7407b2edaad191067de8f797d290",
+      "task_sha256": "f9950d32c8886f88db0f2ec93d612c29d06a8d71920d30d2d961148748202501",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-019",
+        101
+      ],
+      "wire_sha256": "542655dc2b15fc6c3e84b9bd81ed355334a993a6bb27e174e3f8acf2843d6770",
+      "task_sha256": "1291c5d8cad4ebbae8910f958615f2fb20a46139e8f9ae609fa2b74439a33d94",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-014",
+        101
+      ],
+      "wire_sha256": "a3bd809d13389ceb08fc9425a9929972386122b20966f03d23a6fbd04b0fee9a",
+      "task_sha256": "f4b3910fd3ab886498f4d04358f932063d6feae60b0c06cae64a5b4b06082a4a",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-013",
+        102
+      ],
+      "wire_sha256": "0575b9ed2a0f69bf59b603becd7cc7a98fdf276ca8cc6de6f48eac687290884c",
+      "task_sha256": "78b49a6614ee6804fa83a80499e353e013ddf87adb4a3f5bd5bc7c7223c4dc6d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-017",
+        102
+      ],
+      "wire_sha256": "535f51a77f273cefa4f751e4f600631986cc3990df65144cb788630dcee782c7",
+      "task_sha256": "dd3cf5fd6f6cbcd16a41d2a0aadf177cdc856c91c24db8a005682c5e6acf7374",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-012",
+        102
+      ],
+      "wire_sha256": "9347404aa604757548b1a63876d850ced36f9415709592e1448cc5856c98f832",
+      "task_sha256": "0d91503a2dbadb0787cd00ebb694f737ce597ace1d10c3862828d739dc67c6fa",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-020",
+        102
+      ],
+      "wire_sha256": "5af27949ff02172a5b66ed6592bad21d64b1760f0d2d2f2f43da86dd2706ac8e",
+      "task_sha256": "f9950d32c8886f88db0f2ec93d612c29d06a8d71920d30d2d961148748202501",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-graph-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-graph-013",
+        101
+      ],
+      "wire_sha256": "7d84345e3d643cad3dacfbcf60b23fa6bea9a3f5d93e0d00ef732babcbdc7596",
+      "task_sha256": "78b49a6614ee6804fa83a80499e353e013ddf87adb4a3f5bd5bc7c7223c4dc6d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-019",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-019",
+        102
+      ],
+      "wire_sha256": "f2b79b3cf015c019aefac2116dcaa8536f0c96ebacbf99c8f11a32818f97fd9c",
+      "task_sha256": "423d41b47741cc4ac3d726bce5450afe2d8fca9861e587a05e01a3473a6db51d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-015",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-015",
+        101
+      ],
+      "wire_sha256": "943f14bd0fd28d02703692b9e39c01dd9dab0e15bded167234a289ec097b7ad7",
+      "task_sha256": "ed6246321d1c7bee02dd229640aaf5b2b8812f604225c56461f60b3d0f1f0e03",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-018",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-018",
+        101
+      ],
+      "wire_sha256": "ad7b611482c727a9b0c79553e23d9a39bb066e2e13b11c0ed63163edb24daa3f",
+      "task_sha256": "99e5120947d3a7ad5733c68fa8382bcf65892581ed1f8cc46584bc119f4e1ee7",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-017",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-017",
+        101
+      ],
+      "wire_sha256": "541d96cd1a49ec18579e26be72ee53c8ee6e0702e83411a029b200800557a49e",
+      "task_sha256": "90e0bf53b1c8550044361c312c05b9402d482eda34dd982f880f5f942fae95df",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-015",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-015",
+        102
+      ],
+      "wire_sha256": "85b46e7c88e2bbd11fce617c929b53d18cbab53d512a7f9a426b6b516f0b8986",
+      "task_sha256": "ed6246321d1c7bee02dd229640aaf5b2b8812f604225c56461f60b3d0f1f0e03",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-011",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-011",
+        101
+      ],
+      "wire_sha256": "7217e19fcd59b6d9bb42517692ca3bf5de7013d5e539942c4ea3956d3759fcf0",
+      "task_sha256": "d00a80e9531660bed7fcfd9237d2c80654ccab5db0ecc3d078ada8e471746d2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-011",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-011",
+        102
+      ],
+      "wire_sha256": "c8f5f04c9d7c3e06ae607da61188e494a2e8fc99023f3dd6ce449dc300e09ad3",
+      "task_sha256": "d00a80e9531660bed7fcfd9237d2c80654ccab5db0ecc3d078ada8e471746d2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-016",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-016",
+        102
+      ],
+      "wire_sha256": "3cc94d077e9ee7e8cabde8fa7571f615d5c326f54068c9fd507a79b47340aea1",
+      "task_sha256": "13c380064e4591c950152e9555c7e402019cea20f103dc606fa0e97662941760",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-018",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-018",
+        102
+      ],
+      "wire_sha256": "cb0df79d6846184f78572a7f41ca6f33b18df1c7769881b363d3383f1d2fbf7b",
+      "task_sha256": "99e5120947d3a7ad5733c68fa8382bcf65892581ed1f8cc46584bc119f4e1ee7",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-014",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-014",
+        102
+      ],
+      "wire_sha256": "35769d165ec4453f68beea979ad798a187cccaa5f718bcbb3089e93f688fb1b1",
+      "task_sha256": "3475a72161dc95275143998fd929c2fe0e368ae4293904d8b53cd4e6f6625086",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-016",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-016",
+        101
+      ],
+      "wire_sha256": "c87bb4bdbb60f16c0fda35fb530bc24902ba3138ff24c3495f4a9b4ed995bddb",
+      "task_sha256": "13c380064e4591c950152e9555c7e402019cea20f103dc606fa0e97662941760",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-012",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-012",
+        101
+      ],
+      "wire_sha256": "09630ee01ce226d6ab438023d401b74301160a930f8585709166d41ba7d201f6",
+      "task_sha256": "cca51c20bad491bcddc07cf8f11d7f2424f09f02f4c2e7aa72249106e8ac7827",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-020",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-020",
+        101
+      ],
+      "wire_sha256": "4e0a7102bba1ed5b8c9e56c27abe878ab56893522d9096c77ce92309c207c8b1",
+      "task_sha256": "94e188a20c37465514662c73e9ac5cc7117ef4ddac72119ee280e4b62d9ad314",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-019",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-019",
+        101
+      ],
+      "wire_sha256": "feb341b1333848bc438859e78e98e3df62f7b476bdca1460a547d1b552453c39",
+      "task_sha256": "423d41b47741cc4ac3d726bce5450afe2d8fca9861e587a05e01a3473a6db51d",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-014",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-014",
+        101
+      ],
+      "wire_sha256": "b4e8fa3544e019f6e0063e5713429b3b488f592e718f3b67767a1f6e4f33bb41",
+      "task_sha256": "3475a72161dc95275143998fd929c2fe0e368ae4293904d8b53cd4e6f6625086",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-013",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-013",
+        102
+      ],
+      "wire_sha256": "0b3d20885fd516e0ef58eda0210385b3d1ac9b6deac997aa247c6397739cf489",
+      "task_sha256": "b86202a3cf4a175db8b9da1bf802030afe237cf43add2acaac86ca39bf6a7c2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-017",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-017",
+        102
+      ],
+      "wire_sha256": "e5610c9d01996ea96b49bb9fafe39c4489cc050a66b45febf72bc407f08eafe6",
+      "task_sha256": "90e0bf53b1c8550044361c312c05b9402d482eda34dd982f880f5f942fae95df",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-012",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-012",
+        102
+      ],
+      "wire_sha256": "0a1ae2d921cc459a9d895ee0b5cad5a02158657fb0d5b277e2591cd909dfda3f",
+      "task_sha256": "cca51c20bad491bcddc07cf8f11d7f2424f09f02f4c2e7aa72249106e8ac7827",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-020",
+      "seed": 102,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-020",
+        102
+      ],
+      "wire_sha256": "b85736aaba86327a4b8a990ff437b495b7fc7c0408a25453d1f739f927b1ca09",
+      "task_sha256": "94e188a20c37465514662c73e9ac5cc7117ef4ddac72119ee280e4b62d9ad314",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    },
+    {
+      "id": "compute-dl-v1-aggregation-013",
+      "seed": 101,
+      "arm": "D",
+      "original_boot": "t02-D",
+      "key": [
+        "compute_dl",
+        "compute-dl-v1-aggregation-013",
+        101
+      ],
+      "wire_sha256": "5f4e6626a2c90aa97172d877733ea2b41f2c20a7f2cd5ef80946737ee6477e07",
+      "task_sha256": "b86202a3cf4a175db8b9da1bf802030afe237cf43add2acaac86ca39bf6a7c2e",
+      "original_boot_file": "<rank0-work>/stdbench/compute-dl/stdbench-compute-dl-20261105-v1/frozen-v1/boots/t02-D.json",
+      "original_boot_sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    }
+  ]
+}

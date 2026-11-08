@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "at_utc": "2026-11-06T15:43:45.333075+00:00",
+  "models_http_status": 200,
+  "model_id": "DeepSeek-V4.1-Flash-TF",
+  "G_engine_sha": "58bece1d3184269059fd3f7f755c52f4f295113d",
+  "G_run": "efast2-20261106T153623Z",
+  "ranks": [
+    {
+      "rank": 0,
+      "image_id": "sha256:e6cf428b02d188ceda5859b2f25839d4c305ad1f66b758b634b5d07dbe9da4f5",
+      "host_pid": 3402557,
+      "running": true
+    },
+    {
+      "rank": 1,
+      "image_id": "sha256:ca6feff3164a67710816be940968403f938947e4974ff04f61717d8f0f5688f9",
+      "host_pid": 1111915,
+      "running": true
+    }
+  ],
+  "steps_path": "<rank0-work>/stdbench/compute-dl/a2-continuation/runs/stdbench-compute-a2-20261106-v1-A2-plain/steps.jsonl",
+  "steps_sha256": "c894233d7d52f0073167c8adba6a7366651c8a46c92661f2423426b2d59416ad",
+  "restore_log_path": "<rank0-work>/stdbench/compute-dl/a2-continuation/runs/stdbench-compute-a2-20261106-v1-A2-plain/G-restore.log",
+  "restore_log_sha256": "2db3bd484824f879647a98b0d850007216ded67091ab02d038f241dd28942bb8",
+  "status_path": "<rank0-work>/dsv41-bench/out/efast2-20261106T153623Z/status.json",
+  "status_sha256": "2bfdba3952cf8f72ca155e140569318a6ed0536bd381bef4928c20f4c555ed29",
+  "source_sha256": "a842e869bc11eef76e8a87331c5ff53fddda387572413b53b48e963d4b51e3c7",
+  "inference_requests": 0
+}

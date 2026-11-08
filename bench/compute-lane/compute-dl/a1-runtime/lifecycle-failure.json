@@ -1,0 +1,13 @@
+{
+  "mode": "failure",
+  "scope": "stdbench-cpu-1793862560",
+  "wrapper_pid": 3944626,
+  "owned_pids": [
+    3944626,
+    3944644,
+    3944645
+  ],
+  "expected_exit": 73,
+  "guarded": true,
+  "GPU_requests": 0
+}

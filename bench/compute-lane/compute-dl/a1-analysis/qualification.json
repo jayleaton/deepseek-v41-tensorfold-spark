@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "full_20000_draw_fake_controls": true,
+  "real_retained_observed": 342,
+  "strict_original_solve_counts_preserved": {
+    "D": 1,
+    "L": 169
+  },
+  "retained_activation": 112,
+  "incomplete_primary_withheld": true,
+  "source_sha256": {
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/pins.py": "1b2589a2b9b58ae8f3cc19f88e1d6331d9bbcb80b392e6e3637e8dfe8d07e8b4",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/pair_analysis.py": "adb0bbf3abc465e54e6c8485fc2337a961363a4f3bb88bcd1c14c93b918af32e",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/fakecheck.py": "38ffac490a664531fbce4ef73aac6239eeca26bdc60ae5c0fef8c3e53238e03a",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/collect_report.py": "43c1cafbea0c8b26cf21f207d66902e69cdd2c18845c81b100b160ffd9c30380",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/grade.py": "3882b846bfe7b7ecf5aa973162371cd18354d60523cb53119f477d0b785a51c8",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/qualify_analysis.py": "0a685beecf5028e07fa030a7a3634bf00cb7f9293ecc24339bfe9eceac2f5ba1",
+    "<rank1-work>/stdbench/compute-dl/a1-analysis/analysis.py": "47d67669de7b34dfec2606e6231beb68b241da7208c74c78c884404d49dd9718"
+  },
+  "log_sha256": "2fbeb79264fb419276a308f90064909d592647dc6a6b359892ed4776a844a8aa",
+  "GPU_requests": 0
+}

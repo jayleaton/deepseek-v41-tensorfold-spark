@@ -1,0 +1,11 @@
+{
+ "reasoning": "",
+ "content": "Check:\n\n```python\nprint(min([2, 3]))\nprint(sorted([2, 3]))\n```\n```\n2\n[2, 3]\n```\n\nDone.",
+ "tensorfold": {
+  "runner": {
+   "fence": {
+    "owned": 1
+   }
+  }
+ }
+}

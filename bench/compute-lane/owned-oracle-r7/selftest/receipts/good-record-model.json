@@ -1,0 +1,29 @@
+{
+ "reasoning": "Then 47*83 = 3900, and 2^10 = 1024.\n",
+ "tensorfold": {
+  "runner": {
+   "inline": {
+    "owned": 1
+   },
+   "cells": [
+    {
+     "cell": 0,
+     "route": "graph",
+     "status": "ok",
+     "lang": "python",
+     "field": "reasoning",
+     "at": 29,
+     "token": 29,
+     "drafted": 0,
+     "path": "held",
+     "form": "inline",
+     "span": "2^10",
+     "value": " 1024",
+     "ids": 7,
+     "landed": 7,
+     "forced": 7
+    }
+   ]
+  }
+ }
+}

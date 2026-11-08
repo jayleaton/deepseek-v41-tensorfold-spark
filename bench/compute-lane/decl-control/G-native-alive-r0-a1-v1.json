@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "rank": 0,
+  "native_pid_namespace": 55,
+  "binary": "tensorfold-dsv41",
+  "role": "serve",
+  "endpoint_completion_requested": false,
+  "models_http_status": 200,
+  "model_ids": [
+    "DeepSeek-V4.1-Flash-TF"
+  ]
+}

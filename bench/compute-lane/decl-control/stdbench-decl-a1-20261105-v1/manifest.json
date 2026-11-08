@@ -1,0 +1,130 @@
+{
+  "a1_spec_sha256": "e7308621c645aef4402924a1b47c1a52e05baabe00239f915011f8431bbd0e89",
+  "boots": [
+    {
+      "arm": "plain",
+      "boot": "t01-plain",
+      "lane": 0,
+      "manifest": "boots/t01-plain/manifest.json"
+    },
+    {
+      "arm": "declared_off",
+      "boot": "t01-declared_off",
+      "lane": 0,
+      "manifest": "boots/t01-declared_off/manifest.json"
+    },
+    {
+      "arm": "lane",
+      "boot": "t01-lane",
+      "lane": 1,
+      "manifest": "boots/t01-lane/manifest.json"
+    },
+    {
+      "arm": "declared_off",
+      "boot": "t02-declared_off",
+      "lane": 0,
+      "manifest": "boots/t02-declared_off/manifest.json"
+    },
+    {
+      "arm": "lane",
+      "boot": "t02-lane",
+      "lane": 1,
+      "manifest": "boots/t02-lane/manifest.json"
+    },
+    {
+      "arm": "plain",
+      "boot": "t02-plain",
+      "lane": 0,
+      "manifest": "boots/t02-plain/manifest.json"
+    },
+    {
+      "arm": "lane",
+      "boot": "t03-lane",
+      "lane": 1,
+      "manifest": "boots/t03-lane/manifest.json"
+    },
+    {
+      "arm": "plain",
+      "boot": "t03-plain",
+      "lane": 0,
+      "manifest": "boots/t03-plain/manifest.json"
+    },
+    {
+      "arm": "declared_off",
+      "boot": "t03-declared_off",
+      "lane": 0,
+      "manifest": "boots/t03-declared_off/manifest.json"
+    }
+  ],
+  "files": {
+    "boots/t01-declared_off/manifest.json": "e4cb4c79948f4817004325e944367544b91362766c2cd5b0ccd4353ebfea2bd9",
+    "boots/t01-lane/manifest.json": "4bee7a37ce3c925c35d73b251f5753e7b04fef72d5d02cc6dfd7c1721c344561",
+    "boots/t01-plain/manifest.json": "cc01c02e6997e781a996addc5a36c7d6dc59f81b762d12ded91781122be4547f",
+    "boots/t02-declared_off/manifest.json": "03330bbbb281cc502f8608a21f06768942dd0311a853f0a25df7584bbab57224",
+    "boots/t02-lane/manifest.json": "f1b714d83003b72a263e7cdcd83eb69be76351775ee875c74283abac2c7311e1",
+    "boots/t02-plain/manifest.json": "49a62c015c99923f2f2403114e3d17623949f6ec04641c3609a23ca5828d3aa3",
+    "boots/t03-declared_off/manifest.json": "ba37ba8ce926530b45d13ecb68d5b5c9e8a6f496c4695a68e6c8188af739a293",
+    "boots/t03-lane/manifest.json": "c81c50024d7e1964a71127552e777a0fe3a4eb5343320c9a09d64f84cf30eca6",
+    "boots/t03-plain/manifest.json": "38aeb0b067ef0267a6b7d1525f864f29df01c32d99a0763aede98887ea05a9f5",
+    "rank0/configs/t01-declared_off-r0.env": "4a7bbae002613aebf2174094d4c93349967b210048769654163652722cd2e948",
+    "rank0/configs/t01-lane-r0.env": "9af62bd453709e61d448423d04c0bca37db783244dc0228caac6ed15db9e6b82",
+    "rank0/configs/t01-plain-r0.env": "778b0ad90f3659756f2efabdfb9aafa25d4db1f3b197722ad2742d72fbf032c5",
+    "rank0/configs/t02-declared_off-r0.env": "a9525a7a4c6095fbcac9ed95b5d40dfc09acecc55cd03413c9a44660b7ab7cbe",
+    "rank0/configs/t02-lane-r0.env": "280b745b35fc2c6f8c50c67184b4e220aa53a698772359ff25d6bbdf896a70b0",
+    "rank0/configs/t02-plain-r0.env": "bcbc32fd8c5e282c1e1a5bcb264c26bfb4deaa5a3d27764730a3183c312d47a7",
+    "rank0/configs/t03-declared_off-r0.env": "7c94ee42a115004bb86ac327f688c79100ea281cc3eaba0bee00cd821fe49e43",
+    "rank0/configs/t03-lane-r0.env": "1b59cdeac1d7bd36db643bde5596d9b58e957e6a63e94356416c109cc67af4ee",
+    "rank0/configs/t03-plain-r0.env": "9371d5f93b2f27b0345ee7fa4dbffa3108221ce3460d8d16a01dcc968cdc822e",
+    "rank1/configs/t01-declared_off-r1.env": "1c0ee3a777a86f4e164b02b3dff51d3ace039f00edd28a8b24fc4d58a92458e9",
+    "rank1/configs/t01-lane-r1.env": "e4464698147dc0c9117952827004ececdb9b019803e6ffa2d1bb0d39d15993bd",
+    "rank1/configs/t01-plain-r1.env": "5892a48c6d416fd34671156d4225a1be6c2f0d986020c2bc3b5fccd0f5bbf1a4",
+    "rank1/configs/t02-declared_off-r1.env": "42f3fe0dbf5383b18491c4cf5a7de4a33a7363a1175f5f3594c238449624c5c7",
+    "rank1/configs/t02-lane-r1.env": "f1afeb29c3fe2d0a5eeeb35e2ea7b23088d8049923f6ca237c07dc27de99a015",
+    "rank1/configs/t02-plain-r1.env": "211d65a054b983eda8ebe678053ece236306648f9ec80e10178674e5d3c87087",
+    "rank1/configs/t03-declared_off-r1.env": "fe3f618e0f073d3e47feab2de5edf5a9d6d51ac95f651b44167d5ab7a54d6d60",
+    "rank1/configs/t03-lane-r1.env": "ffd90a0e262b335a8bacfe26d9f6e1b2a11d76d093a1037ab41e97ad5100caa5",
+    "rank1/configs/t03-plain-r1.env": "65a4409fc6446d2c4c87fd3d46955a20a27ea05c44c8d384ade909e68c7e4803"
+  },
+  "guard_source": "/etc/spark/thermal.env",
+  "image": "tensorfold-dsv41-imr:r-3a429d6f122d",
+  "image_ids": [
+    "sha256:5be7d7d40f267590b9e7b41410f48d40048af24e004203629a347d3d7c16a8cd",
+    "sha256:80beaba732d1ed9439e012b007d8dbe19ec2f8962f50fbac29a18c8cd6fda306"
+  ],
+  "orders": [
+    [
+      "t01",
+      [
+        "plain",
+        "declared_off",
+        "lane"
+      ]
+    ],
+    [
+      "t02",
+      [
+        "declared_off",
+        "lane",
+        "plain"
+      ]
+    ],
+    [
+      "t03",
+      [
+        "lane",
+        "plain",
+        "declared_off"
+      ]
+    ]
+  ],
+  "parent_spec_sha256": "adb05167fff21469ee7251555cb243f1f109c4d8e3de237fdcaa59ada8eb55e6",
+  "prefix": "stdbench-decl-a1-20261105-v1",
+  "references": {
+    "base-arms.json": "9bbacf49fd8bf7917321409c23c8c7f68836d4d28fe456181b7957daac0f5d4f",
+    "base-r0.env": "c0301508e99561c4e457d5c40e26eb23667a8243b2602210fa23018afa96c61b",
+    "base-r1.env": "96cbacd85464af61073619b4e96c83180bb902112b1ef8062e543cf6c0085edc"
+  },
+  "revision": "3a429d6f122d9eb2900c43e622933d311e4be44f",
+  "schema": 1,
+  "status": "STAGED_CPU_GATES_PENDING"
+}

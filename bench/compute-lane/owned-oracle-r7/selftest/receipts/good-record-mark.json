@@ -1,0 +1,1 @@
+{"reasoning": "Compute 47*83 = 3901 @engine, then go on.\n", "content": "", "tensorfold": {"runner": {"inline": {"owned": 1}, "cells": [{"cell": 0, "form": "inline", "route": "graph", "status": "ok", "lang": "python", "field": "reasoning", "at": 15, "token": 6, "drafted": 0, "path": "held", "span": "47*83", "value": " 3901 @engine", "ids": 4, "landed": 4, "forced": 4}]}}}

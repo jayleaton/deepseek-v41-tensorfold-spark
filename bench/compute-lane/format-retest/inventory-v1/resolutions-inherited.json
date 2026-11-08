@@ -1,0 +1,818 @@
+{
+  "711": {
+    "prompt_sha256": "72882db4972d3c8795d2710bf10cc7e87b41e2f79a86a38bb3fb6377ae6847e4",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "711/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Buying scoops with $6 at $1.50 under buy-two-get-one-free asks for a discrete purchase/free-scoop count. Its fixed small prices and promotion cannot supply the huge operands of integer, modular or division; there is no weighted grid, directed graph or 40-60-record six-category cents map.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "697": {
+    "prompt_sha256": "802fb1f2be93ed9392821eafe0fed094e7213e8476330a7331be3ed55b794d42",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "697/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Three successive generations each have three offspring; the requested quantity is the last generation's size. This fixed branching count is neither large A*B+C nor large modular exponentiation or 80/29-digit division. A family tree has no weighted shortest-distance request, monotone cost grid or category transaction map.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1051": {
+    "prompt_sha256": "dd991482440350ced69912acaddf28b3b8dd748bd7c68c259bdae95175c23c12",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1051/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Water consumption is 8 cups/day over 30 days converted using 16 cups/gallon. This small product followed by unit conversion asks for gallons, not a large-operand product, power residue or quotient/remainder pair. No grid, weighted adjacency or six-category transaction data are specified.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "7": {
+    "prompt_sha256": "df236d25d9710e4138dc7522ad2324afb5cf94c1b632c8e30c3962a65154e662",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "7/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Elapsed download time combines 40% of a 200-GB transfer at 2 GB/minute, a 20-minute restart and a complete repeated transfer. These fixed scalar rates and durations are outside the large arithmetic input bounds and do not define modular powering, a division pair, grid/graph optimization or categorized cents totals.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "688": {
+    "prompt_sha256": "1c203d9c3d7fd4774da20534c78479bb2119ad0ba66d1b44fc70d01c95ccbd18",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "688/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Available nap minutes are the three-hour budget less homework durations 20, 40 and 20 minutes. This is fixed small time subtraction, with no 24-36-digit multiplicands, large power modulus or 80/29-digit dividend/divisor. Three durations are not a cost matrix, weighted directed network or 40-60 transactions returning six totals.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "994": {
+    "prompt_sha256": "c4909fc78640bd99191914d223a2374e2cbcd0217c8eb9f06730abbf38c19333",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "994/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Three howl durations are related to 20 seconds by doubling and summing, then their combined duration is requested in minutes. The small duration relations cannot be a specified large integer/power/division instance. No path minimization or category-by-category weighted transaction aggregation is requested.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "79": {
+    "prompt_sha256": "bdaaab61d07fc5b94b60ad35289d4f52fb369a98289cb82081b21eaa2243ee83",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "79/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The requested grooming price applies a 30% discount to $100. This single percentage adjustment has fixed tiny operands, not the new large product, modular power or long division. One discounted service supplies neither a six-category 40-60-record map nor any grid or directed weighted graph.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "244": {
+    "prompt_sha256": "c66c93af68a54de06ce5e9e795fcb03e086b6ac4ef4d5af9681819b2a4616bff",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "244/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The unknown is Ginger's fry contribution balancing an initial 24, final 27, removals of 5, twice 5, and 3 less than 5. This small linear balance is not any bounded large arithmetic instance. Four fry transfers with one unknown are not 40-60 specified cents records with six output totals, and define no grid or shortest-path graph.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "416": {
+    "prompt_sha256": "fd2a27a8eb3f33c2937a968f81f0f6548ac1f78e9188bf49a84faf0caa7abf2b",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "416/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Two unknown animal counts satisfy 180 heads and 304 humps with coefficients two and one; only the dromedary count is requested. Solving this two-equation count system is not large product/power/divmod evaluation. Two species and aggregate constraints cannot be the six-category explicit transaction map, a weighted grid or directed shortest-path instance.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1232": {
+    "prompt_sha256": "b4edecabbefdbf9c96e75d43343478b11e4bdf8a4497a89c45c30a250d4194ca",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1232/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Pomelos given away are determined from an initial 20 and a remaining fraction 1/4. The fractional complement count uses fixed small numbers, excluding all three large arithmetic instance bounds; it provides no weighted paths or 40-60 signed-cent transactions grouped into A-F.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "147": {
+    "prompt_sha256": "4ff7adcd107a3162a1e833fcf5d128aca681f102525eca68d45900f6859143e8",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "147/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Bee returns in the last six hours balance 30 departures, half as many early returns and twice the first departures in a later interval. The four time intervals specify a small population balance, not six-category cents aggregation or any weighted grid/graph. Their literal counts and fractions cannot be the large product, modular-power or division operands.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1259": {
+    "prompt_sha256": "529b113de7a347a3f0e1bc51e23762d42e88627f85df6bf2142666881f406c05",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1259/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "June doughnut revenue multiplies 10 dozen per day by $2 per doughnut and the month's day count. A fixed small repeated sales rate does not contain two 24-36-digit multiplicands, power-residue inputs or long-divmod inputs. It requests one revenue total, without 40-60 explicit A-F transactions, a cost grid or directed network.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "586": {
+    "prompt_sha256": "b3878f07b3c4f33cac2bbee6262a1129c9f51d7f10fa3657daf2d5101a3760b1",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "586/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Required water applies 100 ml per 200 calories to two hours at 500 calories/hour and one hour at 600. This two-activity rate conversion has fixed small operands, outside the three large arithmetic families. Two calorie contributions and a scalar water output cannot be six-category transaction aggregation or grid/graph minimum cost.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "325": {
+    "prompt_sha256": "4d3c5b15be587a0ae309c7393c56d7724e1246ae8eb192a911ea991e899c1680",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "325/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Monthly payroll uses 100 employees, a 2/5 junior fraction, $2000 junior pay and a $400 senior increment. It asks for a combined salary total from two groups, not an explicit 40-60-record A-F cents map. These small payroll operands are incompatible with large product/power/divmod bounds and contain no weighted path instance.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1083": {
+    "prompt_sha256": "9e6ac99a52b25b4f69ee18ad71606f3c76af526e0cb71b598e0bd49a99579016",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1083/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Banana savings compare ten four-banana bunches at $3 with individual pricing at $0.80. This difference of two small purchase costs neither matches huge arithmetic operands nor requests modular residue or quotient/remainder. The two pricing alternatives are not six categorized transaction sums and specify no grid/graph optimization.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "856": {
+    "prompt_sha256": "a236d4469063e1ef9a0a9e6665a30453302e107b9b7123de680c9cba0cf90533",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "856/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Glue-pack purchasing asks for a ceiling pack count for 27 students needing two sticks each, with eight sticks per pack. This is small ceiling division, not the unique quotient AND remainder of an 80-digit A by a 29-digit B. No large multiplication or modular power, cost paths, or categorized cents records are specified.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1283": {
+    "prompt_sha256": "436c36d6882e784ce13fab817eafa833a85834bacaf2bcc2ee6049f8b0292cb5",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1283/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Frances's remaining money combines 20 cupcakes at $2, 40 cookies at $1 and five trays at $4 as two revenues minus one expense. Three product terms and one scalar balance do not constitute 40-60 A-F records with six totals. All literal operands are small; neither large arithmetic family nor weighted grid/graph instance is present.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "443": {
+    "prompt_sha256": "6c8c0ff1dbe85e5d9c4d6bd6ebd92073d1d3ec833345bf9f0b22227323522faa",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "443/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "James's unknown run duration follows from Jon's 40-minute swim, 80-minute bike and 50-minute run, a 10% swim adjustment, five extra bike minutes and a ten-minute finish gap. This small duration equation supplies no large arithmetic operands and asks neither shortest path nor a categorized transaction map; three race stages are not a weighted grid or 9-14-vertex graph.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "12": {
+    "prompt_sha256": "f7a2c050b01c87125a0f1e0b333eac78658293ec27a91d7b36ca7ddf14457773",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "12/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The lemon tree asks for years until profit after $90 planting cost, annual seven lemons at $1.50 and $3 upkeep. This break-even threshold uses small periodic cash flows, not a large A*B+C, modular power or 80/29-digit quotient/remainder. A repeated annual rule is not 40-60 explicit A-F records and has no weighted route structure.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1148": {
+    "prompt_sha256": "cd80733b81046a3a4b4c9f60479e48c366ec6797c135aba2842b2990640949f4",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1148/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Equal sharing of three dozen eggs among four children asks for eggs per child. Small unit conversion and division cannot match the 80/29-digit divmod pair or either large product/power family. Four recipients are not a six-category signed-cent record map, cost grid or weighted directed graph.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "667": {
+    "prompt_sha256": "f8af0b30e4291d813a5d09f10191b8da882f0f65021d3a83657eb428de9e4709",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "667/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Game duration is four twelve-minute quarters plus five minutes of overtime. Although this has product-plus-addition form, its multiplicands are 4 and 12, not two 24-36-digit positive integers. It requests no modular power, long division pair, minimum cost path or six-category transaction totals.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "869": {
+    "prompt_sha256": "c52fe756d3396503d5d5b6eec18a5143d85403e9196d5dd48017ddec89228613",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "869/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Phone-purchase change subtracts five $700 phones from $4000 tendered. The fixed price, count and tender are far below integer-family multiplicand lengths and do not specify modular powering or divmod. A single purchase and scalar change are not six categorized totals or a grid/graph minimum-cost problem.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "502": {
+    "prompt_sha256": "7f8c103a2cad4379bf565c489624d963bb380c86af3218514a4a456f61f71975",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "502/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Gift counting adds two friends' five gifts each, three friends' two each and ten extra gifts. These two small products plus a constant are not one large-operand product-plus-offset instance. No power residue, long divmod, weighted path data or 40-60 six-category cents records are supplied.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "830": {
+    "prompt_sha256": "14f7c9c22a1127175b5e618cd56867f49f5b43b11c411523601b348650fbc106",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "830/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Monthly TikTok time scales a four-week schedule comprising 18 four-minute videos, two songwriting hours and six fifteen-minute makeup sessions per week. The unit-converted duration sum has small fixed factors, not large product/power/division inputs. Its three activity rates are not an explicit six-key transaction map, grid or directed shortest-path network.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "274": {
+    "prompt_sha256": "88d3b1607bd82267cdfd7d767958d0204ff5862ef8314270ccfef65442b3a833",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "274/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Seed expenditure sums 20 tomato packets at $40 and 80 celery packets at $30. Two line items and one combined cost differ from 40-60 explicit A-F signed-cent records yielding six totals. Literal two-digit factors preclude the large integer family; no modular exponent, 80/29-digit division or weighted path input exists.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1187": {
+    "prompt_sha256": "14ca50844e7ec64a2c565c36560d77271b45f921bb2005cd2c56967999afa898",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1187/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Time to accumulate 60 snowballs depends on making 20 per hour and losing two every fifteen minutes. This small net-rate/threshold question is not large product, modular power or quotient-and-remainder evaluation. Production and melting rules do not specify a cost grid, directed weighted graph or six-category cents transaction list.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "819": {
+    "prompt_sha256": "64e0c7948984ed6225eaf3962baa3c1140b1f15512645ae5ec55a2b532ebab9e",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "819/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Each student's fundraising share divides the difference between $175000 total and $50000 organization contributions among twenty students. This small subtraction-and-equal-sharing request is not an 80-digit/29-digit divmod pair or either other large arithmetic family. Donor classes supply neither six A-F record totals nor weighted path inputs.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "604": {
+    "prompt_sha256": "bc1fc42d4d2f46d5dcf8047f5860de084bfe84b6ecaa2e6a3ed86e6c754fed18",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "604/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Arcade money remaining starts at $100 and subtracts Monday's $8, twice that Tuesday and four times Tuesday on Wednesday. Three dependent expenses form a small balance, not 40-60 explicit six-category records. Their small factors do not meet large integer/modular/division bounds, and no grid or directed shortest route is requested.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "207": {
+    "prompt_sha256": "58039d3a7b0ffc704b7f00ab5f964500735ef053d1099cd839687b9923bc12fa",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "207/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Candy-bag mass adds 25 chocolate bars at 40g and 80 apples at half a bar's mass. This two-type physical weighted sum asks for one weight, not six categorized monetary sums over 40-60 records. Its fixed small counts and masses exclude large arithmetic instances, and there is no path cost structure.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1133": {
+    "prompt_sha256": "fb2843a5a0699c08134466ac1b1dd23c3e8c9477439a45bd7bd19154d9c66bc2",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1133/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Total walk time follows from two beach miles taking forty minutes and one sidewalk mile at twice the beach speed. Two prescribed segments with a speed ratio are not a 9-14-vertex weighted directed graph with backbone and extra edges, nor a grid minimization. The small rate calculation supplies no large arithmetic operands or six-category cents records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "654": {
+    "prompt_sha256": "5235b785612d122900cb5cb521579d610bc053bbb59b5e846e95f9af3c215e29",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "654/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Eggs in dozens are obtained from sixteen guests eating three halves each, two halves per egg and twelve eggs per dozen. This fixed small conversion chain asks for one serving quantity, not large divmod with both outputs or a large product/power. No weighted paths or six-category transaction map is defined.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "641": {
+    "prompt_sha256": "a0a319e7d1a0f5f7552f83aeca21c9ceaaa5cb3d0fb854457d66ae710f254a48",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "641/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Annual earnings combine a 5% raise on $20000 monthly salary with a half-month bonus. Even the salary/bonus interpretation alternatives remain small percentage-and-period arithmetic, outside all large operand bounds. No alternative yields a 40-60-record six-category map, weighted directed shortest path or 7-10 by 7-10 grid cost.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1084": {
+    "prompt_sha256": "544b73c75cbcd399561eb7cc7ad95b4d59cf8b4b8162c0d5f7699b7e13947e11",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1084/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Sam's fence length is an unknown in two shares totaling 100 feet with Harry's share sixty feet larger. This small linear split is not any large product/power/division instance and asks for no remainder. Two lengths have neither transaction categories nor grid/graph weights and moves.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "785": {
+    "prompt_sha256": "69d6f475739177c1bcc4eea57ee2f3cb2d211eb743ba2e1bb66d6d5ccadd630e",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "785/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Lunch spending totals all 140 quarters and 3/5 of ten twenty-dollar bills. This denomination/fraction calculation has two cash components and a scalar output, not six totals from 40-60 labeled quantity/unit-amount records. Small denominations exclude all large arithmetic families; no grid or graph route is specified.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "203": {
+    "prompt_sha256": "c57c719fd337c7263c47772bebe38432480ecc97001c7fd87d0ca5e42f3450b6",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "203/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Cheese slices combine daily two-slice sandwiches for a week, three omelets using one extra slice each, and eight slices for macaroni. Three food-use contributions produce one count, not a six-category signed-cent map. These fixed small factors cannot be large arithmetic operands and there is no weighted grid or shortest-path network.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1260": {
+    "prompt_sha256": "88c046b390826ebf81ad842ec9f1590e956b4083adff1a7e46995aec0ea4987c",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1260/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Upload days divide 210 photos by a daily capacity of six batches of seven. This small capacity question requests days alone, not quotient and remainder for an 80-digit dividend and 29-digit divisor. There are no large multiplication or modular-power inputs, weighted path structures or categorized cents records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "422": {
+    "prompt_sha256": "e20818857d12fe28c042bd9b076e2e70921d6e66e7b31e198fb3309ccb6e7d60",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "422/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Two-year streaming cost sums six months at $8, eight at $12 and the remaining months at $14. Three tariff periods and one total cannot be 40-60 explicit records returning totals A-F. Small month counts/prices exclude the large arithmetic families; no minimum-cost route through a grid or directed graph is requested.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "599": {
+    "prompt_sha256": "fa222a3ae19de554a682fb37fd16b28db6927abaf6987b0c92f3e4f6111b4322",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "599/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Pet-store legs are counted from five dogs, two cats and ten birds with their species' leg counts. Three animal groups and a single leg total are not six monetary categories or 40-60 transaction records. All counts are small, with no large product/power/divmod operands or weighted path data.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "188": {
+    "prompt_sha256": "4e17c4156c1e1d5c872ed0e9030897fdf3490d336a4eb3f51802dafbf29529be",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "188/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Unknown wheat-bag count is inferred from $400 profit and per-bag $30 sale, $20 purchase and $2 transport. This inverse unit-margin calculation asks for quantity, not six category sums from specified transactions. Its small operands do not meet integer/modular/division bounds and no weighted grid or graph is given.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "355": {
+    "prompt_sha256": "16b85ea9789edc5ab6c8cbc21ec73be8dafc13e8ea5773dbb2b5dfc7c90e23e8",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "355/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Tallest-tree height is twice the combined heights of a six-foot tree and a tree five feet taller. Nested addition and doubling use fixed one-digit lengths, not two 24-36-digit integers. No modular residue, long divmod pair, cost path or labeled transaction map is requested.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "577": {
+    "prompt_sha256": "f22f90b0e054120ff93c50ce83c31ca80c1666d5cabb311bff78cc3369dc5270",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "577/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Daily mean birds divides a seven-day total assembled from grouped observations 50, zero, 120, 20 and 90. This small mean asks for one average, not six weighted monetary sums or a long quotient/remainder pair. It contains no large multiplicands/power modulus or grid/graph minimum-cost input.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "1151": {
+    "prompt_sha256": "286992e93e47b1e2decde74300365612b9e57cec5bae157c2c1a3f213c555a3e",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "1151/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Average speed is total distance over total time for 110 miles in two hours and 140 in three. These two trip segments specify a small rate ratio, not a weighted shortest-path optimization or monotone grid. No large arithmetic operands or six-category cents records occur, and no remainder is requested.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "320": {
+    "prompt_sha256": "0b1541432aadba655cd72b7ebb73421c48a3647f70342398348e12d1784763ea",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "320/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Remaining women are inferred from 25 men, 15 women, a quarter of all people leaving and 22 men staying. This two-population fractional balance has fixed small counts and one unknown, not any large arithmetic instance. It supplies no A-F transaction map, weighted adjacency or cell-cost matrix.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "559": {
+    "prompt_sha256": "21e70c3933d101f539db16bc2bdda4c3bc62be6a40e73fec787a3a387744634d",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "559/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Juan's coffee reduction compares ten times half the recommended four cups with that four-cup target. Small fractional scaling and subtraction cannot be the new large multiplication, power residue or divmod inputs. Two people's cup quantities provide no grid, weighted graph or six-category signed-cent records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "684": {
+    "prompt_sha256": "8617d3a954d27d7460330100af27ab0803bd8b1f084629fe9411bd405ef03080",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "684/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "School arrival slack subtracts six and thirteen elapsed minutes from thirty available minutes. Named landmarks on a prescribed walk do not supply a 9-14-vertex weighted directed graph with backbone and extra edges, and the request is slack rather than shortest distance. Tiny duration subtraction also excludes all large arithmetic, grid and transaction-map instances.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "551": {
+    "prompt_sha256": "a5a080fce7a2c68d7feff5fed3d0fc7ef69516d573a3319171e88c7fc77af667",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "551/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Change from $50 subtracts five $4 hamburgers, ten $0.30 fries and five $2 drinks. Three purchase lines with a scalar change output differ from 40-60 A-F transactions and six summed outputs. Fixed small prices/counts cannot be the large arithmetic inputs, and no grid or graph cost optimization exists.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "105": {
+    "prompt_sha256": "e55a059ae14ec4f5ae7a92283eb87be95e9200c0adb4018fb5a1f4762089478c",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "105/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Combined cookies add Amir's five to Cody's three times five. Its product-plus-addition uses literal factors 3 and 5, excluding 24-36-digit multiplicands. It has no modular exponentiation, long quotient/remainder request, weighted path input or 40-60-record six-category monetary aggregation.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "953": {
+    "prompt_sha256": "985a943742027c7a50cacd4fb300ebb8362c7ce90dc1fab90dff6d7a06931fd7",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "953/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Minutes asleep in bed are obtained from 10 p.m.-6 a.m. minus the 2:15-2:38 a.m. absence and five minutes of earlier waking. This clock-interval subtraction has no large arithmetic operands, power residue or quotient/remainder pair. A few time intervals cannot be the specified weighted grid, directed graph or six-category transaction dataset.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/intermediate_algebra/1779.json": {
+    "prompt_sha256": "0cdb7de447092837fd0a0b3eed768b3fff1ffe9659d73b30137c473e332ed03c",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/intermediate_algebra/1779.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The requested quadrilateral area comes from common tangencies of circle x^2+y^2=2 and parabola y^2=8x. The diagram's curves and four tangent points are Euclidean geometry, not a directed weighted adjacency list or right/down cell-cost grid. This area construction specifies neither large arithmetic operands nor transactions and six monetary totals.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/prealgebra/1302.json": {
+    "prompt_sha256": "b366ba898e3379262f1412ab42aea70a420798abee543c0c7ac5d5d69b585d14",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/prealgebra/1302.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Simplifying sqrt(242) requests a radical expression from one fixed three-digit radicand. It is not integer A*B+C, modular exponentiation or long division, and carries no cell weights, directed edges or category transactions. A shared arithmetic theme cannot make this radical-simplification instance one of the six specified types.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/2036.json": {
+    "prompt_sha256": "c0364fc64487e4ecdb562a1fd4efb3265dd75c6c2ced96273c9d5df0312b1595",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/2036.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Distance between (2,-6) and (-4,3) is requested in simplest radical form. This Euclidean two-point metric is not shortest distance in a 9-14-vertex explicit directed weighted network, nor a right/down grid sum. Its small coordinates and radical operation also exclude the three large arithmetic types and six-category record aggregation.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/346.json": {
+    "prompt_sha256": "1abaefe281529653aa738324cef55620674d86b4766d839517195e41e5f9f79b",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/346.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Evaluating g(f(5)-1) uses the fixed affine functions f(x)=2x-3 and g(x)=x+1. This small function composition cannot instantiate two huge multiplicands, large-exponent modular powering or 80/29-digit divmod. No grid, directed weighted network or categorized monetary records are part of the request.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/intermediate_algebra/101.json": {
+    "prompt_sha256": "fee18d5e23afe870cacd0d4b6f8955013b25109a7ab42a1b4dbc04ddf39350bc",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/intermediate_algebra/101.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The unknown x must satisfy sqrt(x+sqrt(3x+6))+sqrt(x-sqrt(3x+6))=6. Solving this nested radical equation, including its real domains, is not evaluation of supplied integer operands, a power residue or quotient/remainder. There is no discrete cost grid, weighted directed graph or six-category transaction input.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/prealgebra/505.json": {
+    "prompt_sha256": "a4a92af384d88e0b330c09d9a483219e971a0242983ce732018b96f980308e32",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/prealgebra/505.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Solving x/2+x/3=5 asks for a variable in a fixed linear equation with small rational coefficients. Division symbols here do not request q and r for supplied 80/29-digit integers. Nor are large multiplication/modular operands, a cost grid, a weighted graph or A-F transactions supplied.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/1787.json": {
+    "prompt_sha256": "d8224979f71d4e159110c9fc5228b71662eda0114db5a59f66d9056cea7a2332",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/1787.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Meal count is rescaled because twelve ordered meals feed eighteen people and the target is twelve people. This small serving proportion is not a huge product, modular power or long-divmod pair. Shared dinners do not define six categories of signed-cent records or weighted grid/graph routes.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/prealgebra/1742.json": {
+    "prompt_sha256": "667e1a134a6657d254f2a9be880f3f95fa33830af9acbca8cf14bcada5c58984",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/prealgebra/1742.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The probability of selecting a multiple of three from integers 1 through 100 is a finite counting ratio. Divisibility by three is not least residue of a 14-20-digit base raised to exponent 500-5000 modulo a 16-22-digit M. No large product/divmod operands or weighted grid, graph or transaction-map inputs appear.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/776.json": {
+    "prompt_sha256": "fc0a8c355d6080a0c826bb3b4a083ad9986329a6c2e6e7ad7359927596bd9352",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/776.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "For f(x)=3x^4+5x^2-9x-2 and g(x)=f(x-1), the request is the sum of polynomial coefficients. Polynomial translation and coefficient summation are not large A*B+C, modular powering or long division; the powers two and four also fall outside the modular exponent bounds. No weighted paths or categorized cents records are specified.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/1339.json": {
+    "prompt_sha256": "cbe5b6b45a9ab948e501098998aa78238b6bba38c736fed72b1f4627e92be1ed",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/1339.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Inverse variation y proportional to 1/sqrt(x) is calibrated by x=24,y=15 and asks for x at y=3. This scalar algebraic proportion with a square root is not a supplied large arithmetic instance. It has no grid costs, weighted directed edges or 40-60 records for six monetary totals.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/geometry/178.json": {
+    "prompt_sha256": "cf7d35cbd6e1c9c2c27f365f068695388600fab7a4a8aa970df06c9dae274008",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/geometry/178.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "A right triangle with sin(A)=2cos(A) asks for tan(A). This trigonometric ratio constraint is neither integer arithmetic on the specified large operands nor any quotient/remainder request. Three geometric vertices do not give a 9-14-vertex weighted directed network; no monotone grid or categorized transaction data exist.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/precalculus/1300.json": {
+    "prompt_sha256": "fdc8aba1c1ade2de891c8acfc7e126e96fde232077c7c1b25ac07b4cb18aee37",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/precalculus/1300.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The unknown is a three-dimensional vector v constrained by (1,1,1) dot v=2 and (1,1,1) cross v=(1,-2,1). Dot/cross-product linear constraints and a vector output cannot be any of the six specified scalar, divmod-pair or category-map requests. The three vector components are not a 7-10-squareish grid or directed weighted graph.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/661.json": {
+    "prompt_sha256": "1a7c478bb9ae0d789f05b85f3851b478c3b246284803ba33eaacfeaf69f9788a",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/661.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Fewest February miles for a four-mile walk every third day minimizes a periodic schedule count over calendar alignment. This temporal minimum is not visited-cell cost minimization or directed shortest distance, and possible February lengths still give only small counting arithmetic. There are no large arithmetic operands or six-category cents records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/intermediate_algebra/986.json": {
+    "prompt_sha256": "eb18e22ed3c256781e048dfb836a00c159ed2bf6a4c4dec109541d09413a4242",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/intermediate_algebra/986.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Maximizing real e under a+b+c+d+e=8 and a^2+b^2+c^2+d^2+e^2=16 is continuous constrained optimization. The five real unknowns and fixed sum/squared-norm constraints are not supplied large integer operands, a discrete path dataset or categorized transaction records. The request is a maximum component, not any of the six specified quantities.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/1143.json": {
+    "prompt_sha256": "823e4d044d4c14eb5605d266a8d2db894d35509a089c2a6e824df6e0d95dc035",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/1143.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The square of the minimum Euclidean distance from the origin to y=x^2/2-9 minimizes over a continuous parabola. A graph of a real function is not the explicit 9-14-vertex directed weighted graph, and no right/down cost grid exists. The small quadratic geometry also supplies no large arithmetic operands or six-category transaction map.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/geometry/221.json": {
+    "prompt_sha256": "bb96e38a44a1a82d0574f5736da18c8119445aa70ab554e5e3e083cda7cd39fc",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/geometry/221.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Median QM is requested in an isosceles triangle with PQ=QR=34 and PR=32. Its Euclidean side/median relations are not directed edge costs with a shortest-route request, nor monotone grid sums. Two-digit side lengths and geometric length output exclude all large arithmetic families and monetary category aggregation.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/prealgebra/874.json": {
+    "prompt_sha256": "1d73c9bd0ae194ba564d571beecc2a3ceb196d6691a70b4236458978e4940f81",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/prealgebra/874.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Angle PQR is determined by parallel PT and QR, diagram angles x and 2x and an exterior 128-degree angle. These parallel-line angle constraints request degrees, not path costs; drawn segments have no directed weights or grid cell values. There are no large product/power/divmod operands or categorized cents records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/number_theory/239.json": {
+    "prompt_sha256": "a9c68bbdafa67819ce289619f5c49fe7620e36923b0e985eb96a4ca40c61b099",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/number_theory/239.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The remainder modulo four is requested for the explicit sum of integers 1 through 12, not for A^E. Modulus 4 cannot equal the modular family's 16-22-digit M, and the sum has no exponent 500-5000. It also is not 80/29-digit division requesting both q,r or a large product; no grid, weighted graph or six-category record data are present.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/algebra/2486.json": {
+    "prompt_sha256": "5b28247e26c2d9090300441920ef75a720e23c8d0d67cefd5e85a809a4fb6a5a",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/algebra/2486.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "The intersection of 0>=54p-144 and 0>12-20p asks for all real p in interval notation. A solution interval with strict/non-strict endpoints is not any specified integer, quotient/remainder pair or six-key map. Fixed small linear inequalities also supply no weighted directed network or monotone grid.",
+    "reviewer": "reviewer-agent-original-source-review"
+  },
+  "test/prealgebra/914.json": {
+    "prompt_sha256": "f53987fea901b7b49763b5c26647eef8ac0a6eeadef6ff5d014e99116e6dcb27",
+    "original_evidence": {
+      "path": "<rank0-work>/stdbench/phase2/frozen-v3/analysis-lane.json",
+      "sha256": "c9648ba623c8bae307e26d18104fc8b0ceb8021d3a7710e75a43cd35095fd766",
+      "location": "test/prealgebra/914.json/originalproblem"
+    },
+    "decision": "nonoverlap",
+    "signature": null,
+    "reason": "Angle STR is requested from ST parallel QR and triangle angles P=40 degrees and Q=35 degrees. The five labeled geometric points and their incidences do not form a 9-14-vertex directed weighted shortest-path input or a 7-10 by 7-10 cost matrix. Angle inference uses no large arithmetic operands and no six-category monetary records.",
+    "reviewer": "reviewer-agent-original-source-review"
+  }
+}

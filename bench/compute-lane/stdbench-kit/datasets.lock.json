@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "suite": "gsm8k", "format": "gsm8k", "path": "sources/gsm8k.jsonl",
+      "revision": "3101c7d5072418e28b9008a6636bde82a006892c",
+      "sha256": "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+      "url": "https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/test.jsonl"
+    },
+    {
+      "suite": "humaneval", "format": "humaneval", "path": "sources/humaneval.jsonl.gz",
+      "revision": "b9453e8f1865df0a0057a1383767caa400acfbcf",
+      "sha256": "b796127e635a67f93fb35c04f4cb03cf06f38c8072ee7cee8833d7bee06979ef",
+      "url": "https://raw.githubusercontent.com/openai/human-eval/b9453e8f1865df0a0057a1383767caa400acfbcf/data/HumanEval.jsonl.gz"
+    },
+    {
+      "suite": "math500", "format": "math500", "path": "sources/math500.jsonl",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "sha256": "35dc41080a3680858b27fa7e0533d2d547825316fc5dafe5d316f4ccc5a06132",
+      "url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be/test.jsonl"
+    }
+  ]
+}

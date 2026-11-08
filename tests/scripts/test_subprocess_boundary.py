@@ -36,6 +36,7 @@ SOURCES = {
     'scripts/guard-watch-zig.sh': {'"$safe_dir/safe_shell.sh"', '"$config"'},
     'scripts/build-native.sh': {'"$safe_dir/safe_shell.sh"'},
     'scripts/check-zig-image.sh': {'"$safe_dir/safe_shell.sh"'},
+    'scripts/build-runner-image.sh': {'"$safe_dir/safe_shell.sh"'},
     'docker/zig/fetch-source.sh': {'"$safe_dir/../../scripts/safe_shell.sh"'},
     'scripts/fetch-reference.sh': {'"$safe_dir/safe_shell.sh"'},
 }
@@ -404,6 +405,10 @@ def quote_boundary_findings(root):
     violations = []
     for directory, dirs, files in os.walk(root):
         dirs[:] = sorted(name for name in dirs if name != '.git')
+        # The compute-lane studies' scripts are evidence kept byte-for-byte as they ran (MANIFEST.sha256, REDACTIONS.md);
+        # the recipe never executes them, and changing them would break the hashes their adjudications cite.
+        if Path(directory).relative_to(root).as_posix() == 'bench':
+            dirs[:] = [name for name in dirs if name != 'compute-lane']
         for filename in sorted(files):
             path = Path(directory) / filename
             if not path.is_file():

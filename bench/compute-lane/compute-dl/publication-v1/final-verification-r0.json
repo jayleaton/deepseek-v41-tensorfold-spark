@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "rank": 0,
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "sealed_files_unchanged": 3723,
+  "G_image_id": "sha256:e6cf428b02d188ceda5859b2f25839d4c305ad1f66b758b634b5d07dbe9da4f5",
+  "G_native_pid_namespace": 56,
+  "G_native_role": "serve",
+  "owned_study_containers": 0,
+  "collection_GO_revoked": true,
+  "source_sha256": "caeea88c75bff28e034fc8aeacc40e085f6ded3e559f9b6818af1ed1d436f071",
+  "models_http_status": 200,
+  "served_model_id": "DeepSeek-V4.1-Flash-TF",
+  "observed": 342,
+  "missing": 138,
+  "observed_solves": {
+    "D": [
+      1,
+      120
+    ],
+    "L": [
+      169,
+      222
+    ]
+  },
+  "held_seconds": 3413.519101628801,
+  "results_sha256": "8fb098209f2f7a87c51fd7b6074ac7e30729e5e720b28ed22b32b33d6ee226dc",
+  "primary_claim": "WITHHELD_INCOMPLETE"
+}

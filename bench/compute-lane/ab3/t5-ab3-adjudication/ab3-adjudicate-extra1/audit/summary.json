@@ -1,0 +1,248 @@
+{
+  "cache_settings": {
+    "ab3-b1-1-plain": {},
+    "ab3-b1-2-lane": {},
+    "ab3-b1-3-full": {},
+    "ab3-b1-4-only": {},
+    "ab3-b2-1-lane": {},
+    "ab3-b2-2-full": {},
+    "ab3-b2-3-only": {},
+    "ab3-b2-4-plain": {},
+    "ab3-b3-1-full": {},
+    "ab3-b3-2-only": {},
+    "ab3-b3-3-plain": {},
+    "ab3-b3-4-lane": {}
+  },
+  "first_cached": [
+    {
+      "boot": "ab3-b1-1-plain",
+      "arm": "plain",
+      "cached": 0,
+      "prompt": 53
+    },
+    {
+      "boot": "ab3-b1-2-lane",
+      "arm": "lane",
+      "cached": 0,
+      "prompt": 359
+    },
+    {
+      "boot": "ab3-b1-3-full",
+      "arm": "full",
+      "cached": 0,
+      "prompt": 471
+    },
+    {
+      "boot": "ab3-b1-4-only",
+      "arm": "only",
+      "cached": 0,
+      "prompt": 359
+    },
+    {
+      "boot": "ab3-b2-1-lane",
+      "arm": "lane",
+      "cached": 0,
+      "prompt": 360
+    },
+    {
+      "boot": "ab3-b2-2-full",
+      "arm": "full",
+      "cached": 0,
+      "prompt": 472
+    },
+    {
+      "boot": "ab3-b2-3-only",
+      "arm": "only",
+      "cached": 0,
+      "prompt": 360
+    },
+    {
+      "boot": "ab3-b2-4-plain",
+      "arm": "plain",
+      "cached": 0,
+      "prompt": 54
+    },
+    {
+      "boot": "ab3-b3-1-full",
+      "arm": "full",
+      "cached": 0,
+      "prompt": 474
+    },
+    {
+      "boot": "ab3-b3-2-only",
+      "arm": "only",
+      "cached": 0,
+      "prompt": 362
+    },
+    {
+      "boot": "ab3-b3-3-plain",
+      "arm": "plain",
+      "cached": 0,
+      "prompt": 56
+    },
+    {
+      "boot": "ab3-b3-4-lane",
+      "arm": "lane",
+      "cached": 0,
+      "prompt": 362
+    }
+  ],
+  "losses_vs_plain": {
+    "lane": [
+      [
+        "w9-div_big-012",
+        103
+      ],
+      [
+        "w9-div_big-039",
+        103
+      ],
+      [
+        "w9-div_big-048",
+        101
+      ],
+      [
+        "w9-div_big-048",
+        103
+      ],
+      [
+        "w9-mbpp-240",
+        101
+      ]
+    ],
+    "full": [
+      [
+        "w9-div_big-012",
+        103
+      ],
+      [
+        "w9-div_big-030",
+        103
+      ],
+      [
+        "w9-div_big-054",
+        103
+      ]
+    ],
+    "only": [
+      [
+        "w9-div_big-012",
+        103
+      ],
+      [
+        "w9-div_big-039",
+        103
+      ],
+      [
+        "w9-div_big-048",
+        101
+      ],
+      [
+        "w9-div_big-048",
+        103
+      ],
+      [
+        "w9-mbpp-240",
+        101
+      ]
+    ]
+  },
+  "gains_vs_plain": {
+    "lane": [
+      [
+        "w9-bignum-012",
+        101
+      ],
+      [
+        "w9-bignum-012",
+        102
+      ],
+      [
+        "w9-bignum-012",
+        103
+      ],
+      [
+        "w9-mul30-003",
+        102
+      ],
+      [
+        "w9-mul30-003",
+        103
+      ],
+      [
+        "w9-mul30-006",
+        102
+      ],
+      [
+        "w9-mul30-020",
+        102
+      ]
+    ],
+    "full": [
+      [
+        "w9-bignum-012",
+        101
+      ],
+      [
+        "w9-bignum-012",
+        102
+      ],
+      [
+        "w9-bignum-012",
+        103
+      ],
+      [
+        "w9-mul30-003",
+        102
+      ],
+      [
+        "w9-mul30-003",
+        103
+      ],
+      [
+        "w9-mul30-006",
+        102
+      ],
+      [
+        "w9-mul30-020",
+        102
+      ]
+    ],
+    "only": [
+      [
+        "w9-bignum-012",
+        101
+      ],
+      [
+        "w9-bignum-012",
+        102
+      ],
+      [
+        "w9-bignum-012",
+        103
+      ],
+      [
+        "w9-mul30-003",
+        102
+      ],
+      [
+        "w9-mul30-003",
+        103
+      ],
+      [
+        "w9-mul30-006",
+        102
+      ],
+      [
+        "w9-mul30-020",
+        102
+      ]
+    ]
+  },
+  "executor_counts": {
+    "sandbox": 285,
+    "in-model runner": 89,
+    "code tool": 70
+  },
+  "frozen_spec_sha256": "81b34c1a79a754efca01ebee85f47c74490a029f23e4e0533799205b60dd524e"
+}

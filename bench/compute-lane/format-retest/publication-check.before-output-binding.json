@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "GPU_requests": 0,
+  "historical_fixture_only": true,
+  "controls": [
+    "actual complete value",
+    "changed landed bytes rejected",
+    "unqualified presentation rejected",
+    "status mismatch rejected",
+    "actual clipped policy",
+    "changed landed bytes rejected",
+    "unqualified presentation rejected",
+    "status mismatch rejected"
+  ],
+  "actual_historical_rows_sha256": "c58b2e8180379283a9d4a7a9de29fb679356350b41a086c213f5a18c807acb05",
+  "actual_historical_rows_path": "<rank0-work>/stdbench/compute-dl/a2-report/final-audit-v1/audited-rows.jsonl",
+  "source_sha256": {
+    "<rank0-work>/stdbench/format-retest/publication_checks.py": "6ebd8c26f207eea70d70471de3956d12f497a585f19bd667173caa971ed01e76",
+    "<rank0-work>/stdbench/format-retest/publish.py": "922a1e928b6983804ac9280de1d280928a9ed8ac63c2dcbe292d82ff785d7ff8",
+    "<rank0-work>/stdbench/format-retest/audit_collection.py": "cae0a091c96b5d857f4304e8ac9572ed34ce5f368638bda33fccec393187f164",
+    "<rank0-work>/stdbench/format-retest/analysis/reporter.py": "24c6e6165746c27ef2066438aaef05af85f47960fd721c71e0d513d4e3e6e274"
+  }
+}

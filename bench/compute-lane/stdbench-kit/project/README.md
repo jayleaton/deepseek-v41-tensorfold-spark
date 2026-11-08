@@ -1,0 +1,15 @@
+# Standard benchmark phase 2
+
+> Export navigation: paths marked omitted retain their historical names. Consult the
+> [raw-receipt hash inventory](../../RAW-RECEIPTS.sha256) for excluded receipts and duplicate destinations;
+> historical documents without an inventory entry are not bundled or hash-attested here.
+
+**Completed: 368 cohort replies; status NEEDS-T5.** Read `RESULTS.md` (omitted from this export) for the per-suite results, paired tests, activation and grading limitations. All three lanes were declared but unused on dataset requests, despite qualified native activation diagnostics. G was restored after every turn and its live processes were checked on both nodes.
+
+The authoritative protocol is [T5-STDBENCH-SPEC.md](../phase2/T5-STDBENCH-SPEC.md), SHA256 `9c7327007cfd15825a608f2f6b06f2b39e33b88548c5bb7deb1b209b7395d240`. It supersedes conflicting proposals in [PLAN.md](PLAN.md). `PUBLISHED.md` (omitted from this export) separates exact served-model identity from historical reference scores; those references are not matched local baselines.
+
+The executed kit is `<rank0-host>:~/work/stdbench/phase2/`: `campaign-v2.json`, `frozen-v3/`, fresh prefixed rank configurations, `runs/`, and `post-v1/`. Approved image: `tensorfold-dsv41-imr:r-3a429d6f122d`. Raw replies include native IDs/hash, streaming frames, usage, timing and tool diagnostics. Dataset files remain pinned in `kit/datasets.lock.json`; the original prep kit is retained for provenance and is superseded by the phase2 client, isolated grader and paired analysis.
+
+Reproduce statistics with the frozen `phase2/analysis.py report` CLI, supplying `post-v1/nonmath-graded.jsonl` and `post-v1/math-reviewed.jsonl`, `frozen-v3/analysis-plain.json`, and a **new** output path. Run only through the Spark CPU guard; never execute tests or model code on <dev-host>. See [analysis/review API](../phase2/analysis.md), [native-frame authentication](../phase2/native-frames.md), and [audit API](../phase2/audit-records.md). Existing collection paths reject repeats; completed samples are retained rather than retried.
+
+All verification receipts and source versions are retained on the nodes. Local evidence is under `proof/phase2/` (omitted from this export), with sealed MATH labels under `review/` (omitted from this export). [LEDGER.md](LEDGER.md) records standards, operating constraints, exact scope receipts, the original identity-GET deviation, and the recovered pilot cleanup incident. The initial CPU-prep record remains in `VERIFICATION.md` (omitted from this export).

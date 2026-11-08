@@ -1,0 +1,20 @@
+{
+  "event": "A1_NATURAL_ADMISSION_CLOSURE_BEFORE_A2_CONTINUATION",
+  "collection_at_utc": "2026-11-06T12:37:13.408475+00:00",
+  "A2_sha256": "8eaa9575592f519b504d08022d400602e4b552874c8424b02c59c34f4af174e2",
+  "A1_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "P_durable_responses": 116,
+  "candidate_unobserved_P_suffix": 124,
+  "held_seconds_at_admission_closure": 15905.56037534679,
+  "reason": "4h25m cumulative admission cutoff: no new request or boot",
+  "last_observed_key": ["compute_dl", "compute-dl-v1-aggregation-003", 102],
+  "last_response_at_utc": "2026-11-06T12:37:13.408326+00:00",
+  "last_response_elapsed_seconds": 29.236,
+  "native_accounting_complete": true,
+  "boot_drain_verified_at_utc": "2026-11-06T12:37:19.012697+00:00",
+  "GPU_locks_released_at_utc": "2026-11-06T12:37:19.553167+00:00",
+  "G_restoration_pending": true,
+  "closed_budget_and_actual_suffix_audit_pending": true,
+  "running_A1_source_modified": false,
+  "one_A2_optional_restoration_break": true
+}

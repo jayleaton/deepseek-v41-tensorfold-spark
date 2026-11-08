@@ -1,0 +1,134 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "controls": [
+    {
+      "fixture": "correct",
+      "observed_gate": {
+        "pass": true,
+        "verdict": "PASS",
+        "live_receipts": [],
+        "records": 1,
+        "ok": 1,
+        "wrong-value": 0,
+        "wrong-span": 0,
+        "not-in-text": 0,
+        "unparsed": 0,
+        "wrong-check": 0,
+        "cut": 0,
+        "inconclusive": 0,
+        "short": 0,
+        "unknown": 0,
+        "text_owned_mismatches": 0,
+        "marks": {
+          "engine-inline": 0,
+          "engine-inline-partial": 0,
+          "engine-other-output": 0,
+          "model-imitation": 0
+        },
+        "wrong": []
+      },
+      "input_sha256": "38d56109156167f2d7967977eb56c814c8efe208bb6a713e58a3c4cb60a7769b"
+    },
+    {
+      "fixture": "wrong",
+      "observed_gate": {
+        "pass": false,
+        "verdict": "FAIL",
+        "live_receipts": [],
+        "records": 1,
+        "ok": 0,
+        "wrong-value": 1,
+        "wrong-span": 0,
+        "not-in-text": 0,
+        "unparsed": 0,
+        "wrong-check": 0,
+        "cut": 0,
+        "inconclusive": 0,
+        "short": 0,
+        "unknown": 0,
+        "text_owned_mismatches": 0,
+        "marks": {
+          "engine-inline": 0,
+          "engine-inline-partial": 0,
+          "engine-other-output": 0,
+          "model-imitation": 0
+        },
+        "wrong": [
+          {
+            "verdict": "wrong-value",
+            "form": "trace",
+            "span": "17*19",
+            "visible": null,
+            "written": "[exact, computed by the engine: 17*19 = 324]\n",
+            "paths": [
+              "/receipts/0001.json"
+            ],
+            "field": "reasoning",
+            "at": 0,
+            "offset": 0
+          }
+        ]
+      },
+      "input_sha256": "d38e676dd095607a903e07e542bff92e892780b14c0807338d6c8ed743b12f82"
+    },
+    {
+      "fixture": "not-in-text",
+      "observed_gate": {
+        "pass": false,
+        "verdict": "FAIL",
+        "live_receipts": [],
+        "records": 1,
+        "ok": 0,
+        "wrong-value": 0,
+        "wrong-span": 0,
+        "not-in-text": 1,
+        "unparsed": 0,
+        "wrong-check": 0,
+        "cut": 0,
+        "inconclusive": 0,
+        "short": 0,
+        "unknown": 0,
+        "text_owned_mismatches": 0,
+        "marks": {
+          "engine-inline": 0,
+          "engine-inline-partial": 0,
+          "engine-other-output": 0,
+          "model-imitation": 0
+        },
+        "wrong": [
+          {
+            "verdict": "not-in-text",
+            "form": "trace",
+            "span": "17*19",
+            "visible": null,
+            "written": "[exact, computed by the engine: 17*19 = 323]\n",
+            "paths": [
+              "/receipts/0001.json"
+            ],
+            "field": "reasoning",
+            "at": 0,
+            "offset": null
+          }
+        ]
+      },
+      "input_sha256": "a25fd0b6f5b358a6e16e4f3ec05717589e089b5763b0d1d80034eb36220a5fce"
+    },
+    {
+      "fixture": "empty observations",
+      "observed_gate": {
+        "verdict": "UNEXERCISED",
+        "records": 0
+      },
+      "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "oracle_sha256": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc",
+  "fixture_outputs_cleaned": true,
+  "model_requests": 0,
+  "source_sha256": {
+    "<rank0-work>/stdbench/format-retest/r7_checks.py": "dd3756a9e9012327b8a6b03fa2e78ce2139f8e88bd402ce517baefcca8135216",
+    "<rank0-work>/stdbench/format-retest/r7_audit.py": "0cfa6d5262360b178071228934f426e7230adbd4afce68879b60554ac8ed530c",
+    "<rank0-work>/owned-oracle/tool/oracle.py": "35f2bdf0243df7917b2b61098a1ff4a91bf1044854634912ab4800495db853fc"
+  }
+}

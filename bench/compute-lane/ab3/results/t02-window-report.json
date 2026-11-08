@@ -1,0 +1,295 @@
+{
+ "root": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T095232Z",
+ "gate": {
+  "pass": false,
+  "verdict": "FAIL",
+  "live_receipts": [],
+  "records": 25,
+  "ok": 24,
+  "wrong-value": 0,
+  "wrong-span": 0,
+  "not-in-text": 1,
+  "unparsed": 0,
+  "wrong-check": 0,
+  "cut": 0,
+  "inconclusive": 0,
+  "short": 0,
+  "unknown": 0,
+  "text_owned_mismatches": 0,
+  "marks": {
+   "engine-inline": 0,
+   "engine-inline-partial": 0,
+   "engine-other-output": 0,
+   "model-imitation": 0
+  }
+ },
+ "wrong": [
+  {
+   "verdict": "not-in-text",
+   "form": "trace",
+   "span": "2**66",
+   "visible": null,
+   "written": "[exact, computed by the engine: 2^66 = 73786976294838206464]\n",
+   "paths": [
+    "<rank0-work>/dsv41-bench/out/imr-measure-20261104T095232Z/ab3-b1-3-full/rn-s101/w9-bignum-017.json"
+   ],
+   "field": "content",
+   "at": 0,
+   "offset": null
+  }
+ ],
+ "arms": [
+  {
+   "arm": "rn:s101",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 2548,
+   "reasoning_mean": 127.4,
+   "completion_total": 5025,
+   "completion_mean": 251.2,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 3,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 1,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 2548,
+    "owned": 1,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 1,
+    "owning_reasoning": 210
+   }
+  },
+  {
+   "arm": "rn:s102",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 2150,
+   "reasoning_mean": 107.5,
+   "completion_total": 4251,
+   "completion_mean": 212.6,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": {
+    "ok": 5,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 2150,
+    "owned": 1,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 1,
+    "owning_reasoning": 208
+   }
+  },
+  {
+   "arm": "rn:s103",
+   "guide": "guide#53ed328f",
+   "replies": 20,
+   "reasoning_total": 2028,
+   "reasoning_mean": 101.4,
+   "completion_total": 4298,
+   "completion_mean": 214.9,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 1,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 4,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 14,
+    "reasoning": 2016,
+    "owned": 1,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 1,
+    "owning_reasoning": 173
+   }
+  },
+  {
+   "arm": "ro:s101",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 2696,
+   "reasoning_mean": 134.8,
+   "completion_total": 5022,
+   "completion_mean": 251.1,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 1,
+   "oracle": {
+    "ok": 4,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 2696,
+    "owned": 0,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 0,
+    "owning_reasoning": 0
+   }
+  },
+  {
+   "arm": "ro:s102",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 2460,
+   "reasoning_mean": 123,
+   "completion_total": 4792,
+   "completion_mean": 239.6,
+   "solve": 19,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 4,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 20,
+    "reasoning": 2460,
+    "owned": 2,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 2,
+    "owning_reasoning": 376
+   }
+  },
+  {
+   "arm": "ro:s103",
+   "guide": "no runner_* request fields",
+   "replies": 20,
+   "reasoning_total": 3059,
+   "reasoning_mean": 152.9,
+   "completion_total": 5357,
+   "completion_mean": 267.9,
+   "solve": 18,
+   "graded": 20,
+   "grade_source": [
+    "grades.jsonl"
+   ],
+   "cap_hits": 0,
+   "denial": 0,
+   "mental_only": 0,
+   "oracle": {
+    "ok": 4,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 0,
+    "wrong-check": 0,
+    "cut": 0,
+    "inconclusive": 0,
+    "short": 0,
+    "unknown": 0,
+    "unparsed": 0,
+    "text_owned": 0
+   },
+   "recheck": {
+    "replies": 19,
+    "reasoning": 3057,
+    "owned": 3,
+    "rechecked": 0,
+    "episodes": 0,
+    "tokens": 0.0,
+    "restate_only": 0.0,
+    "doubt": 0,
+    "owning": 2,
+    "owning_reasoning": 769
+   }
+  }
+ ]
+}

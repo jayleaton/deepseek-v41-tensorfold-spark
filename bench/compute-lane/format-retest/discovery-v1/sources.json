@@ -1,0 +1,650 @@
+[
+  {
+    "path": "<rank0-work>/ab-20261104/a/dry-063410/tasks.jsonl",
+    "sha256": "efaaba4605554778d2b867145c770d2fcd533a3e475a702369888d955736da04",
+    "count": 11,
+    "mtime_ns": 1793774050807878881
+  },
+  {
+    "path": "<rank0-work>/ab2-20261104/a/dry-064021/tasks.jsonl",
+    "sha256": "efaaba4605554778d2b867145c770d2fcd533a3e475a702369888d955736da04",
+    "count": 11,
+    "mtime_ns": 1793774421395990351
+  },
+  {
+    "path": "<rank0-work>/ab2-20261104/b/dry-064030/tasks.jsonl",
+    "sha256": "efaaba4605554778d2b867145c770d2fcd533a3e475a702369888d955736da04",
+    "count": 11,
+    "mtime_ns": 1793774430894138803
+  },
+  {
+    "path": "<rank0-work>/ab2-20261104/c/dry-064044/tasks.jsonl",
+    "sha256": "efaaba4605554778d2b867145c770d2fcd533a3e475a702369888d955736da04",
+    "count": 11,
+    "mtime_ns": 1793774444553703933
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/kit/ab3-units.jsonl",
+    "sha256": "68bbd559a434f3bd47c434994bb08d17fe978083280ede8230cabfd9dcfb1c06",
+    "count": 60,
+    "mtime_ns": 1793782316827237968
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/kit2/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t01/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t02/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t03/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t04/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t05/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ab3-20261104/t06/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ows-20261104/q01/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793782967641437694
+  },
+  {
+    "path": "<rank0-work>/ows-20261104/q01/dry-135341/tasks.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793800421947896334
+  },
+  {
+    "path": "<rank0-work>/ows-20261104/q01/dry-135413/tasks.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793800453721879212
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide/prompts.jsonl",
+    "sha256": "5fbb3f717603fce8fa0726cf6ddda1ab84a86d0c21a9f9990024ae7f84f12731",
+    "count": 40,
+    "mtime_ns": 1793568422968881440
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide2/prompts.jsonl",
+    "sha256": "7c082d9eed54a98b64e60e8d83998a37f1d0687743157c08067f2ec338d32707",
+    "count": 13,
+    "mtime_ns": 1793581141589850727
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide3/prompts.jsonl",
+    "sha256": "84c732a21ec89a336d5ee3812578dce95ac7fd35d38ae5c2655290b8c513bf96",
+    "count": 16,
+    "mtime_ns": 1793585595551087123
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793626797932238888
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide4/budget-before-2560/prompts.jsonl",
+    "sha256": "a374ca091d035ba1406619f27a1f9ca5e45e030bfda0bc7528306c26c0a8b9a2",
+    "count": 29,
+    "mtime_ns": 1793600239935387432
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide4-results/evidence/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793632192002330890
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide4-results/frozen-kit/budget-before-2560/prompts.jsonl",
+    "sha256": "a374ca091d035ba1406619f27a1f9ca5e45e030bfda0bc7528306c26c0a8b9a2",
+    "count": 29,
+    "mtime_ns": 1793634301160802579
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793695512088705104
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110632892835
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1323114/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692116489921525
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1323114/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692116483921496
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1372458/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692108442882087
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1372458/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692108439882072
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1613333/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110388891638
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1613333/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110378891589
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1656366/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126978972702
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-1656366/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126974972683
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2123463/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110989894587
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2123463/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110968894484
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2178403/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692115959918932
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2178403/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692115949918883
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2218673/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692118913933375
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2218673/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692118910933360
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2258261/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692111644897798
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2258261/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692111641936216
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2401150/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692114122909941
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2401150/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692114114909901
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2457919/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692108164880722
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2457919/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692108147880639
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2472047/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692109983889652
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2472047/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692109972889598
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2632030/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692109222885917
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2632030/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692109219885902
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2836751/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692114908913789
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2836751/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692114893913715
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2849044/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692118364930692
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-2849044/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692118355930648
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3184192/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126516970453
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3184192/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126513970439
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3357589/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126070968282
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3357589/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692126064968253
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3954196/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692112582902396
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-3954196/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692112575902362
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-4166590/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692115168915061
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5/qualification-bridge-s1g5-cpu-4166590/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692115163915037
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-archive-b8ac1966/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793640419115358673
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-archive-b8ac1966/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793640415679352496
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-archive-b8ac1966/qualification-bridge-s1g5-cpu-1372458/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793640418086356823
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-archive-b8ac1966/qualification-bridge-s1g5-cpu-1372458/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793640418628357797
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-canonical-cost/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793687448861925552
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-cost-prefix-proposal/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793682509578376246
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-cut-integration/private-stage/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793682718513985313
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-cut-integration/private-stage/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793682720111991893
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-cut-integration/superseded-local8bf/private-stage/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793681580154359631
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-cut-integration/superseded-local8bf/private-stage/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793681577596353174
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-final-plan/evidence/archive-consumed-120801/source/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793712590796131533
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-final-plan/evidence/archive-consumed-120801/source/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793712590708660899
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-final-preflight/client-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793695512088705104
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-final-preflight/client-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110632892835
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-final-results/actual142816/evidence/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793720527204996559
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-handoff/a892-input/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793671393387626836
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-image/real-ssh-policy-qual-377/private-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793695512088705104
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-image/real-ssh-policy-qual-377/private-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793692110632892835
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-plan/consumer/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793652732849404844
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-preflight-cap-fix/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793678196942757692
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-preflight-cap-fix/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793678196907757549
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-preflight-cap-fix/qualification-bridge-s1g5-cpu-capfix-1180952/integration-kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793678197468759837
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-preflight-cap-fix/qualification-bridge-s1g5-cpu-capfix-1180952/integration-kit/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793678197426759666
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-r5-audit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793709204502295953
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-r5-results/evidence/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793709289953455541
+  },
+  {
+    "path": "<rank0-work>/imr-s1-guide5-wait/four-arm-measure/frozen-r4/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793640365066260874
+  },
+  {
+    "path": "<rank0-work>/imr-s1-sampled-prep-timing/source/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793722824550045583
+  },
+  {
+    "path": "<rank0-work>/imr-s1-sampled-seeds/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793725146497292344
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793558801708569670
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn2/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793583751196772361
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn3/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793620917529446151
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn4/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793645897248894974
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn5/prompts.jsonl",
+    "sha256": "f022d6da07fe0728be5dada843a04600cf9f61b609b917e93359ade23d32767e",
+    "count": 10,
+    "mtime_ns": 1793665445468099464
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn6/prompts.jsonl",
+    "sha256": "f022d6da07fe0728be5dada843a04600cf9f61b609b917e93359ade23d32767e",
+    "count": 10,
+    "mtime_ns": 1793671232451245146
+  },
+  {
+    "path": "<rank0-work>/imr-s2/turn7/prompts.jsonl",
+    "sha256": "f022d6da07fe0728be5dada843a04600cf9f61b609b917e93359ade23d32767e",
+    "count": 10,
+    "mtime_ns": 1793694772295785572
+  },
+  {
+    "path": "<rank0-work>/imr-te/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793522039431136782
+  },
+  {
+    "path": "<rank0-work>/imr-te/t4-handoff-tasks.jsonl",
+    "sha256": "710504d478cdebd1e15fcb175988b0211b1003ac19f00c3ed202725b2139ff27",
+    "count": 5,
+    "mtime_ns": 1793615541214143465
+  },
+  {
+    "path": "<rank0-work>/imr-t4/measure/tasks.jsonl",
+    "sha256": "c2cf4f9a10cf7dc38ca49e594f2fd494f25f8fd561c92d25b7b94c6d83fea1f1",
+    "count": 261,
+    "mtime_ns": 1793651854582151724
+  },
+  {
+    "path": "<rank0-work>/imr-t4/w9final/tasks.jsonl",
+    "sha256": "8af1069879e7f1001c782e0668098a51241fb8fbbc74a60b9df297007a9cd6a9",
+    "count": 450,
+    "mtime_ns": 1793769486181251127
+  },
+  {
+    "path": "<rank0-work>/imr-t5-guide-r5/input/results/evidence/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793720527204996559
+  },
+  {
+    "path": "<rank0-work>/imr-t5-guide-sampled/input/kit/prompts.jsonl",
+    "sha256": "d932cc1fa55c9fb7a481781dd364ecf1bd5570f32aab67b97a9ffdf800fa659f",
+    "count": 29,
+    "mtime_ns": 1793738632187371255
+  },
+  {
+    "path": "<rank0-work>/imr-t5-w9/frozen/tasks-public.json",
+    "sha256": "092d6a83593adaa148344e886ccd393ef19e78fa94c98774c1711a0ac0213cb9",
+    "count": 450,
+    "mtime_ns": 1793690356852571694
+  },
+  {
+    "path": "<rank0-work>/imr-t5-w9-algo/drafts/pre-audit/export/tasks-public.jsonl",
+    "sha256": "4e0692bec1ff8d432496a491cc3cfb7c78996c26f7c9b5197d351fbf79bdb149",
+    "count": 40,
+    "mtime_ns": 1793687995887216912
+  },
+  {
+    "path": "<rank0-work>/imr-t5-w9-algo/drafts/pre-semantic-audit/export/tasks-public.jsonl",
+    "sha256": "340efcb89d47b0b7083e21d9355872ef7d5de30314551065132c400b8e64035c",
+    "count": 40,
+    "mtime_ns": 1793687643738523784
+  },
+  {
+    "path": "<rank0-work>/imr-t5-w9-algo/export/tasks-public.jsonl",
+    "sha256": "64262b514f6d4d8e3599bac601001436cefe41b7e01f6785dbcfeeb8bdc8cda4",
+    "count": 40,
+    "mtime_ns": 1793689088608313535
+  },
+  {
+    "path": "<rank0-work>/stdbench/compute-dl/stdbench-compute-a2-20261106-v1/rank0-host-evidence/4edf20443561b3556754be4ca5d324c5431324073fdd8e7e255e1e897ab62704/ab3-units.jsonl",
+    "sha256": "6053d86cecd00bc91cf78b2606307766fb97f4076fae2dbb6833be99930d0174",
+    "count": 60,
+    "mtime_ns": 1793970837342573064
+  },
+  {
+    "path": "<rank0-work>/stdbench/compute-dl/dataset-v1/tasks-public.jsonl",
+    "sha256": "3e1e07d7a573eb194c0568afac2ef2112011b2b2cada9012fbbce4e6f47f7548",
+    "count": 120,
+    "mtime_ns": 1793853554851870705
+  },
+  {
+    "path": "<rank0-work>/t6-census-20261101/prompts.jsonl",
+    "sha256": "3a49e76029a55aeea35f751cc624d63584aba8cbf115bfdb22dc05796b653531",
+    "count": 150,
+    "mtime_ns": 1793514644010272403
+  }
+]

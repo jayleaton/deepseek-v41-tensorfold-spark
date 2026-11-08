@@ -1,0 +1,11 @@
+{
+  "qualified_proofs_retained": true,
+  "removed_exact_owned_directories": [
+    "dispatch/.zig-cache",
+    "dispatch/.zig-global-cache",
+    "dispatch/guard-mutant/.zig-cache",
+    "dispatch-high/.zig-cache",
+    "dispatch-high/.zig-global-cache",
+    "dispatch-high/guard-mutant/.zig-cache"
+  ]
+}

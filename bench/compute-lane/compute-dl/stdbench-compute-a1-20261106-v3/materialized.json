@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "rank": 0,
+  "prefix": "stdbench-compute-a1-20261106-v3",
+  "spec_sha256": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+  "stage_manifest_sha256": "892d11ba23100436952266483be745f20250575e775caa99b18325a7757af149",
+  "files": {
+    "retention.json": "8af323b86bcc4be7d0d1c49ec97c3fe63af2d673dc6da688d903c15d7f24a59f",
+    "frozen-v1/boots/A1-resume-L.json": "bd4cf14a18da01c0ffdf9d33bf2454401edbeeb1f4639ec245f0788259f3d8f6",
+    "configs/A1-resume-L-r0.env": "8b65ace4fedf1578de1031bb14ba74114491a3cf288a9b4a9f99d23c3ddbcb5d",
+    "rank0/boots/A1-resume-L/manifest.json": "76603e29e3def39c7b4c6241a4b6c2ea135dd21b403f98c10328c191ce603806",
+    "rank1/boots/A1-resume-L/manifest.json": "7e93e9009390aed483353f8f6f1f8784a253ac3ce9b6879b26836349cf8f11e4",
+    "frozen-v1/boots/A1-resume-D.json": "3c4601f04fbfd043a1d2c772100d0bbfa9dc4983a4e77697a93a6d412bc24460",
+    "configs/A1-resume-D-r0.env": "af5cc3976b79c02e70b174b8b3d0b8fdc35ac70358676db0e02d60d401dcca83",
+    "rank0/boots/A1-resume-D/manifest.json": "2fbbe8da100d97d6219e36e7cd15a0c71249679ab3b360079fc327357984dfb6",
+    "rank1/boots/A1-resume-D/manifest.json": "b19c1b0f75e69f5fbd765515a3f9e7169145e21cfe6271ecd1e92e782a360c0a",
+    "frozen-v1/boots/A1-plain-P.json": "f70dd22f422b597eec0fd3480268491a6064b72b322dba25994848ba079916df",
+    "configs/A1-plain-P-r0.env": "adbfd0c4adf86cf0700568445689eacc705c91920241546e4efeeb2b174db38f",
+    "rank0/boots/A1-plain-P/manifest.json": "f78f7feb938a2b63ec948acc3799e0e3313bd7aadfee7031ebc14fd9aef4d428",
+    "rank1/boots/A1-plain-P/manifest.json": "206ce70e91091cd63ed418dcb12da43210c41c95faee00581d8264ff5bf2422f",
+    "frozen-v1/manifest.json": "eb992c0185c955a6d4de685a8385263bbdd666bbb8d7c90460ea4e07ce0e6650",
+    "prompt-inputs.json": "8e024659e6bfa1882e33bfededf332ec6cd3325bb1242038cc24c6b1af9c8d0b",
+    "stage-campaign.json": "b4d3e791943052f5e5bbb81f04352970948e8a87a8970ecd5eb0d0d7236810d5",
+    "source-hashes.json": "5ddfa3452e2f91d63d2a839eda38341109abe58c8ae7108e0d7e773264e81675"
+  },
+  "collection_qualified": false
+}

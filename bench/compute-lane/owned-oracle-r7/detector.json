@@ -1,0 +1,9 @@
+{
+  "no_tool": "\\b(?:no|without|not (?:actually )?having)\\s+(?:(?:actual|real|external|available|python|code|execution|computational|computation)\\s+){0,4}(?:tools?|interpreter|execution|sandbox|runtime)\\b",
+  "lack_access": "\\b(?:don['\u2019]?t|do not|doesn['\u2019]?t|does not|not)\\s+have\\s+(?:an?\\s+)?(?:(?:actual|real|external|available|python|code|execution|any)\\s+){0,4}(?:tools?|interpreter|access|execution|sandbox)\\b",
+  "cannot_run": "\\b(?:can['\u2019]?t|cannot|can not|unable to|not able to)\\s+(?:(?:actually|really|directly|literally)\\s+)?(?:run|execute|use|invoke|call)\\b[^.\\n!?]{0,85}\\b(?:python|code|tools?|interpreter|program|execution|sandbox)\\b",
+  "not_running": "\\b(?:not|aren['\u2019]?t|isn['\u2019]?t|don['\u2019]?t|do not)\\s+(?:actually\\s+|really\\s+)?(?:running|executing|run|execute)\\s+(?:any\\s+|the\\s+)?(?:code|python|program|tools?)\\b",
+  "unavailable": "\\b(?:tools?|python|interpreter|code execution|execution environment)\\b[^.\\n!?]{0,50}\\b(?:not available|unavailable|not enabled|not provided|not real|doesn['\u2019]?t exist|does not exist)\\b",
+  "cannot_execute_bare": "\\b(?:can['\u2019]?t|cannot|can not|unable to)\\s+(?:actually\\s+)?(?:execute|run)(?=[,.?!;]|\\s+but\\b)",
+  "only_mental": "\\b(?:python|code|run|execute|simulate)\\b[^.\\n!?]{0,35}\\bmentally\\b|\\bmentally\\s+(?:run|execute|simulate)\\b"
+}

@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "rank": 1,
+  "native_pid_namespace": 56,
+  "binary": "tf-dsv41",
+  "role": "follow",
+  "endpoint_completion_requested": false
+}

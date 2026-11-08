@@ -1,0 +1,46 @@
+# A1 continuation v3 — source-only handoff
+
+Implementation is confined to this NEW directory. No dev Python, functional execution, tests, SSH, GPU/model/endpoint calls, queue actions, CPU jobs, GO creation, engine edits, or old artifact mutations were performed. No helpers/review delegates launched (parent owns review). Source inspection and exact spec SHA comparison were performed; CPU QUALIFICATION IS PENDING, not claimed passed.
+
+Standards: reread a1-prep/LEDGER.md and a1-runtime/HANDOFF.md; fresh ancestry AGENTS.md/LOCAL-AGENT.md/CONTRIBUTING checks found none. Applicable config search under compute-dl found no lint/format/build/type configuration. This artifact is not Git; no branch/commit/export/PR. Applicable checks remain parent Spark guarded AST, fake/control/lifecycle checks, native/rank/environment/image/dispatch provenance, raw342 revalidation, exact request mask/wires, and queue turn-preflight on every new shell. No <other-host>. Parent owns all execution, G restoration, reconciliation, reporting and auditor adaptation.
+
+Fresh namespace: `stdbench-compute-a1-20261106-v3`. Runtime path: `a1-continuation` on both Sparks. No v2 campaign/ledger/attempt namespace is reused. The unchanged spec copy hashes to `0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453`.
+
+Copies retain runtime modules/scripts, with narrow namespace/path changes. Budget replaces the old inherited schema2 adapter with a single schema3 implementation. `coordination.py` is new. `render_prompts.py` now rebinds qualified v2 arrays rather than rerunning the native renderer. No request generation, physics, image, grade, sampling, seeds, caps, prompt/wire or reference policy changes. Original request serializers, raw342 retention/mask logic, exact L18/D120 and original concatenated t01-D/t02-D P240 order are unchanged.
+
+## Recovery/config contract
+
+Default inputs (must exist only AFTER actual verified G recovery):
+
+- `compute-dl/a1-recovery-20261106/reconciled-budget.json`: derived schema2 prior ledger.
+- `compute-dl/a1-recovery-20261106/recovery.json`: parent-authorized receipt with the exact supplied keys/policy.
+
+Campaign fields are `prior_budget`, `prior_budget_sha256`, `recovery_receipt`, `recovery_receipt_sha256`, alongside unchanged `original_budget` and `original_budget_sha256`. Both final CPU proof and campaign bind these hashes. `budget.campaign_kwargs(cfg)` maps to `HeldBudget(..., original_path, original_sha, prior_path, prior_sha, recovery_path, recovery_sha)`; `validate_prior(**campaign_kwargs(cfg))` performs read-only verification.
+
+Validation requires original3413.519101628801 provenance, exact old histories, closed schema2 prior, all cumulative sums, raw failed v2 active ledger hash, no-new-requests receipt, MODELS200, expected G engine, and actual restore-log hash. The appended failed interval must retain `run_prefix=stdbench-compute-a1-20261105-v2`, start at `2026-11-06T08:53:34.922223Z`, end at receipt interval_end_utc, and charge the ENTIRE UTC difference within1microsecond; prior total must equal raw total plus that charge. The policy string is exactly `conservative full UTC interval; no infrastructure-wait subtraction`. No carry or restored timestamp is invented.
+
+New schema3 copies all prior turns unchanged and binds original/prior/recovery hashes, original_carry_seconds, computed carry_seconds=prior.held_seconds, baseline_interval_count, and v3 run_prefix. Only new intervals are appended to its own ledger; each has v3 run_prefix even when turn labels repeat A1-resume. Reload validates all historical cumulative sums and exact baseline prefix. Original v1, raw v2, reconciled prior and recovery files remain immutable. Limits18000/admission15900 remain. There is no extension or exclusion of infrastructure waiting. Parent should report exhausted-budget INCOMPLETE if applicable.
+
+## Coordination preflight
+
+`coordination.check(path=Path('/tmp/<rank1-host>-gpu.lock'))` opens O_RDONLY|O_NONBLOCK|O_NOFOLLOW, fstats a regular file and reads one byte, then closes. It never creates/writes/truncates/flocks. G holding flock is permitted. The CLI checks only the real fixed path.
+
+Controller checks BOTH nodes via local check and normal bounded <rank1-host> remote control: initial preflight before queue, immediately before queue append, head preflight, and immediately before touching G STOP. Normal <rank1-host> lease still uses the original `exec 9</tmp/<rank1-host>-gpu.lock; flock 9` protocol after STOP. No root02 lock write is introduced. No endpoint liveness helper added; inherited normal model checks remain downstream of qualified CPU/GO gates.
+
+Parent CPU fixtures cover regular/readable while flock held, missing, nonregular directory/FIFO, injected permission failure (root cannot reliably demonstrate mode000 failure), and unchanged file contents. Actual native-path evidence is separately required from BOTH `qualify_rank.py` results and sealed by finalize_cpu. Source has no present-tense claim that either path passed.
+
+## Parent sequence AFTER G recovery
+
+All commands below are payloads for existing parent CPU admission scopes: Sparks only,2GiB/no swap,nice19,ionice-c3,timeout>=7200,one worker; <rank1-host> through01; no SSH heredocs; no <other-host>. Run from Spark `~/work/stdbench/compute-dl`. Synchronize this source directory and dependencies first. Do not copy old GO, logs, runs, seals or generated stages into it.
+
+1. `python3 -B a1-continuation/runtime_stage.py stage --out a1-continuation/runtime-stage-v3`
+   API additionally accepts `prior_path`, `prior_sha`, `recovery_path`, `recovery_sha`; CLI overrides are `--prior-budget`, `--prior-budget-sha256`, `--recovery-receipt`, `--recovery-receipt-sha256`. Defaults hash the supplied parent files and validate their receipt relationship; production paths default to <rank0-host> names for identical campaign bytes.
+2. `python3 -B a1-continuation/runtime_stage.py materialize a1-continuation/runtime-stage-v3 0`; rank1 on <rank1-host> after copying the stage. Fresh destinations only. <rank0-host> retains <rank1-host> manifest shadows. Materializer intentionally does NOT create campaign-v1.json: parent copies each new prefix's stage-campaign.json to its candidate campaign-v1.json before rank checks/finalization. New GO remains absent.
+3. `python3 -B a1-continuation/render_prompts.py` on <rank0-host>: requires v2 qualified prompt proof and CPU receipt hashes, identical staged input bytes, exact242 arrays, and unchanged native renderer/tokenizer. Copies arrays exclusively into v3, writes a new proof with prior authority hashes and new source hash. This reuses CPU proof without rerendering/inference. Keep old prompt/CPU artifacts available on both nodes for final seal reads.
+4. `python3 -B a1-continuation/cpu_check.py` (AST, actual raw342 stage/mask, exact720/P controls, schema3 recovery/history/admission and pure coordination fixtures, fake native-client controls). Uses parent recovery files; cleans its temp stage/materializations/ledgers/FIFO. It cannot authorize collection.
+5. Actual CPU/rank qualifier: `python3 -B a1-continuation/qualify_rank.py 0` and rank1 on <rank1-host>. These do actual three native-adapter dry runs per rank, fresh namespace/environment/image checks, and native coordination path checks; parent still controls admission/CPU dispatch.
+6. Existing lifecycle procedure, replacing paths with a1-continuation: `bash a1-continuation/lifecycle-launch.sh success` and `failure` (failure exit73 expected), preserving actual inherited-SIGPIPE proof/logs as lifecycle-success.log and lifecycle-failure.log. Then `python3 -B a1-continuation/control_check.py` writes fresh controls/code seals. It calls queue turn-preflight for ALL five new shell scripts and dependencies. Parent should also retain its usual explicit preflight evidence before execution.
+7. Reuse the complete hash-qualified native clipping/codec, raw342 revalidation-v2, dispatch, analysis/statistics/sensitivity and strict-grader evidence; do not rerun heavy suites where sources/input hashes are unchanged. No342 exclusions. Existing finalizer checks raw source coverage and all revalidation files and policy receipts, original/reference/native source pins, frozen analysis/secondary source hashes, prompt evidence and actual fresh rank/control proofs. Parent's forthcoming report/auditor adaptations must be complete BEFORE finalization/code sealing.
+8. `python3 -B a1-continuation/finalize_cpu.py` requires absent GO, all evidence above and untouched staged candidate. It creates only v3 ledger/campaign/CPU proof, checks computed reconciled baseline rather than fixed old carry, and binds all720 manifest keys, raw342, remaining138/P240 wires and both protocols. Parent copies final identical campaign bytes/evidence to both rank-local paths and verifies actual seals on both nodes with GO absent. This source handoff is NOT that qualification.
+
+Only parent subsequently creates the newly qualified GO and invokes `bash a1-continuation/launch.sh FINAL_CAMPAIGN A1-resume`, then A1-plain after resume QUALIFIED. These are two study turns with normal drain/G restore per turn. Failed v2 remains NO_DATA with no exclusions/retries of original observed keys. Parent owns all queue/G actions and final report.

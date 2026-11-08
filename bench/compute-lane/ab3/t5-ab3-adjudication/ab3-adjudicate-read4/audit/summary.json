@@ -1,0 +1,357 @@
+{
+  "freeze_sha256": "93417d27c61d8c52069ec1b33cb83d79f26e6cd3fdc0b8d33127e784b6315e7a",
+  "frozen_at": "2026-11-04T09:18:35Z",
+  "first_request_utc": "2026-11-04T09:26:06.045929+00:00",
+  "frozen_files_per_copy": 152,
+  "frozen_copies": 7,
+  "family_counts": {
+    "add30": 11,
+    "algo": 5,
+    "bignum": 3,
+    "div_big": 8,
+    "mbpp": 20,
+    "mul30": 3,
+    "mul_big": 10
+  },
+  "receipts": 720,
+  "tool_matches": 444,
+  "safety_gate_sum": {
+    "records": 87,
+    "ok": 86,
+    "wrong-value": 0,
+    "wrong-span": 0,
+    "not-in-text": 1,
+    "cut": 0,
+    "unknown": 0,
+    "unparsed": 0
+  },
+  "first_cache": [
+    {
+      "boot": "ab3-b1-1-plain",
+      "arm": "plain",
+      "first": {
+        "id": "w9-mul_big-067",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 1252,
+        "completion": 1252,
+        "inserted": 0,
+        "solved": true,
+        "finish": "stop",
+        "wall": 28.087,
+        "prompt": 53,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T091946Z/ab3-b1-1-plain/a-s102/w9-mul_big-067.json",
+        "sent": 1793784366.0459294
+      }
+    },
+    {
+      "boot": "ab3-b1-2-lane",
+      "arm": "lane",
+      "first": {
+        "id": "w9-mul_big-067",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 104,
+        "completion": 87,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 5.57,
+        "prompt": 359,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T091946Z/ab3-b1-2-lane/d-s102/w9-mul_big-067.json",
+        "sent": 1793785323.5428724
+      }
+    },
+    {
+      "boot": "ab3-b1-3-full",
+      "arm": "full",
+      "first": {
+        "id": "w9-mul_big-067",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 82,
+        "completion": 65,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 4.955,
+        "prompt": 471,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T095232Z/ab3-b1-3-full/rn-s102/w9-mul_big-067.json",
+        "sent": 1793786333.659193
+      }
+    },
+    {
+      "boot": "ab3-b1-4-only",
+      "arm": "only",
+      "first": {
+        "id": "w9-mul_big-067",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 104,
+        "completion": 87,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 5.754,
+        "prompt": 359,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T095232Z/ab3-b1-4-only/ro-s102/w9-mul_big-067.json",
+        "sent": 1793786875.6324766
+      }
+    },
+    {
+      "boot": "ab3-b2-1-lane",
+      "arm": "lane",
+      "first": {
+        "id": "w9-mul_big-053",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 177,
+        "completion": 159,
+        "inserted": 18,
+        "solved": true,
+        "finish": "stop",
+        "wall": 8.248,
+        "prompt": 360,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T101747Z/ab3-b2-1-lane/d-s102/w9-mul_big-053.json",
+        "sent": 1793787849.7552614
+      }
+    },
+    {
+      "boot": "ab3-b2-2-full",
+      "arm": "full",
+      "first": {
+        "id": "w9-mul_big-053",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 100,
+        "completion": 82,
+        "inserted": 18,
+        "solved": true,
+        "finish": "stop",
+        "wall": 5.411,
+        "prompt": 472,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T101747Z/ab3-b2-2-full/rn-s102/w9-mul_big-053.json",
+        "sent": 1793788501.233184
+      }
+    },
+    {
+      "boot": "ab3-b2-3-only",
+      "arm": "only",
+      "first": {
+        "id": "w9-mul_big-053",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 177,
+        "completion": 159,
+        "inserted": 18,
+        "solved": true,
+        "finish": "stop",
+        "wall": 8.319,
+        "prompt": 360,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T104533Z/ab3-b2-3-only/ro-s102/w9-mul_big-053.json",
+        "sent": 1793789514.60138
+      }
+    },
+    {
+      "boot": "ab3-b2-4-plain",
+      "arm": "plain",
+      "first": {
+        "id": "w9-mul_big-053",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 504,
+        "completion": 504,
+        "inserted": 0,
+        "solved": true,
+        "finish": "stop",
+        "wall": 12.114,
+        "prompt": 54,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T104533Z/ab3-b2-4-plain/a-s102/w9-mul_big-053.json",
+        "sent": 1793790168.962983
+      }
+    },
+    {
+      "boot": "ab3-b3-1-full",
+      "arm": "full",
+      "first": {
+        "id": "w9-mul_big-015",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 149,
+        "completion": 132,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 8.522,
+        "prompt": 474,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T112309Z/ab3-b3-1-full/rn-s102/w9-mul_big-015.json",
+        "sent": 1793791771.79555
+      }
+    },
+    {
+      "boot": "ab3-b3-2-only",
+      "arm": "only",
+      "first": {
+        "id": "w9-mul_big-015",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 118,
+        "completion": 101,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 5.655,
+        "prompt": 362,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T112309Z/ab3-b3-2-only/ro-s102/w9-mul_big-015.json",
+        "sent": 1793792376.581409
+      }
+    },
+    {
+      "boot": "ab3-b3-3-plain",
+      "arm": "plain",
+      "first": {
+        "id": "w9-mul_big-015",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 737,
+        "completion": 737,
+        "inserted": 0,
+        "solved": true,
+        "finish": "stop",
+        "wall": 17.912,
+        "prompt": 56,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T115045Z/ab3-b3-3-plain/a-s102/w9-mul_big-015.json",
+        "sent": 1793793426.37061
+      }
+    },
+    {
+      "boot": "ab3-b3-4-lane",
+      "arm": "lane",
+      "first": {
+        "id": "w9-mul_big-015",
+        "seed": 102,
+        "family": "mul_big",
+        "T": 118,
+        "completion": 101,
+        "inserted": 17,
+        "solved": true,
+        "finish": "stop",
+        "wall": 5.562,
+        "prompt": 362,
+        "cached": 0,
+        "censored": false,
+        "cut": false,
+        "owned": 0,
+        "path": "<rank0-work>/dsv41-bench/out/imr-measure-20261104T115045Z/ab3-b3-4-lane/d-s102/w9-mul_big-015.json",
+        "sent": 1793794676.2656932
+      }
+    }
+  ],
+  "arms": {
+    "plain": {
+      "T": 301009,
+      "completion": 301009,
+      "inserted": 0,
+      "solved": 170,
+      "censored": 7,
+      "cut": 0,
+      "owned": 0,
+      "wall": 8107.944,
+      "prompt": 14643,
+      "cached": 5440,
+      "finishes": {
+        "stop": 173,
+        "deadline": 7
+      }
+    },
+    "lane": {
+      "T": 65499,
+      "completion": 62094,
+      "inserted": 3405,
+      "solved": 172,
+      "censored": 0,
+      "cut": 0,
+      "owned": 0,
+      "wall": 2274.08,
+      "prompt": 69723,
+      "cached": 47632,
+      "finishes": {
+        "stop": 180
+      }
+    },
+    "full": {
+      "T": 56872,
+      "completion": 53060,
+      "inserted": 3812,
+      "solved": 174,
+      "censored": 0,
+      "cut": 0,
+      "owned": 40,
+      "wall": 2047.714,
+      "prompt": 89883,
+      "cached": 61856,
+      "finishes": {
+        "stop": 180
+      }
+    },
+    "only": {
+      "T": 65558,
+      "completion": 62224,
+      "inserted": 3334,
+      "solved": 172,
+      "censored": 0,
+      "cut": 0,
+      "owned": 48,
+      "wall": 2299.921,
+      "prompt": 69723,
+      "cached": 47632,
+      "finishes": {
+        "stop": 180
+      }
+    }
+  }
+}

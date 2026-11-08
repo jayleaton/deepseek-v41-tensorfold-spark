@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "spec_sha256": "8eaa9575592f519b504d08022d400602e4b552874c8424b02c59c34f4af174e2",
+  "source_sha256": {
+    "<rank0-work>/stdbench/compute-dl/a2-report/verify_G.py": "a842e869bc11eef76e8a87331c5ff53fddda387572413b53b48e963d4b51e3c7",
+    "<rank0-work>/stdbench/compute-dl/a2-report/qualify_report.py": "b8dc738bdda24865097e0ca7441d79f2cefc322f29e59a041c11834ecbec3da4",
+    "<rank0-work>/stdbench/compute-dl/a2-report/audit_collection.py": "55a1077641c1bdc430e2ebd9679a43f988701d81dd21591d40ba066e6e697137",
+    "<rank0-work>/stdbench/compute-dl/a2-report/audit_a1_settlement.py": "560b09f9b1619117b994ad39e3ac00f47a46e294f585623424dd64bd1da58718",
+    "<rank0-work>/stdbench/compute-dl/a2-report/publish.py": "f447dd9ceb0cdf302635781a3eb88abaef9e0e49595ef76df1dfd9674756ef48"
+  },
+  "retained_rows": 596,
+  "activation_distinct_L": 120,
+  "strict_cost_safety_projection": true,
+  "full_20000_draw_report_format": true,
+  "scheduled_CSV_rows": 720,
+  "partial_primary_withheld": true,
+  "CPU_fixture_production_publication_refused": true,
+  "CPU_fixture_outputs_removed": true,
+  "sealed_initial_raw_audit_required_before_GO": true,
+  "GPU_requests": 0,
+  "GO_created": false
+}

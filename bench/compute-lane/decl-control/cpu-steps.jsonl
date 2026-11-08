@@ -1,0 +1,4 @@
+{"step": "native-host-build", "verdict": "PASS"}
+{"step": "native-render", "verdict": "PASS"}
+{"step": "CPU-full-array-comparison", "verdict": "PASS", "dataset_pairs": 184, "diagnostic_pairs": 2}
+{"step": "collection-feasibility", "verdict": "BLOCKED", "reason": "actual served initial prompt IDs and all-round prompt accounting unavailable"}

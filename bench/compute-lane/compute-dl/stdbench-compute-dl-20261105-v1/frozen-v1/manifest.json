@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "prefix": "stdbench-compute-dl-20261105-v1",
+  "spec_sha256": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+  "status": "STAGED_CPU_GATES_PENDING",
+  "collection_qualified": false,
+  "turns": [
+    {
+      "name": "t01",
+      "boots": [
+        "t01-D",
+        "t01-L"
+      ]
+    },
+    {
+      "name": "t02",
+      "boots": [
+        "t02-L",
+        "t02-D"
+      ]
+    }
+  ],
+  "boots": [
+    {
+      "boot": "t01-D",
+      "arm": "D",
+      "file": "boots/t01-D.json",
+      "sha256": "828d9bfc466796a08c36d9324fa5294048e2c2fda9bdcff69d9107840bcaf162"
+    },
+    {
+      "boot": "t01-L",
+      "arm": "L",
+      "file": "boots/t01-L.json",
+      "sha256": "f044822f55fb1e80c6509514c3d271fa7c5936ecec8933b60ad621939e4e98e7"
+    },
+    {
+      "boot": "t02-L",
+      "arm": "L",
+      "file": "boots/t02-L.json",
+      "sha256": "1259822c1ffca99073bf2e26fce9f5ad86206eb7fc412dc3f08157c1df8264a2"
+    },
+    {
+      "boot": "t02-D",
+      "arm": "D",
+      "file": "boots/t02-D.json",
+      "sha256": "3a6a93eeb4dec0b75365771e5abd8316e4051dcc4c55476c5df065819126c6d8"
+    }
+  ],
+  "fresh_replies": 480,
+  "diagnostic_replies": 8,
+  "tasks_public_sha256": "3e1e07d7a573eb194c0568afac2ef2112011b2b2cada9012fbbce4e6f47f7548",
+  "seeds": [
+    101,
+    102
+  ],
+  "families": [
+    "integer",
+    "modular",
+    "division",
+    "dp",
+    "graph",
+    "aggregation"
+  ]
+}

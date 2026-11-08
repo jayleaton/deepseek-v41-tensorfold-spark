@@ -1,0 +1,28 @@
+{
+  "sources": {
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/T5-COMPUTE-DL-SPEC-A1.md": "0dca1fa52838388ea1e7afbc3a4c5e9747775f64e871640df7a66496369e5453",
+    "<rank0-work>/stdbench/compute-dl/T5-COMPUTE-DL-SPEC.md": "c3e6da463138fb82ae51245dd55d7033fedae56c5e4266f8aaacfb6b80a4a141",
+    "<rank0-work>/stdbench/compute-dl/remaining-collection.json": "6fdf99b3dbfd5d77e9ae3c04c3a23c85c18e78a0762933561aa34c1fbd57da43",
+    "<rank0-work>/stdbench/compute-dl/LEDGER.md": "2a5f4956181f843342c65329b64815c579c43da8054c4cd99d83e0d66b4ecf72",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/protocol.py": "71bf3947c4cb7fb4588657da88870b56c102efc23e61c899ce2b236e1568e045",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/rank_ops.py": "020263299eba5291c20c1496b50b36b32d32263083b5704ab581e4f679717771",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/lifecycle_probe.py": "126013eea63d5f41cf4a69b0ec8ca232f4ac59bbe15410d9bd419cd4f4b79649",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/finalize_cpu.py": "933b1409f9fd5529a3411c7cc34927fc85747974e2917d902c781fa2017efb7c",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/controller.py": "fe0f26fe18a6beacfc1e4c3341e2d8c3afab5954c7730ec8fdc3977e957aed2d",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/coordination.py": "d6b5070dc60919bcf4720b2472fa89d5ef5272c34999d963bc0cb0d4acbeaf2c",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/render_prompts.py": "53cd7b5309bf82d1975038a6b77457fe984b81ac1569455a89d9bb980e601c79",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/clipping.py": "3f1c71d14ba0ab58029767ee14facaa4a98c12765ee830fdcd826b60eb95c373",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/request_adapter.py": "d1b4da6f4fdf3d0bce6d89d2bae04de258f451671a4c9335051bf7abe3cc2b67",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/qualify_rank.py": "b8f4885ae095b39145a419d2837e6598c8bbc8ba6ea93ab127abf9ac0a809587",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/budget.py": "95cbad1dd2a9af4f0fcd3510c642e61400e3b1c3fec05226927b19db233a0f70",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/runtime_stage.py": "b7ebc6b127ad630ebbbae653d166df0417cc22e53756a1aedcab738a7a2c84f7",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/cpu_check.py": "e561847f226356a6e1ec8d4e2aa987a9a81408a551159f79127f523f72c8bc8b",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/fake_client_check.py": "d6bf93a4548b2d0cc7f8b62119e6c6d0d4571ebd3b30e4b8ab02435768b3233a",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/control_check.py": "1dd01c1eed55c8a6a387fcd6233c01b59149ea5594b6647dd3292bb7f2d09c22",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/fence.sh": "4613ab2c4dda5cebe02bbbe278204f9bdd27990c21bc66a8965e7e0d6987278a",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/turn.sh": "823b1bd208ab442e3db15d317d5bc3561d516b4ae780b7b4d8a8e420f9e74828",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/launch.sh": "6b85278f54cff65b24829cf7a45fa1c0e5ed1ee9ce5fcdcdc4f6d85ba6ddc1be",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/lifecycle-launch.sh": "68110fe9f3294ca317454f56989ac980815512f333cf2d6514b0ae100652c64a",
+    "<rank0-work>/stdbench/compute-dl/a1-continuation/cpu_gate.sh": "43a76e00ddc090904bb3810d7ffd2633a8881bb4fd3cba8d5d1350eb806ca9ed"
+  }
+}

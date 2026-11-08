@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "spec_sha256": "b47ede697eed3a38d244ad5ff7447690732bd12945ff4592554d45bc2d8527ec",
+  "controls": {
+    "passed": true,
+    "controls": [
+      "raw-only response retained unqualified",
+      "processed transport error retained",
+      "marker-only attempt stays ambiguous/missing",
+      "no retry authorization",
+      "fixtures cleaned"
+    ]
+  },
+  "source_sha256": {
+    "<rank1-work>/stdbench/format-retest/audit_collection.py": "4d13080eea400ef5fa192eabd1d360092743a5baad3399d0905f6b306f9b7578",
+    "<rank1-work>/stdbench/format-retest/qualify_cpu.py": "b97f46a4649ef0e3b940a9a3b3a070725e0440c38484b4ba395ad71d85194bac"
+  }
+}
