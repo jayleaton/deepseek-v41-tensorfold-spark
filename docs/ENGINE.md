@@ -58,7 +58,7 @@ flash17 pack on TP2. H added:
   structured output, `0` refuses it, and any other value stops the boot.
 
 The pin is not on upstream main yet, so `config/tensorfold.repo` points at JJ's public fork
-(`jayleaton/TensorFold`, branch `dsv41/compute-lane-release`), where the commit is published. To fall back to G, put
+(`jayleaton/TensorFold`, branch `dsv41/compute-lane-release-s86`), where the commit is published. To fall back to G, put
 `58bece1d3184269059fd3f7f755c52f4f295113d` (branch `dsv41/candidate-g`) in `config/tensorfold.rev` and regenerate
 the settings list; G does not read the profile's runner lines, so the launcher warns and does not forward them. To fall back to F, put
 `56200688d52af54062fadbab12de36e95165ad72` (an ancestor of G on that branch) in `config/tensorfold.rev`, also unset
