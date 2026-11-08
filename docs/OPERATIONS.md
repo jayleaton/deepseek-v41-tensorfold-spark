@@ -118,7 +118,7 @@ The profile keeps every limit at its default: two sandboxes at a time, 10 s and 
 with 512 result-body tokens each. The cap applies per call, so a reply with several calls can insert several capped
 results plus truncation notes, bounded by the request's output-token budget.
 
-At the current pin (`01a62132c`) a client function named `python` that is byte-equal to the built-in definition
+From pin `01a62132c` on, a client function named `python` that is byte-equal to the built-in definition
 also arms the lane (any other `python` function next to `code_interpreter` is refused), and a request may set
 `deadline_s` (seconds, more than 0 and at most 1000000): at the deadline the reply ends with `finish_reason:
 "deadline"` and keeps its tokens and usage.

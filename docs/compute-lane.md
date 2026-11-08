@@ -21,16 +21,17 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `01a62132cf66dda64d6d54d568901ee78e4a4126`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
+| Pin | `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` of `jayleaton/TensorFold` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
-The pin is `07106059c` plus five commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
+The pin is `07106059c` plus seven commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
 chat](#compute-in-every-chat)), `75d774470` refines it (a client's own `python`, the `compute_executed` count),
 `012767b62` and `8a6ce56a3` keep it out of replies that cannot run a call and out of thinking-off chats ([When the
 built-in tool is offered](#when-the-built-in-tool-is-offered)), and `01a62132c` stops the runner's inline cells from
-taking the right operand of an operator they do not read (`\times`, `\bmod`) as the whole expression. With that setting
-unset it renders and serves requests exactly as `07106059c` does; the inline fix applies whenever the runner is on.
+taking the right operand of an operator they do not read (`\times`, `\bmod`) as the whole expression; `5f3e98939` and
+`7b79ef92d` (upstream #2182) let NVMe session restores through `Disk.validate`. With that setting
+unset it renders and serves requests exactly as `07106059c` does, apart from the session restores; the inline fix applies whenever the runner is on.
 Below it, the release branch holds the same 303 commits over upstream `0d51120a8` as the measured branch, with the
 same trees, messages and dates, re-recorded under one author. Counterparts of commits named in this recipe's docs:
 

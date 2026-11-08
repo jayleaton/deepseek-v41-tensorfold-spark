@@ -21,8 +21,8 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `01a62132c` on `dsv41/compute-lane-release`: `07106059c`, the exact engine source of the compute-lane
-studies ([compute lane](compute-lane.md)), plus five commits. `07106059c`'s tree is byte-identical to the measured
+The current pin is `7b79ef92d` on `dsv41/compute-lane-release-s86`: `07106059c`, the exact engine source of the compute-lane
+studies ([compute lane](compute-lane.md)), plus seven commits. `07106059c`'s tree is byte-identical to the measured
 source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus `deadline_s`,
 the engine-held compute lane with its sandbox, and the experimental in-model runner, which stays off unless its settings
 are set. The first added commit (`e5172c4a2`) is `TF_DSV41_COMPUTE_LANE_DEFAULT` (unset: no change), which gives every
@@ -34,11 +34,16 @@ does: a client's own `python` function keeps the name for its request (the built
 tool only to a thinking chat whose reply has room for a call (`max_tokens` at least 1024, no stop strings, logprobs or
 structured output; the guide stays on every thinking chat), and never return a built-in call the engine could not run
 ([compute lane](compute-lane.md#when-the-built-in-tool-is-offered)). The fifth (`01a62132c`) makes the runner's
-inline cells abstain after a TeX or worded operator (`\(4 \times 49 - 11 =` had got the value of `49 - 11`). [compute
+inline cells abstain after a TeX or worded operator (`\(4 \times 49 - 11 =` had got the value of `49 - 11`). The sixth
+and seventh (`5f3e98939`, `7b79ef92d`) are upstream #2182 by Sergey Tretyak (goshi), cherry-picked unchanged from
+`f1402df75` and `6cb6ca1c9`: `Disk.validate` now agrees with the stash contract and the replay drafter, so a session
+parked on the NVMe tier under `TF_DSV41_PREFILL=replay` is restored instead of failing with `BadBlob` and prefilling
+again ([#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86), reported by crystal8194; the
+measurement is under [Session restore at this pin](#session-restore-at-this-pin)). [compute
 lane](compute-lane.md) lists the measured G commits'
 counterparts on this branch.
 
-The previous pin is release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,
+The recipe pinned `01a62132c` (this branch without #2182) before; earlier it pinned release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,
 the same tree). G is candidate F (`56200688d`, the
 fallback pin) plus the compute lane (`TF_DSV41_COMPUTE_LANE`, off in the engine, on in the flash17 profile; [OPERATIONS](OPERATIONS.md)) and its
 executor. F carries the opt-in settings the flash17 profile turns on (the KV mirror, both rotation folds, the indexer
@@ -63,6 +68,30 @@ fallback, as described below. This source support is not a new
 pack/device qualification. Do not edit a pack config to bypass admission checks. Native images, structured output,
 defaults, sessions and sampling still require migration qualification; historical production results do not
 qualify this pin.
+
+## Session restore at this pin
+
+[#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86): with the replay prefill and no
+`TF_DSV41_SESSION_DELTA`, every session restore off the NVMe tier failed `Disk.validate` with `BadBlob`, so a
+returning long conversation paid its whole prefill again. Upstream #2182 (goshi) relaxes the two checks that no writer
+honours; crystal8194 measured it on G (`58bece1d3` plus #2182) at 16 `resumed ... from NVMe`, 0 `BadBlob` and a warm
+4x60k TTFT of 0.4 s instead of 30.6 s.
+
+On this pin, one TP2 boot of the flash17 default profile (`r-7b79ef92d846-runner`, 2026-11-08), `vllm bench serve`
+prefix_repetition, 4 prefixes x 60,000 tokens + 512 suffix, 16 prompts, `--max-concurrency 1`, `--seed 0`, 256 output
+tokens, `--ignore-eos`, cold then the same 16 prompts warm (TTFT from the engine's `done` lines, all 16 requests):
+
+| | issue, G (`58bece1d3`) | this pin, cold | this pin, warm |
+| --- | --- | --- | --- |
+| TTFT median | 30.6 s cold, 30.6 s warm | 25.24 s | **0.300 s** (0.289-0.314) |
+| `BadBlob`, both ranks | 16 | 0 | **0** |
+| `resumed ... from NVMe` / `from RAM` (rank 0) | 0 / 0 | 0 / 0 | 0 / **16** (60,496 of 60,512 tokens each) |
+
+The warm cell resumed from the RAM tier, so this boot did not read the NVMe tier; the disk path is covered by the
+upstream host tests (13 `session_codec` cases, `zig build test-dsv41-device-host` 240/240 here against 227/227 before)
+and the two measurements above. The issue's G figures come from crystal8194's profile, not this one. vLLM's client
+marked 2 of the 16 cold requests failed ("never received a valid chunk") although the engine logged all 16 complete
+(256 tokens, HTTP 200); its own cold median over the other 14 is 28.73 s.
 
 ## Results at this pin (2026-10-29/30)
 

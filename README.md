@@ -18,8 +18,10 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `01a62132c` on
-`dsv41/compute-lane-release`: the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `7b79ef92d` on
+`dsv41/compute-lane-release-s86`: `01a62132c` plus the NVMe session-restore fix of upstream #2182 (sessions parked on
+the NVMe tier come back instead of failing with `BadBlob`; [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
+`01a62132c` is the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
 byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client's own `python` function keeps the name;
 `compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
 for half an expression). That is release
