@@ -2,7 +2,7 @@
 # non-test zig/src, plus the prefix ++ "_SUFFIX" names of knob groups parsed under a literal prefix.
 # Regenerate on every pin bump:
 #   python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout
-rev 75d7744706d4880147069ee1492915692289bc37
+rev 01a62132cf66dda64d6d54d568901ee78e4a4126
 TENSORFOLD_API_KEY
 TENSORFOLD_BENCHMARK_TOKEN
 TENSORFOLD_CHECKPOINT_SHA256

@@ -21,15 +21,20 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `75d774470` on `dsv41/compute-lane-release`: `07106059c`, the exact engine source of the
-compute-lane studies ([compute lane](compute-lane.md)), plus two commits. `07106059c`'s tree is byte-identical to the
-measured source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus
-`deadline_s`, the engine-held compute lane with its sandbox, and the experimental in-model runner, which stays off
-unless its settings are set. The first added commit (`e5172c4a2`) is `TF_DSV41_COMPUTE_LANE_DEFAULT` (unset: no
-change), which gives every chat the built-in tool and the runner's guide and reports `compute_executed`; the flash17 profile turns it on with the
-runner ([compute lane](compute-lane.md#compute-in-every-chat)). The second (`75d774470`) changes only what that
-setting does: a client's own `python` function keeps the name for its request (the built-in tool steps aside), and
-`compute_executed.calls` counts only calls that ran. [compute lane](compute-lane.md) lists the measured G commits'
+The current pin is `01a62132c` on `dsv41/compute-lane-release`: `07106059c`, the exact engine source of the compute-lane
+studies ([compute lane](compute-lane.md)), plus five commits. `07106059c`'s tree is byte-identical to the measured
+source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus `deadline_s`,
+the engine-held compute lane with its sandbox, and the experimental in-model runner, which stays off unless its settings
+are set. The first added commit (`e5172c4a2`) is `TF_DSV41_COMPUTE_LANE_DEFAULT` (unset: no change), which gives every
+chat the built-in tool and the runner's guide and reports `compute_executed`; the flash17 profile turns it on with the
+runner ([compute lane](compute-lane.md#compute-in-every-chat)). The second (`75d774470`) changes only what that setting
+does: a client's own `python` function keeps the name for its request (the built-in tool steps aside), and
+`compute_executed.calls` counts only calls that ran. The third and fourth (`012767b62`, `8a6ce56a3`) offer the built-in
+tool only to a thinking chat whose reply has room for a call (`max_tokens` at least 1024, no stop strings, logprobs or
+structured output), and never return a built-in call the engine could not run ([compute
+lane](compute-lane.md#when-the-built-in-tool-is-offered)). The fifth (`01a62132c`) makes the runner's inline cells
+abstain after a TeX or worded operator (`\(4 \times 49 - 11 =` had got the value of `49 - 11`). [compute
+lane](compute-lane.md) lists the measured G commits'
 counterparts on this branch.
 
 The previous pin is release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,

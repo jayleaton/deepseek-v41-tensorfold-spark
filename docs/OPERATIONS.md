@@ -118,23 +118,23 @@ The profile keeps every limit at its default: two sandboxes at a time, 10 s and 
 with 512 result-body tokens each. The cap applies per call, so a reply with several calls can insert several capped
 results plus truncation notes, bounded by the request's output-token budget.
 
-At the current pin (`75d774470`) a client function named `python` that is byte-equal to the built-in definition
+At the current pin (`01a62132c`) a client function named `python` that is byte-equal to the built-in definition
 also arms the lane (any other `python` function next to `code_interpreter` is refused), and a request may set
 `deadline_s` (seconds, more than 0 and at most 1000000): at the deadline the reply ends with `finish_reason:
 "deadline"` and keeps its tokens and usage.
 
 The flash17 profile's default is the in-thinking "tool-full" profile: the in-model runner on (experimental), lane calls
-on the runner first with the sandbox as fallback, and `TF_DSV41_COMPUTE_LANE_DEFAULT=1`, so every chat is served as
-if it listed `code_interpreter` and sent the runner's trust guide, whatever the client sends. The client's own
+on the runner first with the sandbox as fallback, and `TF_DSV41_COMPUTE_LANE_DEFAULT=1`, so every thinking chat with
+room for a call is served as if it listed `code_interpreter` and sent the runner's trust guide, whatever the client
+sends ([when the built-in tool is offered](compute-lane.md#when-the-built-in-tool-is-offered)). The client's own
 function tools still return their calls to the client. A client that offers its own function named `python` keeps it:
 for that request the built-in tool is left out and its `python` calls go back to the client, while the runner's
-in-thinking cells stay on. Each reply's `tensorfold.compute_executed` counts the built-in calls that ran and the
-runner cells (0 when none); a call with no code, or past the call cap, is not counted. It needs the runner image (`scripts/build-runner-image.sh`;
-the boot stops on an image without the circuit). The log line `compute default: every chat gets the built-in tool and
-the runner's guide, whatever it sends` confirms it. The opt-in arm L block in the profile sets the runner and its
-options off, which is how the lane-only studies ran.
-The studies, their exact configurations, results and how to rerun them are in
-[compute lane](compute-lane.md).
+in-thinking cells stay on. Each reply's `tensorfold.compute_executed` counts the built-in calls that ran and the runner
+cells (0 when none); a call with no code, or past the call cap, is not counted. It needs the runner image
+(`scripts/build-runner-image.sh`; the boot stops on an image without the circuit). The log line `compute default: every
+thinking chat gets the built-in tool and the runner's guide, whatever it sends` confirms it. The opt-in arm L block in
+the profile sets the runner and its options off, which is how the lane-only studies ran. The studies, their exact
+configurations, results and how to rerun them are in [compute lane](compute-lane.md).
 
 **Turning it off.** The sandbox lane and the in-thinking runner are separate switches. To disable only the sandbox
 lane, set `TF_DSV41_COMPUTE_LANE=0` and `TF_DSV41_COMPUTE_LANE_DEFAULT=0` (or delete both lines) in

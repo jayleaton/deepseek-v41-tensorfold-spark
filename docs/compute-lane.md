@@ -8,8 +8,8 @@ the client in the loop. The client gets one reply: the answer, plus the calls in
 
 **The flash17 profile's default is the in-thinking "tool-full" profile** with `TF_DSV41_COMPUTE_LANE_DEFAULT=1`: the
 model computes inside its thinking (the in-model runner writes the values of the cells it can run) and through the
-built-in tool, for every chat whatever the client sends ([Compute in every chat](#compute-in-every-chat)). Arm L, the
-lane alone with the runner off, is an opt-in block in the same profile.
+built-in tool, for every thinking chat whatever the client sends ([Compute in every chat](#compute-in-every-chat)).
+Arm L, the lane alone with the runner off, is an opt-in block in the same profile.
 
 [OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) covers the sandbox, its
 limits, the boot self-test and how to turn the lane off. This page covers the default, the measured configurations,
@@ -20,13 +20,16 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `75d7744706d4880147069ee1492915692289bc37`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
+| Pin | `01a62132cf66dda64d6d54d568901ee78e4a4126`, branch `dsv41/compute-lane-release` of `jayleaton/TensorFold` |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
-The pin is `07106059c` plus two commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
-chat](#compute-in-every-chat)) and `75d774470` refines it (a client's own `python`, the `compute_executed` count). With
-that setting unset it renders and serves requests exactly as `07106059c` does.
+The pin is `07106059c` plus five commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
+chat](#compute-in-every-chat)), `75d774470` refines it (a client's own `python`, the `compute_executed` count),
+`012767b62` and `8a6ce56a3` keep it out of replies that cannot run a call and out of thinking-off chats ([When the
+built-in tool is offered](#when-the-built-in-tool-is-offered)), and `01a62132c` stops the runner's inline cells from
+taking the right operand of an operator they do not read (`\times`, `\bmod`) as the whole expression. With that setting
+unset it renders and serves requests exactly as `07106059c` does; the inline fix applies whenever the runner is on.
 Below it, the release branch holds the same 303 commits over upstream `0d51120a8` as the measured branch, with the
 same trees, messages and dates, re-recorded under one author. Counterparts of commits named in this recipe's docs:
 
@@ -72,12 +75,12 @@ lines with this request shape), full and runner-only.
 
 ### The flash17 profile against the measured arms
 
-The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1`. AB3's requests
-sent `tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the
-engine supplies both to every chat, so a client sends neither. `max_tokens` and `deadline_s` stay the client's (AB3
-sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the
-default has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's nineteen
-names with the runner off, so no default value survives from an exported shell) and runs on the plain image.
+The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1`. AB3's requests sent
+`tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the engine
+supplies both to every thinking chat, so a client sends neither. `max_tokens` and `deadline_s` stay the client's (AB3
+sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the default
+has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's nineteen names with
+the runner off, so no default value survives from an exported shell) and runs on the plain image.
 
 Both blocks share the rest of the profile, which equals L's effective environment except:
 
@@ -185,7 +188,7 @@ Configured in the default profile, measured only where stated:
 | --- | --- |
 | `TF_DSV41_RUNNER` and the default's `TF_DSV41_RUNNER_*` lines | the in-model runner; measured only in AB3's tool-full arm |
 | `TF_DSV41_COMPUTE_LANE_RUNNER` and `_*` | S3, runner-first lane calls; tool-full only |
-| `TF_DSV41_COMPUTE_LANE_DEFAULT` | every chat gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
+| `TF_DSV41_COMPUTE_LANE_DEFAULT` | every thinking chat with room for a call gets the built-in tool and the trust guide; not in any study (AB3's requests sent both) |
 | `TF_DSV41_RUNNER_INLINE_ARITH` and `_INLINE_MOD` | not set in either block, so the engine defaults both to `1` and inline arithmetic and modulo cells run (the profile's `TF_DSV41_RUNNER_FORMS` includes `inline`); on in AB3 (mapped source `00b66d9f6`) |
 
 Off in both blocks and never on in an adjudicated arm: `TF_DSV41_RUNNER_TRACE*`, `_SPEC_HOLD`, `_COMMIT`, `_STATED`,
@@ -197,18 +200,22 @@ The lane itself (`TF_DSV41_COMPUTE_LANE` with its default limits) and `deadline_
 ## Compute in every chat
 
 `TF_DSV41_COMPUTE_LANE_DEFAULT=1` (needs `TF_DSV41_COMPUTE_LANE=1`; any other value, or the setting without the lane,
-stops the boot) makes the engine read every chat request as the tool-full request, whatever the client sends:
+stops the boot) makes the engine read every thinking chat request as the tool-full request, whatever the client
+sends:
 
-- `tools` gets the built-in `{"type": "code_interpreter"}` entry once. A client that lists it, or sends a byte-equal
-  copy of the built-in `python` function, still gets one declaration. A client that offers its own, different
+- `tools` gets the built-in `{"type": "code_interpreter"}` entry once, when the chat thinks and its reply can run a
+  call ([When the built-in tool is offered](#when-the-built-in-tool-is-offered)). A client that lists it, or sends a
+  byte-equal copy of the built-in `python` function, still gets one declaration. A client that offers its own, different
   function named `python` keeps it: for that request the built-in tool is left out (the prompt is the client's own and
   its `python` calls go back to it), while the runner's in-thinking cells and guide stay on. A model's call carries
   only the tool's name, so two tools named `python` cannot both be offered. Only a request that lists
   `code_interpreter` next to its own different `python` is refused (HTTP 400), as with the default off. A
   `tool_choice` of `"none"` keeps the built-in tool; `"required"` or a named function leave it out, as they do for a
   request that opts in.
-- The runner's guide is the boot's (`TF_DSV41_RUNNER_GUIDE`, or AB3's trust guide when unset, sha256 `53ed328f…`); a
-  request's own `runner_guide` is ignored.
+- The runner's guide is the boot's (`TF_DSV41_RUNNER_GUIDE`, or AB3's trust guide when unset, sha256 `53ed328f…`), for
+  thinking chats only: it was measured inside thinking, and in a visible answer it makes the model write `<expr> =`
+  cells where the client expects the answer. A thinking-off chat gets no guide. A request's own `runner_guide` is
+  ignored.
 - The client's own function tools are kept and their calls go back to the client as usual. Only built-in calls and
   the runner's in-thinking cells run in the engine.
 - No request field turns it off.
@@ -217,6 +224,28 @@ Each reply's `tensorfold` object then carries `compute_executed`: `calls` (built
 or the sandbox started; a call with no code, or past `TF_DSV41_COMPUTE_LANE_MAX_CALLS`, stays a report but is not
 counted), `runner_cells` (runner cells the engine wrote a value for, all forms) and `total`, 0 when nothing ran. With the setting unset no
 reply carries it and requests are rendered exactly as before.
+
+### When the built-in tool is offered
+
+The default offers the built-in tool only to a thinking chat whose reply can hold at a call, run it and still
+answer:
+
+- Thinking is on: `chat_template_kwargs.enable_thinking` (or `thinking`, or a `reasoning_effort` other than `none`),
+  else the server's default. With thinking off, the prose the model writes before a call would be the visible answer,
+  and the answer after the result would run straight on into it (a TP2 benchmark check showed
+  `Let me compute.232792560`).
+- `max_tokens` is at least 1024 (`default_min_tokens` in the engine's `compute_turns.zig`). A request with no
+  `max_tokens`, or 0, counts as the server's default (4096). The call, its result and the answer all count against
+  `max_tokens`, so a short reply (a 64-token QA benchmark, for one) has no room for them.
+- No `stop` strings, no `logprobs` or `prompt_logprobs`, and no structured output (`response_format`, `guided_json`,
+  `guided_regex`, `guided_choice`, `guided_grammar`, `structured_outputs`). These replies cannot hold at a call.
+
+Any other request is served as with the default off: no built-in tool and the same prompt (thinking off: no guide
+either). The client's own tools are kept as usual. A request that lists `code_interpreter` itself is not affected by
+these rules: a thinking-off client that wants the tool can still opt in.
+
+If a built-in call still cannot finish inside `max_tokens`, it never reaches the client: no `tool_calls`, no DSML
+markup in the content. The reply keeps the prose before the call and ends with `finish_reason` `"length"`.
 
 ## Runner image
 

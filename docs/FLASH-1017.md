@@ -92,10 +92,11 @@ each one does.
 | `TF_DSV41_PF_SCRATCH_ALIAS` | `1` | |
 
 The profile also turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`) with its in-thinking default: the in-model runner
-and a built-in, sandboxed Python tool for every chat ([compute lane](compute-lane.md)).
-In the 2026-11-01 window on G the lane alone measured plain coding about 2 % lower (0.980, one
-run; the lane-off boots varied 2.2 %); see
-[OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it off.
+and a built-in, sandboxed Python tool for every thinking chat ([compute
+lane](compute-lane.md#when-the-built-in-tool-is-offered)). In the 2026-11-01 window on G the lane alone measured plain
+coding about 2 % lower (0.980, one run; the lane-off boots varied 2.2 %); see
+[OPERATIONS](OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile) for limits and how to turn it
+off.
 
 On the exported engine, this profile with the #48 guard (engine on 8001, guard on 8000, the plan thread pinned to
 one CPU inside `CPUSET_CPUS`) was qualified over a 3-hour soak of long agentic sessions up to ~156K tokens with RAM
