@@ -20,18 +20,23 @@ on each node after changing either variable (see [ZIG-SERVE](ZIG-SERVE.md#genera
 
 ### Long histories with many images
 
-A request carries at most `TF_DSV41_VISION_MAX_IMAGES` images (8 by default; one image is at most 1,024 positions).
+A request carries at most `TF_DSV41_VISION_MAX_IMAGES` images (8 by default). Its images share one visual-token budget,
+1,024 positions by default (the processor's `max_image_tokens`; the recipe does not pass `--vision-image-tokens`), and
+each image gets at most 1,024 / n of them. The processor scales even a small screenshot up to about 200 positions, so
+from about the sixth image on, every image added or removed re-sizes all of the request's images.
 Session reuse resumes only from a stored entry that is an exact prefix of the new prompt. A client that drops an old
 image from the middle of a long history, replacing it with a note, a summary or nothing, changes the prompt at that
 image, so every entry past it stops matching and the next turn prefills from the last entry before the change. On a
 long agent session that can be the whole context again: 216–278 s at ~500K tokens in
 [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80). Edited messages and compaction do the same.
+Because of the shared budget, a history with more than about five images changes at its first image on every turn that
+adds or drops one, even when the client keeps every image.
 
-- **Raise the ceiling** when an agent history keeps many screenshots: `TF_DSV41_VISION_MAX_IMAGES=32` costs at most
-  ~32K pool positions and changes neither the AOT set nor the buffer plan. Check `TF_DSV41_VISION_FETCH_TOTAL_S`, one
-  deadline for every image of a request.
-- **Trim in batches.** When the history passes the ceiling, drop old images down to the ceiling minus 8, not minus 1,
-  so one rewrite (one long prefill) covers eight new images instead of one.
+- **Raising the ceiling** (`TF_DSV41_VISION_MAX_IMAGES=32`) adds no pool positions, the AOT set and the buffer plan stay
+  the same, and each image gets fewer positions (1,024 / 32 = 32). Check `TF_DSV41_VISION_FETCH_TOTAL_S`, one deadline
+  for every image of a request.
+- **Trimming** old images also re-sizes the ones kept, so past about five images it rewrites from the first image like
+  adding one does.
 - **Checkpoints** (`TF_DSV41_SESSION_LCP_RESUME=1`, off by default): the engine also saves the prompt's state every
   `TF_DSV41_SESSION_LCP_EVERY` tokens (default 32,768) while it prefills, and keeps those checkpoints as long as their
   conversation. A rewritten history then resumes from the last checkpoint before the change and prefills only the rest

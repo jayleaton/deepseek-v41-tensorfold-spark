@@ -307,4 +307,9 @@ at that token depend on the history, and only a snapshot taken there holds them.
 With the setting unset the planner's pieces, the snapshots and every resumed row are those of `7b79ef92d` (a host test
 compares a trace of both). Whatever the setting, an admission that loses at least 1,024 tokens of reuse logs
 `sessions: slot S: a N-token prompt diverged at token D (stored M); it prefills from P`.
-[IMAGES](IMAGES.md#long-histories-with-many-images) has the workarounds that need no engine change.
+[IMAGES](IMAGES.md#long-histories-with-many-images) explains why a history with many images is rewritten.
+
+Measured on two Sparks with the same commit ported to the serving engine `5d25d4ff4` (2026-11-11, G's recipe, knob on;
+nine turns, a 67.5K-token log then eight screenshots; the ninth turn drops the oldest screenshot): the rewritten
+68,632-token turn resumed 65,536 tokens from RAM and reached its first token in 1.97 s, against 43.99 s for a cold
+prefill of the same prompt with the knob off, and its greedy reply equals the cold one token for token.
