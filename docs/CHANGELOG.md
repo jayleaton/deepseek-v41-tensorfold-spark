@@ -3,12 +3,27 @@
 The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a) -> `da5ae43` (G16) -> `cd4245a`
 (G18) -> **`7bd2d67`** (G19). Each window's write-up is in [`docs/campaign/`](campaign/README.md).
 
+## 2026-11-11: the G port (`5d25d4ff4`) with CUDA forward compatibility
+
+- **Pin `5d25d4ff4`**, release candidate G's commits ported onto the runner line `5074ee87d`; production serving
+  switched to it this day. Its decode geometric mean against production G was 1.024 over four cells, with replies
+  token-identical to G's; [BENCHMARKS](BENCHMARKS.md#the-g-port-5d25d4ff4) has the checks and
+  [ENGINE](ENGINE.md) the commits. It must be published to `config/tensorfold.repo` before this branch merges.
+- **The compute lane refused at boot with image input on** (pin `5d25d4ff4`). The vision engine wrapper did not
+  forward `resume_held` to its inner engine; it does now.
+- **CUDA forward compatibility** (`scripts/build-compat-image.sh`): CUDA 13.3's 610.43.02 driver from Mia /
+  MiaAI-Lab's pinned image, checked file by file, over the host's older kernel module; `TF_CUDA_COMPAT=0` on both nodes
+  selects the host driver ([OPERATIONS](OPERATIONS.md#cuda-forward-compatibility-tf_cuda_compat)). Decode +3.5 % paired
+  against the host driver.
+- **Settings list**: the pin reads the lane's and the runner's `TF_DSV41_*` names as a family binding's aliases of the
+  generic `TF_COMPUTE_LANE*` / `TF_RUNNER*`; `scripts/engine_settings.py` composes both.
+
 ## Bugs fixed
 
 - **NVMe session restores failed with `BadBlob`** (pin `7b79ef92d`, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
   `Disk.validate` required a stash span of at most the ring and no drafter offset without drafter rings; neither holds
   under `TF_DSV41_PREFILL=replay`, so every restore off the NVMe tier re-prefilled. Upstream #2182 by goshi, reported
-  and confirmed by crystal8194; [ENGINE](ENGINE.md#session-restore-at-this-pin) has the measurement.
+  and confirmed by crystal8194; [ENGINE](ENGINE.md#session-restore-86) has the measurement.
 - **A duplicate image in one request killed both ranks** (G16). The vision row store counted a reference per
   occurrence of an image, so an agent history that resends the same screenshot released it early; the next request
   with that image raised `KeyError` inside rank 0's prefill forward, rank 1 waited in the exchange, and both ranks

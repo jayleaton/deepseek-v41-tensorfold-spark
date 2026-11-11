@@ -18,25 +18,34 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `7b79ef92d` on
-`dsv41/compute-lane-release-s86`: `01a62132c` plus the NVMe session-restore fix of upstream #2182 (sessions parked on
-the NVMe tier come back instead of failing with `BadBlob`; [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
-`01a62132c` is the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
-byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client's own `python` function keeps the name;
-`compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
-for half an expression). That is release
-candidate G (`58bece1d3`, fallback; F `56200688d` before it) plus `deadline_s`, the engine-held compute lane and the
-experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, whose runner and
-trust guide run for every thinking chat whatever the client sends (the built-in tool only when its reply has room for a
-call); it needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block. The
-pin's history holds the stable DeepSeek head H (`20ad77878`, re-recorded there as
-`b073317ab`) and includes flash17’s `dsq-1` admission support. The pin is not on upstream main yet, so the build fetches
-it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo)) until the upstream PRs merge; a local
-checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `5d25d4ff4`, the G port: the 40
+commits of release candidate G (`58bece1d3`) ported onto the line that carries the in-model runner (`5074ee87d`, with
+the `TF_DSV41_BIAS_VL` and `TF_DSV41_NO_FORCED_DRAFTS` settings fixes, the forced-rows hold, graph-bank teardown frees
+and runner proof fixes), plus a lean fixup (`0e547b124`), a health-test brace fix (`5114cb28d`) and `5d25d4ff4`
+itself: the vision wrapper forwards held replies to its engine, without which the compute lane refused at boot with
+image input on. Production serving on two Sparks switched to it on 2026-11-11, with the CUDA forward-compatibility
+layer ([OPERATIONS](docs/OPERATIONS.md#cuda-forward-compatibility-tf_cuda_compat); CUDA 13.3's 610.43.02 driver over
+the host's 580 kernel module, `TF_CUDA_COMPAT=0` for the host driver). It also carries the NVMe session-restore fix of
+upstream #2182 ([#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) and flash17’s `dsq-1`
+admission support. The previous pins are the fallbacks: `7b79ef92d` on `dsv41/compute-lane-release-s86` (the
+compute-lane release with #2182, whose branch holds the exact source the [compute-lane studies](docs/compute-lane.md)
+ran) and release candidate G, `58bece1d3` (F `56200688d` before it). The flash17 profile's default is the in-thinking
+"tool-full" profile, whose runner and trust guide run for every thinking chat whatever the client sends (the built-in
+tool only when its reply has room for a call); it needs the runner image (`scripts/build-runner-image.sh`). The measured
+lane-only arm is an opt-in block. See [ENGINE](docs/ENGINE.md).
+
+**Before this branch can merge**, `5d25d4ff4` must be published to JJ's TensorFold fork
+([`config/tensorfold.repo`](config/tensorfold.repo)); it is not there yet, so the default build cannot fetch it. Until
+then, build with `TENSORFOLD_SOURCE` set to a local checkout or bundle that contains it
+([ENGINE](docs/ENGINE.md#build-and-checks)). The pin is not on upstream main either.
+
+Against production G on 2026-11-11 (TP2, flash17 K6 pack, compute lane on), the switch boot decoded at a geometric mean
+of **1.024×** over four cells, its replies were token-identical to G's on 12 of 12, and the correctness checks passed or
+matched G's results ([BENCHMARKS](docs/BENCHMARKS.md#the-g-port-5d25d4ff4)).
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
-was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-10-2930). Full engine/pack/device
+was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-h-2026-10-2930). Full engine/pack/device
 qualification is still pending, and the historical production results below do not qualify this pin.
 
 > **Work in progress.** Measured on one pair of Sparks. Read [what is not solved](docs/KNOWN-ISSUES.md) before
@@ -83,6 +92,7 @@ git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 scripts/build-native.sh -t tensorfold-dsv41:local                                    # the engine at the pin
 scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner  # + runner assets (downloaded, sha256-checked)
+scripts/build-compat-image.sh tensorfold-dsv41:local-runner tensorfold-dsv41:local-runner-compat  # + CUDA forward compatibility
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
 scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting

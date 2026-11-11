@@ -1,0 +1,11 @@
+# The CUDA forward-compatibility driver scripts/build-compat-image.sh layers: scripts/cuda_compat.py accepts exactly
+# these files at these sha256s (and the links in cuda-compat.links), CUDA 13.3's user-mode driver 610.43.02 as
+# cuda-compat.release's image ships it.
+5e499d0378ce7214e90bb15f01a4bc6a6e26cb270116ce285d888a43903724b4  libcudadebugger.so.610.43.02
+568153835562ea89c0c1669635e5631ada5f0862689025e3ed4a383086413e3a  libcuda.so.610.43.02
+2bff62a7ecb2de306cdf0ac14c41135ca8f5f3d7dfba58e968020701ebfa5663  libnvcuextend.so.610.43.02
+ac1b62df041ea2e2f69d957ab6522e1a7343ad1255b0ad12b9f85500fdff3e48  libnvidia-gpucomp.so.610.43.02
+91ca045c5169d36c2e69da58a18a231af9f730c91cc36fcbf745b0266ec07f3a  libnvidia-nvvm70.so.4
+dcd13b53cfeef4b6bf8e93268562c07e0b2b49f3c53dab774320d9ec4442f5fe  libnvidia-nvvm.so.610.43.02
+60e70458c42f8e239f369cf4fde0c2f503d8b45657c6d9e66c763bbcb312d345  libnvidia-ptxjitcompiler.so.610.43.02
+08e7e5791a3ffa8af19a820fff069e2685f7c822c4dffa99443cac88df2738a8  libnvidia-tileiras.so.610.43.02

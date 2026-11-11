@@ -39,6 +39,39 @@ error text is credential-masked before stdout and JSON output. Unknown native he
 Set `PREFLIGHT=1` for the optional launcher hook: warnings continue, failures stop the start. The helper does not
 certify the checkpoint or justify a pool increase; native HTTP/SSE qualification remains required.
 
+## The G port (`5d25d4ff4`)
+
+These are the checks behind the 2026-11-11 switch of production serving from G (`58bece1d3`) to the current pin. They
+were measured on 2026-11-11, TP2 on two DGX Sparks, with the flash17 K6 MTP variant
+([FLASH-1017](FLASH-1017.md#the-k6-mtp-variant)) and the flash17 profile with the compute lane on, on the CUDA
+forward-compatibility image ([OPERATIONS](OPERATIONS.md#cuda-forward-compatibility-tf_cuda_compat)).
+
+**Decode against production G.** Four decode cells, greedy, three reps each. The G port's column is the median of its
+reps; G's is the median of 26 G restores that day.
+
+| Cell | G port tok/s | G tok/s | G port / G |
+| --- | ---: | ---: | ---: |
+| ceiling_count 256 | 131.1 | 128.8 | 1.018 |
+| coding 200 | 107.5 | 104.4 | 1.029 |
+| coding 400 | 109.6 | 106.1 | 1.033 |
+| prose 200 | 59.4 | 58.6 | 1.014 |
+
+The geometric mean is **1.024**, and the replies were token-identical to G's on 12 of 12 (every rep of every cell). A
+second boot, the first restore cycle, measured **1.021**, again 12 of 12 identical.
+
+**Correctness** on the switch boot:
+- greedy 2K and exact 8K prefill token IDs equal the H reference;
+- the thinking-off set: 19 of 20 correct, the same rows as G, and all 20 replies identical to G's;
+- a 159-item task subset: 151 of 159, the same items correct as G;
+- a native image request and the compute-lane smoke pass;
+- both ranks logged 0 allocator reports and 0 error lines before shutdown. After SIGTERM each rank logs 1629 allocator
+  reports: the known teardown pattern of the runner's graph bank, not a serving leak.
+
+**CUDA forward compatibility against the host driver** (an earlier window the same day; release candidate G's image with
+the compat layer, one boot on the image's 610.43.02 driver and one with `TF_CUDA_COMPAT=0` on the host's 580 driver,
+the same decode cells): decode **+3.5 %** faster with the compat driver, paired on identical tokens, faster on 14 of 15
+requests (one-sided sign test p = 0.0005). The thinking-off set was **9.5 %** faster by wall time.
+
 ## Release candidate G
 
 These numbers come from the paired bench boots behind the pin to G (`58bece1d3`). They used the flash17 K6 MTP variant

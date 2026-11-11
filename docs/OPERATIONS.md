@@ -162,6 +162,46 @@ above; turn it off if no client sends `code_interpreter` or if that is not accep
   All arms solved 38 of 40. Against no tools at all, the lane was 2.7 % faster at one stream and 5.5 % slower at four,
   where only two sandboxes run at a time (`TF_DSV41_COMPUTE_LANE_WORKERS`).
 
+## CUDA forward compatibility (`TF_CUDA_COMPAT`)
+
+Production serving runs the runner image with a CUDA forward-compatibility layer over it: CUDA 13.3's user-mode driver
+(libcuda 610.43.02) in the image, used while the host's kernel module is older (580 on the measured Sparks), as NGC
+images do. The engine binary is unchanged. Build it over the runner image, then set `IMAGE` to the new tag on both
+nodes:
+
+```bash
+scripts/build-native.sh -t tensorfold-dsv41:local
+scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner
+scripts/build-compat-image.sh tensorfold-dsv41:local-runner tensorfold-dsv41:local-runner-compat
+```
+
+`scripts/cuda_compat.py` takes `/usr/local/cuda-13.3/compat/lib.real` out of the image
+[`config/cuda-compat.release`](../config/cuda-compat.release) pins by digest: Mia / MiaAI-Lab's dual-Spark image when
+it is present by that digest, else her base image (NGC PyTorch), pulled by digest; it holds the same files and is a
+large pull. The directory must hold exactly the files in [`config/cuda-compat.sha256`](../config/cuda-compat.sha256)
+at their sha256 and the links in [`config/cuda-compat.links`](../config/cuda-compat.links); anything else stops the
+build before it starts. No driver file is kept in this repository.
+
+The layer's entry, `tf-compat-entry`, runs ahead of the base entrypoint, and the base command is kept. It puts
+`/opt/tensorfold/compat` first on the loader path only while the kernel module is older than 610 and `cuInit` succeeds
+through it (probed with the image's `python3`); otherwise the engine runs on the host's driver, as before. It logs one
+line saying which, first in each rank's container log: `tf-compat-entry: CUDA forward compatibility on: driver 610
+(image) over kernel module ...` or `tf-compat-entry: host CUDA driver (...)`. After the build, the builder checks
+without a GPU that an image without a device and `TF_CUDA_COMPAT=0` both log the host driver, that arguments reach the
+command unchanged and that the image is the base plus the layer, then prints a JSON receipt (image and base IDs, size
+delta). Both ranks must run the same image: the pair identity compares them.
+
+**Turning it off.** Set `TF_CUDA_COMPAT=0` in `config/prod-zig.env` on both nodes and restart the pair; the launcher
+forwards it, and the entry logs `host CUDA driver (...; TF_CUDA_COMPAT=0)`. Or set `IMAGE` back to the runner image.
+
+**Measured** (2026-11-11, one boot each, release candidate G's image with the layer, `TF_CUDA_COMPAT` unset against
+`0`): decode **+3.5 %** with the compat driver, paired on identical tokens (faster on 14 of 15 requests, one-sided sign
+test p = 0.0005), and the thinking-off set **9.5 %** faster by wall time. The current pin was qualified on the compat
+image ([BENCHMARKS](BENCHMARKS.md#the-g-port-5d25d4ff4)).
+
+The packaging is the lane-template runner packaging (`e679834c7`), ported here; the driver files are NVIDIA's, as
+Mia / MiaAI-Lab's image ships them ([CREDITS](CREDITS.md)).
+
 ## Stalled-engine exit (`TF_DSV41_STALL_EXIT_S`, off)
 
 The pinned engine watches its own work: a round, a session snapshot, the KV union sync and each operation a follower

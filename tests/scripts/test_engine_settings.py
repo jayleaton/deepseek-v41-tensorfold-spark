@@ -42,10 +42,34 @@ def test_prefix_parsed_knob_groups_list_their_composed_names():
     assert engine_settings.composed_names(lines) == {"TF_X_LANE_WORKERS", "TF_X_LANE_PYTHON"}
 
 
+def test_family_bindings_list_the_names_under_their_prefix_and_alias():
+    lines = [
+        'r:zig/src/core/lane.zig:        const on = get(prefix) orelse "";',
+        'r:zig/src/core/lane.zig:        c.workers = try knob(u8, get, prefix ++ "_WORKERS", c.workers, 1, 64);',
+        'r:zig/src/core/lane.zig:        c.place = try place.Config.parse(get, prefix);',
+        'r:zig/src/core/lane.zig:pub const place = @import("lane_place.zig");',
+        'r:zig/src/core/lane_place.zig:        const cpus = get(prefix ++ "_CPUS") orelse "";',
+        'r:zig/src/core/lane_binding.zig:const lane = @import("lane.zig");',
+        'r:zig/src/core/lane_binding.zig:    prefix: []const u8 = "TF_LANE", // PREFIX=1 enables',
+        'r:zig/src/core/lane_binding.zig:        const old = b.alias orelse return lane.Config.parse(get, b.prefix);',
+        'r:zig/src/core/lane_binding.zig:pub const x: Binding = .{ .alias = "TF_X_LANE" };',
+        # A member's prefix (`b.prefix ++ "_RUNNER"`) derives another binding; it is not a knob of this group.
+        'r:zig/src/core/lane_circuit.zig:    return .{ .prefix = b.prefix ++ "_RUNNER" };',
+    ]
+    assert engine_settings.composed_names(lines) == {
+        "TF_LANE", "TF_LANE_WORKERS", "TF_LANE_CPUS", "TF_X_LANE", "TF_X_LANE_WORKERS", "TF_X_LANE_CPUS"}
+
+
 def test_manifest_lists_the_compute_lane_knob_group():
     _, settings = engine_settings.manifest()
     assert {"TF_DSV41_COMPUTE_LANE"} | {"TF_DSV41_COMPUTE_LANE_" + s for s in (
-        "WORKERS", "MAX_MS", "MAX_RESULT_TOKENS", "MAX_CALLS", "MEM_MB", "PYTHON", "CPUS")} <= settings
+        "WORKERS", "MAX_MS", "MAX_RESULT_TOKENS", "MAX_CALLS", "MEM_MB", "PYTHON", "CPUS", "DEFAULT")} <= settings
+    # The in-model runner and the lane's runner (S3) under the DeepSeek-V4.1 binding's names, as the profile sets them.
+    assert {"TF_DSV41_RUNNER"} | {"TF_DSV41_RUNNER_" + s for s in (
+        "CIRCUIT", "FORMS", "BACKEND", "GRAPH_BANK", "STATED", "INLINE_CHAIN", "INLINE_MARK", "SYNC_GRAPH",
+        "COMPILE_STEPS", "CELLS", "COMMIT")} <= settings
+    assert {"TF_DSV41_COMPUTE_LANE_RUNNER"} | {"TF_DSV41_COMPUTE_LANE_RUNNER_" + s for s in (
+        "CIRCUIT", "BACKEND", "GRAPH_BANK", "SETTLE_US", "WALL_MS")} <= settings
 
 
 @pytest.mark.parametrize("profile", PROFILES)

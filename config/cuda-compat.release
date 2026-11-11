@@ -1,0 +1,7 @@
+# Where scripts/cuda_compat.py takes the CUDA forward-compatibility driver from for scripts/build-compat-image.sh:
+# `path` inside `image`, Mia / MiaAI-Lab's dual-Spark image (her recipe dc05c912, built as published), when it is
+# present by that digest; else `mirror`, her base image, pulled by digest (it holds the same files). Never re-hosted
+# here; cuda-compat.sha256 and cuda-compat.links decide what is taken.
+image tensorfold-mia-dualtf@sha256:678f4d2cac0301f5632df4adca84026df94cb560eb99ac7617488bcaa93aa751
+mirror nvcr.io/nvidia/pytorch@sha256:2140e699b3beaf7f96a0081fd9c9406bc3832b435cdb60dfa2d261f7d2f34a1c
+path /usr/local/cuda-13.3/compat/lib.real

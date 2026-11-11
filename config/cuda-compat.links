@@ -1,0 +1,10 @@
+# The symbolic links of the CUDA forward-compatibility driver (cuda-compat.sha256 holds its files):
+# NAME -> TARGET, exactly.
+libcudadebugger.so.1 -> libcudadebugger.so.610.43.02
+libcuda.so.1 -> libcuda.so.610.43.02
+libcuda.so -> libcuda.so.1
+libnvcuextend.so.1 -> libnvcuextend.so.610.43.02
+libnvcuextend.so -> libnvcuextend.so.1
+libnvidia-nvvm.so.4 -> libnvidia-nvvm.so.610.43.02
+libnvidia-nvvm.so -> libnvidia-nvvm.so.4
+libnvidia-ptxjitcompiler.so.1 -> libnvidia-ptxjitcompiler.so.610.43.02

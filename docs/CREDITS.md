@@ -21,6 +21,11 @@
   their [1017 kit](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-1017-2x-DGX-Sparks/tree/0e7d421eb4797d98dc781dad764b8f86d34118ae)
   at `0e7d421`. The engine adapts that check to packed per-rank shards as `TF_DSV41_ENGRAM_VALIDATE`, which validates
   before CUDA and TP start.
+  The CUDA forward-compatibility layer ([OPERATIONS](OPERATIONS.md#cuda-forward-compatibility-tf_cuda_compat))
+  extracts the CUDA 13.3 forward-compatibility driver (610.43.02) as Mia's dual-Spark image ships it, pinned by digest
+  in [`config/cuda-compat.release`](../config/cuda-compat.release) and checked file by file; the driver files are
+  NVIDIA's and are not re-hosted here. The layer's packaging is ported from the lane-template runner packaging
+  (`e679834c7`).
 - [dealignai](https://huggingface.co/dealignai/DeepSeek-V4.1-Flash-UNCENSORED-EXL3-2.9bpw): the uncensored 2.9 bpw
   variant measured here.
 - [turboderp / ExLlamaV3](https://github.com/turboderp-org/exllamav3): the EXL3 format.
@@ -50,6 +55,10 @@
   compressed-KV plane), both rotation folds (`TF_DSV41_ROT_FOLD` bit 0 from its grouped linear's `RotOut`, bit 1
   from its attention merge's `Rot`), `TF_DSV41_IDX_IOTA` and `TF_DSV41_DEPTH_OVERHEAD_MS`. The bertholomus pack card's K6
   attention and shared-MTP allocation independently supports the [K6 MTP variant](FLASH-1017.md#the-k6-mtp-variant).
+  The current pin, the G port `5d25d4ff4`, carries this engine work from Bert's
+  ([bertholomus](https://github.com/bertholomus)) DeepSeek-V4.1 fork: six of its commits name him as co-author (the KV
+  mirror, both rotation folds, `TF_DSV41_IDX_IOTA`, `TF_DSV41_DEPTH_OVERHEAD_MS` and the engine's credit for his
+  decode mechanisms).
 - [LibertAIDAI](https://huggingface.co/LibertAIDAI/DeepSeek-V4.1-Flash-1017-EXL3-2.9bpw/blob/afc7aa0aab98ee735c0f54e0a122019af1ac08f1/README.md):
   the 46-projection K6 MTP allocation the [K6 MTP variant](FLASH-1017.md#the-k6-mtp-variant) follows.
 - Issue and pull-request authors on this repository: **WireLLM** (#3, the host memory growth), **ZackO2o** (#4, the

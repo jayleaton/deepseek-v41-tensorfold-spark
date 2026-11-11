@@ -21,11 +21,16 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` of `jayleaton/TensorFold` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
+| Release pin | `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` of `jayleaton/TensorFold` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
-The pin is `07106059c` plus seven commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
+The recipe now pins the G port `5d25d4ff4` ([ENGINE](ENGINE.md)), whose lane and runner come from the runner line
+`5074ee87d`, not from this branch; the studies were not rerun on it. Its own checks, with the lane and runner on, are in
+[BENCHMARKS](BENCHMARKS.md#the-g-port-5d25d4ff4). The rest of this section describes the release branch the studies
+belong to.
+
+The release pin is `07106059c` plus seven commits: `e5172c4a2` adds `TF_DSV41_COMPUTE_LANE_DEFAULT` ([Compute in every
 chat](#compute-in-every-chat)), `75d774470` refines it (a client's own `python`, the `compute_executed` count),
 `012767b62` and `8a6ce56a3` keep it out of replies that cannot run a call and out of thinking-off chats ([When the
 built-in tool is offered](#when-the-built-in-tool-is-offered)), and `01a62132c` stops the runner's inline cells from

@@ -3,10 +3,10 @@
 
 config/tensorfold-settings.txt lists every TF_* / TENSORFOLD_* name the pinned engine
 reads (string literals in its non-test zig/src, and the `prefix ++ "_SUFFIX"` names of a
-knob group its callers parse under a literal prefix). The launcher forwards exactly those
-names that are set, plus NCCL_*. It never forwards credential names, or names it sets
-itself. It refuses renamed or removed settings, so an old profile cannot silently fall
-back to an engine default.
+knob group its callers or a family binding parse under a literal prefix). The launcher
+forwards exactly those names that are set, plus NCCL_* and TF_CUDA_COMPAT (read by the
+image's entry). It never forwards credential names, or names it sets itself. It refuses
+renamed or removed settings, so an old profile cannot silently fall back to an engine default.
 
 Commands (names arrive on stdin, one per line; values are never read from argv):
   forward               print the names to forward; refuse legacy names (exit 2); warn about names
@@ -75,6 +75,9 @@ RANK_LOCAL = frozenset({
 RECIPE_NAMES = frozenset({"TF_DSV41_THINKING", "TF_DSV41_DEFAULT_EFFORT", "TF_DSV41_LAUNCH_T0",
                           "TF_NATIVE_REQUIRE_FILE", "TENSORFOLD_SOURCE", "TENSORFOLD_REV", "TF_SRC"})
 RECIPE_PREFIXES = ("TF_SAFE_",)
+# Settings the image's entrypoint reads before the engine starts (docker/zig/tf-compat-entry), forwarded like the
+# engine's own: TF_CUDA_COMPAT=0 runs on the host driver instead of the image's forward-compatibility driver.
+IMAGE_NAMES = frozenset({"TF_CUDA_COMPAT"})
 # Profile names the pinned engine no longer reads: the replacement, or why the line goes.
 LEGACY = {
     "GLM53_TF_ROCE_FAST": "TF_TP_ROCE_FAST",
@@ -121,7 +124,7 @@ def legacy_messages(names):
 def forwarded(names, settings):
     from redact import secret_name
     return sorted(n for n in set(names)
-                  if (n in settings or n.startswith("NCCL_"))
+                  if (n in settings or n in IMAGE_NAMES or n.startswith("NCCL_"))
                   and n not in LAUNCHER_OWNED and n not in RECIPE_NAMES and not secret_name(n))
 
 
@@ -129,7 +132,7 @@ def ignored(names, settings):
     """Engine-looking names that the pinned engine does not read (typos, removed settings)."""
     from redact import secret_name
     return sorted(n for n in set(names)
-                  if ENGINE_NAME.fullmatch(n) and n not in settings and n not in RECIPE_NAMES
+                  if ENGINE_NAME.fullmatch(n) and n not in settings and n not in RECIPE_NAMES and n not in IMAGE_NAMES
                   and not n.startswith(RECIPE_PREFIXES) and not secret_name(n))
 
 
@@ -203,8 +206,19 @@ def profile_command(argv):
 SOURCE = ("zig/src/*.zig", ":!*_test.zig")
 # A knob group parsed under a `comptime prefix` reads `prefix ++ "_SUFFIX"`, and its caller passes the literal prefix
 # (`compute_lane.Config.parse(&env, "TF_DSV41_COMPUTE_LANE")` reads TF_DSV41_COMPUTE_LANE_WORKERS and the rest).
-SUFFIX = re.compile(r'\bprefix \+\+ "(_[A-Z0-9_]+)"')
+SUFFIX = re.compile(r'(?<!\.)\bprefix \+\+ "(_[A-Z0-9_]+)"')
 PREFIXED_CALL = re.compile(r'\b([a-z0-9_]+)\.(?:[A-Za-z0-9_]+\.)?parse\(.*?"((?:TF|TENSORFOLD)_[A-Z0-9_]+)"\)')
+# `get(prefix)` reads the bare prefix (the group's switch). A group that passes its prefix on (`place.Config.parse(get,
+# prefix)`) reads that module's names too. A family binding (compute_binding.zig, runner_binding.zig) parses a group
+# under its default `prefix: []const u8 = "TF_..."` or under `.alias = "TF_..."`, the family's older names for the same
+# knobs (`lane.Config.parse(get, b.prefix)` / `(get, old)`). Module names resolve through `const x = @import("y.zig")`.
+SWITCH = re.compile(r'\bget\(prefix\)')
+FORWARD = re.compile(r'\b([a-z0-9_]+)\.Config\.parse\(get, (prefix|b\.prefix|old)\)')
+IMPORT = re.compile(r'\bconst ([a-z0-9_]+) = @import\("(?:[\w./]+/)?([a-z0-9_]+)\.zig"\)')
+DEFAULT_PREFIX = re.compile(r'\bprefix: \[\]const u8 = "((?:TF|TENSORFOLD)_[A-Z0-9_]+)"')
+ALIAS = re.compile(r': Binding = \.\{ \.alias = "((?:TF|TENSORFOLD)_[A-Z0-9_]+)"')
+GROUPED = (r'prefix \+\+ "_[A-Z0-9_]+"|\.parse\(.*"(TF|TENSORFOLD)_|get\(prefix\)|\.Config\.parse\(get, |'
+           r'= @import\("|prefix: \[\]const u8 = "(TF|TENSORFOLD)_|\.alias = "(TF|TENSORFOLD)_')
 
 
 def _grep(source, revision, *args):
@@ -217,15 +231,43 @@ def _grep(source, revision, *args):
 
 
 def composed_names(lines):
-    """`REV:path:text` grep lines -> the names a prefix-parsed knob group reads through its literal-prefix callers."""
-    suffixes, prefixes = {}, set()
+    """`REV:path:text` grep lines -> the names a prefix-parsed knob group reads through its literal-prefix callers and
+    family bindings."""
+    suffixes, imports, forwards, defaults, aliases, calls = {}, {}, {}, {}, set(), set()
     for line in lines:
         _, path, text = (line.split(":", 2) + ["", ""])[:3]
         module = Path(path).stem
-        for suffix in SUFFIX.findall(text):
-            suffixes.setdefault(module, set()).add(suffix)
-        prefixes.update(PREFIXED_CALL.findall(text))
-    return {prefix + suffix for module, prefix in prefixes for suffix in suffixes.get(module, ())}
+        own = suffixes.setdefault(module, set())
+        own.update(SUFFIX.findall(text))
+        if SWITCH.search(text):
+            own.add("")
+        imports.setdefault(module, {}).update(IMPORT.findall(text))
+        forwards.setdefault(module, set()).update(FORWARD.findall(text))
+        defaults.update((module, prefix) for prefix in DEFAULT_PREFIX.findall(text))
+        aliases.update((module, alias) for alias in ALIAS.findall(text))
+        calls.update((module, called, prefix) for called, prefix in PREFIXED_CALL.findall(text))
+
+    def group(module, seen=()):
+        """The suffixes a module's parse reads, with those of the modules it passes its prefix on to."""
+        out = set(suffixes.get(module, ()))
+        for called, arg in forwards.get(module, ()):
+            target = imports.get(module, {}).get(called, called)
+            if arg == "prefix" and target not in seen:
+                out |= group(target, (*seen, module))
+        return out
+
+    names = {prefix + suffix for module, called, prefix in calls
+             for suffix in group(imports.get(module, {}).get(called, called))}
+    for module, prefix in defaults.items():
+        for called, arg in forwards.get(module, ()):
+            if arg != "prefix":
+                names |= {prefix + suffix for suffix in group(imports.get(module, {}).get(called, called))}
+    for module, alias in sorted(aliases):
+        prefix = defaults.get(module)
+        if prefix:
+            names |= {alias + name[len(prefix):] for name in list(names)
+                      if name == prefix or name.startswith(prefix + "_")}
+    return names
 
 
 def engine_names(source, revision):
@@ -233,7 +275,7 @@ def engine_names(source, revision):
     if not literal:
         raise SystemExit("cannot read the engine source at " + revision)
     names = {line.strip().strip('"') for line in literal if line.strip()}
-    grouped = _grep(source, revision, "-E", r'prefix \+\+ "_[A-Z0-9_]+"|\.parse\(.*"(TF|TENSORFOLD)_')
+    grouped = _grep(source, revision, "-E", GROUPED)
     return sorted(names | composed_names(grouped))
 
 
