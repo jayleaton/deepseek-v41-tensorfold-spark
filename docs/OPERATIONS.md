@@ -194,7 +194,7 @@ delta). Both ranks must run the same image: the pair identity compares them.
 **Turning it off.** Set `TF_CUDA_COMPAT=0` in `config/prod-zig.env` on both nodes and restart the pair; the launcher
 forwards it, and the entry logs `host CUDA driver (...; TF_CUDA_COMPAT=0)`. Or set `IMAGE` back to the runner image.
 
-**Measured** (2026-11-11, one boot each, release candidate G's image with the layer, `TF_CUDA_COMPAT` unset against
+**Measured** (2026-11-11, one boot each, the 5d25d4ff4 image with the layer, `TF_CUDA_COMPAT` unset against
 `0`): decode **+3.5 %** with the compat driver, paired on identical tokens (faster on 14 of 15 requests, one-sided sign
 test p = 0.0005), and the thinking-off set **9.5 %** faster by wall time. The current pin was qualified on the compat
 image ([BENCHMARKS](BENCHMARKS.md#the-g-port-5d25d4ff4)).

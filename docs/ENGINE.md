@@ -144,7 +144,7 @@ The tables are in [BENCHMARKS](BENCHMARKS.md#the-g-port-5d25d4ff4).
 - **Serving checks**: a native image request and the compute-lane smoke pass. Before shutdown, both ranks logged 0
   allocator reports and 0 error lines. After SIGTERM each rank logs 1629 allocator reports: the known teardown pattern
   of the runner's graph bank, not a serving leak.
-- **CUDA forward compatibility** (an earlier window that day, on release candidate G's image with the compat layer, one
+- **CUDA forward compatibility** (an earlier window that day, on this pin's image with the compat layer, one
   boot on the image's driver and one with `TF_CUDA_COMPAT=0`): decode **+3.5 %** faster with the compat driver, paired
   on identical tokens (faster on 14 of 15 requests, one-sided sign test p = 0.0005), and the thinking-off set **9.5 %**
   faster by wall time.

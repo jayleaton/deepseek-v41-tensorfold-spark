@@ -4,6 +4,9 @@ Support me here: https://buymeacoffee.com/jayleaton
 
 # DeepSeek-V4.1-Flash-1017 on TensorFold, 2x NVIDIA DGX Spark
 
+> **Do not merge: engine pin not public yet.** This branch pins TensorFold `5d25d4ff4`, which is not yet published
+> to [`config/tensorfold.repo`](config/tensorfold.repo); see below.
+
 ![flash17: DeepSeek-V4.1-Flash-1017, EXL3 2.8 bpw, now available](assets/flash17-now-available.png)
 
 A recipe for serving DeepSeek-V4.1-Flash-1017 on two NVIDIA DGX Sparks behind an OpenAI-compatible API. It ships
