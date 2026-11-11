@@ -21,7 +21,7 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` of `jayleaton/TensorFold` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
+| Pin | `a3cf60d672bc5dd71a5b45deba5ea965fbec4353`, branch `dsv41/session-lcp-resume` of `jayleaton/TensorFold` (`7b79ef92d` plus the opt-in checkpoints of [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)); before it `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 

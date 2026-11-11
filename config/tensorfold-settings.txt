@@ -2,7 +2,7 @@
 # non-test zig/src, plus the prefix ++ "_SUFFIX" names of knob groups parsed under a literal prefix.
 # Regenerate on every pin bump:
 #   python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout
-rev 7b79ef92d846138d51638b677c473392a56e240c
+rev a3cf60d672bc5dd71a5b45deba5ea965fbec4353
 TENSORFOLD_API_KEY
 TENSORFOLD_BENCHMARK_TOKEN
 TENSORFOLD_CHECKPOINT_SHA256
@@ -321,6 +321,8 @@ TF_DSV41_SESSION_DELTA
 TF_DSV41_SESSION_DISK
 TF_DSV41_SESSION_DISK_GIB
 TF_DSV41_SESSION_DISK_MIN
+TF_DSV41_SESSION_LCP_EVERY
+TF_DSV41_SESSION_LCP_RESUME
 TF_DSV41_SESSION_RAM_MIB
 TF_DSV41_SESSION_RESIDENT
 TF_DSV41_SESSION_RESIDENT_GIB
