@@ -162,7 +162,9 @@ def test_the_build_context_files_agree():
     dockerfile = (ROOT / "docker/zig/compat.Dockerfile").read_text()
     assert "COPY compat/ /opt/tensorfold/compat/" in dockerfile
     assert f"COPY tf-compat-entry {cuda_compat.ENTRY_PATH}" in dockerfile
-    assert "ENTRYPOINT" not in dockerfile and "CMD" not in dockerfile  # cuda_compat.py appends both from the base
+    instructions = [line for line in dockerfile.splitlines() if not line.lstrip().startswith("#")]
+    # cuda_compat.py appends both from the base
+    assert not any(line.split()[:1] in (["ENTRYPOINT"], ["CMD"]) for line in instructions)
     assert os.access(ROOT / "docker/zig/tf-compat-entry", os.X_OK)
 
 

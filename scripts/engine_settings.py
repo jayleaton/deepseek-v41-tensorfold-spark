@@ -59,6 +59,8 @@ TRANSPORT_COMMON = frozenset({
     # the RoCE traffic class, the cuda/roce.zig protocol switches, test and other-family switches
     "TF_TP_ROCE_HCAS", "TF_TP_ROCE_TC", "TF_ROCE", "TF_ROCE_MAX_KB",
     "TF_TP_ALLOW_HOST_ONLY", "TF_TP_LOCAL", "TF_TP_STATS", "TF_TP_TRACE",
+    # the four-rank neighbour relay: every rank must opt in, and its size limit splits the same gathers
+    "TF_TP_ROCE_RELAY", "TF_TP_ROCE_RELAY_MAX_KB",
 })
 # Per-rank settings, forwarded but not hashed, each shown per-rank by the engine source.
 RANK_LOCAL = frozenset({
