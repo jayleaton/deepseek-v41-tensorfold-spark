@@ -1,0 +1,31 @@
+started	task	trial	passed	model_steps	wall_s	excluded	pytest
+2026-11-12T04:01:21+0000	mbox-strip-envelope	1	pass	7	40.2		16 passed in 0.09s
+2026-11-12T04:02:12+0000	parser-mbox-quoting	1	pass	4	42.6		55 passed in 1.44s
+2026-11-12T04:03:08+0000	storage-blob-put	1	pass	6	45.5		17 passed in 0.21s
+2026-11-12T04:04:02+0000	parser-date	1	pass	43	226.8	Answer exposure (#54)	55 passed in 1.44s
+2026-11-12T04:08:04+0000	mbox-scan	1	pass	7	47.1		16 passed in 0.09s
+2026-11-12T04:09:00+0000	parser-mbox-quoting-nodoc	1	FAIL	1	6.2		34 failed, 21 passed in 1.38s
+2026-11-12T04:09:19+0000	mbox-quoting-both-halves	1	pass	7	50.9		71 passed in 1.49s
+2026-11-12T04:10:25+0000	storage-put-and-sweep	1	pass	9	49.2		17 passed in 0.22s
+2026-11-12T04:11:23+0000	script-reverse	1	pass	5	17.1		3/3 checks passed
+2026-11-12T04:11:41+0000	script-transform	1	pass	3	14.6		6/6 checks passed
+2026-11-12T04:11:56+0000	mbox-strip-envelope	2	pass	3	19.4		16 passed in 0.09s
+2026-11-12T04:12:24+0000	parser-mbox-quoting	2	pass	5	38.0		55 passed in 1.45s
+2026-11-12T04:13:17+0000	storage-blob-put	2	pass	8	53.0		17 passed in 0.22s
+2026-11-12T04:14:19+0000	parser-date	2	pass	22	142.4		55 passed in 1.45s
+2026-11-12T04:16:57+0000	mbox-scan	2	FAIL	0	5.5		13 failed, 3 passed in 0.12s
+2026-11-12T04:17:11+0000	parser-mbox-quoting-nodoc	2	pass	4	28.9		55 passed in 1.44s
+2026-11-12T04:17:55+0000	mbox-quoting-both-halves	2	FAIL	1	7.4		37 failed, 34 passed in 1.42s
+2026-11-12T04:18:15+0000	storage-put-and-sweep	2	pass	8	58.2		17 passed in 0.27s
+2026-11-12T04:19:22+0000	script-reverse	2	pass	6	19.5		3/3 checks passed
+2026-11-12T04:19:42+0000	script-transform	2	pass	3	16.9		6/6 checks passed
+2026-11-12T04:20:00+0000	mbox-strip-envelope	3	pass	6	34.0		16 passed in 0.09s
+2026-11-12T04:20:43+0000	parser-mbox-quoting	3	pass	6	43.8		55 passed in 1.46s
+2026-11-12T04:21:39+0000	storage-blob-put	3	pass	8	59.1		17 passed in 0.21s
+2026-11-12T04:22:48+0000	parser-date	3	pass	14	94.9		55 passed in 1.44s
+2026-11-12T04:24:38+0000	mbox-scan	3	FAIL	1	6.8		13 failed, 3 passed in 0.12s
+2026-11-12T04:24:53+0000	parser-mbox-quoting-nodoc	3	pass	8	55.4		55 passed in 1.44s
+2026-11-12T04:26:04+0000	mbox-quoting-both-halves	3	pass	8	66.3		71 passed in 1.46s
+2026-11-12T04:27:25+0000	storage-put-and-sweep	3	pass	8	58.7		17 passed in 0.22s
+2026-11-12T04:28:32+0000	script-reverse	3	pass	5	18.6		3/3 checks passed
+2026-11-12T04:28:51+0000	script-transform	3	pass	2	16.5		6/6 checks passed

@@ -5,6 +5,10 @@ OpenAI-compatible on `HOST:PORT` (`127.0.0.1:8000` by default: put your own prox
 `/v1/messages` (Anthropic's Messages format, streaming included, plus `/v1/messages/count_tokens`),
 `/tokenize`, `/v1/models` (`max_model_len`), `/health`, `/metrics`.
 
+A whole tool call to a tool the request did not declare comes back as a `tool_calls` entry, as on vLLM, when its name
+is 1 to 64 letters, digits, `_` or `-` and its arguments are a JSON object, so the client can refuse the unknown tool
+and the model can retry ([ENGINE](ENGINE.md#undeclared-tool-calls-at-this-pin)).
+
 `/v1/messages` streams follow the Anthropic streaming convention: `message_start` names the whole prompt
 (`input_tokens`, output 0) and `message_delta` splits that same prompt into `input_tokens`,
 `cache_read_input_tokens` and `cache_creation_input_tokens`. The head's number equals the delta's parts
