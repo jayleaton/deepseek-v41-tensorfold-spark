@@ -5,6 +5,16 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Bugs fixed
 
+- **A history rewritten mid-way prefilled the whole context, silently** (pin `1ea71240a`,
+  [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). Dropping an old image past
+  `TF_DSV41_VISION_MAX_IMAGES` changed the prompt at that image, so no stored entry prefixed it: 216–278 s at ~500K
+  tokens, with no log line. Each such miss is now logged with where the prompt diverged; `TF_DSV41_SESSION_LCP_RESUME=1`
+  (off by default; needs the round planner, `TF_DSV41_PREFILL_PIECES=1`, as the shipped profiles) adds prompt
+  checkpoints so the rewritten turn resumes from the last one before the change
+  ([ENGINE](ENGINE.md#rewritten-histories-at-this-pin)). [IMAGES](IMAGES.md#long-histories-with-many-images) explains
+  why many images rewrite a history: a request's images share one 1,024-position budget. Reported with a full analysis
+  by Capicua25x.
+
 - **NVMe session restores failed with `BadBlob`** (pin `7b79ef92d`, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
   `Disk.validate` required a stash span of at most the ring and no drafter offset without drafter rings; neither holds
   under `TF_DSV41_PREFILL=replay`, so every restore off the NVMe tier re-prefilled. Upstream #2182 by goshi, reported
