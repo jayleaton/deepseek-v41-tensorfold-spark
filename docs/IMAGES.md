@@ -42,6 +42,11 @@ adds or drops one, even when the client keeps every image.
   conversation. A rewritten history then resumes from the last checkpoint before the change and prefills only the rest
   (a change inside an image resumes before that image). Each checkpoint holds a few MB of the RAM tier
   (`TF_DSV41_SESSION_RAM_MIB`) and no extra pool pages; checkpoints are dropped, never written to the NVMe tier.
+  The spacing is any multiple of 16; the first checkpoint is the first multiple at or past 64 tokens.
+  **Checkpoints come from the round planner**, so they need `TF_DSV41_PREFILL_PIECES=1` with
+  `TF_DSV41_OWN_PREFILL=1` and `TF_DSV41_PROMPT_TAIL=verify` (both defaults). The shipped profiles serve this way. With
+  `TF_DSV41_PREFILL_PIECES` off (whole prompts at admission), the setting saves no checkpoints, and a rewritten history
+  prefills from the last stored entry before the change, as without it.
 
 Whatever the setting, a miss that loses at least 1,024 tokens of reuse is logged with where the prompt changed:
 `sessions: slot S: a N-token prompt diverged at token D (stored M); it prefills from P`.

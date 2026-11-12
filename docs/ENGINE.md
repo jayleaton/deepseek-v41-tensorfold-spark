@@ -21,7 +21,7 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `a3cf60d67` on `dsv41/session-lcp-resume`: `7b79ef92d` plus one commit for
+The current pin is `1ea71240a` on `dsv41/session-lcp-resume`: `7b79ef92d` plus two commits for
 [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see [Rewritten histories](#rewritten-histories-at-this-pin)).
 `7b79ef92d` on `dsv41/compute-lane-release-s86` is `07106059c`, the exact engine source of the compute-lane
 studies ([compute lane](compute-lane.md)), plus seven commits. `07106059c`'s tree is byte-identical to the measured
@@ -295,11 +295,16 @@ on a long agent session often the whole context ([#80](https://github.com/jaylea
 A longer entry cannot be cut at the change: every layer's sliding-window ring, the ratio-2 carries and the replay stash
 at that token depend on the history, and only a snapshot taken there holds them.
 
-`a3cf60d67` adds, all off unless `TF_DSV41_SESSION_LCP_RESUME=1`:
+`a3cf60d67` and `1ea71240a` add, all off unless `TF_DSV41_SESSION_LCP_RESUME=1`:
 
 - **Checkpoints.** The prefill planner also snapshots a prompt at every multiple of `TF_DSV41_SESSION_LCP_EVERY`
-  tokens (default 32768, a multiple of 16), before its replay point. A rewritten history resumes from the last
-  checkpoint before the change. Each one is an ordinary RAM-tier entry (a few MB of bounded state, no extra pool pages).
+  tokens (default 32768, a multiple of 16), before its replay point; the first is the first multiple at or past the
+  64-token snapshot minimum (`1ea71240a`: a spacing of 16, 32 or 48 made none before). A rewritten history resumes
+  from the last checkpoint before the change. Each one is an ordinary RAM-tier entry (a few MB of bounded state, no
+  extra pool pages).
+- **Prerequisite.** Only the round planner (`TF_DSV41_PREFILL_PIECES=1`, which needs `TF_DSV41_OWN_PREFILL=1` and
+  `TF_DSV41_PROMPT_TAIL=verify`, both defaults) saves checkpoints. Whole-prompt mode (`TF_DSV41_PREFILL_PIECES` off)
+  snapshots each prompt once, so there the setting makes no checkpoints. The shipped profiles use the planner.
 - **Retention.** Checkpoints take their conversation's recency on every resume, so the RAM budget evicts a chat's older
   turns before them; an evicted checkpoint is dropped, never written to the NVMe tier.
 - **Images.** A resume never starts inside an image's positions; it moves back to an entry at or before the image.
