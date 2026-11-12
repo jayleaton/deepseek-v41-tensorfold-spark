@@ -21,8 +21,10 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `1ea71240a` on `dsv41/session-lcp-resume`: `7b79ef92d` plus two commits for
-[#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see [Rewritten histories](#rewritten-histories-at-this-pin)).
+The current pin is `3ca06dd4b` on `dsv41/undeclared-tool-passthrough`: `1ea71240a` plus one server commit (see
+[Undeclared tool calls](#undeclared-tool-calls-at-this-pin)). `1ea71240a` on `dsv41/session-lcp-resume` is `7b79ef92d`
+plus two commits for [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see
+[Rewritten histories](#rewritten-histories-at-this-pin)).
 `7b79ef92d` on `dsv41/compute-lane-release-s86` is `07106059c`, the exact engine source of the compute-lane
 studies ([compute lane](compute-lane.md)), plus seven commits. `07106059c`'s tree is byte-identical to the measured
 source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus `deadline_s`,
@@ -318,3 +320,23 @@ Measured on two Sparks with the same commit ported to the serving engine `5d25d4
 nine turns, a 67.5K-token log then eight screenshots; the ninth turn drops the oldest screenshot): the rewritten
 68,632-token turn resumed 65,536 tokens from RAM and reached its first token in 1.97 s, against 43.99 s for a cold
 prefill of the same prompt with the knob off, and its greedy reply equals the cold one token for token.
+
+## Undeclared tool calls at this pin
+
+A model sometimes calls a tool by a name the request did not declare: an agent client such as OpenCode 2 declares
+its shell tool as `shell`, and DeepSeek-V4.1 can write a call to `bash` after a history of such calls. Up to
+`1ea71240a` the server kept that well-formed call as the reply's text, so the reply ended with `finish_reason: "stop"`
+and no `tool_calls`, and the client took the DSML block as its final answer and ended the turn (4 of 30 trials in an
+outside OpenCode 2.2.7 benchmark). vLLM returns the call, the client answers that the tool is unknown, and the model
+retries.
+
+`3ca06dd4b` returns it the same way: a whole call block naming an undeclared tool is a `tool_calls` entry with
+`finish_reason: "tool_calls"`, streamed or not, when the name is 1 to 64 letters, digits, `_` or `-` and the arguments
+are a JSON object. Everything else stays as before: a declared tool keeps its declared spelling; a name with spaces,
+dots or other characters, malformed or unclosed blocks, and bare JSON that names no declared tool (a structured
+answer) stay text; a request without tools never gets a tool call; a call inside the reasoning is never made; and a
+call cut by the end token or `max_tokens` is completed only for a declared tool. The engine's upstream line kept
+undeclared calls as text to match its frozen Python answers (`7be90a36b`), although its API docs describe this
+behaviour, so the change is a fork commit with its own host tests: they fail on `1ea71240a`, and one replays
+DeepSeek-V4.1's own reply captured on the Sparks (a request declaring only `shell`, after two `bash` calls in the
+history, answered with a DSML `bash` call and `finish_reason: "stop"`).

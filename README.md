@@ -18,8 +18,11 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `1ea71240a` on
-`dsv41/session-lcp-resume`: `7b79ef92d` plus opt-in prompt checkpoints for rewritten histories
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `3ca06dd4b` on
+`dsv41/undeclared-tool-passthrough`: `1ea71240a` plus one server fix, so a whole tool call to a tool the request did
+not declare comes back as a tool call, as on vLLM, and the client can refuse it
+([ENGINE](docs/ENGINE.md#undeclared-tool-calls-at-this-pin)). `1ea71240a` (`dsv41/session-lcp-resume`) is
+`7b79ef92d` plus opt-in prompt checkpoints for rewritten histories
 (`TF_DSV41_SESSION_LCP_RESUME`, off by default) and a log line on each costly session miss
 ([#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). `7b79ef92d` (`dsv41/compute-lane-release-s86`) is
 `01a62132c` plus the NVMe session-restore fix of upstream #2182 (sessions parked on
