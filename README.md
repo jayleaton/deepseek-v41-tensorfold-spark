@@ -18,8 +18,8 @@ the previously deployed engine and profile.
 | Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `3ca06dd4b` on
-`dsv41/undeclared-tool-passthrough`: `1ea71240a` plus one server fix, so a whole tool call to a tool the request did
+This branch migrates the recipe to upstream native serving. The pin is TensorFold `12257eb51` on
+`dsv41/undeclared-tool-passthrough`: `1ea71240a` plus two server commits, so a whole tool call to a tool the request did
 not declare comes back as a tool call, as on vLLM, and the client can refuse it
 ([ENGINE](docs/ENGINE.md#undeclared-tool-calls-at-this-pin)). `1ea71240a` (`dsv41/session-lcp-resume`) is
 `7b79ef92d` plus opt-in prompt checkpoints for rewritten histories

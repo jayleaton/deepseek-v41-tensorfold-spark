@@ -21,7 +21,7 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | `3ca06dd4bf2e0243cf6e7cb6338a2501f78d59fe`, branch `dsv41/undeclared-tool-passthrough` of `jayleaton/TensorFold` (`1ea71240a` plus the undeclared-tool fix; `1ea71240a` is `7b79ef92d` plus the opt-in checkpoints of [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)); before them `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
+| Pin | `12257eb51fd2236b65b0e0d8197836e225b95cf5`, branch `dsv41/undeclared-tool-passthrough` of `jayleaton/TensorFold` (`1ea71240a` plus the undeclared-tool fix; `1ea71240a` is `7b79ef92d` plus the opt-in checkpoints of [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)); before them `7b79ef92d846138d51638b677c473392a56e240c`, branch `dsv41/compute-lane-release-s86` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
 | Measured source | `07106059c` on that branch: tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 

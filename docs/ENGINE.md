@@ -21,7 +21,7 @@ python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # aft
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `3ca06dd4b` on `dsv41/undeclared-tool-passthrough`: `1ea71240a` plus one server commit (see
+The current pin is `12257eb51` on `dsv41/undeclared-tool-passthrough`: `1ea71240a` plus two server commits (see
 [Undeclared tool calls](#undeclared-tool-calls-at-this-pin)). `1ea71240a` on `dsv41/session-lcp-resume` is `7b79ef92d`
 plus two commits for [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see
 [Rewritten histories](#rewritten-histories-at-this-pin)).
@@ -326,15 +326,17 @@ prefill of the same prompt with the knob off, and its greedy reply equals the co
 A model sometimes calls a tool by a name the request did not declare: an agent client such as OpenCode 2 declares
 its shell tool as `shell`, and DeepSeek-V4.1 can write a call to `bash` after a history of such calls. Up to
 `1ea71240a` the server kept that well-formed call as the reply's text, so the reply ended with `finish_reason: "stop"`
-and no `tool_calls`, and the client took the DSML block as its final answer and ended the turn (4 of 30 trials in an
-outside OpenCode 2.2.7 benchmark). vLLM returns the call, the client answers that the tool is unknown, and the model
-retries.
+and no `tool_calls`, and the client took the DSML block as its final answer and ended the turn. An outside OpenCode
+2.2.7 benchmark of this recipe at `176024b` lost 4 of its 30 trials this way, by the reporter's reading of the
+transcripts; [the report, its 30 rows and what each source shows](../results/undeclared-tool-20261112/README.md). By
+that report, vLLM returns the call, the client answers that the tool is unknown, and the model retries; we have not
+measured that recovery.
 
-`3ca06dd4b` returns it the same way: a whole call block naming an undeclared tool is a `tool_calls` entry with
+`3ca06dd4b` returns it the same way, and `12257eb51` requires the call to be whole: a whole call block naming an undeclared tool is a `tool_calls` entry with
 `finish_reason: "tool_calls"`, streamed or not, when the name is 1 to 64 letters, digits, `_` or `-` and the arguments
 are a JSON object. Everything else stays as before: a declared tool keeps its declared spelling; a name with spaces,
-dots or other characters, malformed or unclosed blocks, and bare JSON that names no declared tool (a structured
-answer) stay text; a request without tools never gets a tool call; a call inside the reasoning is never made; and a
+dots or other characters, malformed or unclosed blocks (an undeclared XML or GLM call with stray text in its markup
+too, in either call mode), and bare JSON that names no declared tool (a structured answer) stay text; a request without tools never gets a tool call; a call inside the reasoning is never made; and a
 call cut by the end token or `max_tokens` is completed only for a declared tool. The engine's upstream line kept
 undeclared calls as text to match its frozen Python answers (`7be90a36b`), although its API docs describe this
 behaviour, so the change is a fork commit with its own host tests: they fail on `1ea71240a`, and one replays

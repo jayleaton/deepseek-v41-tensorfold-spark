@@ -5,12 +5,14 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Bugs fixed
 
-- **A tool call to an undeclared name ended an agent's turn** (pin `3ca06dd4b`). When the model called a tool the
+- **A tool call to an undeclared name ended an agent's turn** (pin `12257eb51`). When the model called a tool the
   request did not declare (OpenCode 2 declares `shell`; DeepSeek-V4.1 sometimes calls `bash`), the server returned
-  the well-formed DSML call as text with `finish_reason: "stop"`, and the client ended the turn: 4 of 30 trials in an
-  outside OpenCode 2.2.7 benchmark. The call now comes back as a `tool_calls` entry, as on vLLM, so the client can
-  answer that the tool is unknown and the model can retry. Names with spaces or dots, malformed blocks and requests
-  without tools stay as before ([ENGINE](ENGINE.md#undeclared-tool-calls-at-this-pin)).
+  the well-formed DSML call as text with `finish_reason: "stop"`, and the client ended the turn. An outside OpenCode
+  2.2.7 benchmark traced its 4 failed trials out of 30 to this
+  ([report and rows](../results/undeclared-tool-20261112/README.md)). The call now comes back as a `tool_calls`
+  entry, as on vLLM, so the client can answer that the tool is unknown. Names with spaces or dots, malformed blocks
+  (stray text in an undeclared XML or GLM call included) and requests without tools stay as before
+  ([ENGINE](ENGINE.md#undeclared-tool-calls-at-this-pin)).
 - **A history rewritten mid-way prefilled the whole context, silently** (pin `1ea71240a`,
   [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). Dropping an old image past
   `TF_DSV41_VISION_MAX_IMAGES` changed the prompt at that image, so no stored entry prefixed it: 216–278 s at ~500K
