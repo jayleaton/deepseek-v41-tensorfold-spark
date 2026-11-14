@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 19:44:30 +0700
+Subject: [PATCH 067/207] In-model runner: an unspaced int-int after a word is
+ a range, not inline math
+
+Live TP2 smoke owned -8 for "Rightmost 9 positions 12-20 ="; such cells now abstain.
+---
+ zig/src/core/runner_scan.zig | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 3c2646f8b9ec9b249cfc79620d438dda49d43ccf..c630bf1139eea7a920d2a55c9e14310c31cbbef0 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -203,6 +203,13 @@ fn inlineExpr(line: []const u8) ?struct { expr: []const u8, space: bool } {
+             if (before[start] != ' ' and before[start] != '\t') return null;
+             if (stop == ',') return null;
+         }
++        // after a word, an unspaced "12-20" is a range ("positions 12-20 ="), not a subtraction
++        const word = std.mem.trimEnd(u8, lead, " \t");
++        if (word.len > 0 and std.ascii.isAlphabetic(word[word.len - 1])) {
++            for (1..expr.len - 1) |k| {
++                if (expr[k] == '-' and std.ascii.isDigit(expr[k - 1]) and std.ascii.isDigit(expr[k + 1])) return null;
++            }
++        }
+     }
+     const first = expr[0];
+     if (!(std.ascii.isDigit(first) or first == '(' or first == '-')) return null;
+@@ -349,6 +356,7 @@ test "runner scan: an inline expression at a line's end is a cell and its own tr
+         .{ "Compute: -3 * (4 + 5) =", "-3 * (4 + 5)" }, .{ "2**10 =", "2**10" },
+         .{ "3 * -4 =", "3 * -4" },
+         .{ "43210 − 98765 + 1 =", "43210 − 98765 + 1" },
++        .{ "So 9876 - 4321 =", "9876 - 4321" },         .{ "9876-4321=", "9876-4321" },
+     }) |c| {
+         const got = inlineOf(c[0]) orelse return error.TestExpectedInline;
+         defer a.free(got);
+@@ -358,9 +366,10 @@ test "runner scan: an inline expression at a line's end is a cell and its own tr
+ 
+ test "runner scan: inline refuses chains, comparisons, words, lists and incomplete expressions" {
+     for ([_][]const u8{
+-        "a = 3*4 =",   "15*16 = 240*17 =", "3*4 ==",    "x <= 3*4 =",    "2x + 3 =",  "x3*4 =",   "f(2)*3 =",
+-        "1673, +10 =", "1,234 + 5 =",      "a - 3*4 =", "3 + 4 + ... =", "3 4 + 5 =", "(3 + 4 =", "3 + =",
+-        "42 =",        "$5 + 3 =",         "50% * 2 =", "3 *",           "**3*4** =", "2(3+4) =", "3*4 = 12",
++        "a = 3*4 =",                     "15*16 = 240*17 =", "3*4 ==",    "x <= 3*4 =",    "2x + 3 =",  "x3*4 =",   "f(2)*3 =",
++        "1673, +10 =",                   "1,234 + 5 =",      "a - 3*4 =", "3 + 4 + ... =", "3 4 + 5 =", "(3 + 4 =", "3 + =",
++        "42 =",                          "$5 + 3 =",         "50% * 2 =", "3 *",           "**3*4** =", "2(3+4) =", "3*4 = 12",
++        "Rightmost 9 positions 12-20 =", "pages 3-5 + 1 =",
+     }) |line| {
+         if (inlineOf(line)) |got| {
+             std.testing.allocator.free(got);

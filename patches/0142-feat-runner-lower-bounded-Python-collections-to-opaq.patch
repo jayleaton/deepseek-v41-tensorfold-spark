@@ -1,0 +1,3455 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 00:56:31 +0700
+Subject: [PATCH 142/207] feat(runner): lower bounded Python collections to
+ opaque RV32
+
+(cherry picked from commit 038e0f2e17df326c340c3e65fd490274d3a8ce65)
+---
+ zig/src/core/runner_frontend.zig              |  15 +-
+ zig/src/core/runner_frontend_collections.zig  |  22 +
+ .../core/runner_frontend_collections_ast.zig  |  95 ++++
+ .../runner_frontend_collections_builtins.zig  | 187 +++++++
+ ...unner_frontend_collections_compat_test.zig |  29 ++
+ .../core/runner_frontend_collections_emit.zig | 425 +++++++++++++++
+ .../core/runner_frontend_collections_expr.zig | 339 ++++++++++++
+ .../runner_frontend_collections_methods.zig   | 123 +++++
+ .../core/runner_frontend_collections_ops.zig  | 195 +++++++
+ .../runner_frontend_collections_parse.zig     | 488 ++++++++++++++++++
+ .../runner_frontend_collections_proof.zig     | 301 +++++++++++
+ .../runner_frontend_collections_runtime.c     | 208 ++++++++
+ .../runner_frontend_collections_support.c     | 181 +++++++
+ .../core/runner_frontend_collections_test.zig | 120 +++++
+ .../runner_frontend_collections_value.zig     | 284 ++++++++++
+ .../runner_frontend_digit_reverse_test.zig    |   8 +-
+ zig/src/core/runner_frontend_elf_cache.zig    |  21 +-
+ zig/src/core/runner_frontend_integer_test.zig |  23 +-
+ .../runner_frontend_optimization_test.zig     |   9 +
+ .../core/runner_frontend_program_compile.zig  |  30 +-
+ .../runner_frontend_python_assert_test.zig    |   8 +-
+ zig/src/core/runner_frontend_test.zig         |   4 +
+ .../core/runner_frontend_tool_script_test.zig |  19 +-
+ 23 files changed, 3099 insertions(+), 35 deletions(-)
+ create mode 100644 zig/src/core/runner_frontend_collections.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_ast.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_builtins.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_compat_test.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_emit.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_expr.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_methods.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_ops.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_parse.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_proof.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_runtime.c
+ create mode 100644 zig/src/core/runner_frontend_collections_support.c
+ create mode 100644 zig/src/core/runner_frontend_collections_test.zig
+ create mode 100644 zig/src/core/runner_frontend_collections_value.zig
+
+diff --git a/zig/src/core/runner_frontend.zig b/zig/src/core/runner_frontend.zig
+index 38d8cd7db7a9fbcba35bb71b9679d62e74677416..b32eee6abd4933df3809c6973d9d965c9de13904 100644
+--- a/zig/src/core/runner_frontend.zig
++++ b/zig/src/core/runner_frontend.zig
+@@ -94,6 +94,7 @@ fn translateImpl(raw: ?*anyopaque, a: std.mem.Allocator, cell: Cell) std.mem.All
+     var source: []const u8 = cell.code;
+     var owned: ?[]u8 = null;
+     var structured = false;
++    var collections_mode = false;
+     var estimated_steps: ?usize = null;
+     defer if (owned) |bytes| a.free(bytes);
+     if (lang == .python) {
+@@ -102,9 +103,14 @@ fn translateImpl(raw: ?*anyopaque, a: std.mem.Allocator, cell: Cell) std.mem.All
+             owned = try program.wrapBody(a, body.source);
+             estimated_steps = body.estimated_steps;
+         } else {
+-            const body = try blocks.lowerWithCost(a, cell.code) orelse return .{ .abstain = .unsupported };
+-            owned = body.source;
+-            estimated_steps = body.estimated_steps;
++            if (try blocks.lowerWithCost(a, cell.code)) |body| {
++                owned = body.source;
++                estimated_steps = body.estimated_steps;
++            } else if (try @import("runner_frontend_collections.zig").lowerWithCost(a, cell.code)) |body| {
++                owned = body.source;
++                estimated_steps = body.estimated_steps;
++                collections_mode = true;
++            } else return .{ .abstain = .unsupported };
+             structured = true;
+         }
+         source = owned.?;
+@@ -115,6 +121,8 @@ fn translateImpl(raw: ?*anyopaque, a: std.mem.Allocator, cell: Cell) std.mem.All
+     const bytes = if (context) |ctx| blk: {
+         var settings = ctx.compiler;
+         if (structured) settings.stack_limit = 4096;
++        settings.collection_stack = collections_mode;
++        if (collections_mode and settings.optimize != .O0) settings.optimize = .O1;
+         settings.opaque_inputs = lang == .python;
+         settings.estimated_steps = estimated_steps;
+         break :blk try program.compile(a, ctx.io, source, settings);
+@@ -124,6 +132,7 @@ fn translateImpl(raw: ?*anyopaque, a: std.mem.Allocator, cell: Cell) std.mem.All
+         break :blk try program.compile(a, threaded.io(), source, .{
+             .clang = "/usr/bin/clang",
+             .stack_limit = if (structured) 4096 else 0,
++            .collection_stack = collections_mode,
+             .opaque_inputs = lang == .python,
+             .estimated_steps = estimated_steps,
+         });
+diff --git a/zig/src/core/runner_frontend_collections.zig b/zig/src/core/runner_frontend_collections.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d6f4094e5783f7eefcedf9fe94e7115783dc91b
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections.zig
+@@ -0,0 +1,22 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const parser = @import("runner_frontend_collections_parse.zig");
++const proof = @import("runner_frontend_collections_proof.zig");
++const emitter = @import("runner_frontend_collections_emit.zig");
++pub const Lowered = struct { source: []u8, estimated_steps: usize };
++
++pub fn lowerWithCost(a: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!?Lowered {
++    if (source.len == 0 or source.len > 4096 or std.mem.indexOfScalar(u8, source, 0) != null) return null;
++    var arena = std.heap.ArenaAllocator.init(a);
++    defer arena.deinit();
++    var p: ast.Program = .{ .a = arena.allocator() };
++    parser.parse(&p, source) catch |err| return switch (err) {
++        error.Unsupported => null,
++        error.OutOfMemory => error.OutOfMemory,
++    };
++    proof.prove(&p) catch |err| return switch (err) {
++        error.Unsupported => null,
++        error.OutOfMemory => error.OutOfMemory,
++    };
++    return .{ .source = try emitter.emit(a, &p), .estimated_steps = p.stats.steps };
++}
+diff --git a/zig/src/core/runner_frontend_collections_ast.zig b/zig/src/core/runner_frontend_collections_ast.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..faf45f0c3ae39a301625eea266e5c1cd58678c2f
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_ast.zig
+@@ -0,0 +1,95 @@
++const std = @import("std");
++pub const Error = error{Unsupported} || std.mem.Allocator.Error;
++pub const Id = usize;
++pub const Tag = enum {
++    integer,
++    boolean,
++    none,
++    string,
++    name,
++    list,
++    tuple,
++    dict,
++    set,
++    call,
++    method,
++    index,
++    slice,
++    comprehension,
++    conditional,
++    add,
++    sub,
++    mul,
++    floor,
++    modulo,
++    neg,
++    pos,
++    logical_not,
++    eq,
++    ne,
++    lt,
++    le,
++    gt,
++    ge,
++    contains,
++    not_contains,
++    is_identity,
++    is_not,
++    logical_and,
++    logical_or,
++};
++pub const Node = struct {
++    tag: Tag,
++    value: i64 = 0,
++    text: []const u8 = "",
++    a: Id = 0,
++    b: Id = 0,
++    c: ?Id = null,
++    args: []const Id = &.{},
++    keywords: []const []const u8 = &.{},
++};
++pub const StmtTag = enum { assign, augassign, expression, print, conditional, for_loop, while_loop, function, ret, assertion, break_loop, continue_loop, pass };
++pub const Stmt = struct {
++    tag: StmtTag,
++    targets: []const Id = &.{},
++    expr: ?Id = null,
++    op: Tag = .add,
++    body: []const Stmt = &.{},
++    otherwise: []const Stmt = &.{},
++    function: usize = 0,
++};
++pub const Scope = struct {
++    names: std.ArrayList([]const u8) = .empty,
++    pub fn find(s: *const Scope, name: []const u8) ?usize {
++        for (s.names.items, 0..) |old, i| if (std.mem.eql(u8, old, name)) return i;
++        return null;
++    }
++    pub fn bind(s: *Scope, a: std.mem.Allocator, name: []const u8) Error!usize {
++        if (s.find(name)) |i| return i;
++        if (s.names.items.len == 64) return error.Unsupported;
++        try s.names.append(a, name);
++        return s.names.items.len - 1;
++    }
++};
++pub const Function = struct { name: []const u8, params: []const []const u8, scope: Scope = .{}, body: []const Stmt = &.{} };
++pub const Stats = struct { steps: usize = 0, cells: usize = 0, objects: usize = 0, chars: usize = 0, prints: usize = 0, depth: usize = 0 };
++pub const Program = struct {
++    a: std.mem.Allocator,
++    nodes: std.ArrayList(Node) = .empty,
++    functions: std.ArrayList(Function) = .empty,
++    globals: Scope = .{},
++    body: []const Stmt = &.{},
++    stats: Stats = .{},
++    pub fn node(p: *Program, n: Node) Error!Id {
++        if (p.nodes.items.len == 1024) return error.Unsupported;
++        try p.nodes.append(p.a, n);
++        return p.nodes.items.len - 1;
++    }
++    pub fn functionId(p: *const Program, name: []const u8) ?usize {
++        for (p.functions.items, 0..) |f, i| if (std.mem.eql(u8, f.name, name)) return i;
++        return null;
++    }
++};
++pub fn validName(name: []const u8) bool {
++    return @import("runner_frontend_python_ast.zig").validName(name);
++}
+diff --git a/zig/src/core/runner_frontend_collections_builtins.zig b/zig/src/core/runner_frontend_collections_builtins.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..bb9ce00bfbe5c3feeaea4cd817b0394818796419
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_builtins.zig
+@@ -0,0 +1,187 @@
++const std = @import("std");
++const v = @import("runner_frontend_collections_value.zig");
++const ops = @import("runner_frontend_collections_ops.zig");
++const ast = @import("runner_frontend_collections_ast.zig");
++const Value = v.Value;
++const Heap = v.Heap;
++const Error = ast.Error;
++fn is(name: []const u8, wanted: []const u8) bool {
++    return std.mem.eql(u8, name, wanted);
++}
++fn argc(args: []const Value, min: usize, max: usize) Error!void {
++    if (args.len < min or args.len > max) return error.Unsupported;
++}
++fn iterator(h: *Heap, kind: v.Kind, args: []const Value) Error!Value {
++    if (kind == .enumerate) {
++        if (!iteratorInput(args[0])) return error.Unsupported;
++    } else {
++        for (args) |x| {
++            if (!iteratorInput(x)) return error.Unsupported;
++        }
++    }
++    if (h.stats.cells + args.len > 1536) return error.Unsupported;
++    const out = try h.new(kind);
++    h.stats.cells += args.len;
++    try out.obj.?.items.appendSlice(h.a, args);
++    return out;
++}
++pub fn call(h: *Heap, name: []const u8, args: []const Value, keywords: []const []const u8) Error!Value {
++    try h.charge(24);
++    if (args.len > 3 or keywords.len != args.len) return error.Unsupported;
++    if (is(name, "sorted")) return sorted(h, args, keywords);
++    for (keywords) |key| if (key.len != 0) return error.Unsupported;
++    if (is(name, "len")) {
++        try argc(args, 1, 1);
++        return Value.int(@intCast(try v.length(args[0])));
++    }
++    if (is(name, "bool")) {
++        try argc(args, 0, 1);
++        return Value.boolean(args.len != 0 and try v.truth(args[0]));
++    }
++    if (is(name, "str")) {
++        try argc(args, 0, 1);
++        return if (args.len == 0) h.string("") else ops.string(h, args[0]);
++    }
++    if (is(name, "int")) {
++        try argc(args, 0, 1);
++        if (args.len == 0) return Value.int(0);
++        if (args[0].kind != .string) return Value.int(try args[0].numeric());
++        const s = std.mem.trim(u8, args[0].obj.?.text, " \t\n");
++        if (s.len == 0) return error.Unsupported;
++        var i: usize = @intFromBool(s[0] == '-' or s[0] == '+');
++        if (i == s.len) return error.Unsupported;
++        while (i < s.len) : (i += 1) if (!std.ascii.isDigit(s[i])) return error.Unsupported;
++        return Value.int(std.fmt.parseInt(i64, s, 10) catch return error.Unsupported);
++    }
++    if (is(name, "abs")) {
++        try argc(args, 1, 1);
++        const n = try args[0].numeric();
++        return Value.int(if (n < 0) -n else n);
++    }
++    if (is(name, "range")) {
++        try argc(args, 1, 3);
++        const start = if (args.len > 1) try args[0].numeric() else 0;
++        const stop = try args[@intFromBool(args.len > 1)].numeric();
++        const step = if (args.len == 3) try args[2].numeric() else 1;
++        if (step == 0) return error.Unsupported;
++        const out = try h.new(.range);
++        var i = start;
++        while (if (step > 0) i < stop else i > stop) : (i += step) try h.append(out, try Value.int(i));
++        return out;
++    }
++    if (is(name, "list") or is(name, "tuple") or is(name, "set")) {
++        try argc(args, 0, 1);
++        const kind: v.Kind = if (is(name, "list")) .list else if (is(name, "tuple")) .tuple else .set;
++        const out = try h.new(kind);
++        if (args.len == 0) return out;
++        var cursor: usize = 0;
++        while (try ops.next(h, args[0], &cursor)) |x| {
++            if (kind == .set) try h.setAdd(out, x) else try h.append(out, x);
++        }
++        return out;
++    }
++    if (is(name, "dict")) {
++        try argc(args, 0, 1);
++        const out = try h.new(.dict);
++        if (args.len == 0) return out;
++        if (args[0].kind == .dict) {
++            const data = args[0].obj.?.items.items;
++            var i: usize = 0;
++            while (i < data.len) : (i += 2) try h.dictSet(out, data[i], data[i + 1]);
++        } else {
++            var cursor: usize = 0;
++            while (try ops.next(h, args[0], &cursor)) |pair| {
++                if (try v.length(pair) != 2) return error.Unsupported;
++                const key = try ops.at(h, pair, 0);
++                const value = try ops.at(h, pair, 1);
++                try h.dictSet(out, key, value);
++            }
++        }
++        return out;
++    }
++    if (is(name, "enumerate")) {
++        try argc(args, 1, 2);
++        const start = if (args.len == 2) args[1] else try Value.int(0);
++        _ = try start.numeric();
++        return iterator(h, .enumerate, &.{ args[0], start });
++    }
++    if (is(name, "zip")) {
++        try argc(args, 0, 3);
++        return iterator(h, .zip, args);
++    }
++    if (is(name, "map")) {
++        try argc(args, 2, 2);
++        if (args[0].kind != .builtin or args[0].n != 2) return error.Unsupported;
++        return iterator(h, .map_str, args[1..]);
++    }
++    if (is(name, "sum")) {
++        try argc(args, 1, 2);
++        var sum = if (args.len == 2) args[1] else try Value.int(0);
++        _ = try sum.numeric();
++        var cursor: usize = 0;
++        while (try ops.next(h, args[0], &cursor)) |x| {
++            _ = try x.numeric();
++            sum = try ops.binary(h, .add, sum, x);
++        }
++        return sum;
++    }
++    if (is(name, "min") or is(name, "max")) {
++        try argc(args, 1, 3);
++        var values = args;
++        if (args.len == 1) values = (try ops.collect(h, args[0], false)).obj.?.items.items;
++        if (values.len == 0) return error.Unsupported;
++        var best = values[0];
++        for (values[1..]) |x| {
++            try h.charge(16);
++            if (try h.order(x, best) == (if (is(name, "min")) std.math.Order.lt else .gt)) best = x;
++        }
++        return best;
++    }
++    if (is(name, "any") or is(name, "all")) {
++        try argc(args, 1, 1);
++        var cursor: usize = 0;
++        while (try ops.next(h, args[0], &cursor)) |x| {
++            try h.charge(8);
++            if (try v.truth(x) == is(name, "any")) return Value.boolean(is(name, "any"));
++        }
++        return Value.boolean(is(name, "all"));
++    }
++    return error.Unsupported;
++}
++fn sorted(h: *Heap, args: []const Value, keywords: []const []const u8) Error!Value {
++    if (args.len == 0 or args.len > 3 or keywords[0].len != 0) return error.Unsupported;
++    var key: Value = .{};
++    var reverse = false;
++    for (args[1..], keywords[1..]) |arg, keyword| {
++        if (is(keyword, "key")) {
++            if (arg.kind != .none and (arg.kind != .builtin or arg.n != 1)) return error.Unsupported;
++            key = arg;
++        } else if (is(keyword, "reverse")) reverse = (try arg.numeric()) != 0 else return error.Unsupported;
++    }
++    const out = try ops.collect(h, args[0], true);
++    const data = out.obj.?.items.items;
++    var keys: [128]Value = undefined;
++    for (data, 0..) |item, i| keys[i] = if (key.kind == .builtin) try call(h, "sum", &.{item}, &.{""}) else item;
++    for (1..@max(1, data.len)) |i| {
++        const item = data[i];
++        const k = keys[i];
++        var j = i;
++        while (j > 0) {
++            const prior = data[j - 1];
++            const pk = keys[j - 1];
++            try h.charge(20);
++            const order = try h.order(pk, k);
++            if (if (reverse) order != .lt else order != .gt) break;
++            data[j] = prior;
++            keys[j] = pk;
++            j -= 1;
++        }
++        data[j] = item;
++        keys[j] = k;
++    }
++    return out;
++}
++
++fn iteratorInput(value: Value) bool {
++    return value.kind == .string or value.kind == .list or value.kind == .tuple or value.kind == .range;
++}
+diff --git a/zig/src/core/runner_frontend_collections_compat_test.zig b/zig/src/core/runner_frontend_collections_compat_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..12a9443ade89d3ae8009b70a52bf0677de94b984
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_compat_test.zig
+@@ -0,0 +1,29 @@
++const std = @import("std");
++const api = @import("runner_api.zig");
++const reference = @import("runner_frontend_reference_test.zig");
++const t = std.testing;
++
++// Call only for the fixed, finite test fixtures; never for arbitrary frontend input.
++pub fn checkExact(env: *const std.process.Environ.Map, program: api.Program, code: []const u8) !void {
++    const python = env.get("TF_RUNNER_REFERENCE_PYTHON") orelse "/usr/bin/python3";
++    const oracle = try std.process.run(t.allocator, t.io, .{
++        .argv = &.{ python, "-I", "-c", code },
++        .stdout_limit = .limited(16384),
++        .stderr_limit = .limited(16384),
++        .timeout = .{ .duration = .{ .raw = .fromSeconds(2), .clock = .awake } },
++    });
++    defer t.allocator.free(oracle.stdout);
++    defer t.allocator.free(oracle.stderr);
++    if (!oracle.term.success()) {
++        std.debug.print("frontend admitted a failing CPython fixture: {s}\n{s}\n", .{ code, oracle.stderr });
++        return error.InvalidPythonAdmission;
++    }
++    const root = env.get("TF_RUNNER_QWENPUTER") orelse return error.SkipZigTest;
++    try reference.check(root, python, program, oracle.stdout);
++}
++
++pub fn checkRejectionOrExact(env: *const std.process.Environ.Map, front: *const api.Frontend, cell: api.Cell) !void {
++    const result = try front.translate(front.ctx, t.allocator, cell);
++    defer if (result == .program) t.allocator.free(result.program.bytes);
++    if (result == .program) try checkExact(env, result.program, cell.code);
++}
+diff --git a/zig/src/core/runner_frontend_collections_emit.zig b/zig/src/core/runner_frontend_collections_emit.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..c2e791f14c96430bb20bf45ad6b9a7495825277a
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_emit.zig
+@@ -0,0 +1,425 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const Allocator = std.mem.Allocator;
++const Error = Allocator.Error;
++pub const builtins = [_][]const u8{ "len", "sum", "min", "max", "range", "list", "tuple", "set", "dict", "enumerate", "zip", "sorted", "str", "int", "bool", "abs", "any", "all", "map" };
++pub const methods = [_][]const u8{ "append", "pop", "reverse", "get", "setdefault", "keys", "items", "values", "add", "remove", "discard", "find", "rfind", "join", "split", "copy" };
++pub fn lookup(names: []const []const u8, name: []const u8) ?usize {
++    for (names, 0..) |s, i| if (std.mem.eql(u8, s, name)) return i;
++    return null;
++}
++
++pub fn emit(a: Allocator, p: *const ast.Program) Error![]u8 {
++    var e: Emitter = .{ .a = a, .p = p };
++    errdefer e.out.deinit(a);
++    defer e.bindings.deinit(a);
++    try e.put(@embedFile("runner_frontend_collections_runtime.c"));
++    try e.put(@embedFile("runner_frontend_collections_support.c"));
++    try e.put("\nstatic volatile int inputs[]={");
++    var input_count: usize = 0;
++    for (p.nodes.items) |n| if (n.tag == .integer or n.tag == .boolean) {
++        try e.out.print(a, "{d},", .{n.value});
++        input_count += 1;
++    };
++    if (input_count == 0) try e.put("0");
++    try e.put("};\n");
++    for (p.nodes.items, 0..) |n, id| if (n.tag == .string) {
++        try e.out.print(a, "static volatile char text{d}[]=", .{id});
++        try e.quoted(n.text);
++        try e.out.print(a, ";\nstatic V literal{d};\n", .{id});
++    };
++    for (p.globals.names.items, 0..) |_, i| try e.out.print(a, "static V g{d}={{-1,0}};\n", .{i});
++    for (p.functions.items, 0..) |f, i| {
++        try e.out.print(a, "static unsigned defined{d};\n", .{i});
++        try e.signature(f, i);
++        try e.put(";\n");
++    }
++    for (p.functions.items, 0..) |f, i| {
++        e.scope = &p.functions.items[i].scope;
++        try e.signature(f, i);
++        try e.put("{\n");
++        for (f.scope.names.items, 0..) |_, j| try e.out.print(a, "V l{d}={{-1,0}};\n", .{j});
++        for (f.params, 0..) |name, j| try e.out.print(a, "l{d}=p{d};\n", .{ f.scope.find(name).?, j });
++        try e.statements(f.body);
++        try e.put("return none();\n}\n");
++    }
++    e.scope = null;
++    try e.put("int main(void){\n");
++    for (p.nodes.items, 0..) |n, i| if (n.tag == .string) {
++        try e.out.print(a, "literal{d}=text(text{d},{d});\n", .{ i, i, n.text.len });
++    };
++    if (p.globals.find("__name__")) |i| try e.out.print(a, "g{d}=text(\"__main__\",8);\n", .{i});
++    try e.statements(p.body);
++    try e.put("return 0;\n}\n");
++    return e.out.toOwnedSlice(a);
++}
++
++const Binding = struct { name: []const u8, id: usize };
++const Emitter = struct {
++    a: Allocator,
++    p: *const ast.Program,
++    out: std.ArrayList(u8) = .empty,
++    scope: ?*const ast.Scope = null,
++    next: usize = 0,
++    bindings: std.ArrayList(Binding) = .empty,
++
++    fn put(e: *Emitter, s: []const u8) Error!void {
++        try e.out.appendSlice(e.a, s);
++    }
++    fn fresh(e: *Emitter) usize {
++        const i = e.next;
++        e.next += 1;
++        return i;
++    }
++    fn quoted(e: *Emitter, s: []const u8) Error!void {
++        try e.put("\"");
++        for (s) |c| try e.out.print(e.a, "\\{o:0>3}", .{c});
++        try e.put("\"");
++    }
++    fn signature(e: *Emitter, f: ast.Function, i: usize) Error!void {
++        try e.out.print(e.a, "static V f{d}(", .{i});
++        if (f.params.len == 0) try e.put("void");
++        for (f.params, 0..) |_, j| {
++            if (j != 0) try e.put(",");
++            try e.out.print(e.a, "V p{d}", .{j});
++        }
++        try e.put(")");
++    }
++    fn variable(e: *Emitter, name: []const u8) Error!void {
++        var i = e.bindings.items.len;
++        while (i != 0) {
++            i -= 1;
++            const b = e.bindings.items[i];
++            if (std.mem.eql(u8, b.name, name)) {
++                try e.out.print(e.a, "v{d}", .{b.id});
++                return;
++            }
++        }
++        if (e.scope) |s| if (s.find(name)) |j| {
++            try e.out.print(e.a, "l{d}", .{j});
++            return;
++        };
++        if (e.p.globals.find(name)) |j| {
++            try e.out.print(e.a, "g{d}", .{j});
++        } else try e.put("(V){-1,0}");
++    }
++    fn decl(e: *Emitter, i: usize) Error!void {
++        try e.out.print(e.a, "V v{d}=", .{i});
++    }
++    fn expr(e: *Emitter, id: ast.Id) Error!usize {
++        const n = e.p.nodes.items[id];
++        const r = e.fresh();
++        switch (n.tag) {
++            .integer, .boolean => {
++                try e.decl(r);
++                var slot: usize = 0;
++                for (e.p.nodes.items[0..id]) |prior| if (prior.tag == .integer or prior.tag == .boolean) {
++                    slot += 1;
++                };
++                try e.out.print(e.a, "val({d},inputs[{d}]);\n", .{ @intFromBool(n.tag == .boolean), slot });
++            },
++            .none => {
++                try e.decl(r);
++                try e.put("none();\n");
++            },
++            .string => {
++                try e.decl(r);
++                try e.out.print(e.a, "py_hold(literal{d});\n", .{id});
++            },
++            .name => {
++                try e.decl(r);
++                if ((std.mem.eql(u8, n.text, "sum") or std.mem.eql(u8, n.text, "str")) and e.p.globals.find(n.text) == null and
++                    (e.scope == null or e.scope.?.find(n.text) == null))
++                {
++                    try e.out.print(e.a, "val(9,{d});\n", .{if (std.mem.eql(u8, n.text, "sum")) @as(usize, 1) else 2});
++                } else {
++                    try e.put("checked(");
++                    try e.variable(n.text);
++                    try e.put(");\n");
++                }
++            },
++            .list, .tuple, .dict, .set => {
++                try e.decl(r);
++                const tag: usize = switch (n.tag) {
++                    .list => 4,
++                    .tuple => 5,
++                    .dict => 6,
++                    else => 7,
++                };
++                try e.out.print(e.a, "fresh({d});\n", .{tag});
++                var i: usize = 0;
++                while (i < n.args.len) : (i += 1) {
++                    const x = try e.expr(n.args[i]);
++                    if (n.tag == .dict) {
++                        i += 1;
++                        const y = try e.expr(n.args[i]);
++                        try e.out.print(e.a, "store(v{d},v{d},v{d});\n", .{ r, x, y });
++                    } else try e.out.print(e.a, "{s}(v{d},v{d});\n", .{ if (n.tag == .set) "setadd" else "append", r, x });
++                }
++            },
++            .logical_and, .logical_or => {
++                const x = try e.expr(n.a);
++                try e.decl(r);
++                try e.out.print(e.a, "v{d};\nif({s}truth(v{d})){{\n", .{ x, if (n.tag == .logical_or) "!" else "", x });
++                const y = try e.expr(n.b);
++                try e.out.print(e.a, "v{d}=py_hold(v{d});\n}}\n", .{ r, y });
++            },
++            .conditional => {
++                const cond = try e.expr(n.b);
++                try e.out.print(e.a, "V v{d};if(truth(v{d})){{\n", .{ r, cond });
++                const x = try e.expr(n.a);
++                try e.out.print(e.a, "v{d}=py_hold(v{d});\n}}else{{\n", .{ r, x });
++                const y = try e.expr(n.c.?);
++                try e.out.print(e.a, "v{d}=py_hold(v{d});\n}}\n", .{ r, y });
++            },
++            .neg, .pos, .logical_not => {
++                const x = try e.expr(n.a);
++                try e.decl(r);
++                const op: usize = if (n.tag == .neg) 0 else if (n.tag == .pos) 1 else 2;
++                try e.out.print(e.a, "unary({d},v{d});\n", .{ op, x });
++            },
++            .index => {
++                const x = try e.expr(n.a);
++                const y = try e.expr(n.b);
++                try e.decl(r);
++                try e.out.print(e.a, "get(v{d},v{d});\n", .{ x, y });
++            },
++            .slice => {
++                const x = try e.expr(n.a);
++                var parts: [3]usize = undefined;
++                for (&parts, 0..) |*part, i| part.* = try e.expr(n.args[i]);
++                try e.decl(r);
++                try e.out.print(e.a, "slice(v{d},v{d},v{d},v{d});\n", .{ x, parts[0], parts[1], parts[2] });
++            },
++            .call, .method => try e.call(n, r),
++            .comprehension => try e.comprehension(n, r),
++            else => {
++                const x = try e.expr(n.a);
++                const y = try e.expr(n.b);
++                try e.decl(r);
++                try e.out.print(e.a, "binary({d},v{d},v{d});\n", .{ binaryId(n.tag), x, y });
++            },
++        }
++        return r;
++    }
++    fn call(e: *Emitter, n: ast.Node, r: usize) Error!void {
++        if (n.tag == .call) if (e.p.functionId(n.text)) |f| {
++            try e.out.print(e.a, "if(!defined{d})fail();\n", .{f});
++        };
++        if (n.tag == .call and n.args.len == 1 and
++            (std.mem.eql(u8, n.text, "any") or std.mem.eql(u8, n.text, "all")))
++        {
++            const gen = e.p.nodes.items[n.args[0]];
++            if (gen.tag == .comprehension and gen.value == 1) return e.generatorTruth(gen, r, std.mem.eql(u8, n.text, "all"));
++        }
++        const base = if (n.tag == .method) try e.expr(n.a) else 0;
++        var args: std.ArrayList(usize) = .empty;
++        defer args.deinit(e.a);
++        for (n.args) |arg| try args.append(e.a, try e.expr(arg));
++        try e.decl(r);
++        if (n.tag == .call) if (e.p.functionId(n.text)) |f| {
++            try e.out.print(e.a, "f{d}(", .{f});
++            for (args.items, 0..) |x, i| {
++                if (i != 0) try e.put(",");
++                try e.out.print(e.a, "v{d}", .{x});
++            }
++            try e.put(");\n");
++            return;
++        };
++        const id = lookup(if (n.tag == .method) &methods else &builtins, n.text);
++        var valid_keywords = true;
++        var positional: usize = 0;
++        for (n.keywords) |key| {
++            if (key.len == 0) {
++                positional += 1;
++            } else if (n.tag != .call or !std.mem.eql(u8, n.text, "sorted") or
++                (!std.mem.eql(u8, key, "key") and !std.mem.eql(u8, key, "reverse"))) valid_keywords = false;
++        }
++        if (std.mem.eql(u8, n.text, "sorted") and positional > 1) valid_keywords = false;
++        if (id == null or args.items.len > 3 or !valid_keywords) {
++            try e.put("none();fail();\n");
++            return;
++        }
++        try e.out.print(e.a, "{s}({d},", .{ if (n.tag == .method) "method" else "builtin", id.? });
++        if (n.tag == .method) try e.out.print(e.a, "v{d},", .{base});
++        try e.out.print(e.a, "{d},", .{args.items.len});
++        var slots: [3]?usize = .{ null, null, null };
++        if (n.tag == .call and id.? == 11) {
++            var pos: usize = 0;
++            for (args.items, 0..) |x, i| {
++                const key = if (i < n.keywords.len) n.keywords[i] else "";
++                if (std.mem.eql(u8, key, "key")) slots[1] = x else if (std.mem.eql(u8, key, "reverse")) slots[2] = x else {
++                    if (pos < 3) slots[pos] = x;
++                    pos += 1;
++                }
++            }
++        } else for (args.items, 0..) |x, i| slots[i] = x;
++        for (slots, 0..) |x, i| {
++            if (i != 0) try e.put(",");
++            if (x) |j| try e.out.print(e.a, "v{d}", .{j}) else try e.put("none()");
++        }
++        try e.put(");\n");
++    }
++    fn generatorTruth(e: *Emitter, n: ast.Node, r: usize, all: bool) Error!void {
++        const seq = try e.expr(n.b);
++        const loop = e.fresh();
++        const item = e.fresh();
++        try e.decl(r);
++        try e.out.print(e.a, "boolean({d});\n", .{@intFromBool(all)});
++        try e.iterHead(seq, loop, item);
++        try e.bindings.append(e.a, .{ .name = n.text, .id = item });
++        defer _ = e.bindings.pop();
++        if (n.c) |filter| {
++            const f = try e.expr(filter);
++            try e.out.print(e.a, "if(!truth(v{d}))continue;\n", .{f});
++        }
++        const x = try e.expr(n.a);
++        try e.out.print(e.a, "if({s}truth(v{d})){{v{d}=boolean({d});break;}}\n}}\n", .{ if (all) "!" else "", x, r, @intFromBool(!all) });
++    }
++    fn comprehension(e: *Emitter, n: ast.Node, r: usize) Error!void {
++        const seq = try e.expr(n.b);
++        const loop = e.fresh();
++        const item = e.fresh();
++        try e.decl(r);
++        try e.put("fresh(4);\n");
++        try e.iterHead(seq, loop, item);
++        try e.bindings.append(e.a, .{ .name = n.text, .id = item });
++        defer _ = e.bindings.pop();
++        if (n.c) |filter| {
++            const f = try e.expr(filter);
++            try e.out.print(e.a, "if(!truth(v{d}))continue;\n", .{f});
++        }
++        const x = try e.expr(n.a);
++        try e.out.print(e.a, "append(v{d},v{d});\n}}\n", .{ r, x });
++    }
++    fn iterHead(e: *Emitter, seq: usize, loop: usize, item: usize) Error!void {
++        try e.out.print(e.a, "int i{d}=0,guard{d}=dict_size(v{d});V v{d};\nwhile(1){{\n", .{ loop, loop, seq, item });
++        try e.out.print(e.a, "iter_guard(v{d},guard{d});if(!cg_iter(v{d},&i{d},&v{d}))break;\n", .{ seq, loop, seq, loop, item });
++    }
++    fn target(e: *Emitter, id: usize, value: usize) Error!void {
++        const n = e.p.nodes.items[id];
++        switch (n.tag) {
++            .name => {
++                try e.variable(n.text);
++                try e.out.print(e.a, "=py_hold(v{d});\n", .{value});
++            },
++            .tuple, .list => {
++                const cursor = e.fresh();
++                try e.out.print(e.a, "int unpack{d}=0;\n", .{cursor});
++                var values: std.ArrayList(usize) = .empty;
++                defer values.deinit(e.a);
++                for (n.args) |_| {
++                    const x = e.fresh();
++                    try values.append(e.a, x);
++                    try e.out.print(e.a, "V v{d};if(!cg_iter(v{d},&unpack{d},&v{d}))fail();\n", .{ x, value, cursor, x });
++                }
++                const extra = e.fresh();
++                try e.out.print(e.a, "V v{d};if(cg_iter(v{d},&unpack{d},&v{d}))fail();\n", .{ extra, value, cursor, extra });
++                for (n.args, values.items) |arg, x| try e.target(arg, x);
++            },
++            .index => {
++                const x = try e.expr(n.a);
++                const y = try e.expr(n.b);
++                try e.out.print(e.a, "put(v{d},v{d},v{d});\n", .{ x, y, value });
++            },
++            else => try e.put("fail();\n"),
++        }
++    }
++    fn statements(e: *Emitter, body: []const ast.Stmt) Error!void {
++        for (body) |s| switch (s.tag) {
++            .assign => {
++                const x = try e.expr(s.expr.?);
++                for (s.targets) |t| try e.target(t, x);
++            },
++            .augassign => {
++                const n = e.p.nodes.items[s.targets[0]];
++                if (n.tag == .index) {
++                    const a = try e.expr(n.a);
++                    const b = try e.expr(n.b);
++                    const old = e.fresh();
++                    try e.decl(old);
++                    try e.out.print(e.a, "get(v{d},v{d});\n", .{ a, b });
++                    const x = try e.expr(s.expr.?);
++                    try e.out.print(e.a, "put(v{d},v{d},inplace({d},v{d},v{d}));\n", .{ a, b, binaryId(s.op), old, x });
++                } else {
++                    const old = try e.expr(s.targets[0]);
++                    const x = try e.expr(s.expr.?);
++                    const r = e.fresh();
++                    try e.decl(r);
++                    try e.out.print(e.a, "inplace({d},v{d},v{d});\n", .{ binaryId(s.op), old, x });
++                    try e.target(s.targets[0], r);
++                }
++            },
++            .expression => _ = try e.expr(s.expr.?),
++            .print => {
++                var values: std.ArrayList(usize) = .empty;
++                defer values.deinit(e.a);
++                for (s.targets) |arg| try values.append(e.a, try e.expr(arg));
++                if (s.expr) |arg| try values.append(e.a, try e.expr(arg));
++                for (values.items, 0..) |x, i| {
++                    if (i != 0) try e.put("outchar(32);\n");
++                    try e.out.print(e.a, "repr(v{d},1);\n", .{x});
++                }
++                try e.put("outchar(10);\n");
++            },
++            .conditional => {
++                const x = try e.expr(s.expr.?);
++                try e.out.print(e.a, "if(truth(v{d})){{\n", .{x});
++                try e.statements(s.body);
++                try e.put("}else{\n");
++                try e.statements(s.otherwise);
++                try e.put("}\n");
++            },
++            .while_loop => {
++                try e.put("while(1){\n");
++                const x = try e.expr(s.expr.?);
++                try e.out.print(e.a, "if(!truth(v{d}))break;\n", .{x});
++                try e.statements(s.body);
++                try e.put("}\n");
++            },
++            .for_loop => {
++                const x = try e.expr(s.expr.?);
++                const i = e.fresh();
++                const item = e.fresh();
++                try e.iterHead(x, i, item);
++                try e.target(s.targets[0], item);
++                try e.statements(s.body);
++                try e.put("}\n");
++            },
++            .ret => {
++                if (s.expr) |arg| {
++                    const x = try e.expr(arg);
++                    try e.out.print(e.a, "return py_hold(v{d});\n", .{x});
++                } else try e.put("return none();\n");
++            },
++            .assertion => {
++                const x = try e.expr(s.expr.?);
++                try e.out.print(e.a, "if(!truth(v{d}))fail();\n", .{x});
++            },
++            .break_loop => try e.put("break;\n"),
++            .continue_loop => try e.put("continue;\n"),
++            .function => try e.out.print(e.a, "defined{d}=1;\n", .{s.function}),
++            .pass => {},
++        };
++    }
++};
++fn binaryId(tag: ast.Tag) usize {
++    return switch (tag) {
++        .add => 0,
++        .sub => 1,
++        .mul => 2,
++        .floor => 3,
++        .modulo => 4,
++        .eq => 5,
++        .ne => 6,
++        .lt => 7,
++        .le => 8,
++        .gt => 9,
++        .ge => 10,
++        .contains => 11,
++        .not_contains => 12,
++        .is_identity => 13,
++        .is_not => 14,
++        else => 99,
++    };
++}
+diff --git a/zig/src/core/runner_frontend_collections_expr.zig b/zig/src/core/runner_frontend_collections_expr.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..394b8ef20f11c189c893cf41aa9f327ef86c50a6
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_expr.zig
+@@ -0,0 +1,339 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++
++pub fn parse(p: *ast.Program, source: []const u8) ast.Error!ast.Id {
++    var s: Parser = .{ .p = p, .source = source };
++    const id = try s.tuple();
++    s.space();
++    if (s.pos != source.len) return error.Unsupported;
++    try bounded(p, id, 0);
++    return id;
++}
++
++pub const Parser = struct {
++    p: *ast.Program,
++    source: []const u8,
++    pos: usize = 0,
++    depth: usize = 0,
++
++    pub fn space(s: *Parser) void {
++        while (s.pos < s.source.len and std.ascii.isWhitespace(s.source[s.pos])) s.pos += 1;
++    }
++
++    pub fn eat(s: *Parser, token: []const u8) bool {
++        s.space();
++        if (!std.mem.startsWith(u8, s.source[s.pos..], token)) return false;
++        const end = s.pos + token.len;
++        if (nameChar(token[token.len - 1]) and end < s.source.len and nameChar(s.source[end])) return false;
++        s.pos = end;
++        return true;
++    }
++
++    pub fn need(s: *Parser, token: []const u8) ast.Error!void {
++        if (!s.eat(token)) return error.Unsupported;
++    }
++
++    pub fn identifier(s: *Parser) ast.Error![]const u8 {
++        s.space();
++        const start = s.pos;
++        if (start == s.source.len or !(std.ascii.isAlphabetic(s.source[start]) or s.source[start] == '_'))
++            return error.Unsupported;
++        s.pos += 1;
++        while (s.pos < s.source.len and nameChar(s.source[s.pos])) s.pos += 1;
++        const name = s.source[start..s.pos];
++        if (!validName(name)) return error.Unsupported;
++        return name;
++    }
++
++    pub fn tuple(s: *Parser) ast.Error!ast.Id {
++        const first = try s.expression();
++        if (!s.eat(",")) return first;
++        var args: std.ArrayList(ast.Id) = .empty;
++        try args.append(s.p.a, first);
++        while (true) {
++            s.space();
++            if (s.pos == s.source.len or s.source[s.pos] == ')') break;
++            try args.append(s.p.a, try s.expression());
++            if (!s.eat(",")) break;
++        }
++        return s.p.node(.{ .tag = .tuple, .args = try args.toOwnedSlice(s.p.a) });
++    }
++
++    pub fn expression(s: *Parser) ast.Error!ast.Id {
++        if (s.depth >= 24) return error.Unsupported;
++        s.depth += 1;
++        defer s.depth -= 1;
++        const yes = try s.disjunction();
++        if (!s.eat("if")) return yes;
++        const condition = try s.disjunction();
++        try s.need("else");
++        return s.p.node(.{ .tag = .conditional, .a = yes, .b = condition, .c = try s.expression() });
++    }
++
++    fn disjunction(s: *Parser) ast.Error!ast.Id {
++        var root = try s.conjunction();
++        while (s.eat("or")) root = try s.binary(.logical_or, root, try s.conjunction());
++        return root;
++    }
++
++    fn conjunction(s: *Parser) ast.Error!ast.Id {
++        var root = try s.inversion();
++        while (s.eat("and")) root = try s.binary(.logical_and, root, try s.inversion());
++        return root;
++    }
++
++    fn inversion(s: *Parser) ast.Error!ast.Id {
++        if (s.eat("not")) {
++            if (s.depth >= 24) return error.Unsupported;
++            s.depth += 1;
++            defer s.depth -= 1;
++            return s.p.node(.{ .tag = .logical_not, .a = try s.inversion() });
++        }
++        const left = try s.additive();
++        const tag: ast.Tag = if (s.eat("==")) .eq else if (s.eat("!=")) .ne else if (s.eat("<=")) .le else if (s.eat(">=")) .ge else if (s.eat("<")) .lt else if (s.eat(">")) .gt else if (s.eat("in")) .contains else if (s.eat("not")) blk: {
++            try s.need("in");
++            break :blk .not_contains;
++        } else if (s.eat("is")) (if (s.eat("not")) ast.Tag.is_not else ast.Tag.is_identity) else return left;
++        return s.binary(tag, left, try s.additive());
++    }
++
++    fn additive(s: *Parser) ast.Error!ast.Id {
++        var root = try s.product();
++        while (true) {
++            const tag: ast.Tag = if (s.eat("+")) .add else if (s.eat("-")) .sub else break;
++            root = try s.binary(tag, root, try s.product());
++        }
++        return root;
++    }
++
++    fn product(s: *Parser) ast.Error!ast.Id {
++        var root = try s.unary();
++        while (true) {
++            const tag: ast.Tag = if (s.eat("//")) .floor else if (s.eat("%")) .modulo else if (s.eat("*")) .mul else break;
++            root = try s.binary(tag, root, try s.unary());
++        }
++        return root;
++    }
++
++    fn unary(s: *Parser) ast.Error!ast.Id {
++        const tag: ?ast.Tag = if (s.eat("-")) .neg else if (s.eat("+")) .pos else null;
++        if (tag) |op| {
++            if (s.depth >= 24) return error.Unsupported;
++            s.depth += 1;
++            defer s.depth -= 1;
++            return s.p.node(.{ .tag = op, .a = try s.unary() });
++        }
++        var root = try s.atom();
++        while (true) {
++            if (s.eat("[")) {
++                const start = if (s.peek(":")) try s.p.node(.{ .tag = .none }) else try s.expression();
++                if (s.eat(":")) {
++                    const stop = if (s.peek(":") or s.peek("]")) try s.p.node(.{ .tag = .none }) else try s.expression();
++                    var step = try s.p.node(.{ .tag = .none });
++                    if (s.eat(":")) {
++                        if (!s.peek("]")) step = try s.expression();
++                    }
++                    try s.need("]");
++                    root = try s.p.node(.{ .tag = .slice, .a = root, .args = try s.p.a.dupe(ast.Id, &.{ start, stop, step }) });
++                } else {
++                    try s.need("]");
++                    root = try s.p.node(.{ .tag = .index, .a = root, .b = start });
++                }
++            } else if (s.eat(".")) {
++                const name = try s.identifier();
++                try s.need("(");
++                root = try s.call(.method, name, root);
++            } else break;
++        }
++        return root;
++    }
++
++    fn peek(s: *Parser, token: []const u8) bool {
++        const save = s.pos;
++        defer s.pos = save;
++        return s.eat(token);
++    }
++
++    fn binary(s: *Parser, tag: ast.Tag, a: ast.Id, b: ast.Id) ast.Error!ast.Id {
++        return s.p.node(.{ .tag = tag, .a = a, .b = b });
++    }
++
++    fn atom(s: *Parser) ast.Error!ast.Id {
++        if (s.eat("(")) {
++            if (s.eat(")")) return s.p.node(.{ .tag = .tuple });
++            const root = try s.tuple();
++            try s.need(")");
++            return root;
++        }
++        if (s.eat("[")) return s.sequence(.list, "]");
++        if (s.eat("{")) return s.sequence(.set, "}");
++        if (s.eat("True")) return s.p.node(.{ .tag = .boolean, .value = 1 });
++        if (s.eat("False")) return s.p.node(.{ .tag = .boolean });
++        if (s.eat("None")) return s.p.node(.{ .tag = .none });
++        s.space();
++        if (s.pos == s.source.len) return error.Unsupported;
++        if (s.source[s.pos] == '\'' or s.source[s.pos] == '"') return s.string();
++        if (std.ascii.isDigit(s.source[s.pos])) {
++            const start = s.pos;
++            while (s.pos < s.source.len and std.ascii.isDigit(s.source[s.pos])) s.pos += 1;
++            const text = s.source[start..s.pos];
++            if (s.pos < s.source.len and nameChar(s.source[s.pos])) return error.Unsupported;
++            if (text.len > 1 and text[0] == '0') return error.Unsupported;
++            const value = std.fmt.parseInt(i64, text, 10) catch return error.Unsupported;
++            if (value > 2147483648) return error.Unsupported;
++            return s.p.node(.{ .tag = .integer, .value = value });
++        }
++        const name = try s.identifier();
++        if (s.eat("(")) return s.call(.call, name, 0);
++        return s.p.node(.{ .tag = .name, .text = name });
++    }
++
++    fn sequence(s: *Parser, kind: ast.Tag, close: []const u8) ast.Error!ast.Id {
++        var tag = kind;
++        var args: std.ArrayList(ast.Id) = .empty;
++        if (s.eat(close)) return s.p.node(.{ .tag = if (kind == .set) .dict else kind });
++        const first = try s.expression();
++        if (kind == .list and s.eat("for")) {
++            const comp = try s.comprehension(first);
++            try s.need(close);
++            return comp;
++        }
++        try args.append(s.p.a, first);
++        if (kind == .set and s.eat(":")) {
++            tag = .dict;
++            try args.append(s.p.a, try s.expression());
++        }
++        while (!s.eat(close)) {
++            try s.need(",");
++            if (s.eat(close)) break;
++            try args.append(s.p.a, try s.expression());
++            if (tag == .dict) {
++                try s.need(":");
++                try args.append(s.p.a, try s.expression());
++            }
++        }
++        return s.p.node(.{ .tag = tag, .args = try args.toOwnedSlice(s.p.a) });
++    }
++
++    fn comprehension(s: *Parser, output: ast.Id) ast.Error!ast.Id {
++        const name = try s.identifier();
++        try s.need("in");
++        const iterable = try s.disjunction();
++        const filter: ?ast.Id = if (s.eat("if")) try s.disjunction() else null;
++        return s.p.node(.{ .tag = .comprehension, .text = name, .a = output, .b = iterable, .c = filter });
++    }
++
++    fn call(s: *Parser, tag: ast.Tag, name: []const u8, base: ast.Id) ast.Error!ast.Id {
++        var args: std.ArrayList(ast.Id) = .empty;
++        var keywords: std.ArrayList([]const u8) = .empty;
++        var named = false;
++        if (!s.eat(")")) while (true) {
++            const save = s.pos;
++            var key: []const u8 = "";
++            if (s.identifier()) |candidate| {
++                if (s.eat("=") and !s.peek("=")) key = candidate else s.pos = save;
++            } else |_| s.pos = save;
++            if (key.len != 0) {
++                for (keywords.items) |old| if (std.mem.eql(u8, old, key)) return error.Unsupported;
++                named = true;
++            } else if (named) return error.Unsupported;
++            var arg = try s.expression();
++            if (s.eat("for")) {
++                if (tag != .call or args.items.len != 0 or key.len != 0 or
++                    !(std.mem.eql(u8, name, "any") or std.mem.eql(u8, name, "all"))) return error.Unsupported;
++                arg = try s.comprehension(arg);
++                s.p.nodes.items[arg].value = 1;
++                try args.append(s.p.a, arg);
++                try keywords.append(s.p.a, "");
++                try s.need(")");
++                break;
++            }
++            try args.append(s.p.a, arg);
++            try keywords.append(s.p.a, key);
++            if (s.eat(")")) break;
++            try s.need(",");
++            if (s.eat(")")) break;
++        };
++        return s.p.node(.{ .tag = tag, .text = name, .a = base, .args = try args.toOwnedSlice(s.p.a), .keywords = try keywords.toOwnedSlice(s.p.a) });
++    }
++
++    fn string(s: *Parser) ast.Error!ast.Id {
++        const quote = s.source[s.pos];
++        s.pos += 1;
++        var bytes: std.ArrayList(u8) = .empty;
++        while (s.pos < s.source.len) {
++            var c = s.source[s.pos];
++            s.pos += 1;
++            if (c == quote) return s.p.node(.{ .tag = .string, .text = try bytes.toOwnedSlice(s.p.a) });
++            if (c < 32 or c >= 128) return error.Unsupported;
++            if (c == '\\') c = try s.escape();
++            if (bytes.items.len >= 128) return error.Unsupported;
++            try bytes.append(s.p.a, c);
++        }
++        return error.Unsupported;
++    }
++
++    fn escape(s: *Parser) ast.Error!u8 {
++        if (s.pos == s.source.len) return error.Unsupported;
++        const c = s.source[s.pos];
++        s.pos += 1;
++        switch (c) {
++            '\\', '\'', '"' => return c,
++            'n' => return 10,
++            'r' => return 13,
++            't' => return 9,
++            'b' => return 8,
++            'f' => return 12,
++            'v' => return 11,
++            'a' => return 7,
++            'x', 'u', 'U' => {
++                const len: usize = if (c == 'x') 2 else if (c == 'u') 4 else 8;
++                if (s.pos + len > s.source.len) return error.Unsupported;
++                const value = std.fmt.parseInt(u32, s.source[s.pos .. s.pos + len], 16) catch return error.Unsupported;
++                for (s.source[s.pos .. s.pos + len]) |digit| if (!std.ascii.isHex(digit)) return error.Unsupported;
++                if (value >= 128) return error.Unsupported;
++                s.pos += len;
++                return @intCast(value);
++            },
++            '0'...'7' => {
++                var value: u16 = c - '0';
++                var count: usize = 1;
++                while (count < 3 and s.pos < s.source.len and s.source[s.pos] >= '0' and s.source[s.pos] <= '7') : (count += 1) {
++                    value = value * 8 + s.source[s.pos] - '0';
++                    s.pos += 1;
++                }
++                if (value >= 128) return error.Unsupported;
++                return @intCast(value);
++            },
++            else => return error.Unsupported,
++        }
++    }
++};
++
++fn nameChar(c: u8) bool {
++    return std.ascii.isAlphanumeric(c) or c == '_';
++}
++
++pub fn validName(name: []const u8) bool {
++    if (name.len == 0 or !(std.ascii.isAlphabetic(name[0]) or name[0] == '_')) return false;
++    for (name) |c| if (!nameChar(c)) return false;
++    const reserved = [_][]const u8{ "__debug__", "__builtins__", "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield" };
++    for (reserved) |word| if (std.mem.eql(u8, word, name)) return false;
++    return true;
++}
++
++fn bounded(p: *const ast.Program, id: ast.Id, depth: usize) ast.Error!void {
++    if (depth >= 24) return error.Unsupported;
++    const n = p.nodes.items[id];
++    switch (n.tag) {
++        .integer, .boolean, .none, .string, .name => {},
++        .list, .tuple, .dict, .set, .call => {},
++        .slice, .method, .neg, .pos, .logical_not => try bounded(p, n.a, depth + 1),
++        else => {
++            try bounded(p, n.a, depth + 1);
++            try bounded(p, n.b, depth + 1);
++            if (n.c) |c| try bounded(p, c, depth + 1);
++        },
++    }
++    for (n.args) |arg| try bounded(p, arg, depth + 1);
++}
+diff --git a/zig/src/core/runner_frontend_collections_methods.zig b/zig/src/core/runner_frontend_collections_methods.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..00e3ea100b46509adc4240595e156088b0050ec8
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_methods.zig
+@@ -0,0 +1,123 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const v = @import("runner_frontend_collections_value.zig");
++const ops = @import("runner_frontend_collections_ops.zig");
++const Value = v.Value;
++const Heap = v.Heap;
++const Error = ast.Error;
++fn is(a: []const u8, b: []const u8) bool {
++    return std.mem.eql(u8, a, b);
++}
++fn argc(args: []const Value, min: usize, max: usize) Error!void {
++    if (args.len < min or args.len > max) return error.Unsupported;
++}
++pub fn call(h: *Heap, object: Value, name: []const u8, args: []const Value, keywords: []const []const u8) Error!Value {
++    try h.charge(24);
++    if (args.len != keywords.len) return error.Unsupported;
++    for (keywords) |key| if (key.len != 0) return error.Unsupported;
++    if (is(name, "append")) {
++        try argc(args, 1, 1);
++        if (object.kind != .list) return error.Unsupported;
++        try h.append(object, args[0]);
++        return .{};
++    }
++    if (is(name, "pop")) {
++        try argc(args, 0, 1);
++        if (object.kind != .list) return error.Unsupported;
++        const o = object.obj.?;
++        const i = try v.normalized(if (args.len == 0) -1 else try args[0].numeric(), o.items.items.len);
++        try h.charge((o.items.items.len - i) * 8);
++        return o.items.orderedRemove(i);
++    }
++    if (is(name, "reverse")) {
++        try argc(args, 0, 0);
++        if (object.kind != .list) return error.Unsupported;
++        std.mem.reverse(Value, object.obj.?.items.items);
++        try h.charge(object.obj.?.items.items.len * 8);
++        return .{};
++    }
++    if (is(name, "copy")) {
++        try argc(args, 0, 0);
++        if (object.kind != .list) return error.Unsupported;
++        return ops.collect(h, object, false);
++    }
++    if (is(name, "get") or is(name, "setdefault")) {
++        try argc(args, 1, 2);
++        if (object.kind != .dict) return error.Unsupported;
++        if (try h.contains(object, args[0])) return h.get(object, args[0]);
++        const fallback = if (args.len == 2) args[1] else Value{};
++        if (is(name, "setdefault")) try h.dictSet(object, args[0], fallback);
++        return fallback;
++    }
++    if (is(name, "keys") or is(name, "items") or is(name, "values")) {
++        try argc(args, 0, 0);
++        if (object.kind != .dict) return error.Unsupported;
++        return .{ .kind = if (is(name, "keys")) .keys else if (is(name, "items")) .items else .values, .obj = object.obj };
++    }
++    if (is(name, "add")) {
++        try argc(args, 1, 1);
++        try h.setAdd(object, args[0]);
++        return .{};
++    }
++    if (is(name, "remove") or is(name, "discard")) {
++        try argc(args, 1, 1);
++        if (object.kind != .set or !v.hashable(args[0])) return error.Unsupported;
++        const data = object.obj.?.items.items;
++        for (data, 0..) |x, i| {
++            try h.charge(12);
++            if (try h.eq(x, args[0])) {
++                _ = object.obj.?.items.orderedRemove(i);
++                return .{};
++            }
++        }
++        if (is(name, "remove")) return error.Unsupported;
++        return .{};
++    }
++    if (is(name, "find") or is(name, "rfind")) {
++        try argc(args, 1, 3);
++        if (object.kind != .string or args[0].kind != .string) return error.Unsupported;
++        const s = object.obj.?.text;
++        const needle = args[0].obj.?.text;
++        const n: i64 = @intCast(s.len);
++        var lo: i64 = if (args.len >= 2) try args[1].numeric() else 0;
++        var hi: i64 = if (args.len >= 3) try args[2].numeric() else n;
++        if (lo < 0) lo += n;
++        lo = @max(lo, 0);
++        if (hi < 0) hi += n;
++        hi = @min(n, @max(hi, 0));
++        var found: i64 = -1;
++        while (lo + @as(i64, @intCast(needle.len)) <= hi) : (lo += 1) {
++            try h.charge(12 + needle.len * 4);
++            const i: usize = @intCast(lo);
++            if (std.mem.eql(u8, s[i..][0..needle.len], needle)) {
++                found = lo;
++                if (is(name, "find")) break;
++            }
++        }
++        return Value.int(found);
++    }
++    if (is(name, "join")) {
++        try argc(args, 1, 1);
++        if (object.kind != .string) return error.Unsupported;
++        const seq = try ops.collect(h, args[0], false);
++        var text: std.ArrayList(u8) = .empty;
++        for (seq.obj.?.items.items, 0..) |x, i| {
++            if (x.kind != .string) return error.Unsupported;
++            if (i != 0) try text.appendSlice(h.a, object.obj.?.text);
++            try text.appendSlice(h.a, x.obj.?.text);
++        }
++        return h.string(text.items);
++    }
++    if (is(name, "split")) {
++        try argc(args, 1, 1);
++        if (object.kind != .string or args[0].kind != .string or args[0].obj.?.text.len == 0) return error.Unsupported;
++        const out = try h.new(.list);
++        var iterator = std.mem.splitSequence(u8, object.obj.?.text, args[0].obj.?.text);
++        while (iterator.next()) |part| {
++            const item = try h.string(part);
++            try h.append(out, item);
++        }
++        return out;
++    }
++    return error.Unsupported;
++}
+diff --git a/zig/src/core/runner_frontend_collections_ops.zig b/zig/src/core/runner_frontend_collections_ops.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d9c7d32815df66b19a282c70cc736c4cead93d12
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_ops.zig
+@@ -0,0 +1,195 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const val = @import("runner_frontend_collections_value.zig");
++const Value = val.Value;
++const Heap = val.Heap;
++const Error = ast.Error;
++
++pub fn unary(h: *Heap, tag: ast.Tag, v: Value) Error!Value {
++    try h.charge(8);
++    if (tag == .logical_not) return Value.boolean(!try val.truth(v));
++    const n = try v.numeric();
++    return Value.int(if (tag == .neg) -n else if (tag == .pos) n else return error.Unsupported);
++}
++pub fn binary(h: *Heap, tag: ast.Tag, a: Value, b: Value) Error!Value {
++    try h.charge(16);
++    if (tag == .eq or tag == .ne) {
++        const same = try h.eq(a, b);
++        return Value.boolean(if (tag == .eq) same else !same);
++    }
++    if (tag == .is_identity or tag == .is_not) {
++        if (a.kind != .none and b.kind != .none and !((a.kind == .list or a.kind == .dict or a.kind == .set) and
++            (b.kind == .list or b.kind == .dict or b.kind == .set))) return error.Unsupported;
++        const same = a.kind == b.kind and (a.kind == .none or a.obj == b.obj);
++        return Value.boolean(if (tag == .is_identity) same else !same);
++    }
++    if (tag == .contains or tag == .not_contains) {
++        const yes = try h.contains(b, a);
++        return Value.boolean(if (tag == .contains) yes else !yes);
++    }
++    if (tag == .lt or tag == .le or tag == .gt or tag == .ge) {
++        const order = try h.order(a, b);
++        return Value.boolean(switch (tag) {
++            .lt => order == .lt,
++            .le => order != .gt,
++            .gt => order == .gt,
++            .ge => order != .lt,
++            else => unreachable,
++        });
++    }
++    if (tag == .add and a.kind == .string and b.kind == .string) {
++        const text = try std.mem.concat(h.a, u8, &.{ a.obj.?.text, b.obj.?.text });
++        return h.string(text);
++    }
++    if (tag == .add and a.kind == b.kind and (a.kind == .list or a.kind == .tuple)) {
++        const out = try h.new(a.kind);
++        for (a.obj.?.items.items) |x| try h.append(out, x);
++        for (b.obj.?.items.items) |x| try h.append(out, x);
++        return out;
++    }
++    if (tag == .mul and (a.kind == .string or a.kind == .list or a.kind == .tuple)) return repeat(h, a, try b.numeric());
++    if (tag == .mul and (b.kind == .string or b.kind == .list or b.kind == .tuple)) return repeat(h, b, try a.numeric());
++    const x = try a.numeric();
++    const y = try b.numeric();
++    return Value.int(switch (tag) {
++        .add => x + y,
++        .sub => x - y,
++        .mul => x * y,
++        .floor => if (y == 0 or (x == std.math.minInt(i32) and y == -1)) return error.Unsupported else @divFloor(x, y),
++        .modulo => if (y == 0 or (x == std.math.minInt(i32) and y == -1)) return error.Unsupported else @mod(x, y),
++        else => return error.Unsupported,
++    });
++}
++pub fn repeat(h: *Heap, v: Value, n: i64) Error!Value {
++    const count: usize = @intCast(@max(0, n));
++    const len = try val.length(v);
++    if (count > 128 or len * count > 128) return error.Unsupported;
++    if (v.kind == .string) {
++        const text = try h.a.alloc(u8, len * count);
++        for (0..count) |i| @memcpy(text[i * len ..][0..len], v.obj.?.text);
++        return h.string(text);
++    }
++    const out = try h.new(v.kind);
++    for (0..count) |_| for (v.obj.?.items.items) |x| {
++        try h.append(out, x);
++    };
++    return out;
++}
++pub fn inplace(h: *Heap, tag: ast.Tag, left: Value, right: Value) Error!Value {
++    if (left.kind != .list or (tag != .add and tag != .mul)) return binary(h, tag, left, right);
++    if (tag == .add) {
++        if (right.kind != .list and right.kind != .tuple) return error.Unsupported;
++        const items = try collect(h, right, false);
++        const copy = try h.a.dupe(Value, items.obj.?.items.items);
++        for (copy) |v| try h.append(left, v);
++    } else {
++        const n = try right.numeric();
++        const original = try h.a.dupe(Value, left.obj.?.items.items);
++        if (n > 128 or original.len * @as(usize, @intCast(@max(n, 0))) > 128) return error.Unsupported;
++        if (n <= 0) left.obj.?.items.clearRetainingCapacity() else {
++            var k: i64 = 1;
++            while (k < n) : (k += 1) for (original) |v| {
++                try h.append(left, v);
++            };
++        }
++    }
++    return left;
++}
++pub fn slice(h: *Heap, v: Value, lo: Value, hi: Value, step_value: Value) Error!Value {
++    if (v.kind != .string and v.kind != .list and v.kind != .tuple) return error.Unsupported;
++    const len: i64 = @intCast(try val.length(v));
++    const step = if (step_value.kind == .none) 1 else try step_value.numeric();
++    if (step == 0) return error.Unsupported;
++    const lower: i64 = if (step > 0) 0 else -1;
++    const upper: i64 = if (step > 0) len else len - 1;
++    const start = if (lo.kind == .none) (if (step > 0) @as(i64, 0) else len - 1) else @min(upper, @max(lower, adjust(try lo.numeric(), len)));
++    const stop = if (hi.kind == .none) (if (step > 0) len else @as(i64, -1)) else @min(upper, @max(lower, adjust(try hi.numeric(), len)));
++    var bytes: [128]u8 = undefined;
++    var n: usize = 0;
++    const out = if (v.kind == .string) Value{} else try h.new(v.kind);
++    var i = start;
++    while (if (step > 0) i < stop else i > stop) : (i += step) {
++        try h.charge(12);
++        if (v.kind == .string) {
++            bytes[n] = v.obj.?.text[@intCast(i)];
++            n += 1;
++        } else try h.append(out, v.obj.?.items.items[@intCast(i)]);
++    }
++    return if (v.kind == .string) h.string(bytes[0..n]) else out;
++}
++fn adjust(i: i64, len: i64) i64 {
++    return if (i < 0) i + len else i;
++}
++pub fn indexable(v: Value) bool {
++    return v.kind == .string or v.kind == .list or v.kind == .tuple or v.kind == .dict or v.kind == .range or
++        v.kind == .items or v.kind == .keys or v.kind == .values;
++}
++pub fn at(h: *Heap, v: Value, i: usize) Error!Value {
++    if (i >= try val.length(v)) return error.Unsupported;
++    try h.charge(8);
++    if (v.kind == .string) return h.string(v.obj.?.text[i .. i + 1]);
++    if (v.kind == .dict or v.kind == .keys) return v.obj.?.items.items[2 * i];
++    if (v.kind == .values) return v.obj.?.items.items[2 * i + 1];
++    if (v.kind == .items) {
++        const out = try h.new(.tuple);
++        try h.append(out, v.obj.?.items.items[2 * i]);
++        try h.append(out, v.obj.?.items.items[2 * i + 1]);
++        return out;
++    }
++    if (!indexable(v)) return error.Unsupported;
++    return v.obj.?.items.items[i];
++}
++pub fn next(h: *Heap, v: Value, cursor: *usize) Error!?Value {
++    if (indexable(v)) {
++        if (cursor.* >= try val.length(v)) return null;
++        const value = try at(h, v, cursor.*);
++        cursor.* += 1;
++        return value;
++    }
++    if (v.kind != .enumerate and v.kind != .zip and v.kind != .map_str) return error.Unsupported;
++    const o = v.obj.?;
++    const args = o.items.items;
++    const i = o.cursor;
++    if (o.exhausted) return null;
++    if (v.kind == .zip and args.len == 0) {
++        o.exhausted = true;
++        return null;
++    }
++    for (if (v.kind == .enumerate) args[0..1] else args) |src| if (i >= try val.length(src)) {
++        o.exhausted = true;
++        return null;
++    };
++    o.cursor += 1;
++    if (v.kind == .map_str) return try string(h, try at(h, args[0], i));
++    const result = try h.new(.tuple);
++    if (v.kind == .enumerate) {
++        try h.append(result, try Value.int((try args[1].numeric()) + @as(i64, @intCast(i))));
++        try h.append(result, try at(h, args[0], i));
++    } else {
++        for (args) |src| {
++            try h.append(result, try at(h, src, i));
++        }
++    }
++    return result;
++}
++pub fn collect(h: *Heap, v: Value, allow_set: bool) Error!Value {
++    const out = try h.new(.list);
++    if (v.kind == .set and allow_set) {
++        for (v.obj.?.items.items) |x| try h.append(out, x);
++    } else {
++        var cursor: usize = 0;
++        while (try next(h, v, &cursor)) |x| try h.append(out, x);
++    }
++    return out;
++}
++pub fn string(h: *Heap, v: Value) Error!Value {
++    if (v.kind == .string) return v;
++    var buffer: [16]u8 = undefined;
++    const text = switch (v.kind) {
++        .integer => std.fmt.bufPrint(&buffer, "{d}", .{v.n}) catch return error.Unsupported,
++        .boolean => if (v.n != 0) "True" else "False",
++        .none => "None",
++        else => return error.Unsupported,
++    };
++    return h.string(text);
++}
+diff --git a/zig/src/core/runner_frontend_collections_parse.zig b/zig/src/core/runner_frontend_collections_parse.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..f6a8b71cb6a6140a12ce7839591d8c90c953a6f1
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_parse.zig
+@@ -0,0 +1,488 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const expr = @import("runner_frontend_collections_expr.zig");
++
++pub fn parse(p: *ast.Program, source: []const u8) ast.Error!void {
++    if (source.len == 0 or source.len > 4096) return error.Unsupported;
++    var s: Parser = .{ .p = p, .lines = try lines(p, source) };
++    if (s.lines.len == 0 or s.lines[0].indent != 0) return error.Unsupported;
++    p.body = try s.block(0, &p.globals, false, 0, 0);
++    if (s.pos != s.lines.len) return error.Unsupported;
++    for (p.nodes.items) |n| {
++        if (n.tag == .name and std.mem.eql(u8, n.text, "__name__")) _ = try p.globals.bind(p.a, "__name__");
++    }
++    try protectedScope(p, &p.globals);
++    for (p.functions.items) |*f| try protectedScope(p, &f.scope);
++}
++
++const Line = struct { indent: usize, text: []const u8 };
++const Parser = struct {
++    p: *ast.Program,
++    lines: []const Line,
++    pos: usize = 0,
++    count: usize = 0,
++
++    fn block(s: *Parser, indent: usize, scope: *ast.Scope, function: bool, loops: usize, depth: usize) ast.Error![]const ast.Stmt {
++        if (depth >= 16) return error.Unsupported;
++        var out: std.ArrayList(ast.Stmt) = .empty;
++        while (s.pos < s.lines.len) {
++            const line = s.lines[s.pos];
++            if (line.indent < indent) break;
++            if (line.indent != indent) return error.Unsupported;
++            if (starts(line.text, "else:") or starts(line.text, "elif ")) break;
++            s.pos += 1;
++            try s.statements(&out, line.text, indent, scope, function, loops, depth);
++        }
++        if (out.items.len == 0) return error.Unsupported;
++        return out.toOwnedSlice(s.p.a);
++    }
++
++    fn statements(s: *Parser, out: *std.ArrayList(ast.Stmt), text: []const u8, indent: usize, scope: *ast.Scope, function: bool, loops: usize, depth: usize) ast.Error!void {
++        if (compound(text)) {
++            try out.append(s.p.a, try s.statement(text, indent, scope, function, loops, depth));
++            return;
++        }
++        var rest = text;
++        while (rest.len != 0) {
++            const sep = topChar(rest, ';') orelse rest.len;
++            const part = trim(rest[0..sep]);
++            if (part.len == 0 or compound(part)) return error.Unsupported;
++            try out.append(s.p.a, try s.statement(part, indent, scope, function, loops, depth));
++            if (sep == rest.len) break;
++            rest = trim(rest[sep + 1 ..]);
++        }
++    }
++
++    fn suite(s: *Parser, tail: []const u8, indent: usize, scope: *ast.Scope, function: bool, loops: usize, depth: usize) ast.Error![]const ast.Stmt {
++        if (depth >= 16) return error.Unsupported;
++        if (trim(tail).len != 0) {
++            if (compound(trim(tail))) return error.Unsupported;
++            var out: std.ArrayList(ast.Stmt) = .empty;
++            try s.statements(&out, trim(tail), indent, scope, function, loops, depth + 1);
++            return out.toOwnedSlice(s.p.a);
++        }
++        if (s.pos == s.lines.len or s.lines[s.pos].indent <= indent) return error.Unsupported;
++        return s.block(s.lines[s.pos].indent, scope, function, loops, depth + 1);
++    }
++
++    fn conditional(s: *Parser, text: []const u8, indent: usize, scope: *ast.Scope, function: bool, loops: usize, depth: usize) ast.Error!ast.Stmt {
++        if (depth >= 16) return error.Unsupported;
++        const colon = topChar(text, ':') orelse return error.Unsupported;
++        const condition = try expr.parse(s.p, trim(text[0..colon]));
++        const body = try s.suite(text[colon + 1 ..], indent, scope, function, loops, depth);
++        var otherwise: []const ast.Stmt = &.{};
++        if (s.pos < s.lines.len and s.lines[s.pos].indent == indent) {
++            const next = s.lines[s.pos].text;
++            if (starts(next, "else:")) {
++                s.pos += 1;
++                otherwise = try s.suite(next[5..], indent, scope, function, loops, depth);
++            } else if (starts(next, "elif ")) {
++                s.pos += 1;
++                const branch = try s.p.a.alloc(ast.Stmt, 1);
++                branch[0] = try s.conditional(next[5..], indent, scope, function, loops, depth + 1);
++                otherwise = branch;
++            }
++        }
++        return .{ .tag = .conditional, .expr = condition, .body = body, .otherwise = otherwise };
++    }
++
++    fn statement(s: *Parser, text: []const u8, indent: usize, scope: *ast.Scope, function: bool, loops: usize, depth: usize) ast.Error!ast.Stmt {
++        if (s.count >= 256) return error.Unsupported;
++        s.count += 1;
++        if (keyword(text, "if")) return s.conditional(text[2..], indent, scope, function, loops, depth);
++        if (starts(text, "def ")) {
++            if (function or depth != 0 or s.p.functions.items.len >= 16) return error.Unsupported;
++            return s.definition(text[4..], indent, depth);
++        }
++        if (starts(text, "for ") or keyword(text, "while")) {
++            const is_for = starts(text, "for ");
++            const header_start: usize = if (is_for) 4 else 5;
++            const header = text[header_start..];
++            const colon = topChar(header, ':') orelse return error.Unsupported;
++            var targets: []const ast.Id = &.{};
++            const value = if (is_for) blk: {
++                const sep = topWord(header[0..colon], "in") orelse return error.Unsupported;
++                const target = try expr.parse(s.p, trim(header[0..sep]));
++                try bindTarget(s.p, scope, target, false, 0);
++                targets = try s.p.a.dupe(ast.Id, &.{target});
++                break :blk try expr.parse(s.p, trim(header[sep + 2 .. colon]));
++            } else try expr.parse(s.p, trim(header[0..colon]));
++            const body = try s.suite(header[colon + 1 ..], indent, scope, function, loops + 1, depth);
++            return .{ .tag = if (is_for) .for_loop else .while_loop, .targets = targets, .expr = value, .body = body };
++        }
++        if (std.mem.eql(u8, text, "break") or std.mem.eql(u8, text, "continue")) {
++            if (loops == 0) return error.Unsupported;
++            return .{ .tag = if (text[0] == 'b') .break_loop else .continue_loop };
++        }
++        if (std.mem.eql(u8, text, "pass")) return .{ .tag = .pass };
++        if (keyword(text, "return")) {
++            if (!function) return error.Unsupported;
++            const tail = trim(text[6..]);
++            return .{ .tag = .ret, .expr = if (tail.len == 0) null else try expr.parse(s.p, tail) };
++        }
++        if (keyword(text, "assert")) {
++            const tail = trim(text[6..]);
++            if (topChar(tail, ',') != null) return error.Unsupported;
++            return .{ .tag = .assertion, .expr = try expr.parse(s.p, tail) };
++        }
++        if (assignment(text)) |eq| {
++            var lhs = trim(text[0..eq]);
++            const rhs = trim(text[eq + 1 ..]);
++            if (lhs.len == 0 or rhs.len == 0) return error.Unsupported;
++            var op: ?ast.Tag = null;
++            if (std.mem.endsWith(u8, lhs, "//")) {
++                lhs = trim(lhs[0 .. lhs.len - 2]);
++                op = .floor;
++            } else {
++                op = switch (lhs[lhs.len - 1]) {
++                    '+' => .add,
++                    '-' => .sub,
++                    '*' => .mul,
++                    '%' => .modulo,
++                    else => null,
++                };
++                if (op != null) lhs = trim(lhs[0 .. lhs.len - 1]);
++            }
++            var targets: std.ArrayList(ast.Id) = .empty;
++            const target = try expr.parse(s.p, lhs);
++            try bindTarget(s.p, scope, target, true, 0);
++            if (op != null and s.p.nodes.items[target].tag != .name and s.p.nodes.items[target].tag != .index)
++                return error.Unsupported;
++            try targets.append(s.p.a, target);
++            var rest = rhs;
++            while (assignment(rest)) |next| {
++                if (op != null) return error.Unsupported;
++                const chained = try expr.parse(s.p, trim(rest[0..next]));
++                try bindTarget(s.p, scope, chained, true, 0);
++                try targets.append(s.p.a, chained);
++                rest = trim(rest[next + 1 ..]);
++            }
++            return .{ .tag = if (op != null) .augassign else .assign, .op = op orelse .add, .targets = try targets.toOwnedSlice(s.p.a), .expr = try expr.parse(s.p, rest) };
++        }
++        const root = try expr.parse(s.p, text);
++        const node = s.p.nodes.items[root];
++        if (node.tag == .call and std.mem.eql(u8, node.text, "print")) {
++            for (node.keywords) |key| if (key.len != 0) return error.Unsupported;
++            return .{ .tag = .print, .targets = node.args };
++        }
++        return .{ .tag = .expression, .expr = root };
++    }
++
++    fn definition(s: *Parser, text: []const u8, indent: usize, depth: usize) ast.Error!ast.Stmt {
++        var e: expr.Parser = .{ .p = s.p, .source = text };
++        const name = try e.identifier();
++        if (builtinName(name) or s.p.functionId(name) != null) return error.Unsupported;
++        try e.need("(");
++        var params: std.ArrayList([]const u8) = .empty;
++        var scope: ast.Scope = .{};
++        if (!e.eat(")")) while (true) {
++            const param = try e.identifier();
++            if (scope.find(param) != null or builtinName(param)) return error.Unsupported;
++            _ = try scope.bind(s.p.a, param);
++            try params.append(s.p.a, param);
++            if (e.eat(")")) break;
++            try e.need(",");
++            if (e.eat(")")) break;
++        };
++        try e.need(":");
++        const id = s.p.functions.items.len;
++        try s.p.functions.append(s.p.a, .{ .name = name, .params = try params.toOwnedSlice(s.p.a) });
++        const body = try s.suite(text[e.pos..], indent, &scope, true, 0, depth);
++        s.p.functions.items[id].scope = scope;
++        s.p.functions.items[id].body = body;
++        return .{ .tag = .function, .function = id };
++    }
++};
++
++fn bindTarget(p: *ast.Program, scope: *ast.Scope, id: ast.Id, index: bool, depth: usize) ast.Error!void {
++    if (depth >= 24) return error.Unsupported;
++    const n = p.nodes.items[id];
++    switch (n.tag) {
++        .name => {
++            if (builtinName(n.text) or std.mem.eql(u8, n.text, "__name__")) return error.Unsupported;
++            _ = try scope.bind(p.a, n.text);
++        },
++        .tuple, .list => {
++            if (n.args.len == 0) return error.Unsupported;
++            p.nodes.items[id].tag = .tuple;
++            for (n.args) |arg| try bindTarget(p, scope, arg, index, depth + 1);
++        },
++        .index => if (!index) return error.Unsupported,
++        else => return error.Unsupported,
++    }
++}
++
++fn protectedScope(p: *const ast.Program, scope: *const ast.Scope) ast.Error!void {
++    for (scope.names.items) |name| if (p.functionId(name) != null) return error.Unsupported;
++    for (p.nodes.items) |n| {
++        if (n.tag == .call and scope.find(n.text) != null) return error.Unsupported;
++        if (n.tag == .comprehension and (builtinName(n.text) or p.functionId(n.text) != null)) return error.Unsupported;
++    }
++}
++
++fn builtinName(name: []const u8) bool {
++    const names = [_][]const u8{ "print", "len", "sum", "min", "max", "range", "enumerate", "zip", "sorted", "set", "dict", "list", "tuple", "str", "int", "bool", "any", "all", "map", "abs", "reversed" };
++    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
++    return false;
++}
++
++fn trim(text: []const u8) []const u8 {
++    return std.mem.trim(u8, text, " \t\r\n");
++}
++
++fn starts(text: []const u8, prefix: []const u8) bool {
++    return std.mem.startsWith(u8, text, prefix);
++}
++
++fn keyword(text: []const u8, word: []const u8) bool {
++    return starts(text, word) and (text.len == word.len or
++        !(std.ascii.isAlphanumeric(text[word.len]) or text[word.len] == '_'));
++}
++
++fn compound(text: []const u8) bool {
++    return keyword(text, "if") or starts(text, "for ") or keyword(text, "while") or starts(text, "def ");
++}
++
++pub fn topChar(text: []const u8, wanted: u8) ?usize {
++    var nesting: usize = 0;
++    var quote: u8 = 0;
++    var escaped = false;
++    for (text, 0..) |c, i| {
++        if (quote != 0) {
++            if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == quote) quote = 0;
++        } else if (c == '\'' or c == '"') {
++            quote = c;
++        } else if (nesting == 0 and c == wanted) {
++            return i;
++        } else if (c == '(' or c == '[' or c == '{') {
++            nesting += 1;
++        } else if (c == ')' or c == ']' or c == '}') {
++            if (nesting == 0) return null;
++            nesting -= 1;
++        }
++    }
++    return null;
++}
++
++fn topWord(text: []const u8, word: []const u8) ?usize {
++    var offset: usize = 0;
++    while (offset < text.len) {
++        const relative = topChar(text[offset..], word[0]) orelse return null;
++        const i = offset + relative;
++        if ((i == 0 or text[i - 1] == ' ') and starts(text[i..], word) and
++            (i + word.len == text.len or text[i + word.len] == ' ')) return i;
++        offset = i + 1;
++    }
++    return null;
++}
++
++fn assignment(text: []const u8) ?usize {
++    var offset: usize = 0;
++    while (offset < text.len) {
++        const relative = topChar(text[offset..], '=') orelse return null;
++        const i = offset + relative;
++        if ((i == 0 or std.mem.indexOfScalar(u8, "=!<>", text[i - 1]) == null) and
++            (i + 1 == text.len or text[i + 1] != '=')) return i;
++        offset = i + 1;
++    }
++    return null;
++}
++
++fn lines(p: *ast.Program, source: []const u8) ast.Error![]const Line {
++    var out: std.ArrayList(Line) = .empty;
++    var text: std.ArrayList(u8) = .empty;
++    var stack: [24]u8 = undefined;
++    var depth: usize = 0;
++    var quote: u8 = 0;
++    var escaped = false;
++    var comment = false;
++    var beginning = true;
++    var indent: usize = 0;
++    for (source, 0..) |c, source_pos| {
++        if (c == '\r') {
++            if (source_pos + 1 < source.len and source[source_pos + 1] == '\n') continue;
++            return error.Unsupported;
++        }
++        if (c == 0 or c >= 128 or (c < 32 and c != '\n' and c != '\t')) return error.Unsupported;
++        if (comment and c != '\n') continue;
++        if (c == '\n' and quote == 0) {
++            comment = false;
++            if (depth != 0) {
++                try text.append(p.a, ' ');
++            } else {
++                const value = trim(text.items);
++                if (value.len != 0) try out.append(p.a, .{ .indent = indent, .text = try p.a.dupe(u8, value) });
++                text.clearRetainingCapacity();
++                beginning = true;
++                indent = 0;
++            }
++            continue;
++        }
++        if (quote != 0) {
++            if (c == '\n') return error.Unsupported;
++            if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == quote) quote = 0;
++        } else {
++            if (c == '#') {
++                comment = true;
++                continue;
++            }
++            if (beginning and c == ' ') {
++                indent += 1;
++                continue;
++            }
++            if (c == '\t') return error.Unsupported;
++            beginning = false;
++            if (c == '\'' or c == '"') quote = c else if (c == '(' or c == '[' or c == '{') {
++                if (depth == stack.len) return error.Unsupported;
++                stack[depth] = c;
++                depth += 1;
++            } else if (c == ')' or c == ']' or c == '}') {
++                if (depth == 0) return error.Unsupported;
++                depth -= 1;
++                const expected: u8 = switch (c) {
++                    ')' => '(',
++                    ']' => '[',
++                    else => '{',
++                };
++                if (stack[depth] != expected) return error.Unsupported;
++            }
++        }
++        try text.append(p.a, c);
++    }
++    if (quote != 0 or depth != 0) return error.Unsupported;
++    const value = trim(text.items);
++    if (value.len != 0) try out.append(p.a, .{ .indent = indent, .text = try p.a.dupe(u8, value) });
++    return out.toOwnedSlice(p.a);
++}
++
++test "collections parser preserves print grouping and conditional slots" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    var p: ast.Program = .{ .a = arena.allocator() };
++    try parse(&p, "print(1, 2); print((1, 2)); print(3 if True else 4)");
++    try std.testing.expectEqual(@as(usize, 3), p.body.len);
++    try std.testing.expectEqual(@as(usize, 2), p.body[0].targets.len);
++    try std.testing.expectEqual(@as(usize, 1), p.body[1].targets.len);
++    try std.testing.expectEqual(ast.Tag.tuple, p.nodes.items[p.body[1].targets[0]].tag);
++    const choice = p.nodes.items[p.body[2].targets[0]];
++    try std.testing.expectEqual(ast.Tag.conditional, choice.tag);
++    try std.testing.expectEqual(@as(i64, 3), p.nodes.items[choice.a].value);
++    try std.testing.expectEqual(ast.Tag.boolean, p.nodes.items[choice.b].tag);
++    try std.testing.expectEqual(@as(i64, 4), p.nodes.items[choice.c.?].value);
++
++    const slices = [_][]const u8{ "a[:]", "a[1:3]", "a[::-1]" };
++    for (slices, 0..) |source, i| {
++        const slice_id = try expr.parse(&p, source);
++        const slice = p.nodes.items[slice_id];
++        try std.testing.expectEqual(ast.Tag.slice, slice.tag);
++        try std.testing.expectEqualStrings("a", p.nodes.items[slice.a].text);
++        try std.testing.expectEqual(@as(usize, 3), slice.args.len);
++        if (i == 1) {
++            try std.testing.expectEqual(@as(i64, 1), p.nodes.items[slice.args[0]].value);
++            try std.testing.expectEqual(@as(i64, 3), p.nodes.items[slice.args[1]].value);
++        } else {
++            try std.testing.expectEqual(ast.Tag.none, p.nodes.items[slice.args[0]].tag);
++            try std.testing.expectEqual(ast.Tag.none, p.nodes.items[slice.args[1]].tag);
++        }
++        try std.testing.expectEqual(if (i == 2) ast.Tag.neg else ast.Tag.none, p.nodes.items[slice.args[2]].tag);
++    }
++    const nested_id = try expr.parse(&p, "a[0][1:3]");
++    const nested = p.nodes.items[nested_id];
++    try std.testing.expectEqual(ast.Tag.slice, nested.tag);
++    const indexed = p.nodes.items[nested.a];
++    try std.testing.expectEqual(ast.Tag.index, indexed.tag);
++    try std.testing.expectEqualStrings("a", p.nodes.items[indexed.a].text);
++    const after_slice_id = try expr.parse(&p, "a[:][0]");
++    const after_slice = p.nodes.items[after_slice_id];
++    try std.testing.expectEqual(ast.Tag.index, after_slice.tag);
++    try std.testing.expectEqual(ast.Tag.slice, p.nodes.items[after_slice.a].tag);
++    const ordinary_id = try expr.parse(&p, "a[0][1]");
++    const ordinary = p.nodes.items[ordinary_id];
++    try std.testing.expectEqual(ast.Tag.index, ordinary.tag);
++    try std.testing.expectEqual(ast.Tag.index, p.nodes.items[ordinary.a].tag);
++}
++
++test "collections parser builds source calls and parameter first recursive scopes" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    var p: ast.Program = .{ .a = arena.allocator() };
++    try parse(&p, "def work(xs):\n" ++
++        "    a = b = 0\n" ++
++        "    for i, value in enumerate(xs):\n" ++
++        "        a, b = b, value\n" ++
++        "    return a\n" ++
++        "digits = [3, 1, 2]\n" ++
++        "print(''.join(map(str, sorted(\n" ++
++        "    digits, reverse=True))))\n" ++
++        "print(sorted([[2], [1]], key=sum))\n" ++
++        "print(any('x' in item for item in ['x', 'y']))\n");
++    const scope = p.functions.items[0].scope.names.items;
++    try std.testing.expectEqual(@as(usize, 5), scope.len);
++    try std.testing.expectEqualStrings("xs", scope[0]);
++    try std.testing.expectEqualStrings("a", scope[1]);
++    try std.testing.expectEqualStrings("b", scope[2]);
++    try std.testing.expectEqualStrings("i", scope[3]);
++    try std.testing.expectEqualStrings("value", scope[4]);
++    var found_str = false;
++    var found_sum = false;
++    for (p.nodes.items) |n| {
++        if (n.tag == .name and std.mem.eql(u8, n.text, "str")) found_str = true;
++        if (n.tag == .name and std.mem.eql(u8, n.text, "sum")) found_sum = true;
++    }
++    try std.testing.expect(found_str and found_sum);
++}
++
++test "collections parser rejects unsupported cells without erasing statements" {
++    const cases = [_][]const u8{
++        "import os\nprint(1)",
++        "print(1)\nraise ValueError()",
++        "def f(x=1): return x\nprint(f())",
++        "def f():\n    def g(): return 1\n    return g()\nprint(f())",
++        "def f():\n    nonlocal x\n    return x\nprint(f())",
++        "print(1.5)",
++        "a = [1]; a[:] = [2]; print(a)",
++        "a = [[1]]; a[0][:] = [2]; print(a)",
++        "a = [1]; a[::-1] += [2]; print(a)",
++        "a = [[1]]; print(a[:, 0])",
++        "print(1 < 2 < 3)",
++        "print(1and True)",
++        "print([x for x in [1] for y in [2]])",
++        "print({x for x in [1]})",
++        "print({x: x for x in [1]})",
++        "print([x for x in [1] if x if True])",
++        "print(1)\nfor x in [1]: pass\nelse: print(2)",
++        "print(1)\nbreak",
++        "print(1)\nreturn 2",
++        "len = 1\nprint(len)",
++        "def f(): return 1\nf = 2\nprint(f())",
++        "assert False, 'failure'\nprint(1)",
++        "print(1);;print(2)",
++        "print([1, 2))",
++        "print('unterminated)",
++        "print(1)\n    print(2)",
++    };
++    for (cases) |source| {
++        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++        defer arena.deinit();
++        var p: ast.Program = .{ .a = arena.allocator() };
++        try std.testing.expectError(error.Unsupported, parse(&p, source));
++    }
++}
++
++test "collections parser marks only any and all generator syntax as lazy" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    var p: ast.Program = .{ .a = arena.allocator() };
++    try parse(&p, "print(any(x for x in [1, 0]))\n" ++
++        "print(any([x for x in [1, 0]]))\n" ++
++        "print(all(x for x in [1, 0]))\n" ++
++        "print(all([x for x in [1, 0]]))\n" ++
++        "print([x for x in [1, 0]])\n");
++    for (p.body, 0..) |stmt, i| {
++        const argument = p.nodes.items[stmt.targets[0]];
++        const comp = if (argument.tag == .call) p.nodes.items[argument.args[0]] else argument;
++        try std.testing.expectEqual(ast.Tag.comprehension, comp.tag);
++        const expected: i64 = if (i == 0 or i == 2) 1 else 0;
++        try std.testing.expectEqual(expected, comp.value);
++    }
++}
+diff --git a/zig/src/core/runner_frontend_collections_proof.zig b/zig/src/core/runner_frontend_collections_proof.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..0699f8a35ac3a7ddb07aef29e3e69045b673221c
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_proof.zig
+@@ -0,0 +1,301 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++const val = @import("runner_frontend_collections_value.zig");
++const ops = @import("runner_frontend_collections_ops.zig");
++const builtins = @import("runner_frontend_collections_builtins.zig");
++const methods = @import("runner_frontend_collections_methods.zig");
++const emitter = @import("runner_frontend_collections_emit.zig");
++const Error = ast.Error;
++const Value = val.Value;
++const Frame = struct { scope: *const ast.Scope, values: [64]?Value = @splat(null) };
++const Binding = struct { name: []const u8, value: Value, previous: ?*const Binding = null };
++const Flow = union(enum) { next, ret: Value, break_loop, continue_loop };
++
++pub fn prove(p: *ast.Program) Error!void {
++    p.stats = .{};
++    if (p.functions.items.len > 16) return error.Unsupported;
++    var edges: [16]u16 = @splat(0);
++    try validate(p, p.body, null, &edges, 0);
++    for (p.functions.items, 0..) |f, i| {
++        if (f.params.len > 8) return error.Unsupported;
++        try validate(p, f.body, i, &edges, 0);
++    }
++    for (p.functions.items, 0..) |_, i| try acyclic(&edges, i, 0);
++    var globals: Frame = .{ .scope = &p.globals };
++    var r: Runtime = .{ .p = p, .globals = &globals, .heap = .{ .a = p.a, .stats = &p.stats } };
++    for (p.nodes.items, 0..) |n, i| if (n.tag == .string) {
++        r.literals[i] = try r.heap.string(n.text);
++    };
++    if (p.globals.find("__name__")) |i| globals.values[i] = try r.heap.string("__main__");
++    if (try r.block(&globals, p.body, null) != .next or p.stats.prints == 0) return error.Unsupported;
++}
++fn acyclic(edges: *const [16]u16, id: usize, seen: u16) Error!void {
++    const bit = @as(u16, 1) << @intCast(id);
++    if (seen & bit != 0) return error.Unsupported;
++    for (0..16) |i| if (edges[id] & (@as(u16, 1) << @intCast(i)) != 0) try acyclic(edges, i, seen | bit);
++}
++fn validate(p: *const ast.Program, body: []const ast.Stmt, function: ?usize, edges: *[16]u16, depth: usize) Error!void {
++    if (depth > 24) return error.Unsupported;
++    for (body) |s| {
++        if (s.expr) |id| try node(p, id, function, edges, depth + 1);
++        for (s.targets) |id| try node(p, id, function, edges, depth + 1);
++        try validate(p, s.body, function, edges, depth + 1);
++        try validate(p, s.otherwise, function, edges, depth + 1);
++    }
++}
++fn node(p: *const ast.Program, id: usize, function: ?usize, edges: *[16]u16, depth: usize) Error!void {
++    if (depth > 64 or id >= p.nodes.items.len) return error.Unsupported;
++    const n = p.nodes.items[id];
++    if (n.tag == .call) {
++        if (p.functionId(n.text)) |callee| {
++            if (n.args.len != p.functions.items[callee].params.len) return error.Unsupported;
++            for (n.keywords) |k| if (k.len != 0) return error.Unsupported;
++            if (function) |caller| edges[caller] |= @as(u16, 1) << @intCast(callee);
++        } else if (emitter.lookup(&emitter.builtins, n.text) == null and !std.mem.eql(u8, n.text, "map")) return error.Unsupported;
++    }
++    if (n.tag == .method and emitter.lookup(&emitter.methods, n.text) == null) return error.Unsupported;
++    switch (n.tag) {
++        .integer, .boolean, .none, .string, .name => {},
++        .list, .tuple, .dict, .set, .call => for (n.args) |arg| try node(p, arg, function, edges, depth + 1),
++        .method => {
++            try node(p, n.a, function, edges, depth + 1);
++            for (n.args) |arg| try node(p, arg, function, edges, depth + 1);
++        },
++        .slice => {
++            try node(p, n.a, function, edges, depth + 1);
++            for (n.args) |arg| try node(p, arg, function, edges, depth + 1);
++        },
++        .neg, .pos, .logical_not => try node(p, n.a, function, edges, depth + 1),
++        else => {
++            try node(p, n.a, function, edges, depth + 1);
++            try node(p, n.b, function, edges, depth + 1);
++            if (n.c) |c| try node(p, c, function, edges, depth + 1);
++        },
++    }
++}
++const Runtime = struct {
++    p: *ast.Program,
++    globals: *Frame,
++    heap: val.Heap,
++    literals: [1024]?Value = @splat(null),
++    depth: usize = 0,
++    calls: u16 = 0,
++    defined_functions: u16 = 0,
++    eval_depth: usize = 0,
++    fn name(r: *Runtime, f: *Frame, text: []const u8, binding: ?*const Binding) Error!Value {
++        var b = binding;
++        while (b) |item| : (b = item.previous) if (std.mem.eql(u8, item.name, text)) return item.value;
++        if (f.scope.find(text)) |i| return f.values[i] orelse error.Unsupported;
++        if (r.p.globals.find(text)) |i| return r.globals.values[i] orelse error.Unsupported;
++        if (std.mem.eql(u8, text, "sum")) return .{ .kind = .builtin, .n = 1 };
++        if (std.mem.eql(u8, text, "str")) return .{ .kind = .builtin, .n = 2 };
++        return error.Unsupported;
++    }
++    fn expr(r: *Runtime, f: *Frame, id: usize, b: ?*const Binding) Error!Value {
++        if (r.eval_depth > 64) return error.Unsupported;
++        r.eval_depth += 1;
++        defer r.eval_depth -= 1;
++        try r.heap.charge(6);
++        const n = r.p.nodes.items[id];
++        switch (n.tag) {
++            .integer => return Value.int(n.value),
++            .boolean => return Value.boolean(n.value != 0),
++            .none => return .{},
++            .string => return r.literals[id] orelse error.Unsupported,
++            .name => return r.name(f, n.text, b),
++            .list, .tuple, .dict, .set => {
++                const kind: val.Kind = switch (n.tag) {
++                    .list => .list,
++                    .tuple => .tuple,
++                    .dict => .dict,
++                    else => .set,
++                };
++                const out = try r.heap.new(kind);
++                var i: usize = 0;
++                while (i < n.args.len) : (i += 1) {
++                    const value = try r.expr(f, n.args[i], b);
++                    if (kind == .dict) {
++                        i += 1;
++                        if (i == n.args.len) return error.Unsupported;
++                        const item = try r.expr(f, n.args[i], b);
++                        try r.heap.dictSet(out, value, item);
++                    } else if (kind == .set) try r.heap.setAdd(out, value) else try r.heap.append(out, value);
++                }
++                return out;
++            },
++            .neg, .pos, .logical_not => return ops.unary(&r.heap, n.tag, try r.expr(f, n.a, b)),
++            .logical_and, .logical_or => {
++                const x = try r.expr(f, n.a, b);
++                if (try val.truth(x) == (n.tag == .logical_or)) return x;
++                return r.expr(f, n.b, b);
++            },
++            .conditional => return r.expr(f, if (try val.truth(try r.expr(f, n.b, b))) n.a else n.c.?, b),
++            .index => {
++                const object = try r.expr(f, n.a, b);
++                const key = try r.expr(f, n.b, b);
++                return r.heap.get(object, key);
++            },
++            .slice => {
++                if (n.args.len != 3) return error.Unsupported;
++                const object = try r.expr(f, n.a, b);
++                const lo = try r.expr(f, n.args[0], b);
++                const hi = try r.expr(f, n.args[1], b);
++                const step = try r.expr(f, n.args[2], b);
++                return ops.slice(&r.heap, object, lo, hi, step);
++            },
++            .comprehension => return r.comprehension(f, n, b, null),
++            .call, .method => {
++                if (n.tag == .call and n.args.len == 1 and
++                    (std.mem.eql(u8, n.text, "any") or std.mem.eql(u8, n.text, "all")))
++                {
++                    const gen = r.p.nodes.items[n.args[0]];
++                    if (gen.tag == .comprehension and gen.value == 1) return r.comprehension(f, gen, b, std.mem.eql(u8, n.text, "all"));
++                }
++                const base = if (n.tag == .method) try r.expr(f, n.a, b) else Value{};
++                if (n.args.len > 8) return error.Unsupported;
++                var args: [8]Value = undefined;
++                for (n.args, 0..) |arg, i| args[i] = try r.expr(f, arg, b);
++                if (n.tag == .method) return methods.call(&r.heap, base, n.text, args[0..n.args.len], n.keywords);
++                if (r.p.functionId(n.text)) |callee| return r.call(callee, args[0..n.args.len]);
++                return builtins.call(&r.heap, n.text, args[0..n.args.len], n.keywords);
++            },
++            else => {
++                const x = try r.expr(f, n.a, b);
++                const y = try r.expr(f, n.b, b);
++                return ops.binary(&r.heap, n.tag, x, y);
++            },
++        }
++    }
++    fn comprehension(r: *Runtime, f: *Frame, n: ast.Node, b: ?*const Binding, all: ?bool) Error!Value {
++        const seq = try r.expr(f, n.b, b);
++        const expected = dictSize(seq);
++        const out = if (all == null) try r.heap.new(.list) else Value{};
++        var cursor: usize = 0;
++        while (true) {
++            try guard(seq, expected);
++            const x = try ops.next(&r.heap, seq, &cursor) orelse break;
++            const binding: Binding = .{ .name = n.text, .value = x, .previous = b };
++            if (n.c) |filter| if (!try val.truth(try r.expr(f, filter, &binding))) continue;
++            const value = try r.expr(f, n.a, &binding);
++            if (all) |a| {
++                if (try val.truth(value) != a) return Value.boolean(!a);
++            } else try r.heap.append(out, value);
++        }
++        return if (all) |a| Value.boolean(a) else out;
++    }
++    fn call(r: *Runtime, id: usize, args: []const Value) Error!Value {
++        const bit = @as(u16, 1) << @intCast(id);
++        if (r.depth >= 8 or r.calls & bit != 0 or r.defined_functions & bit == 0) return error.Unsupported;
++        const function = r.p.functions.items[id];
++        if (args.len != function.params.len) return error.Unsupported;
++        var frame: Frame = .{ .scope = &function.scope };
++        for (function.params, args) |name_, value| frame.values[function.scope.find(name_).?] = value;
++        r.depth += 1;
++        r.calls |= bit;
++        defer {
++            r.depth -= 1;
++            r.calls &= ~bit;
++        }
++        r.p.stats.depth = @max(r.p.stats.depth, r.depth);
++        try r.heap.charge(32);
++        return switch (try r.block(&frame, function.body, null)) {
++            .next => Value{},
++            .ret => |v| v,
++            else => error.Unsupported,
++        };
++    }
++    fn assign(r: *Runtime, f: *Frame, target: usize, value: Value, b: ?*const Binding) Error!void {
++        const n = r.p.nodes.items[target];
++        switch (n.tag) {
++            .name => {
++                const i = f.scope.find(n.text) orelse return error.Unsupported;
++                f.values[i] = value;
++            },
++            .tuple => {
++                const seq = try ops.collect(&r.heap, value, false);
++                const items = seq.obj.?.items.items;
++                if (items.len != n.args.len) return error.Unsupported;
++                for (n.args, items) |sub, item| try r.assign(f, sub, item, b);
++            },
++            .index => {
++                const base = try r.expr(f, n.a, b);
++                const key = try r.expr(f, n.b, b);
++                try r.heap.set(base, key, value);
++            },
++            else => return error.Unsupported,
++        }
++    }
++    fn block(r: *Runtime, f: *Frame, body: []const ast.Stmt, b: ?*const Binding) Error!Flow {
++        for (body, 0..) |s, statement_index| {
++            try r.heap.charge(10);
++            switch (s.tag) {
++                .assign => {
++                    const value = try r.expr(f, s.expr.?, b);
++                    for (s.targets) |target| try r.assign(f, target, value, b);
++                },
++                .augassign => {
++                    const n = r.p.nodes.items[s.targets[0]];
++                    const base = if (n.tag == .index) try r.expr(f, n.a, b) else Value{};
++                    const key = if (n.tag == .index) try r.expr(f, n.b, b) else Value{};
++                    const left = if (n.tag == .index) try r.heap.get(base, key) else try r.expr(f, s.targets[0], b);
++                    const right = try r.expr(f, s.expr.?, b);
++                    const result = try ops.inplace(&r.heap, s.op, left, right);
++                    if (n.tag == .index) try r.heap.set(base, key, result) else try r.assign(f, s.targets[0], result, b);
++                },
++                .expression => {
++                    const result = try r.expr(f, s.expr.?, b);
++                    if (body.ptr == r.p.body.ptr and statement_index + 1 == body.len and result.kind != .none)
++                        return error.Unsupported;
++                },
++                .print => {
++                    var values: [16]Value = undefined;
++                    if (s.targets.len > values.len) return error.Unsupported;
++                    for (s.targets, 0..) |arg, i| values[i] = try r.expr(f, arg, b);
++                    for (values[0..s.targets.len]) |value| try r.heap.output(value, false, 0);
++                    r.heap.output_bytes += @max(1, s.targets.len);
++                    if (r.heap.output_bytes > 8192) return error.Unsupported;
++                    r.p.stats.prints += 1;
++                    try r.heap.charge(s.targets.len * 8 + 8);
++                },
++                .assertion => if (!try val.truth(try r.expr(f, s.expr.?, b))) return error.Unsupported,
++                .conditional => {
++                    const flow = try r.block(f, if (try val.truth(try r.expr(f, s.expr.?, b))) s.body else s.otherwise, b);
++                    if (flow != .next) return flow;
++                },
++                .while_loop => {
++                    while (try val.truth(try r.expr(f, s.expr.?, b))) {
++                        const flow = try r.block(f, s.body, b);
++                        if (flow == .break_loop) break;
++                        if (flow == .ret) return flow;
++                    }
++                },
++                .for_loop => {
++                    const iterable = try r.expr(f, s.expr.?, b);
++                    const expected = dictSize(iterable);
++                    var cursor: usize = 0;
++                    while (true) {
++                        try r.heap.charge(12);
++                        try guard(iterable, expected);
++                        const value = try ops.next(&r.heap, iterable, &cursor) orelse break;
++                        try r.assign(f, s.targets[0], value, b);
++                        const flow = try r.block(f, s.body, b);
++                        if (flow == .break_loop) break;
++                        if (flow == .ret) return flow;
++                    }
++                },
++                .ret => return .{ .ret = if (s.expr) |id| try r.expr(f, id, b) else .{} },
++                .break_loop => return .break_loop,
++                .continue_loop => return .continue_loop,
++                .function => r.defined_functions |= @as(u16, 1) << @intCast(s.function),
++                .pass => {},
++            }
++        }
++        return .next;
++    }
++};
++fn dictSize(v: Value) ?usize {
++    return if (v.kind == .dict or v.kind == .items or v.kind == .keys or v.kind == .values) v.obj.?.items.items.len else null;
++}
++fn guard(v: Value, expected: ?usize) Error!void {
++    if (expected) |size| if (v.obj.?.items.items.len != size) return error.Unsupported;
++}
+diff --git a/zig/src/core/runner_frontend_collections_runtime.c b/zig/src/core/runner_frontend_collections_runtime.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..00ed3dcfb7c79d8cca10ec62fdc6325328f5ff49
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_runtime.c
+@@ -0,0 +1,208 @@
++typedef struct { int tag, x; } V;
++typedef struct { int start, len, cap; } Obj;
++static V cells[1536];
++static Obj objects[96];
++static char chars[2048];
++static int nc, no, ns;
++__attribute__((always_inline)) static inline V py_hold(V v) {
++ __asm__ volatile("" : "+r"(v.x)); return v;
++}
++__attribute__((noreturn)) static void fail(void) {
++ register int a0 __asm__("a0")=1; register int a7 __asm__("a7")=93;
++ __asm__ volatile("ecall" : "+r"(a0) : "r"(a7) : "memory"); for(;;) {}
++}
++static V val(int tag,int x) { V v={tag,x}; return py_hold(v); }
++static V num(int x) { return val(0,x); }
++static V boolean(int x) { return val(1,!!x); }
++static V none(void) { return val(2,0); }
++static V checked(V v) { if(v.tag<0) fail(); return py_hold(v); }
++static int scalar(V v) { v=checked(v); if(v.tag>1) fail(); return v.x; }
++static Obj *obj(V v) { if(v.tag<3||v.tag>15||v.tag==9||v.x<0||v.x>=no) fail(); return objects+v.x; }
++static int length(V v) {
++ if(v.tag==9||v.tag>=13)fail(); return obj(v)->len;
++}
++static int truth(V v) { v=checked(v); return v.tag==2?0:v.tag<2?v.x!=0:v.tag>=13||v.tag==9?1:length(v)!=0; }
++static V fresh(int tag) {
++ if(no==96) fail(); int i=no++; objects[i]=(Obj){0,0,0}; return val(tag,i);
++}
++static void reserve(V v,int n) {
++ Obj *o=obj(v); int limit=v.tag==6||v.tag==7?64:128;
++ if(n>limit||n<0) fail(); if(n<=o->cap) return;
++ int cap=o->cap?o->cap:4; while(cap<n) cap*=2;
++ int width=v.tag==6?2:1; if(nc+cap*width>1536) fail();
++ int start=nc; nc+=cap*width;
++ for(int i=0;i<o->len*width;i++) cells[start+i]=cells[o->start+i];
++ o->start=start; o->cap=cap;
++}
++static V text(const volatile char *s,int n) {
++ if(n<0||n>128||ns+n>2048) fail(); V v=fresh(3); Obj *o=obj(v);
++ o->start=ns; o->len=n; o->cap=n;
++ for(int i=0;i<n;i++) chars[ns++]=(char)py_hold(num(s[i])).x;
++ return v;
++}
++static V emptytext(void) { return text("",0); }
++static void append(V v,V x) {
++ if(v.tag!=4&&v.tag!=5&&v.tag!=7&&v.tag!=8) fail(); Obj *o=obj(v);
++ reserve(v,o->len+1); cells[o->start+o->len++]=checked(x);
++}
++static int equal(V a,V b);
++static int lookup(V v,V k) {
++ if(k.tag!=0&&k.tag!=1&&k.tag!=3) fail(); Obj *o=obj(v); int w=v.tag==6?2:1;
++ for(int i=0;i<o->len;i++) if(equal(cells[o->start+i*w],k)) return i;
++ return -1;
++}
++static void store(V v,V k,V x) {
++ if(v.tag!=6) fail(); Obj *o=obj(v); int i=lookup(v,k);
++ if(i<0) { reserve(v,o->len+1); i=o->len++; cells[o->start+2*i]=k; }
++ cells[o->start+2*i+1]=checked(x);
++}
++static void setadd(V v,V k) { if(v.tag!=7) fail(); if(lookup(v,k)<0) append(v,k); }
++static int norm(int i,int n) { if(i<0)i+=n; if(i<0||i>=n)fail(); return i; }
++static V at(V v,int i) {
++ Obj *o=obj(v); i=norm(i,o->len);
++ if(v.tag==3) return text((volatile char *)(chars+o->start+i),1);
++ if(v.tag==7||v.tag>=13) fail();
++ if(v.tag==10) {
++  V pair=fresh(5);append(pair,py_hold(cells[o->start+2*i]));
++  append(pair,py_hold(cells[o->start+2*i+1]));return pair;
++ }
++ if(v.tag==11)return py_hold(cells[o->start+2*i]);
++ if(v.tag==12)return py_hold(cells[o->start+2*i+1]);
++ return py_hold(cells[o->start+i*(v.tag==6?2:1)]);
++}
++static V get(V v,V k) {
++ if(v.tag>=9)fail();
++ if(v.tag==6) { int i=lookup(v,k); if(i<0)fail(); return py_hold(cells[obj(v)->start+2*i+1]); }
++ return at(v,scalar(k));
++}
++static void put(V v,V k,V x) {
++ if(v.tag==6) { store(v,k,x); return; } if(v.tag!=4)fail();
++ Obj *o=obj(v); cells[o->start+norm(scalar(k),o->len)]=checked(x);
++}
++static int equal(V a,V b) {
++ a=checked(a); b=checked(b);
++ if(a.tag>=10||b.tag>=10)fail();
++ if(a.tag<2&&b.tag<2)return a.x==b.x;
++ if(a.tag!=b.tag)return 0; if(a.tag==2)return 1;
++ if(a.tag==9)return a.x==b.x;
++ if(a.tag<2)return a.x==b.x;
++ Obj *x=obj(a),*y=obj(b); if(x->len!=y->len)return 0;
++ if(a.tag==3) { for(int i=0;i<x->len;i++) if(chars[x->start+i]!=chars[y->start+i])return 0; return 1; }
++ if(a.tag==6) {
++  for(int i=0;i<x->len;i++) { int j=lookup(b,cells[x->start+2*i]);
++   if(j<0||!equal(cells[x->start+2*i+1],cells[y->start+2*j+1]))return 0; } return 1;
++ }
++ if(a.tag==7) { for(int i=0;i<x->len;i++)if(lookup(b,cells[x->start+i])<0)return 0; return 1; }
++ for(int i=0;i<x->len;i++)if(!equal(cells[x->start+i],cells[y->start+i]))return 0;
++ return 1;
++}
++static int compare(V a,V b) {
++ if(a.tag<2&&b.tag<2)return (a.x>b.x)-(a.x<b.x);
++ if(a.tag!=b.tag||(a.tag!=3&&a.tag!=4&&a.tag!=5))fail();
++ Obj *x=obj(a),*y=obj(b); int n=x->len<y->len?x->len:y->len;
++ for(int i=0;i<n;i++) {
++  int d=a.tag==3?(chars[x->start+i]>chars[y->start+i])-(chars[x->start+i]<chars[y->start+i]):
++   (equal(cells[x->start+i],cells[y->start+i])?0:compare(cells[x->start+i],cells[y->start+i])); if(d)return d;
++ } return (x->len>y->len)-(x->len<y->len);
++}
++static int contains(V v,V k) {
++ if(v.tag==6||v.tag==7||v.tag==11) { V base=v;if(v.tag==11)base.tag=6;return lookup(base,k)>=0; }
++ if(v.tag>=9)fail();
++ Obj *o=obj(v);
++ if(v.tag==3) {
++  if(k.tag!=3)fail(); Obj *q=obj(k);
++  for(int i=0;i<=o->len-q->len;i++) { int j=0;
++   while(j<q->len&&chars[o->start+i+j]==chars[q->start+j])j++; if(j==q->len)return 1; } return 0;
++ }
++ for(int i=0;i<o->len;i++)if(equal(cells[o->start+i],k))return 1; return 0;
++}
++static V concat(V a,V b) {
++ if(a.tag!=b.tag||(a.tag!=3&&a.tag!=4&&a.tag!=5))fail();
++ V v=fresh(a.tag); Obj *o=obj(v),*x=obj(a),*y=obj(b); int n=x->len+y->len;
++ if(a.tag==3) {
++  if(n>128||ns+n>2048)fail(); o->start=ns; o->len=o->cap=n;
++  for(int i=0;i<x->len;i++)chars[ns++]=chars[x->start+i];
++  for(int i=0;i<y->len;i++)chars[ns++]=chars[y->start+i];
++ } else { for(int i=0;i<x->len;i++)append(v,at(a,i)); for(int i=0;i<y->len;i++)append(v,at(b,i)); }
++ return v;
++}
++static V repeat(V a,int n) {
++ if(a.tag!=3&&a.tag!=4&&a.tag!=5)fail(); if(n<0)n=0; int len=length(a);
++ if(len&&n>128/len)fail();if(!len)n=0; V v=fresh(a.tag); Obj *o=obj(v);
++ if(a.tag==3) {
++  if(ns+len*n>2048)fail(); o->start=ns; o->len=o->cap=len*n;
++  for(int j=0;j<n;j++)for(int i=0;i<len;i++)chars[ns++]=chars[obj(a)->start+i];
++ } else for(int j=0;j<n;j++)for(int i=0;i<len;i++)append(v,at(a,i));
++ return v;
++}
++static V binary(int op,V a,V b) {
++ a=checked(a); b=checked(b);
++ if(op==0&&(a.tag>=3||b.tag>=3))return concat(a,b);
++ if(op==2&&(a.tag>=3||b.tag>=3))return a.tag>=3?repeat(a,scalar(b)):repeat(b,scalar(a));
++ if(op>=5) {
++  if(op==5||op==6)return boolean(equal(a,b)^(op==6));
++  if(op==11||op==12)return boolean(contains(b,a)^(op==12));
++  if(op==13||op==14) {
++   if((a.tag==0||b.tag==0)&&a.tag!=2&&b.tag!=2)fail();
++   return boolean((a.tag==b.tag&&a.x==b.x)^(op==14));
++  }
++  int c=compare(a,b); return boolean(op==7?c<0:op==8?c<=0:op==9?c>0:c>=0);
++ }
++ int x=scalar(a),y=scalar(b),r=0;
++ if(op==0)r=x+y; else if(op==1)r=x-y; else if(op==2)r=x*y;
++ else { if(!y||(x==(-2147483647-1)&&y==-1))fail(); int q=x/y,t=x%y;
++  if(t&&((t<0)!=(y<0))) { q--; t+=y; } r=op==3?q:t; }
++ return num(r);
++}
++static V inplace(int op,V a,V b) {
++ if(a.tag==4&&op==0) {
++  if(b.tag!=4&&b.tag!=5)fail(); int n=length(b);
++  if(length(a)+n>128)fail();for(int i=0;i<n;i++) { V x=at(b,i);append(a,x); }return a;
++ }
++ if(a.tag==4&&op==2) {
++  int n=scalar(b),len=length(a);if(n<0||!len)n=0;if(len&&n>128/len)fail();
++  if(!n)obj(a)->len=0;
++  for(int j=1;j<n;j++)for(int i=0;i<len;i++) { V x=at(a,i);append(a,x); }return a;
++ }
++ return binary(op,a,b);
++}
++static V unary(int op,V a) { return op==2?boolean(!truth(a)):num(op==0?-scalar(a):scalar(a)); }
++static V slice(V a,V start,V stop,V step) {
++ int n=length(a),d=step.tag==2?1:scalar(step); if(!d)fail();
++ int lo=start.tag==2?(d>0?0:n-1):scalar(start),hi=stop.tag==2?(d>0?n:-1):scalar(stop);
++ if(start.tag!=2&&lo<0)lo+=n; if(stop.tag!=2&&hi<0)hi+=n;
++ int min=d>0?0:-1,max=d>0?n:n-1;
++ if(lo<min)lo=min; if(lo>max)lo=max; if(hi<min)hi=min; if(hi>max)hi=max;
++ if(a.tag!=3&&a.tag!=4&&a.tag!=5)fail(); V v=fresh(a.tag); Obj *o=obj(v);
++ if(a.tag==3)o->start=ns;
++ for(int i=lo;d>0?i<hi:i>hi;) {
++  if(a.tag==3) { if(ns==2048)fail(); chars[ns++]=chars[obj(a)->start+i]; o->len++;o->cap++; }
++  else append(v,at(a,i));
++  if((d>0&&i>2147483647-d)||(d<0&&i<(-2147483647-1)-d))break; i+=d;
++ } return v;
++}
++static void outchar(int c) { printf("%c",c); }
++static void repr(V v,int raw) {
++ v=checked(v); if(v.tag==0) { printf("%d",v.x); return; }
++ if(v.tag==1) { printf("%s",v.x?"True":"False"); return; }
++ if(v.tag==2) { printf("%s","None"); return; }
++ if(v.tag>=7)fail(); Obj *o=obj(v);
++ if(v.tag==3) {
++  int quote=39,has_single=0,has_double=0;
++  for(int i=0;i<o->len;i++) { int c=chars[o->start+i]; has_single|=c==39;has_double|=c==34; }
++  if(has_single&&!has_double)quote=34; if(!raw)outchar(quote);
++  for(int i=0;i<o->len;i++) {
++   int c=(unsigned char)chars[o->start+i];
++   if(raw)outchar(c); else if(c==quote||c==92) { outchar(92);outchar(c); }
++   else if(c==10||c==13||c==9) { outchar(92);outchar(c==10?'n':c==13?'r':'t'); }
++   else if(c<32||c==127) {
++    outchar(92);outchar('x');outchar("0123456789abcdef"[c>>4]);outchar("0123456789abcdef"[c&15]);
++   } else outchar(c);
++  } if(!raw)outchar(quote); return;
++ }
++ outchar(v.tag==4?'[':v.tag==5?'(':'{');
++ for(int i=0;i<o->len;i++) {
++  if(i)printf("%s",", "); repr(cells[o->start+i*(v.tag==6?2:1)],0);
++  if(v.tag==6) { printf("%s",": ");repr(cells[o->start+2*i+1],0); }
++ } if(v.tag==5&&o->len==1)outchar(','); outchar(v.tag==4?']':v.tag==5?')':'}');
++}
+diff --git a/zig/src/core/runner_frontend_collections_support.c b/zig/src/core/runner_frontend_collections_support.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f06794a05f39d02815b48b05930c18885b32a95
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_support.c
+@@ -0,0 +1,181 @@
++static V stringify(V a);
++static V sort_keys[128];
++static int indexable(V v) { return (v.tag>=3&&v.tag<=6)||v.tag==8||(v.tag>=10&&v.tag<=12); }
++static int iterator_input(V v) { return (v.tag>=3&&v.tag<=5)||v.tag==8; }
++static V iterator(int tag,int argc,V a,V b,V c) {
++ if((!(tag==14&&!argc)&&!iterator_input(a))||
++    (tag==14&&argc>1&&!iterator_input(b))||(tag==14&&argc>2&&!iterator_input(c)))fail();
++ int n=tag==13?2:tag==15?1:argc;
++ if(nc+n>1536)fail();V v=fresh(tag);Obj *o=obj(v);o->start=nc;o->len=n;o->cap=0;
++ if(n)cells[nc++]=a;if(n>1)cells[nc++]=b;if(n>2)cells[nc++]=c;return v;
++}
++static int cg_iter(V src,int *cursor,V *out) {
++ if(indexable(src)) {
++  if(*cursor>=length(src))return 0;*out=at(src,(*cursor)++);return 1;
++ }
++ if(src.tag<13||src.tag>15)fail();Obj *o=obj(src);int i=o->cap;if(i<0)return 0;
++ if(src.tag==14) {
++  if(!o->len) { o->cap=-1;return 0; }
++  for(int j=0;j<o->len;j++)if(i>=length(cells[o->start+j])) { o->cap=-1;return 0; }
++  V pair=fresh(5);
++  for(int j=0;j<o->len;j++) { V x=at(cells[o->start+j],i);append(pair,x); }
++  o->cap++;*out=pair;return 1;
++ }
++ V input=cells[o->start];if(i>=length(input)) { o->cap=-1;return 0; }
++ if(src.tag==13) {
++  V pair=fresh(5);append(pair,binary(0,cells[o->start+1],num(i)));
++  V x=at(input,i);append(pair,x);*out=pair;
++ } else { V x=at(input,i);*out=stringify(x); }
++ o->cap++;return 1;
++}
++static int dict_size(V v) { return v.tag==6||(v.tag>=10&&v.tag<=12)?length(v):-1; }
++static void iter_guard(V v,int expected) { if(expected>=0&&length(v)!=expected)fail(); }
++static V sequence(V a,int tag) {
++ V v=fresh(tag),x;int cursor=0,expected=dict_size(a);
++ while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&x))break;
++  if(tag==7)setadd(v,x);else append(v,x); }return v;
++}
++static V total(V a) {
++ V r=num(0),x;int cursor=0,expected=dict_size(a);
++ while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&x))break;r=binary(0,r,x); }return r;
++}
++static V stringify(V a) {
++ if(a.tag==3)return a;
++ char b[12]; int n=0; unsigned int x;
++ if(a.tag==2)return text("None",4);
++ if(a.tag==1)return a.x?text("True",4):text("False",5);
++ if(a.tag!=0)fail(); x=a.x<0?0u-(unsigned int)a.x:(unsigned int)a.x;
++ do { b[n++]=(char)('0'+x%10); x/=10; }while(x);
++ if(a.x<0)b[n++]='-'; V v=fresh(3); Obj *o=obj(v);
++ if(ns+n>2048)fail(); o->start=ns; o->len=o->cap=n;
++ while(n)chars[ns++]=b[--n]; return v;
++}
++static int integer(V a) {
++ if(a.tag<2)return scalar(a); if(a.tag!=3)fail(); Obj *o=obj(a); int i=0,neg=0,n=0;
++ while(i<o->len&&(chars[o->start+i]==' '||chars[o->start+i]=='\t'||chars[o->start+i]=='\n'))i++;
++ if(i<o->len&&(chars[o->start+i]=='-'||chars[o->start+i]=='+'))neg=chars[o->start+i++]=='-';
++ int digits=0;
++ while(i<o->len&&chars[o->start+i]>='0'&&chars[o->start+i]<='9') {
++  int d=chars[o->start+i++]-'0'; if(n<(-2147483647-1)/10)fail();
++  n*=10; if(n<(-2147483647-1)+d)fail(); n-=d; digits++;
++ }
++ while(i<o->len&&(chars[o->start+i]==' '||chars[o->start+i]=='\t'||chars[o->start+i]=='\n'))i++;
++ if(!digits||i!=o->len||(!neg&&n==(-2147483647-1)))fail(); return neg?n:-n;
++}
++static V builtin(int id,int argc,V a,V b,V c) {
++ static const unsigned char minargs[]={1,1,1,1,1,0,0,0,0,1,0,1,0,0,0,1,1,1,2};
++ static const unsigned char maxargs[]={1,2,3,3,3,1,1,1,1,2,3,3,1,1,1,1,1,1,2};
++ if(id<0||id>18||argc<minargs[id]||argc>maxargs[id])fail();
++ if(id==0)return num(length(a));
++ if(id==1) {
++  V r=argc>1?b:num(0),x;int cursor=0,expected=dict_size(a);
++  scalar(r);while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&x))break;
++   scalar(x);r=binary(0,r,x); }return r;
++ }
++ if(id==2||id==3) {
++  if(argc>1) {
++   V r=a;int d=compare(b,r);if(id==2?d<0:d>0)r=b;
++   if(argc>2) { d=compare(c,r);if(id==2?d<0:d>0)r=c; }return r;
++  }
++  V r,x;int cursor=0,expected=dict_size(a);if(!cg_iter(a,&cursor,&r))fail();
++  while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&x))break;
++   int d=compare(x,r);if(id==2?d<0:d>0)r=x; }return r;
++ }
++ if(id==4) {
++  int lo=argc==1?0:scalar(a),hi=argc==1?scalar(a):scalar(b),step=argc==3?scalar(c):1;
++  if(!step)fail(); V v=fresh(8);
++  for(int i=lo;step>0?i<hi:i>hi;) {
++   append(v,num(i)); if((step>0&&i>2147483647-step)||(step<0&&i<(-2147483647-1)-step))break; i+=step;
++  } return v;
++ }
++ if(id>=5&&id<=7)return argc?sequence(a,id==5?4:id==6?5:7):fresh(id==5?4:id==6?5:7);
++ if(id==8) {
++  V v=fresh(6); if(!argc)return v;
++  if(a.tag==6) { Obj *o=obj(a); for(int i=0;i<o->len;i++)store(v,cells[o->start+2*i],cells[o->start+2*i+1]); }
++  else { V pair;int cursor=0,expected=dict_size(a);
++   while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&pair))break;
++    if(length(pair)!=2)fail();V k=at(pair,0),x=at(pair,1);store(v,k,x); }
++  }
++  return v;
++ }
++ if(id==9)return iterator(13,2,a,argc>1?b:num(0),none());
++ if(id==10)return iterator(14,argc,a,b,c);
++ if(id==11) {
++  V v;
++  if(a.tag==7) { v=fresh(4);for(int i=0;i<length(a);i++)append(v,py_hold(cells[obj(a)->start+i])); }
++  else v=sequence(a,4);
++  if(b.tag!=2&&(b.tag!=9||b.x!=1))fail();
++  int key=b.tag==9?b.x:0,rev=c.tag==2?0:scalar(c)!=0; Obj *o=obj(v);
++  for(int i=0;i<o->len;i++) {
++   V x=py_hold(cells[o->start+i]);sort_keys[i]=key?total(x):x;
++  }
++  for(int i=1;i<o->len;i++) {
++   V x=py_hold(cells[o->start+i]),kx=py_hold(sort_keys[i]); int j=i;
++   while(j>0) { V ky=py_hold(sort_keys[j-1]); int d=compare(ky,kx);
++    if(rev?d>=0:d<=0)break;
++    cells[o->start+j]=py_hold(cells[o->start+j-1]);sort_keys[j]=ky;j--; }
++   cells[o->start+j]=x;sort_keys[j]=kx;
++  } return v;
++ }
++ if(id==12)return argc?stringify(a):emptytext();
++ if(id==13)return num(argc?integer(a):0);
++ if(id==14)return boolean(argc?truth(a):0);
++ if(id==15) { int n=scalar(a);if(n==(-2147483647-1))fail();return num(n<0?-n:n); }
++ if(id==16||id==17) {
++  V x;int cursor=0,expected=dict_size(a);
++  while(1) { iter_guard(a,expected);if(!cg_iter(a,&cursor,&x))break;
++   if(truth(x)==(id==16))return boolean(id==16); }return boolean(id==17);
++ }
++ if(id==18) { if(argc!=2||a.tag!=9||a.x!=2)fail();return iterator(15,1,b,none(),none()); }
++
++ fail();
++}
++static V method(int id,V a,int argc,V b,V c,V d) {
++ static const unsigned char minargs[]={1,0,0,1,1,0,0,0,1,1,1,1,1,1,1,0};
++ static const unsigned char maxargs[]={1,1,0,2,2,0,0,0,1,1,1,3,3,1,1,0};
++ if(id<0||id>15||argc<minargs[id]||argc>maxargs[id])fail();
++ if(id==0) { if(a.tag!=4)fail();append(a,b);return none(); }
++ if(id==1) {
++  if(a.tag!=4)fail();Obj *o=obj(a);int i=norm(argc?scalar(b):-1,o->len);V x=cells[o->start+i];
++  for(int j=i+1;j<o->len;j++)cells[o->start+j-1]=cells[o->start+j];o->len--;return x;
++ }
++ if(id==2) {
++  if(a.tag!=4)fail();Obj *o=obj(a);for(int i=0;i<o->len/2;i++) {
++   V x=cells[o->start+i];cells[o->start+i]=cells[o->start+o->len-i-1];cells[o->start+o->len-i-1]=x;
++  }return none();
++ }
++ if(id==3||id==4) {
++  if(a.tag!=6)fail();int i=lookup(a,b);if(i>=0)return py_hold(cells[obj(a)->start+2*i+1]);
++  V x=argc>1?c:none();if(id==4)store(a,b,x);return x;
++ }
++ if(id>=5&&id<=7) {
++  if(a.tag!=6)fail();return val(id==5?11:id==6?10:12,a.x);
++ }
++ if(id==8) { setadd(a,b);return none(); }
++ if(id==9||id==10) {
++  if(a.tag!=7)fail();int i=lookup(a,b);if(i<0) { if(id==9)fail();return none(); }
++  Obj *o=obj(a);for(int j=i+1;j<o->len;j++)cells[o->start+j-1]=cells[o->start+j];o->len--;return none();
++ }
++ if(id==11||id==12) {
++  if(a.tag!=3||b.tag!=3)fail();Obj *o=obj(a),*q=obj(b);int lo=argc>1?scalar(c):0,hi=argc>2?scalar(d):o->len;
++  if(lo<0)lo+=o->len;if(lo<0)lo=0;if(hi<0)hi+=o->len;if(hi<0)hi=0;if(hi>o->len)hi=o->len;
++  int found=-1;
++  for(int i=lo;i<=hi-q->len;i++) { int j=0;while(j<q->len&&chars[o->start+i+j]==chars[q->start+j])j++;
++   if(j==q->len) { found=i;if(id==11)break; } }return num(found);
++ }
++ if(id==13) {
++  if(a.tag!=3)fail();V seq=sequence(b,4);int n=length(seq),size=0;
++  for(int i=0;i<n;i++) { V x=at(seq,i);if(x.tag!=3)fail();size+=length(x)+(i?length(a):0); }
++  if(size>128||ns+size>2048)fail();V v=fresh(3);Obj *o=obj(v);o->start=ns;o->len=o->cap=size;
++  for(int i=0;i<n;i++) { if(i)for(int j=0;j<length(a);j++)chars[ns++]=chars[obj(a)->start+j];
++   V x=at(seq,i);for(int j=0;j<length(x);j++)chars[ns++]=chars[obj(x)->start+j]; }return v;
++ }
++ if(id==14) {
++  if(a.tag!=3||argc!=1||b.tag!=3||!length(b))fail();V v=fresh(4);Obj *o=obj(a),*q=obj(b);int start=0;
++  for(int i=0;i<=o->len-q->len;i++) { int j=0;while(j<q->len&&chars[o->start+i+j]==chars[q->start+j])j++;
++   if(j==q->len) { V x=text((volatile char *)(chars+o->start+start),i-start);append(v,x);i+=q->len-1;start=i+1; }
++  }V x=text((volatile char *)(chars+o->start+start),o->len-start);append(v,x);return v;
++ }
++ if(id==15) { if(a.tag!=4)fail();return sequence(a,4); }
++ fail();
++}
+diff --git a/zig/src/core/runner_frontend_collections_test.zig b/zig/src/core/runner_frontend_collections_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..83407a484553e7402c0362bebe2ac2b3601db5fe
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_test.zig
+@@ -0,0 +1,120 @@
++const std = @import("std");
++const collections = @import("runner_frontend_collections.zig");
++const frontend = @import("runner_frontend.zig");
++const reference = @import("runner_frontend_reference_test.zig");
++const t = std.testing;
++pub const cases = [_][2][]const u8{
++    .{ "print(\"abc\"[::2147483647]);print(sorted({True,1,2}));print(sorted({1,True,2}))", "a\n[True, 2]\n[1, 2]\n" },
++    .{ "xs=[];it=enumerate(xs);sorted([it],key=sum);xs.append(1);print(list(it))", "[]\n" },
++    .{ "x=1; print(x is None, None is x, x is not None, None is not x)", "False False True True\n" },
++    .{ "a=[1,-2,-3,4]; print([x for x in a if x>=0])", "[1, 4]\n" },
++    .{ "row=[0]*3; a=[row]*3; a[0][0]=7; print(a); print(a[1] is row)", "[[7, 0, 0], [7, 0, 0], [7, 0, 0]]\nTrue\n" },
++    .{ "a=[[0]*2 for i in range(2)]; a[0][0]=7; print(a)", "[[7, 0], [0, 0]]\n" },
++    .{ "d={True:'a',2:'b'}; d[1]='c'; print(d); print(d.get(7)); print(list(d.items()))", "{True: 'c', 2: 'b'}\nNone\n[(True, 'c'), (2, 'b')]\n" },
++    .{ "s=set([3,1,3,2]); s.discard(2); s.add(4); print(sorted(s)); print(3 in s, 2 not in s)", "[1, 3, 4]\nTrue True\n" },
++    .{ "a=[1]; b=a; c=a[:]; b.append(2); a+=[3]; print(a,b,c)", "[1, 2, 3] [1, 2, 3] [1]\n" },
++    .{ "def f(a):\n    a.append(2)\n    return a\na=[1]; print(a,f(a))", "[1, 2] [1, 2]\n" },
++    .{ "d={'a':1}; view=d.values(); d['a']=2; print(list(view)); e=enumerate([4,5],2); print(list(e)); print(list(e))", "[2]\n[(2, 4), (3, 5)]\n[]\n" },
++    .{ "print(''.join(map(str,sorted([1,2,3],reverse=True)))); print(sorted([[1,2],[0],[3]],key=sum))", "321\n[[0], [1, 2], [3]]\n" },
++    .{ "s='112112'; c=0; subs=[]\nfor i in range(len(s)):\n    sm=0\n    for j in range(i,len(s)):\n        sm+=int(s[j])\n        if sm==j-i+1:\n            c+=1; subs.append(s[i:j+1])\nprint(c,subs)", "6 ['1', '11', '1', '1', '11', '1']\n" },
++    .{ "a=[]\ndef f(x):\n    a.append(x)\n    return x\nprint(any(f(x) for x in [1,2,3]),a); a=[]; print(any([f(x) for x in [1,2,3]]),a)", "True [1]\nTrue [1, 2, 3]\n" },
++    .{ "print(['a\\\'b','a\"b','\\\\','\\n','\\x00']); print(('x',)); print('abc'[::-1])", "[\"a'b\", 'a\"b', '\\\\', '\\n', '\\x00']\n('x',)\ncba\n" },
++    .{ "g=[[1,2],[2],[]]; q=[0]; seen={0}\nfor node in q:\n    for nxt in g[node]:\n        if nxt not in seen:\n            seen.add(nxt); q.append(nxt)\nprint(q)", "[0, 1, 2]\n" },
++    .{ "g={0:[1,2],1:[2],2:[]}; stack=[0]; seen=set(); order=[]\nwhile stack:\n    node=stack.pop()\n    if node not in seen:\n        seen.add(node); order.append(node)\n        for nxt in g[node]:\n            stack.append(nxt)\nprint(order)", "[0, 2, 1]\n" },
++    .{ "a='ab'; b='ac'; d=[[0]*3 for i in range(3)]\nfor i in range(3):\n    d[i][0]=i; d[0][i]=i\nfor i in range(1,3):\n    for j in range(1,3):\n        d[i][j]=min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]!=b[j-1]))\nprint(d)", "[[0, 1, 2], [1, 0, 1], [2, 1, 1]]\n" },
++};
++pub const negatives = [_][]const u8{
++    "__debug__=1;print([__debug__])",
++    "__builtins__={}\ndef f():\n    print([1])\nf()",
++    "print({1:2}.keys()=={1})",
++    "print({}.items()==set())",
++    "print([{1:2}.keys()]==[{1}])",
++    "print(sorted([1],key=sum))",
++    "a=[1];print(a);a",
++    "d={1:10};e=enumerate(d);d[2]=20;print(list(e))",
++    "d={1:10};e=zip(d.values(),[1]);d[2]=20;print(list(e))",
++    "print(sorted([2,1],reverse=[]))",
++    "a=[];a+=range(2);print(a)",
++    "a=[0];b=[0]\nfor _ in range(7):\n    a=[a]*8;b=[b]*8\nprint(a==b)",
++    "print({1,2})",
++    "print(list(set([1,2])))",
++    "for x in set([1,2]):\n    print(x)",
++    "a=[]; a.append(a); print(a)",
++    "d={}; d[1]=d; print(d)",
++    "a=[1]; print(a[2])",
++    "a=[1]; a[-2]=3; print(a)",
++    "print(2147483647+1)",
++    "print((-2147483647-1)//-1)",
++    "print([1]*129)",
++    "while True:\n    pass\nprint(0)",
++    "print(1.5)",
++    "import os\nprint(1)",
++    "print(input())",
++    "def f():\n    return f()\nprint(f())",
++    "print(f())\ndef f():\n    return 1",
++    "x=1\ndef f():\n    print(x)\n    x=2\nf()",
++    "d={1:2}\nfor k in d:\n    d[3]=4\nprint(d)",
++    "print=1; print([1])",
++    "print('é')",
++    "print([1]) #\x00",
++    "def f(x):\n    return x\n",
++};
++test "collections proof keeps opaque original inputs and source control flow" {
++    for (cases) |fixture| {
++        const lower = (try collections.lowerWithCost(t.allocator, fixture[0])) orelse {
++            std.debug.print("collections refused positive: {s}\n", .{fixture[0]});
++            return error.UnexpectedAbstention;
++        };
++        defer t.allocator.free(lower.source);
++        try t.expect(lower.estimated_steps > 0);
++        try t.expect(std.mem.indexOf(u8, lower.source, "static volatile int inputs[]") != null);
++        try t.expect(std.mem.indexOf(u8, lower.source, "py_hold") != null);
++    }
++}
++test "collections proof refuses unsupported and invalid behavior" {
++    for (negatives) |source| {
++        const result = try collections.lowerWithCost(t.allocator, source);
++        defer if (result) |body| t.allocator.free(body.source);
++        if (result != null) std.debug.print("collections accepted negative: {s}\n", .{source});
++        try t.expect(result == null);
++    }
++}
++test "configured collections O1 ELF matches CPython and reference" {
++    var env = try t.environ.createMap(t.allocator);
++    defer env.deinit();
++    const clang = env.get("TF_RUNNER_CLANG") orelse return error.SkipZigTest;
++    const root = env.get("TF_RUNNER_QWENPUTER") orelse return error.SkipZigTest;
++    var context: frontend.Context = .{ .io = t.io, .compiler = .{ .clang = clang, .linker = env.get("TF_RUNNER_LLD"), .optimize = .O1, .step_budget = 0 } };
++    const front = context.frontend();
++    for (cases) |fixture| {
++        const oracle = try std.process.run(t.allocator, t.io, .{ .argv = &.{ "/usr/bin/python3", "-I", "-c", fixture[0] }, .stdout_limit = .limited(16384), .stderr_limit = .limited(16384), .timeout = .{ .duration = .{ .raw = .fromSeconds(3), .clock = .awake } } });
++        defer t.allocator.free(oracle.stdout);
++        defer t.allocator.free(oracle.stderr);
++        try t.expect(oracle.term.success());
++        try t.expectEqualStrings(fixture[1], oracle.stdout);
++        const translated = try front.translate(front.ctx, t.allocator, .{ .form = .fence, .lang = "python", .code = fixture[0] });
++        defer if (translated == .program) t.allocator.free(translated.program.bytes);
++        if (translated != .program) std.debug.print("collections compiler refused: {s}\n", .{fixture[0]});
++        try t.expect(translated == .program);
++        try reference.check(root, "/usr/bin/python3", translated.program, oracle.stdout);
++    }
++}
++
++test "collections nested dictionary comparisons retain quadratic cost" {
++    const code = "d={}\nfor i in range(10):\n    d[i]=i\na=[d]*20;b=[d]*20;print(a==b)";
++    const lowered = (try collections.lowerWithCost(t.allocator, code)) orelse return error.UnexpectedAbstention;
++    defer t.allocator.free(lowered.source);
++    try t.expect(lowered.estimated_steps > 10522);
++}
++
++// Apply the scalar lowering's executed O0 floor and ELF rodata guards to collections.
++test "collections O1 retains runtime work against O0 folding guards" {
++    var env = try t.environ.createMap(t.allocator);
++    defer env.deinit();
++    for ([_]usize{ 6, 14, 15 }) |index| {
++        const fixture = cases[index];
++        const lowered = (try collections.lowerWithCost(t.allocator, fixture[0])) orelse return error.UnexpectedAbstention;
++        defer t.allocator.free(lowered.source);
++        try @import("runner_frontend_optimization_test.zig").checkCollectionsOptimization(&env, lowered.source, fixture[1]);
++    }
++}
+diff --git a/zig/src/core/runner_frontend_collections_value.zig b/zig/src/core/runner_frontend_collections_value.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fbb0b812f5eee94ddea9528bdc4ba9f69b604e9
+--- /dev/null
++++ b/zig/src/core/runner_frontend_collections_value.zig
+@@ -0,0 +1,284 @@
++const std = @import("std");
++const ast = @import("runner_frontend_collections_ast.zig");
++pub const Error = ast.Error;
++pub const Kind = enum(i32) { integer = 0, boolean = 1, none = 2, string = 3, list = 4, tuple = 5, dict = 6, set = 7, range = 8, builtin = 9, items = 10, keys = 11, values = 12, enumerate = 13, zip = 14, map_str = 15 };
++pub const Value = struct {
++    kind: Kind = .none,
++    n: i64 = 0,
++    obj: ?*Object = null,
++    pub fn int(n: i64) Error!Value {
++        if (n < std.math.minInt(i32) or n > std.math.maxInt(i32)) return error.Unsupported;
++        return .{ .kind = .integer, .n = n };
++    }
++    pub fn boolean(b: bool) Value {
++        return .{ .kind = .boolean, .n = @intFromBool(b) };
++    }
++    pub fn numeric(v: Value) Error!i64 {
++        if (v.kind != .integer and v.kind != .boolean) return error.Unsupported;
++        return v.n;
++    }
++};
++pub const Object = struct { items: std.ArrayList(Value) = .empty, text: []const u8 = "", capacity: usize = 0, cursor: usize = 0, exhausted: bool = false };
++pub const Heap = struct {
++    a: std.mem.Allocator,
++    stats: *ast.Stats,
++    output_bytes: usize = 0,
++    proof_work: usize = 0,
++    pub fn charge(h: *Heap, steps: usize) Error!void {
++        h.stats.steps += steps;
++        if (h.stats.steps > 200000) return error.Unsupported;
++    }
++    fn work(h: *Heap, n: usize) Error!void {
++        h.proof_work += n;
++        if (h.proof_work > 200000) return error.Unsupported;
++    }
++    pub fn eq(h: *Heap, a: Value, b: Value) Error!bool {
++        const weight_cost = @min(try h.weight(a), try h.weight(b));
++        try h.charge(@min(200001, 16 + weight_cost * 8));
++        return equal(a, b, 0);
++    }
++    pub fn order(h: *Heap, a: Value, b: Value) Error!std.math.Order {
++        try h.charge(@min(200001, 16 + @min(try h.weight(a), try h.weight(b)) * 12));
++        return compare(a, b, 0);
++    }
++    fn weight(h: *Heap, v: Value) Error!usize {
++        var memo: [96]Weight = undefined;
++        var n: usize = 0;
++        return h.weightInner(v, &memo, &n, 0);
++    }
++    fn weightInner(h: *Heap, v: Value, memo: *[96]Weight, count: *usize, depth: usize) Error!usize {
++        try h.work(1);
++        if (depth > 8) return error.Unsupported;
++        if (v.kind == .string) return v.obj.?.text.len + 1;
++        const o = v.obj orelse return 1;
++        for (memo[0..count.*]) |old| if (old.obj == o) return old.weight;
++        if (count.* == memo.len) return error.Unsupported;
++        const index = count.*;
++        count.* += 1;
++        memo[index] = .{ .obj = o, .weight = 200001 };
++        var total: usize = 1;
++        for (o.items.items) |x| total = @min(200001, total + try h.weightInner(x, memo, count, depth + 1));
++        if (v.kind == .dict or v.kind == .set) total = @min(200001, total * @max(1, try length(v)));
++        memo[index].weight = total;
++        return total;
++    }
++    fn reaches(h: *Heap, value: Value, target: *Object) Error!bool {
++        var seen: [96]*Object = undefined;
++        var count: usize = 0;
++        return h.reachInner(value, target, &seen, &count, 0);
++    }
++    fn reachInner(h: *Heap, value: Value, target: *Object, seen: *[96]*Object, count: *usize, depth: usize) Error!bool {
++        try h.work(1);
++        if (value.obj == null or value.kind == .string) return false;
++        const o = value.obj.?;
++        if (o == target) return true;
++        for (seen[0..count.*]) |old| if (old == o) return false;
++        if (depth > 8 or count.* == seen.len) return error.Unsupported;
++        seen[count.*] = o;
++        count.* += 1;
++        for (o.items.items) |x| if (try h.reachInner(x, target, seen, count, depth + 1)) return true;
++        return false;
++    }
++    pub fn new(h: *Heap, kind: Kind) Error!Value {
++        if (h.stats.objects == 96) return error.Unsupported;
++        h.stats.objects += 1;
++        try h.charge(24);
++        const object = try h.a.create(Object);
++        object.* = .{};
++        return .{ .kind = kind, .obj = object };
++    }
++    pub fn string(h: *Heap, text: []const u8) Error!Value {
++        if (text.len > 128 or h.stats.chars + text.len > 2048) return error.Unsupported;
++        for (text) |c| if (c >= 128) return error.Unsupported;
++        const v = try h.new(.string);
++        v.obj.?.text = try h.a.dupe(u8, text);
++        h.stats.chars += text.len;
++        try h.charge(text.len * 4);
++        return v;
++    }
++    pub fn reserve(h: *Heap, v: Value, wanted: usize) Error!void {
++        const o = v.obj orelse return error.Unsupported;
++        const limit: usize = if (v.kind == .dict) 128 else if (v.kind == .set) 64 else 128;
++        if (wanted > limit) return error.Unsupported;
++        const width: usize = if (v.kind == .dict) 2 else 1;
++        const units = (wanted + width - 1) / width;
++        if (units <= o.capacity) return;
++        var cap: usize = if (o.capacity == 0) 4 else o.capacity;
++        while (cap < units) cap *= 2;
++        if (h.stats.cells + cap * width > 1536) return error.Unsupported;
++        h.stats.cells += cap * width;
++        try h.charge(16 + o.items.items.len * 4);
++        try o.items.ensureTotalCapacity(h.a, cap * width);
++        o.capacity = cap;
++    }
++    pub fn append(h: *Heap, v: Value, item: Value) Error!void {
++        if (v.kind != .list and v.kind != .tuple and v.kind != .range and v.kind != .enumerate and v.kind != .zip and v.kind != .map_str)
++            return error.Unsupported;
++        if (try h.reaches(item, v.obj.?)) return error.Unsupported;
++        try h.reserve(v, v.obj.?.items.items.len + 1);
++        try v.obj.?.items.append(h.a, item);
++        try h.charge(12);
++    }
++    pub fn dictSet(h: *Heap, v: Value, key: Value, item: Value) Error!void {
++        if (v.kind != .dict or !hashable(key) or try h.reaches(item, v.obj.?)) return error.Unsupported;
++        const o = v.obj.?;
++        var i: usize = 0;
++        while (i < o.items.items.len) : (i += 2) {
++            try h.charge(12);
++            if (try h.eq(o.items.items[i], key)) {
++                o.items.items[i + 1] = item;
++                return;
++            }
++        }
++        try h.reserve(v, o.items.items.len + 2);
++        try o.items.append(h.a, key);
++        try o.items.append(h.a, item);
++    }
++    pub fn setAdd(h: *Heap, v: Value, key: Value) Error!void {
++        if (v.kind != .set or !hashable(key)) return error.Unsupported;
++        if (try h.contains(v, key)) return;
++        try h.reserve(v, v.obj.?.items.items.len + 1);
++        try v.obj.?.items.append(h.a, key);
++    }
++    pub fn contains(h: *Heap, v: Value, key: Value) Error!bool {
++        if (v.kind == .string) {
++            if (key.kind != .string) return error.Unsupported;
++            try h.charge(v.obj.?.text.len * (key.obj.?.text.len + 1) * 4);
++            return std.mem.indexOf(u8, v.obj.?.text, key.obj.?.text) != null;
++        }
++        if (v.kind != .list and v.kind != .tuple and v.kind != .range and v.kind != .dict and v.kind != .set and v.kind != .keys)
++            return error.Unsupported;
++        if ((v.kind == .dict or v.kind == .set or v.kind == .keys) and !hashable(key)) return error.Unsupported;
++        const stride: usize = if (v.kind == .dict or v.kind == .keys) 2 else 1;
++        var i: usize = 0;
++        while (i < v.obj.?.items.items.len) : (i += stride) {
++            try h.charge(12);
++            if (try h.eq(v.obj.?.items.items[i], key)) return true;
++        }
++        return false;
++    }
++    pub fn get(h: *Heap, v: Value, key: Value) Error!Value {
++        try h.charge(16);
++        if (v.kind == .dict) {
++            if (!hashable(key)) return error.Unsupported;
++            var i: usize = 0;
++            while (i < v.obj.?.items.items.len) : (i += 2) {
++                try h.charge(12);
++                if (try h.eq(v.obj.?.items.items[i], key)) return v.obj.?.items.items[i + 1];
++            }
++            return error.Unsupported;
++        }
++        const index = try normalized(try key.numeric(), try length(v));
++        if (v.kind == .string) return h.string(v.obj.?.text[index .. index + 1]);
++        if (v.kind != .list and v.kind != .tuple and v.kind != .range) return error.Unsupported;
++        return v.obj.?.items.items[index];
++    }
++    pub fn set(h: *Heap, v: Value, key: Value, item: Value) Error!void {
++        if (v.kind == .dict) return h.dictSet(v, key, item);
++        if (v.kind != .list or try h.reaches(item, v.obj.?)) return error.Unsupported;
++        const i = try normalized(try key.numeric(), try length(v));
++        v.obj.?.items.items[i] = item;
++        try h.charge(16);
++    }
++    pub fn output(h: *Heap, v: Value, repr: bool, depth: usize) Error!void {
++        if (depth > 8) return error.Unsupported;
++        var bytes: usize = 0;
++        switch (v.kind) {
++            .integer => {
++                var b: [16]u8 = undefined;
++                bytes = (std.fmt.bufPrint(&b, "{d}", .{v.n}) catch return error.Unsupported).len;
++            },
++            .boolean => bytes = if (v.n != 0) 4 else 5,
++            .none => bytes = 4,
++            .string => {
++                bytes = v.obj.?.text.len;
++                if (repr) {
++                    bytes += 2;
++                    for (v.obj.?.text) |c| if (c < 32 or c == 127 or c == '\\' or c == '\'' or c == '"') {
++                        bytes += 3;
++                    };
++                }
++            },
++            .list, .tuple, .dict => {
++                const items = v.obj.?.items.items;
++                bytes = 2 + items.len * 2;
++                for (items) |item| try h.output(item, true, depth + 1);
++            },
++            else => return error.Unsupported,
++        }
++        h.output_bytes += bytes;
++        if (h.output_bytes > 8192) return error.Unsupported;
++        try h.charge(bytes * 8);
++    }
++};
++pub fn hashable(v: Value) bool {
++    return v.kind == .integer or v.kind == .boolean or v.kind == .string;
++}
++pub fn truth(v: Value) Error!bool {
++    return switch (v.kind) {
++        .none => false,
++        .integer, .boolean => v.n != 0,
++        .string => v.obj.?.text.len != 0,
++        .list, .tuple, .dict, .set, .range, .items, .keys, .values => (try length(v)) != 0,
++        .enumerate, .zip, .map_str, .builtin => true,
++    };
++}
++pub fn length(v: Value) Error!usize {
++    return switch (v.kind) {
++        .string => v.obj.?.text.len,
++        .list, .tuple, .set, .range => v.obj.?.items.items.len,
++        .dict, .items, .keys, .values => v.obj.?.items.items.len / 2,
++        else => error.Unsupported,
++    };
++}
++pub fn normalized(i: i64, len: usize) Error!usize {
++    const at = if (i < 0) i + @as(i64, @intCast(len)) else i;
++    if (at < 0 or at >= len) return error.Unsupported;
++    return @intCast(at);
++}
++const Weight = struct { obj: *Object, weight: usize };
++pub fn equal(a: Value, b: Value, depth: usize) Error!bool {
++    if (depth > 8) return error.Unsupported;
++    if (@backingInt(a.kind) >= 10 or @backingInt(b.kind) >= 10) return error.Unsupported;
++    if ((a.kind == .integer or a.kind == .boolean) and (b.kind == .integer or b.kind == .boolean)) return a.n == b.n;
++    if (a.kind != b.kind) return false;
++    return switch (a.kind) {
++        .none => true,
++        .integer, .boolean, .builtin => a.n == b.n,
++        .string => std.mem.eql(u8, a.obj.?.text, b.obj.?.text),
++        .list, .tuple, .range => blk: {
++            const x = a.obj.?.items.items;
++            const y = b.obj.?.items.items;
++            if (x.len != y.len) break :blk false;
++            for (x, y) |l, r| if (!try equal(l, r, depth + 1)) break :blk false;
++            break :blk true;
++        },
++        .dict, .set => blk: {
++            const x = a.obj.?.items.items;
++            const y = b.obj.?.items.items;
++            if (x.len != y.len) break :blk false;
++            const stride: usize = if (a.kind == .dict) 2 else 1;
++            var i: usize = 0;
++            while (i < x.len) : (i += stride) {
++                var j: usize = 0;
++                while (j < y.len and !try equal(x[i], y[j], depth + 1)) : (j += stride) {}
++                if (j == y.len or (stride == 2 and !try equal(x[i + 1], y[j + 1], depth + 1))) break :blk false;
++            }
++            break :blk true;
++        },
++        else => error.Unsupported,
++    };
++}
++pub fn compare(a: Value, b: Value, depth: usize) Error!std.math.Order {
++    if (depth > 8) return error.Unsupported;
++    if ((a.kind == .integer or a.kind == .boolean) and (b.kind == .integer or b.kind == .boolean)) return std.math.order(a.n, b.n);
++    if (a.kind != b.kind) return error.Unsupported;
++    if (a.kind == .string) return std.mem.order(u8, a.obj.?.text, b.obj.?.text);
++    if (a.kind != .list and a.kind != .tuple) return error.Unsupported;
++    const x = a.obj.?.items.items;
++    const y = b.obj.?.items.items;
++    for (x[0..@min(x.len, y.len)], y[0..@min(x.len, y.len)]) |l, r| {
++        if (!try equal(l, r, depth + 1)) return compare(l, r, depth + 1);
++    }
++    return std.math.order(x.len, y.len);
++}
+diff --git a/zig/src/core/runner_frontend_digit_reverse_test.zig b/zig/src/core/runner_frontend_digit_reverse_test.zig
+index 9f3106fa0d3ad42fd07ecae3df091e801995e497..4d639b667638a1aafbbac93fa1ced3e3d908806c 100644
+--- a/zig/src/core/runner_frontend_digit_reverse_test.zig
++++ b/zig/src/core/runner_frontend_digit_reverse_test.zig
+@@ -163,8 +163,10 @@ test "configured digit reversal frontend matches CPython and the RV32 reference"
+         try @import("runner_frontend_reference_test.zig").check(root, python, result.program, oracle.stdout);
+     }
+     for (refused) |code| {
+-        const result = try front.translate(front.ctx, t.allocator, .{ .form = .fence, .lang = "python", .code = code });
+-        defer if (result == .program) t.allocator.free(result.program.bytes);
+-        try t.expect(result == .abstain);
++        try @import("runner_frontend_collections_compat_test.zig").checkRejectionOrExact(
++            &env,
++            &front,
++            .{ .form = .fence, .lang = "python", .code = code },
++        );
+     }
+ }
+diff --git a/zig/src/core/runner_frontend_elf_cache.zig b/zig/src/core/runner_frontend_elf_cache.zig
+index 9bffe25c48939c8779cfb2d99323d38b508da5b6..a4b1101a02c2f9778d7f44a431c902dd8c9f4ced 100644
+--- a/zig/src/core/runner_frontend_elf_cache.zig
++++ b/zig/src/core/runner_frontend_elf_cache.zig
+@@ -24,13 +24,13 @@ pub fn wanted(opaque_inputs: bool, step_budget: usize, estimated_steps: ?usize)
+ }
+ 
+ /// Everything besides the fixed runtime that changes the image or its acceptance.
+-pub fn key(normalized: []const u8, clang: []const u8, linker: ?[]const u8, optimize: u8, stack_limit: usize) Key {
++pub fn key(normalized: []const u8, clang: []const u8, linker: ?[]const u8, optimize: u8, stack_limit: usize, collection_stack: bool) Key {
+     var h = std.crypto.hash.sha2.Sha256.init(.{});
+     for ([_][]const u8{ clang, linker orelse "", normalized }) |part| {
+         h.update(std.mem.asBytes(&part.len));
+         h.update(part);
+     }
+-    h.update(&.{optimize});
++    h.update(&.{ optimize, @intFromBool(collection_stack) });
+     h.update(std.mem.asBytes(&stack_limit));
+     h.update(if (linker == null) "lld" else "path");
+     var out: Key = undefined;
+@@ -92,13 +92,14 @@ test "elf cache: only opaque inputs with a known admission, distinct settings ne
+     try t.expect(!wanted(false, 0, 5));
+     reset(t.io);
+     defer reset(t.io);
+-    const k = key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 0);
++    const k = key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 0, false);
+     for ([_]Key{
+-        key("int main(void) {\n }\n", "/usr/bin/clang", null, 1, 0),
+-        key("int main(void) {\n}\n", "/usr/bin/clang-18", null, 1, 0),
+-        key("int main(void) {\n}\n", "/usr/bin/clang", "", 1, 0),
+-        key("int main(void) {\n}\n", "/usr/bin/clang", null, 2, 0),
+-        key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 4096),
++        key("int main(void) {\n }\n", "/usr/bin/clang", null, 1, 0, false),
++        key("int main(void) {\n}\n", "/usr/bin/clang-18", null, 1, 0, false),
++        key("int main(void) {\n}\n", "/usr/bin/clang", "", 1, 0, false),
++        key("int main(void) {\n}\n", "/usr/bin/clang", null, 2, 0, false),
++        key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 4096, false),
++        key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 0, true),
+     }) |other| try t.expect(!std.mem.eql(u8, &k, &other));
+     try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, k));
+     put(t.io, k, "image one");
+@@ -109,9 +110,9 @@ test "elf cache: only opaque inputs with a known admission, distinct settings ne
+     try t.expectEqual(@as(u64, 1), hitCount(t.io));
+     const big = try t.allocator.alloc(u8, max_image + 1);
+     defer t.allocator.free(big);
+-    const kb = key("big", "c", null, 1, 0);
++    const kb = key("big", "c", null, 1, 0, false);
+     put(t.io, kb, big);
+     try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, kb));
+-    for (0..slots) |i| put(t.io, key(std.mem.asBytes(&i), "c", null, 1, 0), "filler");
++    for (0..slots) |i| put(t.io, key(std.mem.asBytes(&i), "c", null, 1, 0, false), "filler");
+     try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, k));
+ }
+diff --git a/zig/src/core/runner_frontend_integer_test.zig b/zig/src/core/runner_frontend_integer_test.zig
+index f7538b077d4d85180963634986d73c71f736e2cc..ffc95eb9696de5a2a6647a0cdcbee7eeb3dde198 100644
+--- a/zig/src/core/runner_frontend_integer_test.zig
++++ b/zig/src/core/runner_frontend_integer_test.zig
+@@ -192,11 +192,11 @@ test "integer frontend refuses unsafe ambiguous noninteger and incomplete Python
+     defer env.deinit();
+     var context = configured(env.get("TF_RUNNER_CLANG") orelse "/usr/bin/clang", env.get("TF_RUNNER_LLD"));
+     const bad = [_][]const u8{
+-        "",              "1+",                           "(2+3",                   "2**",        "divmod(7,)",   "pow(2,3,)",   "int('ff',)",
+-        "missing+1",     "print(missing)",               "import os",              "1.25*2",     "1e3+1",        "1/2",         "6/3",
+-        "1//0",          "1%0",                          "divmod(1,0)",            "pow(2,3,0)", "2**-1",        "pow(2,-1,3)", "print((1,2))",
+-        "1,2",           "(1,2)",                        "2*3,18",                 "1<2<3",      "1+2=3",        "1==1==1",     "__import__('os').getcwd()",
+-        "(1).__class__", "int('__import__(\"os\")',16)", "int('ff',16).__class__", "int('2',2)", "int('gg',16)",
++        "",                             "1+",                     "(2+3",        "2**",          "divmod(7,)", "pow(2,3,)",                 "int('ff',)",
++        "missing+1",                    "print(missing)",         "import os",   "1.25*2",       "1e3+1",      "1/2",                       "6/3",
++        "1//0",                         "1%0",                    "divmod(1,0)", "pow(2,3,0)",   "2**-1",      "pow(2,-1,3)",               "1,2",
++        "(1,2)",                        "2*3,18",                 "1<2<3",       "1+2=3",        "1==1==1",    "__import__('os').getcwd()", "(1).__class__",
++        "int('__import__(\"os\")',16)", "int('ff',16).__class__", "int('2',2)",  "int('gg',16)",
+     };
+     for ([_]api.Form{ .repl, .fence }) |form| {
+         for (bad) |code| try abstains(&context, .{ .form = form, .lang = "python", .code = code });
+@@ -207,6 +207,19 @@ test "integer frontend refuses unsafe ambiguous noninteger and incomplete Python
+     }) |code| try abstains(&context, .{ .form = .inline_expr, .lang = "python", .code = code });
+ }
+ 
++test "configured integer frontend prints tuple and list representations exactly like CPython" {
++    var env = try t.environ.createMap(t.allocator);
++    defer env.deinit();
++    var context = configured(try requiredClang(&env), env.get("TF_RUNNER_LLD"));
++    for ([_]api.Form{ .repl, .fence }) |form| {
++        for ([_][]const u8{ "print((1,2))", "print([1,2])" }) |code| {
++            const program = try translate(&context, .{ .form = form, .code = code, .expected = "" });
++            defer t.allocator.free(program.bytes);
++            try @import("runner_frontend_collections_compat_test.zig").checkExact(&env, program, code);
++        }
++    }
++}
++
+ test "integer frontend refuses prior cells that can shadow integer builtins" {
+     var env = try t.environ.createMap(t.allocator);
+     defer env.deinit();
+diff --git a/zig/src/core/runner_frontend_optimization_test.zig b/zig/src/core/runner_frontend_optimization_test.zig
+index 47650454b970505187cf33fb3f29e999a64dd210..1b02f5cfba274510b03477bde74d8ef36324a420 100644
+--- a/zig/src/core/runner_frontend_optimization_test.zig
++++ b/zig/src/core/runner_frontend_optimization_test.zig
+@@ -150,8 +150,17 @@ pub fn checkOptimization(env: *const Env, source: []const u8, expected: []const
+     return checkWithFloor(env, source, expected, trusted, 8);
+ }
+ 
++pub fn checkCollectionsOptimization(env: *const Env, source: []const u8, expected: []const u8) !void {
++    return checkWithStack(env, source, expected, true, 8, true);
++}
++
+ fn checkWithFloor(env: *const Env, source: []const u8, expected: []const u8, trusted: bool, divisor: u64) !void {
++    return checkWithStack(env, source, expected, trusted, divisor, false);
++}
++
++fn checkWithStack(env: *const Env, source: []const u8, expected: []const u8, trusted: bool, divisor: u64, collection_stack: bool) !void {
+     var config = try settings(env, trusted);
++    config.collection_stack = collection_stack;
+     config.optimize = .O0;
+     const baseline = try build(source, config);
+     defer t.allocator.free(baseline);
+diff --git a/zig/src/core/runner_frontend_program_compile.zig b/zig/src/core/runner_frontend_program_compile.zig
+index 5645a1430266d79a03bf7642739fc171f23527a2..a9c539ed2176717260362bc6a2ad3d8a47d9b8ce 100644
+--- a/zig/src/core/runner_frontend_program_compile.zig
++++ b/zig/src/core/runner_frontend_program_compile.zig
+@@ -17,6 +17,7 @@ pub const Config = struct {
+     scratch_root: []const u8 = "/tmp",
+     optimize: enum { O0, O1, O2 } = .O1,
+     stack_limit: usize = 0,
++    collection_stack: bool = false,
+     opaque_inputs: bool = false,
+     estimated_steps: ?usize = null,
+     step_budget: usize = 10522,
+@@ -268,7 +269,7 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+             else => return null,
+         };
+         defer a.free(usage);
+-        if (!safeStackUsage(usage, config.stack_limit)) return null;
++        if (!stackUsage(usage, config.stack_limit, config.collection_stack)) return null;
+     }
+     const bytes = dir.readFileAlloc(io, "program.elf", a, .limited(1 << 20)) catch |err| switch (err) {
+         error.OutOfMemory => return error.OutOfMemory,
+@@ -299,7 +300,7 @@ pub fn scratch(io: std.Io, parent: std.Io.Dir, buf: *[64]u8) ?[]const u8 {
+ 
+ fn imageKey(normalized: []const u8, config: Config) ?elf_cache.Key {
+     if (!elf_cache.wanted(config.opaque_inputs, config.step_budget, config.estimated_steps)) return null;
+-    return elf_cache.key(normalized, config.clang, config.linker, @backingInt(config.optimize), config.stack_limit);
++    return elf_cache.key(normalized, config.clang, config.linker, @backingInt(config.optimize), config.stack_limit, config.collection_stack);
+ }
+ 
+ /// The image-cache key compile() uses for `source` under `config`, or null when it would not cache (tests).
+@@ -319,6 +320,10 @@ fn remaining(io: std.Io, config: Config, milliseconds: i64) ?std.Io.Duration {
+ 
+ // Summed static frames bound every call chain in the trusted, recursion-free Python lowering.
+ pub fn safeStackUsage(report: []const u8, limit: usize) bool {
++    return stackUsage(report, limit, false);
++}
++
++fn stackUsage(report: []const u8, limit: usize, collections: bool) bool {
+     var total: usize = 0;
+     var functions: usize = 0;
+     var lines = std.mem.splitScalar(u8, report, '\n');
+@@ -326,11 +331,16 @@ pub fn safeStackUsage(report: []const u8, limit: usize) bool {
+         const line = std.mem.trim(u8, raw, "\r");
+         if (line.len == 0) continue;
+         var fields = std.mem.splitScalar(u8, line, '\t');
+-        _ = fields.next() orelse return false;
++        const label = fields.next() orelse return false;
++        const name_start = if (std.mem.lastIndexOfScalar(u8, label, ':')) |at| at + 1 else 0;
++        const name = label[name_start..];
++        const recursive = std.mem.startsWith(u8, name, "equal") or std.mem.startsWith(u8, name, "compare") or
++            std.mem.startsWith(u8, name, "repr");
++        const factor: usize = if (collections and recursive) 9 else 1;
+         const size = std.fmt.parseInt(usize, fields.next() orelse return false, 10) catch return false;
+         const kind = fields.next() orelse return false;
+-        if (fields.next() != null or !std.mem.eql(u8, kind, "static") or size > limit - total) return false;
+-        total += size;
++        if (fields.next() != null or !std.mem.eql(u8, kind, "static") or size > (limit - total) / factor) return false;
++        total += size * factor;
+         functions += 1;
+     }
+     return functions != 0;
+@@ -554,3 +564,13 @@ test "generated support has a bounded size allowance while raw cells retain thei
+     @memset(oversized, ' ');
+     try std.testing.expectEqual(@as(?[]u8, null), try normalizeWithTrust(a, oversized, true));
+ }
++
++// The closed collections runtime allows at most nine frames through its recursive value walkers.
++test "collections stack admission charges every bounded recursive frame" {
++    const report = "p.c:1:main\t128\tstatic\np.c:2:equal\t32\tstatic\n" ++
++        "p.c:3:compare.specialized\t48\tstatic\np.c:4:repr\t64\tstatic\n";
++    try std.testing.expect(safeStackUsage(report, 272));
++    try std.testing.expect(stackUsage(report, 1424, true));
++    try std.testing.expect(!stackUsage(report, 1423, true));
++    try std.testing.expect(!stackUsage("p.c:2:equal\t32\tdynamic\n", 4096, true));
++}
+diff --git a/zig/src/core/runner_frontend_python_assert_test.zig b/zig/src/core/runner_frontend_python_assert_test.zig
+index fdfd25c97c9bc8bb0e4a01cd3ea482e41ec18c6d..7774408087140215e9a52f5c548176cc536652b9 100644
+--- a/zig/src/core/runner_frontend_python_assert_test.zig
++++ b/zig/src/core/runner_frontend_python_assert_test.zig
+@@ -199,9 +199,11 @@ test "configured assertion cells match exact CPython stdout through fence dispat
+         );
+     }
+     for (refused) |code| {
+-        const result = try front.translate(front.ctx, t.allocator, .{ .form = .fence, .lang = "python", .code = code });
+-        defer if (result == .program) t.allocator.free(result.program.bytes);
+-        try t.expect(result == .abstain);
++        try @import("runner_frontend_collections_compat_test.zig").checkRejectionOrExact(
++            &env,
++            &front,
++            .{ .form = .fence, .lang = "python", .code = code },
++        );
+     }
+ }
+ 
+diff --git a/zig/src/core/runner_frontend_test.zig b/zig/src/core/runner_frontend_test.zig
+index 63944b14a8a686829e5fbb6c193095b262b14670..92a8afa94ab9fffa251b930f95e26a1ccac2ca4e 100644
+--- a/zig/src/core/runner_frontend_test.zig
++++ b/zig/src/core/runner_frontend_test.zig
+@@ -218,3 +218,7 @@ test "inline typographic operators normalize without changing Python syntax or t
+         try t.expect((try front.translate(null, t.allocator, .{ .form = .inline_expr, .lang = "python", .code = code })) == .abstain);
+     }
+ }
++
++comptime {
++    _ = @import("runner_frontend_collections_test.zig");
++}
+diff --git a/zig/src/core/runner_frontend_tool_script_test.zig b/zig/src/core/runner_frontend_tool_script_test.zig
+index 8459f69a0e64a639378a316b7c0e69096708f4d7..61cd52859afa3043a7e397c4b584b80aa91c0e55 100644
+--- a/zig/src/core/runner_frontend_tool_script_test.zig
++++ b/zig/src/core/runner_frontend_tool_script_test.zig
+@@ -112,11 +112,11 @@ test "configured whole division script passes optimized work and rodata folding
+     try optimization.checkOptimization(&env, source, expected, true);
+ }
+ 
+-test "configured Boolean coercion falls back with integer unary plus semantics" {
++test "configured Boolean coercion preserves CPython semantics through generic fallback" {
+     var env = try t.environ.createMap(t.allocator);
+     defer env.deinit();
+     const clang = env.get("TF_RUNNER_CLANG") orelse return error.SkipZigTest;
+-    const root = env.get("TF_RUNNER_QWENPUTER") orelse return error.SkipZigTest;
++    _ = env.get("TF_RUNNER_QWENPUTER") orelse return error.SkipZigTest;
+     var context: frontend.Context = .{ .io = t.io, .compiler = .{
+         .clang = clang,
+         .linker = env.get("TF_RUNNER_LLD"),
+@@ -127,10 +127,17 @@ test "configured Boolean coercion falls back with integer unary plus semantics"
+         .lang = "python",
+         .code = "print(+(1==1))",
+     });
++    defer if (result == .program) t.allocator.free(result.program.bytes);
+     try t.expect(result == .program);
+-    defer t.allocator.free(result.program.bytes);
+-    try reference.check(root, env.get("TF_RUNNER_REFERENCE_PYTHON") orelse "/usr/bin/python3", result.program, "1\n");
+-    for ([_][]const u8{ "print(len(str(1==1)))", "print(sum(map(int,str(1==1))))" }) |code| {
+-        try t.expect((try f.translate(f.ctx, t.allocator, .{ .form = .fence, .lang = "python", .code = code })) == .abstain);
++    const compat = @import("runner_frontend_collections_compat_test.zig");
++    try compat.checkExact(&env, result.program, "print(+(1==1))");
++    for ([_][]const u8{
++        "print(+True)",
++        "print(-True)",
++        "print(len(str(1==1)))",
++        "x=1==1;print(len(str(x)))",
++        "print(sum(map(int,str(1==1))))",
++    }) |code| {
++        try compat.checkRejectionOrExact(&env, &f, .{ .form = .fence, .lang = "python", .code = code });
+     }
+ }

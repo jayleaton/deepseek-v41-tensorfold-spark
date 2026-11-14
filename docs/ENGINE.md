@@ -1,12 +1,51 @@
 # Native TensorFold engine
 
-The recipe builds [TensorFold](https://github.com/ashhart/TensorFold) at the exact commit in
-[`config/tensorfold.rev`](../config/tensorfold.rev), fetched from the repository in
-[`config/tensorfold.repo`](../config/tensorfold.repo). The commit is the single engine pin; the repository only says
-where it is published. The Docker build resolves
-and verifies it, builds the `dsv41-serve` target with both CUDA runtime and DeepSeek family images, and installs
-`tensorfold-dsv41` and `tf-dsv41`. The serving build uses upstream Git objects without recipe patches. The older native export stays in
-`engine/zig` solely to preserve the existing generator/reference dependencies pending their equivalence audit.
+The recipe builds unmodified upstream [TensorFold](https://github.com/ashhart/TensorFold) at the exact commit in
+[`config/tensorfold.rev`](../config/tensorfold.rev) (`0d51120a8`, on upstream `main`), fetched from
+[`config/tensorfold.repo`](../config/tensorfold.repo), and applies this recipe's patch series over it:
+[`patches/`](../patches/) `0001` to the number in [`config/tensorfold.patches`](../config/tensorfold.patches), in
+order, with `git am`. The result must be the engine tree in [`config/tensorfold.tree`](../config/tensorfold.tree), or
+the build stops. The Docker build resolves and verifies the commit, applies the series, builds the `dsv41-serve` target
+with both CUDA runtime and DeepSeek family images, and installs `tensorfold-dsv41` and `tf-dsv41`. The image carries
+the upstream commit as `org.tensorfold.revision` and the tree as `org.tensorfold.tree`, and the launcher refuses an
+image whose labels differ from the two files. The older native export stays in `engine/zig` solely to preserve the
+existing generator/reference dependencies pending their equivalence audit.
+
+## The patch series
+
+The 207 patches are the DeepSeek-V4.1 engine work that is not on upstream `main` yet, one patch per commit, with each
+commit's author (Sergey Tretyak's two `Disk.validate` commits keep his name). A merge in that history is one patch
+holding the merge's change, and its message lists the commits it brought in. As this work reaches upstream `main`,
+the pin moves forward and the series gets shorter. Applied to `0d51120a8`, `0001`-`0207` give tree
+`6571ad430`, which is the content of the engine commit `12257eb51` except for 29 lines in 10 files that named
+internal machines, tools and people (28 comment and notes lines and one tool's report string). The checkout's last
+commit is `7e1fa712a` with the fixed committer `fetch-source.sh` uses.
+
+To get the patched engine source, for example to regenerate the settings list or build by hand:
+
+```bash
+bash docker/zig/fetch-source.sh "$(cat config/tensorfold.rev)" /absolute/new-dir /nonexistent \
+  "$(cat config/tensorfold.repo)" "$PWD/patches" "$(cat config/tensorfold.patches)" "$(cat config/tensorfold.tree)"
+```
+
+The earlier engines this recipe has pinned are prefixes of the same series. To roll back, put the number and tree from
+this table in `config/tensorfold.patches` and `config/tensorfold.tree`, regenerate the settings list, and rebuild the
+image:
+
+| Engine | `config/tensorfold.patches` | `config/tensorfold.tree` | Original commit |
+| --- | --- | --- | --- |
+| current: undeclared calls must be whole | `0207` | `6571ad43034aae5486bbd83fc1c0f32282de1ae3` | `12257eb51` |
+| undeclared tool calls go out as calls | `0206` | `156d157a8179ce331b4abbb94ac6268b2e4f463f` | `3ca06dd4b` |
+| prompt checkpoints for rewritten histories (#80) | `0205` | `4bb6cf7a4c154b0c6ae43493f7c1b2013157daba` | `1ea71240a` |
+| NVMe session-restore fix (#86) | `0203` | `d53f80f2880d363e23bb963643b95f949a413b5f` | `7b79ef92d` |
+| compute default, before #86 | `0201` | `32a36908894fb75e46d42c5b66e86809241cf4d9` | `01a62132c` |
+| release candidate G | `0050` | `abb4567df0569bdff1aeebfd129d9ca0f5919877` | `58bece1d3` |
+| candidate F | `0047` | `a8c7888c4827bf2a9d9e4691b578ba68e2662927` | `56200688d` |
+| stable head H | `0039` | `cc79d3a2d9175b2e1e1fa5a11059b221c9dc5efd` | `20ad77878` |
+
+G and F do not read the profile's runner lines, so the launcher warns and does not forward them; for F also unset
+`TF_DSV41_COMPUTE_LANE`. The original commit column names the engine history the measurements below cite. Those
+commits are not where the recipe gets its engine.
 
 [`config/tensorfold-settings.txt`](../config/tensorfold-settings.txt) lists every `TF_*` / `TENSORFOLD_*` setting
 the pinned engine reads. The launcher forwards exactly the ones a profile sets, plus `NCCL_*`, never credential
@@ -15,17 +54,17 @@ about any other engine-looking name the pin does not read, so an old profile can
 Every pin bump regenerates the list from the new engine source, and a test fails when the two disagree:
 
 ```bash
-python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout   # after editing config/tensorfold.rev
+python3 scripts/engine_settings.py generate /absolute/new-dir   # the patched checkout above, after any pin or series change
 ```
 
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current pin is `12257eb51` on `dsv41/undeclared-tool-passthrough`: `1ea71240a` plus two server commits (see
-[Undeclared tool calls](#undeclared-tool-calls-at-this-pin)). `1ea71240a` on `dsv41/session-lcp-resume` is `7b79ef92d`
+The current engine is patches `0001`-`0207` (`12257eb51`): `1ea71240a` plus two server commits (see
+[Undeclared tool calls](#undeclared-tool-calls-at-this-pin)). `1ea71240a` (`0205`) is `7b79ef92d`
 plus two commits for [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see
 [Rewritten histories](#rewritten-histories-at-this-pin)).
-`7b79ef92d` on `dsv41/compute-lane-release-s86` is `07106059c`, the exact engine source of the compute-lane
+`7b79ef92d` (`0203`) is `07106059c`, the exact engine source of the compute-lane
 studies ([compute lane](compute-lane.md)), plus seven commits. `07106059c`'s tree is byte-identical to the measured
 source `3a429d6f1` (tree `c3636e6da`), with the same history re-recorded under one author. It is G plus `deadline_s`,
 the engine-held compute lane with its sandbox, and the experimental in-model runner, which stays off unless its settings
@@ -45,10 +84,10 @@ parked on the NVMe tier under `TF_DSV41_PREFILL=replay` is restored instead of f
 again ([#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86), reported by crystal8194; the
 measurement is under [Session restore at this pin](#session-restore-at-this-pin)). [compute
 lane](compute-lane.md) lists the measured G commits'
-counterparts on this branch.
+counterparts in this history.
 
-The recipe pinned `01a62132c` (this branch without #2182) before; earlier it pinned release candidate G, `58bece1d3` on `dsv41/candidate-g` (its counterpart here is `3adb042bb`,
-the same tree). G is candidate F (`56200688d`, the
+The recipe pinned `01a62132c` (`0201`, without #2182) before; earlier it pinned release candidate G, `58bece1d3` (patch
+`0050` gives its tree, apart from the comment lines above). G is candidate F (`56200688d`, the
 fallback pin) plus the compute lane (`TF_DSV41_COMPUTE_LANE`, off in the engine, on in the flash17 profile; [OPERATIONS](OPERATIONS.md)) and its
 executor. F carries the opt-in settings the flash17 profile turns on (the KV mirror, both rotation folds, the indexer
 row split, Engram shard validation and five others; [FLASH-1017](FLASH-1017.md)). Both descend from stable head H
@@ -61,13 +100,7 @@ flash17 pack on TP2. H added:
   only for constrained rows. `TF_DSV41_GRAMMAR` is honoured again: unset, empty or `1` (the default) serves
   structured output, `0` refuses it, and any other value stops the boot.
 
-The pin is not on upstream main yet, so `config/tensorfold.repo` points at JJ's public fork
-(`jayleaton/TensorFold`, branch `dsv41/compute-lane-release-s86`), where the commit is published. To fall back to G, put
-`58bece1d3184269059fd3f7f755c52f4f295113d` (branch `dsv41/candidate-g`) in `config/tensorfold.rev` and regenerate
-the settings list; G does not read the profile's runner lines, so the launcher warns and does not forward them. To fall back to F, put
-`56200688d52af54062fadbab12de36e95165ad72` (an ancestor of G on that branch) in `config/tensorfold.rev`, also unset
-`TF_DSV41_COMPUTE_LANE` and regenerate the settings list. Once the upstream PRs merge
-and the pin is on `ashhart/TensorFold`, the file points back there. A local checkout or a bundle remains the
+A local checkout or a bundle remains the
 fallback, as described below. This source support is not a new
 pack/device qualification. Do not edit a pack config to bypass admission checks. Native images, structured output,
 defaults, sessions and sampling still require migration qualification; historical production results do not
@@ -163,8 +196,9 @@ The image also builds the three libraries the engine loads from `lib/` beside `b
 The image's library proof refuses any other library name the binaries can open, except HIP RCCL and FFmpeg video,
 which this image does not request.
 
-`scripts/build-native.sh -t tensorfold-dsv41:local` fetches the pin from that repository. To build without the
-network, or from your own copy, supply a checkout containing the pin:
+`scripts/build-native.sh -t tensorfold-dsv41:local` fetches the upstream pin from that repository and applies the
+series. To build without the network, or from your own copy, supply an upstream checkout containing the pin (the
+series is applied the same way):
 
 ```bash
 TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
@@ -174,10 +208,10 @@ The script reads the exact revision from the pin file, fetches only that revisio
 history into temporary scratch, and creates a self-contained bundle. It does not
 modify the supplied checkout, use its working-tree edits, or require its HEAD to
 match the pin. For transfer to another builder, such as a Spark that has no engine checkout, create a bundle
-containing the upgrade branch and supply the bundle file instead:
+containing upstream `main` and supply the bundle file instead:
 
 ```bash
-git -C /absolute/TensorFold bundle create /absolute/tensorfold.bundle dsv41/upgrade-latest
+git -C /absolute/TensorFold bundle create /absolute/tensorfold.bundle main
 git -C /absolute/TensorFold bundle verify /absolute/tensorfold.bundle   # must list the pin's history
 TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
 ```
@@ -189,7 +223,8 @@ the Docker builder. A supplied invalid/incomplete bundle fails without falling b
 to the network. Only the Dockerfile, source resolver, shared credential boundary and selected bundle enter the
 temporary build context; it is removed when the command exits. The bundle never
 enters the runtime image. Without `TENSORFOLD_SOURCE`, the builder fetches the same
-pin, by commit, from `config/tensorfold.repo`; it does not follow a moving branch.
+pin, by commit, from `config/tensorfold.repo`; it does not follow a moving branch. Only the patches the series
+names enter the build context, and a missing or duplicated number stops the build.
 
 Follow the pinned upstream `AGENTS.md`, `CONTRIBUTING.md`, `.zig-version` and native contributor documentation for
 engine changes. Upstream gates include fmt, lean with zero new finding identities, host/golden/security/fuzz/kernel
@@ -339,6 +374,6 @@ dots or other characters, malformed or unclosed blocks (an undeclared XML or GLM
 too, in either call mode), and bare JSON that names no declared tool (a structured answer) stay text; a request without tools never gets a tool call; a call inside the reasoning is never made; and a
 call cut by the end token or `max_tokens` is completed only for a declared tool. The engine's upstream line kept
 undeclared calls as text to match its frozen Python answers (`7be90a36b`), although its API docs describe this
-behaviour, so the change is a fork commit with its own host tests: they fail on `1ea71240a`, and one replays
+behaviour, so the change is a recipe patch (`0206`, `0207`) with its own host tests: they fail on `1ea71240a`, and one replays
 DeepSeek-V4.1's own reply captured on the Sparks (a request declaring only `shell`, after two `bash` calls in the
 history, answered with a DSML `bash` call and `finish_reason: "stop"`).

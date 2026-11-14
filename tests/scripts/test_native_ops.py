@@ -47,8 +47,11 @@ class World:
         return {'status': 'ok'} if url.endswith('/health') else {'data': [{'id': 'model'}]}
 
     def item(self, rank, **labels):
+        # A launched container carries its image's labels, the engine tree included when the recipe pins one.
+        tree = {'org.tensorfold.tree': self.ops.tree} if getattr(self, 'ops', None) and self.ops.tree else {}
         return {'Name': f'/{self.prefix}-r{rank}', 'Id': str(rank + 1) * 64,
-                'Config': {'Labels': {'org.tensorfold.rank': str(rank), 'org.tensorfold.revision': REV, **labels}},
+                'Config': {'Labels': {'org.tensorfold.rank': str(rank), 'org.tensorfold.revision': REV,
+                                      **tree, **labels}},
                 'State': {'Running': True}}
 
     def run(self, argv, **kwargs):
@@ -172,6 +175,40 @@ def test_operator_stop_is_durable_before_signals_and_watch_stands_down(world):
     assert world.ranks == [None, None]
     assert world.ops.tick().startswith('held:')
     assert not world.launches()
+
+
+def pinned_tree(world, tmp_path, tree):
+    (tmp_path / 'config/tensorfold.tree').write_text(tree + '\n')
+    world.ops = ops.Lifecycle(world.env, runner=world.run, clock=lambda: world.time, wall=lambda: world.time,
+                              sleep=world.sleep, http=world.http, root=tmp_path)
+
+
+@pytest.mark.parametrize('old', [{'org.tensorfold.tree': 'c' * 40}, {}])
+def test_patch_only_rollback_replaces_healthy_pair_on_another_tree(world, tmp_path, old):
+    # Same upstream revision, another patch-series tree (or an image without the label): healthy, but not reused.
+    pinned_tree(world, tmp_path, 'd' * 40)
+    world.ranks = [world.item(0, **old), world.item(1, **old)]
+    if not old:
+        for item in world.ranks:
+            del item['Config']['Labels']['org.tensorfold.tree']
+    assert not world.ops.status()['ready']
+    world.ops.start()
+    assert sorted(rank for rank, _, _ in world.stop_calls) == [0, 1]
+    assert world.launches() == [1, 0]
+    assert all(item['Config']['Labels']['org.tensorfold.tree'] == 'd' * 40 for item in world.ranks)
+    assert world.ops.status()['ready']
+
+
+def test_pair_on_the_pinned_tree_is_reused(world, tmp_path):
+    pinned_tree(world, tmp_path, 'd' * 40)
+    world.ranks = [world.item(0), world.item(1)]
+    world.ops.start()
+    assert world.launches() == [] and world.stop_calls == []
+
+
+def test_invalid_pinned_tree_is_refused(world, tmp_path):
+    with pytest.raises(ops.OpsError, match='engine tree'):
+        pinned_tree(world, tmp_path, 'not-a-tree')
 
 
 @pytest.mark.parametrize('labels', [{'org.tensorfold.rank': '9'}, {'org.tensorfold.revision': 'f' * 40}])

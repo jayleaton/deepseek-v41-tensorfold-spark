@@ -1,0 +1,705 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:57:22 +0700
+Subject: [PATCH 059/207] Merge branch 'dsv41/imr-circuit' into
+ dsv41/in-model-runner
+
+Squashed merge of 2 commits:
+- core: R1 evaluator shares linear forms and walks only firing units (Jay Leaton)
+- core: R1 golden test shards and a write-gate host test (Jay Leaton)
+---
+ zig/src/core/runner_circuit_eval.zig        | 115 ++++++++++-------
+ zig/src/core/runner_circuit_golden_test.zig |  13 +-
+ zig/src/core/runner_circuit_load.zig        | 132 +++++++++++++-------
+ zig/src/core/runner_circuit_model.zig       |  55 ++++++--
+ zig/src/core/runner_circuit_state.zig       |  33 ++++-
+ zig/src/core/runner_circuit_test.zig        |  17 +++
+ zig/src/core/runner_circuit_tiny_test.zig   |  15 ++-
+ 7 files changed, 268 insertions(+), 112 deletions(-)
+
+diff --git a/zig/src/core/runner_circuit_eval.zig b/zig/src/core/runner_circuit_eval.zig
+index f5e482c1f30b3fa9dfa4050cf4ef9b21805a4e0d..5bef406c7ac531e2cfba29fd595f1a09e1a8d752 100644
+--- a/zig/src/core/runner_circuit_eval.zig
++++ b/zig/src/core/runner_circuit_eval.zig
+@@ -7,53 +7,71 @@ const Scalar = model.Scalar;
+ const hd = model.hd;
+ 
+ /// The residual a token starts from: dim 0 is one, each feature dim a function of the token's family and payload.
+-pub fn embed(c: *const model.Circuit, token: u32, x: []Scalar) !void {
++pub fn embed(s: *State, token: u32) !void {
++    const c = s.circuit;
+     const fam, const pay = c.split(token) orelse return error.CircuitUnknownToken;
+-    @memset(x, 0);
+-    x[0] = 1;
+-    for (c.features) |f| x[f.dim] = f.value(fam, pay, c.family_bits);
++    s.clearResidual();
++    s.x[0] = 1;
++    s.touch(0);
++    for (c.features) |f| {
++        const v = f.value(fam, pay, c.family_bits);
++        if (v == 0) continue;
++        s.x[f.dim] = v;
++        s.touch(f.dim);
++    }
+ }
+ 
+ /// Feeds one token through every batch in stored node order and returns the token the output code names.
+ pub fn step(s: *State, token: u32) !u32 {
+     const c = s.circuit;
+-    try embed(c, token, s.x);
++    try embed(s, token);
+     for (c.batches) |*b| switch (b.*) {
+-        .ffn => |*f| ffn(f, s.x, s.work),
++        .ffn => |*f| ffn(s, f),
+         .heads => |*h| try heads(s, h),
+     };
+     s.steps += 1;
+     return decode(c, s.x);
+ }
+ 
+-fn commit(outs: []const model.Out, values: []const Scalar, x: []Scalar) void {
+-    for (outs, values) |o, v| x[o.dim] = if (o.into) x[o.dim] + v else v;
++fn commit(s: *State, outs: []const model.Out, values: []const Scalar) void {
++    for (outs, values) |o, v| {
++        s.x[o.dim] = if (o.into) s.x[o.dim] + v else v;
++        s.touch(o.dim);
++    }
+ }
+ 
+-fn ffn(f: *const model.Ffn, x: []Scalar, work: []Scalar) void {
+-    const t = f.terms;
+-    const up = work[0..t];
+-    const gate = work[t .. 2 * t];
+-    const y = work[2 * t ..][0..f.outs.len];
+-    @memset(work[0 .. 2 * t + f.outs.len], 0);
+-    f.up.apply(x, up);
+-    f.gate.apply(x, gate);
+-    for (f.coef, f.slot, up, gate) |c, s, u, g| y[s] += c * u * @max(g, 0);
+-    commit(f.outs, y, x);
++/// Silent units (gate <= 0) add exactly zero; each form's units are sorted by constant, so the walk stops early.
++fn ffn(s: *State, f: *const model.Ffn) void {
++    const y = s.work[0..f.outs.len];
++    const up = s.work[f.outs.len..][0..f.up.forms.outputs];
++    const gate = s.work[f.outs.len + up.len ..][0..f.gate.forms.outputs];
++    @memset(y, 0);
++    f.up.forms.apply(s.x, s.active.items, up);
++    f.gate.forms.apply(s.x, s.active.items, gate);
++    for (gate, f.starts[0 .. f.starts.len - 1], f.starts[1..]) |v, lo, hi| for (f.order[lo..hi]) |t| {
++        const g = f.gate.bias[t] + v;
++        if (!(g > 0)) break;
++        unit(f, t, g, up, y);
++    };
++    for (f.always) |t| unit(f, t, f.gate.bias[t], up, y);
++    commit(s, f.outs, y);
++}
++
++fn unit(f: *const model.Ffn, t: u32, g: Scalar, up: []const Scalar, y: []Scalar) void {
++    const uf = f.up.form[t];
++    const u = if (uf == model.no_form) f.up.bias[t] else f.up.bias[t] + up[uf];
++    y[f.slot[t]] += f.coef[t] * u * g;
+ }
+ 
+ fn heads(s: *State, h: *const model.Heads) !void {
+-    const width = h.proj.outputs;
++    const width = h.proj.columns();
+     const p = s.work[0..width];
+     const values = s.work[width..][0..h.outs.len];
+     const rest = s.work[width + h.outs.len ..];
+-    const keys = rest[0..hd];
+-    const query = rest[hd .. 2 * hd];
+     const v = rest[2 * hd .. 3 * hd];
+     const z = rest[3 * hd .. 4 * hd];
+     const o = rest[4 * hd .. 5 * hd];
+-    @memset(p, 0);
+-    h.proj.apply(s.x, p);
++    h.proj.eval(s.x, s.active.items, rest[5 * hd ..][0..h.proj.forms.outputs], p);
+     for (p[0..h.channels], h.taps, 0..) |*e, t, i| {
+         const past = s.channelHistory(h.first_channel + @as(u32, @intCast(i)));
+         const now = e.*;
+@@ -63,21 +81,33 @@ fn heads(s: *State, h: *const model.Heads) !void {
+         past[0] = now;
+     }
+     for (h.heads) |*head| {
+-        scatter(head.k, p, keys, false);
+-        scatter(head.q, p, query, false);
+-        const key = try oneHot(keys);
++        var key: ?u32 = null;
++        for (head.k) |k| if (p[k.column] > 0) {
++            if (key != null) return error.CircuitKeyNotOneHot;
++            key = k.at;
++        };
++        var rows: [hd]u32 = undefined;
++        var n: usize = 0;
++        for (head.q) |q| if (p[q.column] > 0) {
++            rows[n] = q.at;
++            n += 1;
++        };
+         for (head.value_heads) |*vh| {
+             if (vh.a) |col| try decay(s, vh.table, p[col]);
+             if (key) |r| if (try writeEnabled(vh.beta, p)) {
+                 scatter(vh.v, p, v, false);
+                 try s.writeRow(vh.table, r, v);
+             };
+-            try read(s, vh.table, query, o);
++            const out = values[vh.out_first..][0..vh.out_cols.len];
++            if (!try read(s, vh.table, rows[0..n], o)) {
++                @memset(out, 0);
++                continue;
++            }
+             scatter(vh.z, p, z, true);
+-            for (vh.out_cols, vh.out_w, values[vh.out_first..][0..vh.out_cols.len]) |col, w, *y| y.* = o[col] * z[col] * w;
++            for (vh.out_cols, vh.out_w, out) |col, w, *y| y.* = o[col] * z[col] * w;
+         }
+     }
+-    commit(h.outs, values, s.x);
++    commit(s, h.outs, values);
+ }
+ 
+ fn scatter(picks: []const model.Pick, p: []const Scalar, into: []Scalar, rectify: bool) void {
+@@ -85,16 +115,6 @@ fn scatter(picks: []const model.Pick, p: []const Scalar, into: []Scalar, rectify
+     for (picks) |k| into[k.at] = if (rectify) @max(p[k.column], 0) else p[k.column];
+ }
+ 
+-/// The row a key selects, null when no entry is positive; more than one positive entry is not a one-hot key.
+-fn oneHot(keys: []const Scalar) !?u32 {
+-    var found: ?u32 = null;
+-    for (keys, 0..) |k, r| if (k > 0) {
+-        if (found != null) return error.CircuitKeyNotOneHot;
+-        found = @intCast(r);
+-    };
+-    return found;
+-}
+-
+ /// beta: absent is 1; 1 writes, an integer <= 0 does not, anything else breaks the circuit's exact range.
+ fn writeEnabled(beta: ?u32, p: []const Scalar) !bool {
+     const b = p[beta orelse return true];
+@@ -118,23 +138,24 @@ fn decay(s: *State, table: u32, selector: Scalar) !void {
+     s.present[table] = 0;
+ }
+ 
+-/// Sum of the rows a multi-hot query selects, normalized by the ballast: o / sqrt((o0^2 + o1^2) / hd).
+-fn read(s: *State, table: u32, query: []const Scalar, o: []Scalar) !void {
+-    @memset(o, 0);
++/// Sum of the rows a multi-hot query selects over the ballast norm o / sqrt((o0^2 + o1^2) / hd); false if none.
++fn read(s: *State, table: u32, rows: []const u32, o: []Scalar) !bool {
+     var any = false;
+-    for (query, 0..) |q, r| {
+-        if (q <= 0 or !s.rowPresent(table, @intCast(r))) continue;
+-        for (o, s.row(table, @intCast(r))) |*a, b| a.* += b;
++    for (rows) |r| {
++        if (!s.rowPresent(table, r)) continue;
++        if (!any) @memset(o, 0);
++        for (o, s.row(table, r)) |*a, b| a.* += b;
+         any = true;
+     }
+-    if (!any) return;
++    if (!any) return false;
+     const ref = o[0] * o[0] + o[1] * o[1];
+     if (ref == 0) {
+         for (o) |a| if (a != 0) return error.CircuitReadBallast;
+-        return;
++        return false;
+     }
+     const norm = @sqrt(ref / @as(Scalar, hd));
+     for (o) |*a| a.* /= norm;
++    return true;
+ }
+ 
+ /// The output code: family bits then 16 payload bits, each the sign of a code dim (+kappa is 1, -kappa is 0).
+diff --git a/zig/src/core/runner_circuit_golden_test.zig b/zig/src/core/runner_circuit_golden_test.zig
+index 9d0fe1934bccc7689df17d7a7fe9cc4e4dc3c16c..742d63e578b8a85bdf339ff9df7c90ea206a9bae 100644
+--- a/zig/src/core/runner_circuit_golden_test.zig
++++ b/zig/src/core/runner_circuit_golden_test.zig
+@@ -1,4 +1,4 @@
+-//! T1's reference traces against the CPU circuit: every token, step count and output byte (TF_RUNNER_CIRCUIT/GOLDENS).
++//! T1 reference traces vs the CPU circuit: TF_RUNNER_CIRCUIT, _GOLDENS, optional _GOLDEN_LIMIT, _GOLDEN_SHARD=i/n.
+ const std = @import("std");
+ const rc = @import("runner_circuit.zig");
+ 
+@@ -63,6 +63,13 @@ test "golden: the CPU circuit reproduces every reference trace token, step count
+         return error.SkipZigTest;
+     };
+     const limit = if (env("TF_RUNNER_GOLDEN_LIMIT")) |l| try std.fmt.parseInt(u64, l, 10) else std.math.maxInt(u64);
++    var shard: [2]u64 = .{ 0, 1 };
++    if (env("TF_RUNNER_GOLDEN_SHARD")) |sh| {
++        var parts = std.mem.splitScalar(u8, sh, '/');
++        shard[0] = try std.fmt.parseInt(u64, parts.first(), 10);
++        shard[1] = try std.fmt.parseInt(u64, parts.next() orelse return error.GoldenShard, 10);
++        if (shard[0] >= shard[1]) return error.GoldenShard;
++    }
+     var circuit = try rc.Circuit.load(gpa, circuit_path);
+     defer circuit.deinit(gpa);
+     const manifest_bytes = try readFile(dir, "manifest.json");
+@@ -80,7 +87,9 @@ test "golden: the CPU circuit reproduces every reference trace token, step count
+     var totals: struct { cases: u64 = 0, steps: u64 = 0, ns: u64 = 0, skipped: u64 = 0 } = .{};
+     var it = std.mem.tokenizeScalar(u8, lines, '\n');
+     var calc_seen: u64 = 0;
+-    while (it.next()) |line| {
++    var index: u64 = 0;
++    while (it.next()) |line| : (index += 1) {
++        if (index % shard[1] != shard[0]) continue;
+         var parsed = try std.json.parseFromSlice(Case, gpa, line, .{ .ignore_unknown_fields = true });
+         defer parsed.deinit();
+         const case = parsed.value;
+diff --git a/zig/src/core/runner_circuit_load.zig b/zig/src/core/runner_circuit_load.zig
+index f59186a94585af77f23ebd50e0d656f217815bae..d84f21703447a43897341c311d96a9c3f0294c0c 100644
+--- a/zig/src/core/runner_circuit_load.zig
++++ b/zig/src/core/runner_circuit_load.zig
+@@ -235,7 +235,7 @@ const Builder = struct {
+ 
+     fn ffnDims(b: *Builder, n: *const JNode, reads: *std.ArrayList(u32), writes: *std.ArrayList(u32)) !void {
+         const out = n.out orelse return error.CircuitNode;
+-        if (out >= b.dims or n.into == null) return error.CircuitIndex;
++        if (out == 0 or out >= b.dims or n.into == null) return error.CircuitIndex;
+         for (n.terms orelse return error.CircuitNode) |t| {
+             _ = try exact(t[0]);
+             try b.check(t[1], reads);
+@@ -260,7 +260,7 @@ const Builder = struct {
+             for (mine.items) |d| for (writes.items[0..own]) |w| if (d == w) return error.CircuitHazard;
+             try reads.appendSlice(b.tmp, mine.items);
+             for (vh.out) |t| {
+-                if (t[0] >= hd or t[1] >= b.dims) return error.CircuitIndex;
++                if (t[0] >= hd or t[1] == 0 or t[1] >= b.dims) return error.CircuitIndex;
+                 _ = try exact(t[2]);
+                 try writes.append(b.tmp, t[1]);
+             }
+@@ -282,44 +282,48 @@ const Builder = struct {
+     }
+ 
+     fn ffnBatch(b: *Builder) !model.Ffn {
+-        var src: std.ArrayList(u32) = .empty;
+-        var dst: std.ArrayList(u32) = .empty;
+-        var w: std.ArrayList(Scalar) = .empty;
+-        var gsrc: std.ArrayList(u32) = .empty;
+-        var gdst: std.ArrayList(u32) = .empty;
+-        var gw: std.ArrayList(Scalar) = .empty;
++        var up: FormSet = .{};
++        var gate: FormSet = .{};
+         var coef: std.ArrayList(Scalar) = .empty;
+         var slot: std.ArrayList(u32) = .empty;
+         const outs = try b.a.alloc(model.Out, b.pending.items.len);
+         for (b.pending.items, outs, 0..) |n, *out, s| {
+             out.* = .{ .dim = n.out.?, .into = n.into.? };
+             for (n.terms.?) |t| {
+-                const term: u32 = @intCast(coef.items.len);
+                 try coef.append(b.a, try exact(t[0]));
+                 try slot.append(b.a, @intCast(s));
+-                for (t[1]) |e| try triple(b.tmp, &src, &dst, &w, e[0], term, e[1]);
+-                for (t[2]) |e| try triple(b.tmp, &gsrc, &gdst, &gw, e[0], term, e[1]);
++                try up.add(b, t[1]);
++                try gate.add(b, t[2]);
+             }
+         }
+-        const terms: u32 = @intCast(coef.items.len);
+-        return .{
+-            .terms = terms,
+-            .up = try model.sparse(b.a, b.dims, terms, src.items, dst.items, w.items),
+-            .gate = try model.sparse(b.a, b.dims, terms, gsrc.items, gdst.items, gw.items),
+-            .coef = coef.items,
+-            .slot = slot.items,
+-            .outs = outs,
++        const g = try gate.finish(b);
++        const starts = try b.a.alloc(u32, gate.forms + 1);
++        @memset(starts, 0);
++        var always: std.ArrayList(u32) = .empty;
++        for (g.form, g.bias, 0..) |f, c, t| {
++            if (f != model.no_form) starts[f + 1] += 1 else if (c > 0) try always.append(b.a, @intCast(t));
++        }
++        for (1..starts.len) |i| starts[i] += starts[i - 1];
++        const order = try b.a.alloc(u32, starts[gate.forms]);
++        const fill = try b.tmp.dupe(u32, starts[0..gate.forms]);
++        for (g.form, 0..) |f, t| if (f != model.no_form) {
++            order[fill[f]] = @intCast(t);
++            fill[f] += 1;
+         };
++        for (0..gate.forms) |f| std.mem.sort(u32, order[starts[f]..starts[f + 1]], g.bias, struct {
++            fn gt(bias: []const Scalar, x: u32, y: u32) bool {
++                return bias[x] > bias[y] or (bias[x] == bias[y] and x < y);
++            }
++        }.gt);
++        return .{ .terms = @intCast(coef.items.len), .up = try up.finish(b), .gate = g, .coef = coef.items, .slot = slot.items, .outs = outs, .order = order, .starts = starts, .always = always.items };
+     }
+ 
+     fn headBatch(b: *Builder) !model.Heads {
+-        var src: std.ArrayList(u32) = .empty;
+-        var dst: std.ArrayList(u32) = .empty;
+-        var w: std.ArrayList(Scalar) = .empty;
++        var cols: FormSet = .{};
+         var taps: std.ArrayList([model.lags]Scalar) = .empty;
+         for (b.pending.items) |n| {
+-            for ([_][]const ChanAt{ n.q.?, n.k.? }) |chans| for (chans) |ch| try b.addChannel(&src, &dst, &w, &taps, ch[1]);
+-            for (n.value_heads.?) |vh| for (vh.v) |ch| try b.addChannel(&src, &dst, &w, &taps, ch[1]);
++            for ([_][]const ChanAt{ n.q.?, n.k.? }) |chans| for (chans) |ch| try b.addChannel(&cols, &taps, ch[1]);
++            for (n.value_heads.?) |vh| for (vh.v) |ch| try b.addChannel(&cols, &taps, ch[1]);
+         }
+         const channels: u32 = @intCast(taps.items.len);
+         var column = channels;
+@@ -335,19 +339,19 @@ const Builder = struct {
+                 try b.tables.append(b.a, try initTable(b.a, jv, kk.len > 0 or jv.a.len > 0));
+                 try b.names.append(b.a, try b.a.dupe(u8, n.name));
+                 vh.* = .{ .table = table, .v = try b.picks(jv.v, &chan), .a = null, .beta = null, .z = &.{}, .out_first = @intCast(outs.items.len), .out_cols = &.{}, .out_w = &.{} };
+-                if (jv.a.len > 0) vh.a = try plain(b.tmp, &src, &dst, &w, jv.a, &column);
+-                if (jv.beta) |e| vh.beta = try plain(b.tmp, &src, &dst, &w, e, &column);
++                if (jv.a.len > 0) vh.a = try plain(b, &cols, jv.a, &column);
++                if (jv.beta) |e| vh.beta = try plain(b, &cols, e, &column);
+                 const z = try b.a.alloc(model.Pick, jv.z.len);
+-                for (jv.z, z) |e, *p| p.* = .{ .at = e[0], .column = try plain(b.tmp, &src, &dst, &w, e[1], &column) };
++                for (jv.z, z) |e, *p| p.* = .{ .at = e[0], .column = try plain(b, &cols, e[1], &column) };
+                 vh.z = z;
+-                const cols = try b.a.alloc(u32, jv.out.len);
++                const out_cols = try b.a.alloc(u32, jv.out.len);
+                 const ws = try b.a.alloc(Scalar, jv.out.len);
+-                for (jv.out, cols, ws) |t, *c, *x| {
++                for (jv.out, out_cols, ws) |t, *c, *x| {
+                     c.* = t[0];
+                     x.* = try exact(t[2]);
+                     try outs.append(b.a, .{ .dim = t[1], .into = jv.into });
+                 }
+-                vh.out_cols = cols;
++                vh.out_cols = out_cols;
+                 vh.out_w = ws;
+             }
+             h.* = .{ .q = q, .k = kk, .value_heads = vhs };
+@@ -355,7 +359,7 @@ const Builder = struct {
+         const first = b.channels;
+         b.channels += channels;
+         return .{
+-            .proj = try model.sparse(b.a, b.dims, column, src.items, dst.items, w.items),
++            .proj = try cols.finish(b),
+             .channels = channels,
+             .first_channel = first,
+             .taps = taps.items,
+@@ -364,9 +368,8 @@ const Builder = struct {
+         };
+     }
+ 
+-    fn addChannel(b: *Builder, src: *std.ArrayList(u32), dst: *std.ArrayList(u32), w: *std.ArrayList(Scalar), taps: *std.ArrayList([model.lags]Scalar), ch: Chan) !void {
+-        const column: u32 = @intCast(taps.items.len);
+-        for (ch.expr) |e| try triple(b.tmp, src, dst, w, e[0], column, e[1]);
++    fn addChannel(b: *Builder, cols: *FormSet, taps: *std.ArrayList([model.lags]Scalar), ch: Chan) !void {
++        try cols.add(b, ch.expr);
+         var t: [model.lags]Scalar = undefined;
+         for (&t, ch.taps) |*x, v| x.* = try exact(v);
+         try taps.append(b.a, t);
+@@ -383,18 +386,59 @@ const Builder = struct {
+     }
+ };
+ 
+-fn triple(a: std.mem.Allocator, src: *std.ArrayList(u32), dst: *std.ArrayList(u32), w: *std.ArrayList(Scalar), s: u32, d: u32, v: f64) !void {
+-    try src.append(a, s);
+-    try dst.append(a, d);
+-    try w.append(a, try exact(v));
++fn plain(b: *Builder, cols: *FormSet, e: Expr, column: *u32) !u32 {
++    try cols.add(b, e);
++    column.* += 1;
++    return column.* - 1;
+ }
+ 
+-fn plain(a: std.mem.Allocator, src: *std.ArrayList(u32), dst: *std.ArrayList(u32), w: *std.ArrayList(Scalar), e: Expr, column: *u32) !u32 {
+-    const at = column.*;
+-    for (e) |t| try triple(a, src, dst, w, t[0], at, t[1]);
+-    column.* += 1;
+-    return at;
+-}
++/// Columns as distinct linear forms (keyed by their sorted non-constant terms) plus each column's constant.
++const FormSet = struct {
++    keys: std.StringHashMapUnmanaged(u32) = .empty,
++    src: std.ArrayList(u32) = .empty,
++    dst: std.ArrayList(u32) = .empty,
++    w: std.ArrayList(Scalar) = .empty,
++    form: std.ArrayList(u32) = .empty,
++    bias: std.ArrayList(Scalar) = .empty,
++    forms: u32 = 0,
++
++    fn add(fs: *FormSet, b: *Builder, e: Expr) !void {
++        const terms = try b.tmp.dupe(Term, e);
++        std.mem.sort(Term, terms, {}, struct {
++            fn lt(_: void, x: Term, y: Term) bool {
++                return x[0] < y[0];
++            }
++        }.lt);
++        var key: std.ArrayList(u8) = .empty;
++        var bias: Scalar = 0;
++        for (terms) |t| {
++            const w = try exact(t[1]);
++            if (t[0] == 0) {
++                bias += w;
++                continue;
++            }
++            try key.appendSlice(b.tmp, std.mem.asBytes(&t[0]));
++            try key.appendSlice(b.tmp, std.mem.asBytes(&w));
++        }
++        try fs.bias.append(b.a, bias);
++        if (key.items.len == 0) return fs.form.append(b.a, model.no_form);
++        const got = try fs.keys.getOrPut(b.tmp, key.items);
++        if (!got.found_existing) {
++            got.value_ptr.* = fs.forms;
++            for (terms) |t| if (t[0] != 0) {
++                try fs.src.append(b.tmp, t[0]);
++                try fs.dst.append(b.tmp, fs.forms);
++                try fs.w.append(b.tmp, try exact(t[1]));
++            };
++            fs.forms += 1;
++        }
++        try fs.form.append(b.a, got.value_ptr.*);
++    }
++
++    fn finish(fs: *FormSet, b: *Builder) !model.Shared {
++        return .{ .forms = try model.sparse(b.a, b.dims, fs.forms, fs.src.items, fs.dst.items, fs.w.items), .form = fs.form.items, .bias = fs.bias.items };
++    }
++};
+ 
+ fn initTable(a: std.mem.Allocator, vh: *const JValueHead, writable: bool) !model.Table {
+     const rows = try a.alloc(Scalar, hd * hd);
+diff --git a/zig/src/core/runner_circuit_model.zig b/zig/src/core/runner_circuit_model.zig
+index e2780112b64b3f04cd681d3dc81c807f3cb26d25..a8cc683223a28e03e9993520b112b5fcd167c6ef 100644
+--- a/zig/src/core/runner_circuit_model.zig
++++ b/zig/src/core/runner_circuit_model.zig
+@@ -12,16 +12,21 @@ pub const keep_selector: Scalar = 0;
+ pub const halve_selector: Scalar = 110;
+ pub const clear_selector: Scalar = 238;
+ 
+-/// y[dst] += x[src] * w over the nonzeros, stored by source so zero inputs cost nothing.
++/// y = x * W over the nonzeros, stored by source so zero inputs cost nothing.
+ pub const Sparse = struct {
+     sources: u32,
+     outputs: u32,
+     starts: []const u32,
+     dst: []const u32,
+     w: []const Scalar,
++    /// Sources with at least one entry, ascending.
++    used: []const u32,
+ 
+-    pub fn apply(m: *const Sparse, x: []const Scalar, y: []Scalar) void {
+-        for (x, 0..) |v, i| {
++    /// y = x * W: zeroes y, then scatters the inputs listed in `active` (every other input is zero).
++    pub fn apply(m: *const Sparse, x: []const Scalar, active: []const u32, y: []Scalar) void {
++        @memset(y, 0);
++        for (if (m.used.len < active.len) m.used else active) |i| {
++            const v = x[i];
+             if (v == 0) continue;
+             for (m.starts[i]..m.starts[i + 1]) |e| y[m.dst[e]] += v * m.w[e];
+         }
+@@ -35,14 +40,38 @@ pub const Sparse = struct {
+ /// Where a node's value lands: x[dim] = value, or x[dim] += value when `into`.
+ pub const Out = struct { dim: u32, into: bool };
+ 
++pub const no_form = std.math.maxInt(u32);
++
++/// A batch's expressions as distinct linear forms: column c = bias[c] + forms[form[c]], the constant dim folded out.
++pub const Shared = struct {
++    forms: Sparse,
++    form: []const u32,
++    bias: []const Scalar,
++
++    pub fn columns(s: *const Shared) usize {
++        return s.form.len;
++    }
++
++    /// `scratch` holds forms.outputs values.
++    pub fn eval(s: *const Shared, x: []const Scalar, active: []const u32, scratch: []Scalar, y: []Scalar) void {
++        s.forms.apply(x, active, scratch);
++        for (y, s.form, s.bias) |*o, f, c| o.* = if (f == no_form) c else c + scratch[f];
++    }
++};
++
+ /// Consecutive FFN nodes with no read of a dim written earlier in the batch: y = sum c * up * max(gate, 0).
+ pub const Ffn = struct {
+     terms: u32,
+-    up: Sparse,
+-    gate: Sparse,
++    up: Shared,
++    gate: Shared,
+     coef: []const Scalar,
+     slot: []const u32,
+     outs: []const Out,
++    /// Terms grouped by gate form (starts has forms + 1 entries), each group by gate constant, largest first.
++    order: []const u32,
++    starts: []const u32,
++    /// Terms whose gate is a positive constant; terms with a constant gate <= 0 never fire and are dropped.
++    always: []const u32,
+ };
+ 
+ /// (row or column, projection column) of a channel or expression.
+@@ -67,7 +96,7 @@ pub const Head = struct {
+ 
+ /// Consecutive head nodes. Projection columns [0, channels) are conv channels with taps; the rest are plain exprs.
+ pub const Heads = struct {
+-    proj: Sparse,
++    proj: Shared,
+     channels: u32,
+     first_channel: u32,
+     taps: []const [lags]Scalar,
+@@ -184,8 +213,8 @@ pub const Circuit = struct {
+     pub fn nonzeros(c: *const Circuit) usize {
+         var n: usize = 0;
+         for (c.batches) |*b| n += switch (b.*) {
+-            .ffn => |*f| f.up.nonzeros() + f.gate.nonzeros(),
+-            .heads => |*h| h.proj.nonzeros(),
++            .ffn => |*f| f.up.forms.nonzeros() + f.gate.forms.nonzeros(),
++            .heads => |*h| h.proj.forms.nonzeros(),
+         };
+         return n;
+     }
+@@ -211,16 +240,20 @@ pub fn sparse(a: std.mem.Allocator, sources: u32, outputs: u32, src: []const u32
+         w[fill[s]] = v;
+         fill[s] += 1;
+     }
+-    return .{ .sources = sources, .outputs = outputs, .starts = starts, .dst = dst, .w = w };
++    var used: std.ArrayList(u32) = .empty;
++    for (0..sources) |i| if (starts[i + 1] > starts[i]) try used.append(a, @intCast(i));
++    return .{ .sources = sources, .outputs = outputs, .starts = starts, .dst = dst, .w = w, .used = used.items };
+ }
+ 
+ test "sparse apply skips zero inputs and adds repeated entries" {
+     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+     defer arena.deinit();
+     const m = try sparse(arena.allocator(), 3, 2, &.{ 0, 2, 2, 1 }, &.{ 1, 0, 0, 1 }, &.{ 2, 3, 4, 5 });
+-    var y = [_]Scalar{ 0, 0 };
+-    m.apply(&.{ 1, 0, 2 }, &y);
++    var y = [_]Scalar{ 7, 7 };
++    m.apply(&.{ 1, 0, 2 }, &.{ 0, 1, 2 }, &y);
+     try std.testing.expectEqualSlices(Scalar, &.{ 14, 2 }, &y);
++    m.apply(&.{ 1, 0, 2 }, &.{2}, &y);
++    try std.testing.expectEqualSlices(Scalar, &.{ 14, 0 }, &y);
+     try std.testing.expectError(error.CircuitIndex, sparse(arena.allocator(), 3, 2, &.{3}, &.{0}, &.{1}));
+ }
+ 
+diff --git a/zig/src/core/runner_circuit_state.zig b/zig/src/core/runner_circuit_state.zig
+index c19a8e499e803bbca77606e78b9ed8d6dc34d62b..96b48af62ac8d9d6a3522b59e054f0426f4444c0 100644
+--- a/zig/src/core/runner_circuit_state.zig
++++ b/zig/src/core/runner_circuit_state.zig
+@@ -17,6 +17,8 @@ pub const State = struct {
+     history: []Scalar,
+     steps: u64 = 0,
+     x: []Scalar,
++    active: std.ArrayList(u32),
++    seen: []bool,
+     work: []Scalar,
+ 
+     pub fn init(gpa: std.mem.Allocator, c: *const model.Circuit) !State {
+@@ -39,8 +41,15 @@ pub const State = struct {
+         @memset(hist, 0);
+         const x = try gpa.alloc(Scalar, c.dims);
+         errdefer gpa.free(x);
++        @memset(x, 0);
++        const seen = try gpa.alloc(bool, c.dims);
++        errdefer gpa.free(seen);
++        @memset(seen, false);
++        var active: std.ArrayList(u32) = .empty;
++        try active.ensureTotalCapacity(gpa, c.dims);
++        errdefer active.deinit(gpa);
+         const work = try gpa.alloc(Scalar, workSize(c));
+-        return .{ .gpa = gpa, .circuit = c, .tables = tables, .owned = owned, .present = present, .history = hist, .x = x, .work = work };
++        return .{ .gpa = gpa, .circuit = c, .tables = tables, .owned = owned, .present = present, .history = hist, .x = x, .active = active, .seen = seen, .work = work };
+     }
+ 
+     pub fn deinit(s: *State) void {
+@@ -50,10 +59,28 @@ pub const State = struct {
+         s.gpa.free(s.present);
+         s.gpa.free(s.history);
+         s.gpa.free(s.x);
++        s.gpa.free(s.seen);
++        s.active.deinit(s.gpa);
+         s.gpa.free(s.work);
+         s.* = undefined;
+     }
+ 
++    /// Zeroes the residual for a new step; only listed dims can be nonzero.
++    pub fn clearResidual(s: *State) void {
++        for (s.active.items) |d| {
++            s.x[d] = 0;
++            s.seen[d] = false;
++        }
++        s.active.clearRetainingCapacity();
++    }
++
++    /// Lists dim d as possibly nonzero (capacity is the dim count, so this never allocates).
++    pub fn touch(s: *State, d: u32) void {
++        if (s.seen[d]) return;
++        s.seen[d] = true;
++        s.active.appendAssumeCapacity(d);
++    }
++
+     pub fn writable(s: *const State, table: u32) bool {
+         return s.circuit.tables[table].writable;
+     }
+@@ -126,8 +153,8 @@ pub const State = struct {
+ fn workSize(c: *const model.Circuit) usize {
+     var n: usize = 0;
+     for (c.batches) |*b| n = @max(n, switch (b.*) {
+-        .ffn => |*f| 2 * @as(usize, f.terms) + f.outs.len,
+-        .heads => |*h| h.proj.outputs + h.outs.len + 5 * hd,
++        .ffn => |*f| f.outs.len + f.up.forms.outputs + f.gate.forms.outputs,
++        .heads => |*h| h.proj.columns() + h.outs.len + 5 * hd + h.proj.forms.outputs,
+     });
+     return n;
+ }
+diff --git a/zig/src/core/runner_circuit_test.zig b/zig/src/core/runner_circuit_test.zig
+index 34fc4e619c0838e8c7b4687005f84f49ce7b31d0..fd8485837e9040577bf965a7f512e846ef18fa21 100644
+--- a/zig/src/core/runner_circuit_test.zig
++++ b/zig/src/core/runner_circuit_test.zig
+@@ -81,6 +81,23 @@ test "a one-hot write is the gated delta rule at beta 1, and reads return the ro
+     try std.testing.expect(s.rowPresent(ram, 3));
+ }
+ 
++test "a write gate of 0 leaves the table untouched and a gate of 1 writes" {
++    var c = try tinyCircuit(.beta_gated);
++    defer c.deinit(gpa);
++    var s = try rc.State.init(gpa, &c);
++    defer s.deinit();
++    const ram = c.program.ram_tables[0];
++    const before = try gpa.dupe(model.Scalar, s.tables[ram]);
++    defer gpa.free(before);
++    _ = try eval.step(&s, tok(2, 1 | 4));
++    try std.testing.expect(!s.rowPresent(ram, 1));
++    try std.testing.expectEqualSlices(model.Scalar, before, s.tables[ram]);
++    _ = try eval.step(&s, tok(2, 2));
++    try std.testing.expect(s.rowPresent(ram, 2));
++    try std.testing.expectEqual(tok(4, '0'), try eval.step(&s, tok(3, 2)));
++    try std.testing.expectEqual(tok(4, '0'), try eval.step(&s, tok(3, 1)));
++}
++
+ test "a key with two positive rows is refused, and an unmapped output code fails instead of guessing" {
+     var two = try tinyCircuit(.two_hot_key);
+     defer two.deinit(gpa);
+diff --git a/zig/src/core/runner_circuit_tiny_test.zig b/zig/src/core/runner_circuit_tiny_test.zig
+index ed4b0eb58b7537ce544c618679a73a82c0c6f1b7..61e3d6857e6b4a6676bab321f762561078e8f33e 100644
+--- a/zig/src/core/runner_circuit_tiny_test.zig
++++ b/zig/src/core/runner_circuit_tiny_test.zig
+@@ -25,7 +25,7 @@ pub fn token(family: u32, payload: u32) u32 {
+ }
+ 
+ /// Variants that break one rule, for negative controls.
+-pub const Variant = enum { good, two_hot_key, unmapped_go };
++pub const Variant = enum { good, two_hot_key, unmapped_go, beta_gated };
+ 
+ /// The container bytes of the tiny circuit.
+ pub fn build(a: std.mem.Allocator, variant: Variant) ![]u8 {
+@@ -122,7 +122,7 @@ fn lag3Head(w: Writer) !void {
+     try w.s("\"out\":[[2,36,16384.0]],\"into\":false,\"init\":[]}]}");
+ }
+ 
+-/// ram0: W writes row (payload bits 0-1) with data bit 2 in column 2; R reads its row into rd. Row 3 starts at 1.
++/// ram0: W writes row (payload bits 0-1), data bit 2 to column 2; R reads to rd; row 3 is 1. beta_gated: data 0.
+ fn ramHead(w: Writer, variant: Variant) !void {
+     try w.s("{\"kind\":\"head\",\"name\":\"ram0\",\"n_cols\":128,\"levels\":\"bit\",\"tiny\":0.0,\"q\":[");
+     for (0..4) |r| {
+@@ -136,9 +136,14 @@ fn ramHead(w: Writer, variant: Variant) !void {
+     }
+     if (variant == .two_hot_key) try w.s(",[9,{\"expr\":[[3,1.0]],\"taps\":[1.0,0.0,0.0,0.0]}]");
+     const v = "\"v\":[[0,{\"expr\":[[3," ++ a_ref ++ "]],\"taps\":[1.0,0.0,0.0,0.0]}],[1,{\"expr\":[[3," ++ a_ref ++
+-        "]],\"taps\":[1.0,0.0,0.0,0.0]}],[2,{\"expr\":[[9,128.0]],\"taps\":[1.0,0.0,0.0,0.0]}]],\"a\":[],\"beta\":null,";
+-    try w.s("],\"value_heads\":[{" ++ v ++ "\"z\":[[2,[[4,1.0]]]],\"out\":[[2,13,16384.0]],\"into\":false,");
+-    try w.s("\"init\":[[3,[[0," ++ a_ref ++ "],[1," ++ a_ref ++ "],[2,128.0]]]]},{" ++ v ++ "\"z\":[],\"out\":[],\"into\":false,\"init\":[]}]}");
++        "]],\"taps\":[1.0,0.0,0.0,0.0]}],[2,{\"expr\":[[9,128.0]],\"taps\":[1.0,0.0,0.0,0.0]}]],\"a\":[],";
++    const beta = if (variant == .beta_gated) "\"beta\":[[0,1.0],[9,-1.0]]," else "\"beta\":null,";
++    try w.s("],\"value_heads\":[{" ++ v);
++    try w.s(beta);
++    try w.s("\"z\":[[2,[[4,1.0]]]],\"out\":[[2,13,16384.0]],\"into\":false,");
++    try w.s("\"init\":[[3,[[0," ++ a_ref ++ "],[1," ++ a_ref ++ "],[2,128.0]]]]},{" ++ v);
++    try w.s(beta);
++    try w.s("\"z\":[],\"out\":[],\"into\":false,\"init\":[]}]}");
+ }
+ 
+ /// One FFN per code dim: GO->BYTE('h'), BYTE even->+1, BYTE odd->HALT, A->A, W->A, R->BYTE('0'+rd), HALT->HALT.

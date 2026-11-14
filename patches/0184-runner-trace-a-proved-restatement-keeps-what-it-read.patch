@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 18:52:45 +0700
+Subject: [PATCH 184/207] runner trace: a proved restatement keeps what it
+ reads
+
+T5-BINDING-ADB-REVIEW.md: when B was already exact, an equal
+restatement (`B=12345678901=A.` or `B=A=12345678901.`) proved its value
+and returned without keeping the names it read. After `A=7.`, B and
+C=B*3 stayed exact.
+
+A restatement proved equal now adds every proved piece's names to the
+held binding's dependencies; the earlier ones stay. An unprovable
+restatement that quarantines a name keeps its dependencies, and a plain
+restatement that clears the quarantine adds its own. Any later
+reassignment of one of those names makes every dependent stale.
+
+New goldens: T5's two already-exact orders with the transitive C, the
+direct B dependent, a restatement that clears a quarantine, and a
+quarantine that keeps an earlier dependency, each abstaining; the same
+texts with A never moved still claim.
+
+(cherry picked from commit 390410e5e77aa454716bd4eb40135528e1db8ca4)
+---
+ zig/src/core/runner_trace.zig           | 22 ++++++++++++++++++----
+ zig/src/core/runner_trace_bind_test.zig |  8 ++++++++
+ 2 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index 8c2063c1dc3ca1641c41b887174ffebc0dcf75a6..3b3f975d89322c6e59a4c8ec4ebbfff2fd29cc3e 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -81,6 +81,18 @@ pub const Tracer = struct {
+         };
+     }
+ 
++    /// Binding k's dependencies with `more` added, each once.
++    fn withDeps(t: *Tracer, k: usize, more: []const []const u8) Allocator.Error![]const []const u8 {
++        const a = t.scratch.allocator();
++        var all: std.ArrayList([]const u8) = .empty;
++        try all.appendSlice(a, t.binds.items[k].deps);
++        next: for (more) |d| {
++            for (all.items) |x| if (std.mem.eql(u8, x, d)) continue :next;
++            try all.append(a, d);
++        }
++        return all.items;
++    }
++
+     fn movedIn(t: *const Tracer, s: []const u8) bool {
+         for (t.moved.items) |n| {
+             var i: usize = 0;
+@@ -185,16 +197,18 @@ pub const Tracer = struct {
+             .soft => if (st == null)
+                 try t.set(n, .tentative, null, &.{})
+             else if (st == .exact)
+-                // R2: an unprovable restatement keeps the value aside until a plain one restates it
+-                try t.set(n, if (t.rules.r2) .quarantined else .hard, t.binds.items[k.?].kept, &.{}),
++                // R2: an unprovable restatement keeps the value aside (and what it read) until a plain one restates it
++                try t.set(n, if (t.rules.r2) .quarantined else .hard, t.binds.items[k.?].kept, t.binds.items[k.?].deps),
+             .value => |v| {
+                 if (held) {
+                     const kept = t.binds.items[k.?].kept.?;
+                     if (!std.mem.eql(u8, v.e.source, kept.source) and !try value.same(t.scratch.allocator(), v.e.source, kept.source))
+                         return t.set(n, .hard, null, &.{});
++                    // a proved restatement reads its names as much as the declaration did: any of them moving moves n
++                    const ds = try t.withDeps(k.?, v.deps);
+                     // R2: only a plain declaration of the same value clears a quarantine
+-                    if (st == .quarantined and !doubt and !v.restate) try t.set(n, .exact, v.e, v.deps);
+-                    return;
++                    if (st == .quarantined and !doubt and !v.restate) return t.set(n, .exact, v.e, ds);
++                    return t.set(n, st.?, kept, ds);
+                 }
+                 // a hypothesis, a question, an approximation or a layout note never makes a binding
+                 if (doubt or v.restate) {
+diff --git a/zig/src/core/runner_trace_bind_test.zig b/zig/src/core/runner_trace_bind_test.zig
+index e0cfc2099dadc987b9cf74d7066f530f3f3794d6..335d97067e130b999411c4e64d737039b9347877 100644
+--- a/zig/src/core/runner_trace_bind_test.zig
++++ b/zig/src/core/runner_trace_bind_test.zig
+@@ -183,6 +183,12 @@ test "runner trace bind: adversarial controls never state an old, doubted, unpro
+         &.{ "A=12345678901.", "B=12345678901=A.", "C=B*3.", "A=7.", "Need compute C*1000003." },
+         &.{ "A=12345678901.", "B=A=12345678901.", "C=B*3.", "A=7.", "Need compute C*1000003." },
+         &.{ "A=12345678901.", "B=12345678901=A.", "A=7.", "Need compute B*1000003." },
++        // an equal restatement of a held name reads its names too (T5-BINDING-ADB-REVIEW.md), quarantined or not
++        &.{ "A=12345678901.", "B=12345678901.", "B=12345678901=A.", "C=B*3.", "A=7.", "Need compute C*1000003." },
++        &.{ "A=12345678901.", "B=12345678901.", "B=A=12345678901.", "C=B*3.", "A=7.", "Need compute C*1000003." },
++        &.{ "A=12345678901.", "B=12345678901.", "B=12345678901=A.", "A=7.", "Need compute B*1000003." },
++        &.{ "A=12345678901.", "B=12345678901.", "B=Y=12345678901.", "B=12345678901=A.", "A=7.", "Need compute B*1000003." },
++        &.{ "A=12345678901.", "B=A.", "B=Y=12345678901.", "B=12345678901.", "A=7.", "Need compute B*1000003." },
+         // an unresolved piece or a dependency left unresolved never proves a restatement (T5 review fixtures)
+         &.{ "B=12345678901.", "B=Y=12345678901.", "Need compute B*1000003." },
+         &.{ "A=12345678901.", "B=12345678901.", "A=Y+1.", "B=A.", "Need compute B*1000003." },
+@@ -207,6 +213,8 @@ test "runner trace bind: adversarial controls never state an old, doubted, unpro
+ 
+ test "runner trace bind: what the guards keep: later declarations, restorations, a genuine definition beside R4" {
+     try expectSource(all, &.{ "Need compute N*1000003. N = 12345.", "Need compute N*1000003." }, "(12345)*1000003");
++    try expectSource(all, &.{ "A=12345678901.", "B=12345678901.", "B=12345678901=A.", "C=B*3.", "Need compute C*1000003." }, "((12345678901)*3)*1000003");
++    try expectSource(all, &.{ "A=12345678901.", "B=12345678901.", "B=A=12345678901.", "C=B*3.", "Need compute C*1000003." }, "((12345678901)*3)*1000003");
+     try expectSource(all, &.{ "A = 12345678901.", "B = A*3.", "A = N*q + r.", "A = 12345678901.", "Need compute A*1000003." }, "(12345678901)*1000003");
+     try expectSource(all, &.{ "A = 12345678901.", "B = A*3.", "A = 5.", "B = 7.", "Need compute B*1000003." }, "(7)*1000003");
+     try expectSource(all, &.{ "Let N = 12345678901.", "N = D*q + r.", "N = 12345678901.", "Need compute N*1000003." }, "(12345678901)*1000003");

@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 17:41:19 +0700
+Subject: [PATCH 183/207] runner trace: every proved chain piece is a
+ dependency
+
+T5-BINDING-REVIEW.md: a later piece equal to the first was checked and
+then skipped before its names were collected, so `B=12345678901=A.`
+did not depend on A. After `A=7.`, B and C=B*3 stayed exact and a
+request read C through the old A.
+
+reading() now collects the names of every piece that proves equal.
+New goldens: the `B=12345678901=A.` and `B=A=12345678901.` orders
+with a transitive dependent C, the direct B case, an unresolved chain
+piece and an unresolved dependency, each abstaining, plus the keep
+cases where A never moves.
+
+(cherry picked from commit adb06a3377337d4b3748fb3e32858a9940a60d15)
+---
+ zig/src/core/runner_trace.zig           |  5 ++---
+ zig/src/core/runner_trace_bind_test.zig | 11 ++++++++++-
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index a1df1f23d5761339c33eab7ec9b3290698112446..8c2063c1dc3ca1641c41b887174ffebc0dcf75a6 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -270,9 +270,8 @@ pub const Tracer = struct {
+             };
+             if (first) |e0| {
+                 if (!std.mem.eql(u8, e0.source, x.source) and !try value.same(a, e0.source, x.source)) return .hard;
+-                continue;
+-            }
+-            first = x;
++            } else first = x;
++            // every proved piece's names are dependencies (`B=12345678901=A.` reads A as much as `B=A=…` does)
+             var j: usize = 0;
+             while (j < p.len) : (j += 1) {
+                 const l = text.nameLen(p, j);
+diff --git a/zig/src/core/runner_trace_bind_test.zig b/zig/src/core/runner_trace_bind_test.zig
+index 6ab37e5ecdfd325360e99090d234a37dce04d7d3..e0cfc2099dadc987b9cf74d7066f530f3f3794d6 100644
+--- a/zig/src/core/runner_trace_bind_test.zig
++++ b/zig/src/core/runner_trace_bind_test.zig
+@@ -179,7 +179,13 @@ test "runner trace bind: adversarial controls never state an old, doubted, unpro
+         &.{ "Let M = 1,000,000,007.", "M = 1e9+7.", "M = 1,000,000,007.", "Need compute M*1000003." },
+         // a definition after the request on the same line never supplies it
+         &.{"Need compute N*1000003. N = 12345."},
+-        // a dependency moved: what read it is stale, and restoring the dependency does not restore it
++        // a dependency moved: what read it is stale, restoring it restores nothing (a name in any equal piece counts)
++        &.{ "A=12345678901.", "B=12345678901=A.", "C=B*3.", "A=7.", "Need compute C*1000003." },
++        &.{ "A=12345678901.", "B=A=12345678901.", "C=B*3.", "A=7.", "Need compute C*1000003." },
++        &.{ "A=12345678901.", "B=12345678901=A.", "A=7.", "Need compute B*1000003." },
++        // an unresolved piece or a dependency left unresolved never proves a restatement (T5 review fixtures)
++        &.{ "B=12345678901.", "B=Y=12345678901.", "Need compute B*1000003." },
++        &.{ "A=12345678901.", "B=12345678901.", "A=Y+1.", "B=A.", "Need compute B*1000003." },
+         &.{ "A = 12345678901.", "B = A*3.", "A = 5.", "Need compute B*1000003." },
+         &.{ "A = 12345678901.", "B = A*3.", "A = N*q + r.", "A = 12345678901.", "Need compute B*1000003." },
+         &.{ "A = 12345678901.", "B = A*3.", "C = B + 1.", "A = 7.", "Need compute C*1000003." },
+@@ -211,6 +217,9 @@ test "runner trace bind: what the guards keep: later declarations, restorations,
+     try expectSource(all, &.{ "Let D=12.", "D=1|2?", "D = 12.", "Need compute D*1000003." }, "(12)*1000003");
+     // the same value after the request moves nothing; after a moved request, the line's next statement is read
+     try expectSource(all, &.{ "Let N = 12345.", "Need compute N*1000003. N = 12,345." }, "(12345)*1000003");
++    // the permuted chain still binds when nothing it read moves
++    try expectSource(all, &.{ "A=12345678901.", "B=12345678901=A.", "C=B*3.", "Need compute C*1000003." }, "((12345678901)*3)*1000003");
++    try expectSource(all, &.{ "A=12345678901.", "B=A=12345678901.", "C=B*3.", "Need compute C*1000003." }, "(((12345678901))*3)*1000003");
+     try expectSource(all, &.{ "A=12345678901234567890", "B=98765432109876543210", "Compute B mod A. B = 8*A? 8A = 98,765,431,209,876,543,120? Let's calculate A*8:" }, "(12345678901234567890)*8");
+ }
+ 

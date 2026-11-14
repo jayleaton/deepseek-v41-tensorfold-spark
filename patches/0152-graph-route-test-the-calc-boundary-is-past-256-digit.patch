@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 05:24:05 +0700
+Subject: [PATCH 152/207] graph route test: the calc boundary is past 256
+ digits after T1's b047d48c8 (10**128 now plans; a bank without 256 templates
+ refuses at lowering)
+
+---
+ zig/src/core/runner_graph_program.zig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/core/runner_graph_program.zig b/zig/src/core/runner_graph_program.zig
+index e0ffb96fcbfac088be57c19257022c133c6ed6e6..c73c893de8ba38880655a0ca9059ca9f9c8a6bea 100644
+--- a/zig/src/core/runner_graph_program.zig
++++ b/zig/src/core/runner_graph_program.zig
+@@ -374,7 +374,7 @@ test "runner graph route: pure-integer calc programs become bank plans sized fro
+     }
+ }
+ 
+-test "runner graph route: decimals, true division, computed exponents or divisors and values past 128 digits stay on calc" {
++test "runner graph route: decimals, true division, computed exponents or divisors and values past 256 digits stay on calc" {
+     const a = std.testing.allocator;
+     for ([_][]const u8{
+         "1/2",
+@@ -384,7 +384,7 @@ test "runner graph route: decimals, true division, computed exponents or divisor
+         "2**(3)",
+         "7//0",
+         "7%(1+1)",
+-        "10**128",
++        "10**256", // past T1's 256-digit width (b047d48c8); a bank without it refuses at lowering
+         "(10**80+123456789)**2-10**161",
+         "(10**80+123456789)**3-10**160",
+         "007+1",

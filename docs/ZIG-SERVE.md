@@ -9,7 +9,7 @@ the previous deployed engine. Do not bypass checkpoint admission or treat this g
 ```bash
 git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
-scripts/build-native.sh -t tensorfold-dsv41:local   # fetches config/tensorfold.rev from config/tensorfold.repo
+scripts/build-native.sh -t tensorfold-dsv41:local   # fetches config/tensorfold.rev from config/tensorfold.repo, applies patches/
 # or, from a local engine checkout or bundle instead of the network (see ENGINE):
 # TENSORFOLD_SOURCE=/absolute/TensorFold scripts/build-native.sh -t tensorfold-dsv41:local
 # TENSORFOLD_SOURCE=/absolute/tensorfold.bundle scripts/build-native.sh -t tensorfold-dsv41:local
@@ -23,7 +23,8 @@ docker save tensorfold-dsv41:local-runner -o build-native-image.tar
 The flash17 profile's default (the in-thinking compute profile) needs `tensorfold-dsv41:local-runner`; set `IMAGE` to it.
 `tensorfold-dsv41:local` alone serves the rollback profile and the profile's arm L block. Transfer the image to the
 worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
-content and runtime config, and an `org.tensorfold.revision` label matching `config/tensorfold.rev`. The pair identity
+content and runtime config, an `org.tensorfold.revision` label matching `config/tensorfold.rev` and an
+`org.tensorfold.tree` label matching `config/tensorfold.tree`. The pair identity
 hashes the image's ordered layer digests, platform and runtime config (`Env`, `Entrypoint`, `Cmd`, `Shell`, `User`,
 `WorkingDir`, `StopSignal`, `Volumes`, `ExposedPorts`, `Healthcheck`, `Labels`), so an image that differs only by a
 baked-in `ENV` or entrypoint is refused; only the digest is printed. The image ID is not compared: Docker's containerd image store reports the manifest digest and
@@ -76,10 +77,11 @@ scripts/fetch-reference.sh build/reference    # new directory; a full clone read
 export PY_SOURCE="$PWD/build/reference/src"
 set -a; source config/prod-zig.env; set +a    # MODEL_DIR, ASSETS_DIR, STATE_DIR, TF_DSV41_CONTEXT
 mkdir -p "$ASSETS_DIR/aot" "$STATE_DIR"
-# Obtain the actual pin, not the historical engine/zig export, into a fresh directory.
+# Obtain the actual patched engine, not the historical engine/zig export, into a fresh directory.
 TENSORFOLD_SOURCE="$PWD/build/token-map-source"
 bash docker/zig/fetch-source.sh "$(cat config/tensorfold.rev)" "$TENSORFOLD_SOURCE" \
-  "$PWD/build/no-local-bundle" "$(cat config/tensorfold.repo)"
+  "$PWD/build/no-local-bundle" "$(cat config/tensorfold.repo)" \
+  "$PWD/patches" "$(cat config/tensorfold.patches)" "$(cat config/tensorfold.tree)"
 test "$(zig version)" = "$(cat "$TENSORFOLD_SOURCE/.zig-version")"   # 0.17.0 at this pin
 (cd "$TENSORFOLD_SOURCE" && zig build dsv41-assets -j1 && \
   zig-out/bin/tf-dsv41-token-map --tokenizer "$MODEL_DIR/tokenizer.json" \

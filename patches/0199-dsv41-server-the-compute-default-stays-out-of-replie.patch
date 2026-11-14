@@ -1,0 +1,475 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 10:39:13 +0700
+Subject: [PATCH 199/207] dsv41 server: the compute default stays out of
+ replies that cannot run a call
+
+dashboard QA (one user message, no tools, max_tokens 64, thinking off)
+scored 30/150 under TF_DSV41_COMPUTE_LANE_DEFAULT=1 against 140/150 with
+it off: the default declared the built-in python tool in every chat, the
+model called it, and the lane could not finish. With under 16 tokens left
+the call never ran; when the result turn did not fit it ran and was not
+inserted; max_tokens could also cut the call. Each reply ended at the
+call: the stream hid it and said finish_reason tool_calls with no text,
+the whole reply returned a python call the client never offered, and a
+cut call stayed in content as DSML. The boot's trust guide, measured
+inside thinking, also put `<expr> =` cells into thinking-off answers.
+
+Under the default, a request that did not list code_interpreter now gets
+the built-in tool only when its reply can run a call: no stop strings, no
+logprobs or prompt_logprobs, no structured output, and max_tokens (or the
+server's default) at least 1024. Otherwise it renders and runs as with
+the default off; a no-tools logprobs request is no longer refused. A
+built-in call the lane still cannot run never reaches such a client: it
+leaves tool_calls and content, and the reply ends with finish_reason
+length. Thinking-off chats get no boot guide under the default. A client
+that lists code_interpreter, and every request with the default unset,
+see no change.
+---
+ zig/src/server/chat.zig                     |   7 +-
+ zig/src/server/compute_default_fit_test.zig | 187 ++++++++++++++++++++
+ zig/src/server/compute_default_test.zig     |  15 +-
+ zig/src/server/compute_segments.zig         |   2 +-
+ zig/src/server/compute_turns.zig            |  60 ++++++-
+ zig/src/server/generation.zig               |   4 +-
+ zig/src/server/openai.zig                   |  16 +-
+ zig/src/server/root.zig                     |   1 +
+ 8 files changed, 269 insertions(+), 23 deletions(-)
+ create mode 100644 zig/src/server/compute_default_fit_test.zig
+
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index bbaa84d0b7fbe6b35e8d54508e939285fe0d0174..1af9ec8baf83058c5c443941fa86a247c75aefb7 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -35,6 +35,8 @@ pub const Input = struct {
+     logprobs: ?u8 = null,
+     /// ``/v1/completions``' ``prompt_logprobs``: rows for the prompt with this many alternatives; null: not asked.
+     prompt_logprobs: ?u8 = null,
++    /// `tools` holds the compute default's own built-in tool (compute_turns.ownedByServer): its calls stay unseen.
++    lane_own: bool = false,
+ };
+ 
+ /// A streamed piece: content text (a string) or a delta object (reasoning or tool calls).
+@@ -104,7 +106,8 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     const a = cx.a;
+     var input = given;
+     // the runner guide (runner_guide.zig) with the runner on: the request's, or the boot's under the compute default
+-    const asked_guide = @import("compute_turns.zig").guideAsked(srv, input.fields);
++    const thinks = input.prompt == null and (flag(input.fields, "enable_thinking") orelse srv.config.enable_thinking);
++    const asked_guide = @import("compute_turns.zig").guideAsked(srv, input.fields, thinks);
+     const guided = @import("runner_guide.zig").apply(a, if (srv.info.runner != null and input.prompt == null) &srv.guides else null, asked_guide, input.messages) catch |e| switch (e) {
+         error.BadGuide => return cx.refuse(try srv.guides.refusal(a)),
+         error.OutOfMemory => return error.OutOfMemory,
+@@ -245,7 +248,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+     preparing = false;
+     var filter: @import("compute_turns.zig").Filter = .{ .a = a, .inner = if (sink) |s| s else undefined };
+     const shown: ?Sink = if (request.hold_eos and sink != null) filter.sink() else sink; // built-in calls stay hidden
+-    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .sink = shown, .hold = request.hold_eos, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .guide = prepared.guide, .lp = if (request.logprobs != null) .{} else null, .loop_stop = request.loop_stop, .deadline_ns = prepared.deadline_ns };
++    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .sink = shown, .hold = request.hold_eos, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .guide = prepared.guide, .lp = if (request.logprobs != null) .{} else null, .loop_stop = request.loop_stop, .deadline_ns = prepared.deadline_ns, .lane_own = input.lane_own };
+     defer srv.noteRequest(prepared.prompt_len, box.cached orelse 0, gen.collected.items.len, box.stats.drafted, box.stats.accepted, box.stats.rounds, received, gen.first_ns, gen.last_ns, box.stats.prefill_seconds);
+     errdefer if (!gen.engine_done) gen.cancel(); // the engine writes to the mailbox until it says finished
+     const result: Failure!Reply = blk: {
+diff --git a/zig/src/server/compute_default_fit_test.zig b/zig/src/server/compute_default_fit_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..eec6464cc42c05c26fb86cf6c19520a7fb4cb50b
+--- /dev/null
++++ b/zig/src/server/compute_default_fit_test.zig
+@@ -0,0 +1,187 @@
++//! The compute default where a reply cannot run a call: no built-in tool, and never an unrun call (dashboard QA).
++const std = @import("std");
++const json = @import("json");
++const api = @import("engine_api");
++const HfText = @import("hf_text.zig").HfText;
++const tf = @import("control_tokens_fixture.zig");
++const h = @import("compute_lane_http_test.zig");
++const turns = @import("compute_turns.zig");
++const lane = api.compute_lane;
++const t = std.testing;
++const Allocator = std.mem.Allocator;
++
++const python = "/usr/bin/python3";
++
++/// An engine that keeps the reply's budget: at most `max_tokens` tokens (forced ones count), then `length`.
++const Script = struct {
++    first: []const u32,
++    answer: []const u32,
++    sink: ?api.Sink = null,
++    max: u32 = 0,
++    sent: u32 = 0,
++    hold: bool = false,
++    prompt: []const u32 = &.{},
++    a: Allocator,
++
++    fn engine(s: *@This()) api.Engine {
++        return .{ .ctx = s, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory, .resume_held = resumeHeld } };
++    }
++    fn info(_: *anyopaque) api.Info {
++        return .{ .context_window = 32768 };
++    }
++    fn send(s: *@This(), id: api.Id, tokens: []const u32) bool {
++        const n: u32 = @intCast(@min(tokens.len, s.max - s.sent));
++        if (n > 0) s.sink.?.event(s.sink.?.ctx, id, &.{ .tokens = tokens[0..n] });
++        s.sent += n;
++        if (n == tokens.len) return true;
++        s.sink.?.event(s.sink.?.ctx, id, &.{ .finished = .{ .reason = .length } });
++        return false;
++    }
++    fn submit(ctx: *anyopaque, id: api.Id, request: *const api.Request, sink: api.Sink) api.SubmitError!void {
++        const s: *@This() = @ptrCast(@alignCast(ctx));
++        s.* = .{ .a = s.a, .first = s.first, .answer = s.answer, .sink = sink, .max = request.max_tokens, .hold = request.hold_eos, .prompt = s.a.dupe(u32, request.prompt) catch unreachable };
++        sink.event(sink.ctx, id, &.{ .prefilled = 0 });
++        if (s.send(id, s.first) and !request.hold_eos) sink.event(sink.ctx, id, &.{ .finished = .{ .reason = .stop } });
++    }
++    fn resumeHeld(ctx: *anyopaque, id: api.Id, r: api.Resume) void {
++        const s: *@This() = @ptrCast(@alignCast(ctx));
++        if (r.tokens.len == 0) return s.sink.?.event(s.sink.?.ctx, id, &.{ .finished = .{ .reason = .stop } });
++        if (s.send(id, r.tokens)) _ = s.send(id, s.answer);
++    }
++    fn cancel(ctx: *anyopaque, id: api.Id) void {
++        const s: *@This() = @ptrCast(@alignCast(ctx));
++        s.sink.?.event(s.sink.?.ctx, id, &.{ .finished = .{ .reason = .cancelled } });
++    }
++    fn status(_: *anyopaque, out: *api.Status, _: []u32) void {
++        out.* = .{};
++    }
++    fn memory(_: *anyopaque, _: bool) ?api.Memory {
++        return null;
++    }
++};
++
++/// What the client read, streamed or whole: content, tool call names and the finish reason.
++const Seen = struct {
++    a: Allocator,
++    code: u16 = 0,
++    content: std.ArrayList(u8) = .empty,
++    calls: usize = 0,
++    finish: []const u8 = "",
++    fn out(r: *@This()) @import("openai.zig").Out {
++        return .{ .ctx = r, .vt = &.{ .open = open, .event = event, .reply = reply } };
++    }
++    fn open(ctx: *anyopaque, _: usize) error{Closed}!void {
++        const r: *@This() = @ptrCast(@alignCast(ctx));
++        r.code = 200;
++    }
++    fn choice(r: *@This(), c: json.Value, key: []const u8) error{Closed}!void {
++        if (c.strField("finish_reason")) |f| r.finish = f;
++        const m = c.get(key) orelse return;
++        if (m.strField("content")) |s| r.content.appendSlice(r.a, s) catch return error.Closed;
++        if (m.get("tool_calls")) |list| if (list == .array) {
++            r.calls += list.array.len;
++        };
++    }
++    fn event(ctx: *anyopaque, payload: ?json.Value) error{Closed}!void {
++        const r: *@This() = @ptrCast(@alignCast(ctx));
++        const ch = (payload orelse return).get("choices") orelse return;
++        if (ch == .array and ch.array.len > 0) try r.choice(ch.array[0], "delta");
++    }
++    fn reply(ctx: *anyopaque, code: u16, v: json.Value) void {
++        const r: *@This() = @ptrCast(@alignCast(ctx));
++        r.code = code;
++        const ch = v.get("choices") orelse return;
++        if (ch == .array and ch.array.len > 0) r.choice(ch.array[0], "message") catch {};
++    }
++};
++
++const Ask = struct { default: bool = true, call: bool = true, max_tokens: i64, stream: bool, fields: []const u8 = "{}", runner: bool = false };
++const Run = struct { seen: Seen, prompt: []const u32, held: bool, call_len: usize };
++
++/// One chat whose model calls python with `pad` bytes of comment (or answers), against the budget-keeping engine.
++fn chat(a: Allocator, pad: usize, ask: Ask) !Run {
++    std.Io.Dir.accessAbsolute(t.io, python, .{}) catch return error.SkipZigTest;
++    var tmp = try h.fixture(a);
++    defer tmp.deinit();
++    var problem: []const u8 = "";
++    const hf = try HfText.load(a, t.io, tmp.path, null, a, &problem);
++    defer hf.deinit();
++    const text = hf.text();
++    const history = try tf.messages(a, "What is 6*7?");
++    const asked = try text.renderIds(a, history, .{ .add_generation_prompt = true }, &problem);
++    const comment = try a.alloc(u8, pad);
++    @memset(comment, 'x');
++    const call_turn = try h.obj(a, try std.fmt.allocPrint(a,
++        \\{{"role":"assistant","content":"","tool_calls":[{{"id":"c1","type":"function","function":{{"name":"python","arguments":"{{\"code\":\"print(6*7) # {s}\"}}"}}}}]}}
++    , .{comment}));
++    const called = try text.renderIds(a, try h.appendTo(a, history, &.{call_turn}), .{ .add_generation_prompt = false }, &problem);
++    const answer = try std.mem.concat(a, u32, &.{ try text.encodePlain(a, "It is 42."), &.{called[called.len - 1]} });
++    const script = try a.create(Script);
++    script.* = .{ .a = a, .first = if (ask.call) called[asked.len..] else answer, .answer = answer };
++    const srv = try @import("server.zig").Server.init(a, t.io, script.engine(), text, .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .use_drafts = false }, null);
++    defer srv.deinit();
++    const cfg: lane.Config = .{ .python = python, .default = ask.default };
++    srv.info.compute = cfg;
++    srv.compute = lane.Pool.init(cfg, &.{ "/bin/sh", "-c", "exec \"$0\" -I -B -u -c \"$1\"", python, lane.runner.runner });
++    // the runner on, with the guide server.zig gives the default (none without it: the profile names no guide)
++    var rn: api.runner.Runner = undefined;
++    if (ask.runner) {
++        rn.cfg = .{};
++        srv.info.runner = &rn;
++        if (ask.default) srv.guides.default = @import("runner_guide.zig").trust;
++    }
++    var seen: Seen = .{ .a = a };
++    var conn = try @import("http_conn.zig").Conn.init(a, -1, "fixture");
++    defer conn.deinit();
++    const body = (try h.obj(a, ask.fields)).object;
++    try body.put(a, "model", .{ .string = "m" });
++    try body.put(a, "max_tokens", try json.intValue(a, ask.max_tokens));
++    try body.put(a, "messages", history);
++    try body.put(a, "stream", .{ .bool = ask.stream });
++    @import("openai.zig").run(srv, a, seen.out(), .{ .conn = &conn }, true, .{ .object = body });
++    return .{ .seen = seen, .prompt = script.prompt, .held = script.hold, .call_len = called.len - asked.len };
++}
++
++test "compute lane: the default offers no built-in tool to a 64-token reply or one with stop strings, no guide unthinking" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    for ([_]bool{ false, true }) |stream| {
++        const off = try chat(a, 0, .{ .default = false, .call = false, .max_tokens = 64, .stream = stream, .runner = true });
++        const qa = try chat(a, 0, .{ .call = false, .max_tokens = 64, .stream = stream, .runner = true });
++        try t.expectEqualSlices(u32, off.prompt, qa.prompt); // the default off's prompt: no tool, no guide (thinking off)
++        try t.expect(!qa.held);
++        try t.expectEqualStrings("It is 42.", qa.seen.content.items);
++        const stop = try chat(a, 0, .{ .call = false, .max_tokens = 2048, .stream = stream, .fields = "{\"stop\":[\"###\"]}" });
++        try t.expectEqualSlices(u32, off.prompt, stop.prompt);
++        try t.expect(!stop.held);
++        // a thinking chat still gets the boot's guide
++        const think = "{\"chat_template_kwargs\":{\"enable_thinking\":true}}";
++        const t_off = try chat(a, 0, .{ .default = false, .call = false, .max_tokens = 64, .stream = stream, .runner = true, .fields = think });
++        const t_on = try chat(a, 0, .{ .call = false, .max_tokens = 64, .stream = stream, .runner = true, .fields = think });
++        try t.expect(t_on.prompt.len > t_off.prompt.len);
++        // at the floor the built-in is offered and its call runs
++        const ran = try chat(a, 0, .{ .max_tokens = turns.default_min_tokens, .stream = stream });
++        try t.expect(ran.held);
++        try t.expectEqualStrings("It is 42.", ran.seen.content.items);
++    }
++}
++
++test "compute lane: a built-in call the default could not run never reaches the client; the reply ends at length" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const pad = 1100; // the call alone nears the floor, so a budget past the floor still cannot hold its answer
++    const len: i64 = @intCast((try chat(a, pad, .{ .max_tokens = 4096, .stream = false })).call_len);
++    // no room for an answer, no room for the result, and max_tokens inside the call itself
++    for ([_]i64{ len + 8, len + 20, len - 20 }) |max| for ([_]bool{ false, true }) |stream| {
++        try t.expect(max >= turns.default_min_tokens);
++        const r = try chat(a, pad, .{ .max_tokens = max, .stream = stream });
++        errdefer std.debug.print("max_tokens {d} stream {}: code {d} finish {s} calls {d} content [{s}]\n", .{ max, stream, r.seen.code, r.seen.finish, r.seen.calls, r.seen.content.items });
++        try t.expectEqual(@as(u16, 200), r.seen.code);
++        try t.expect(r.held);
++        try t.expectEqual(@as(usize, 0), r.seen.calls);
++        try t.expectEqualStrings("length", r.seen.finish);
++        try t.expect(std.mem.indexOf(u8, r.seen.content.items, "DSML") == null);
++    };
++}
+diff --git a/zig/src/server/compute_default_test.zig b/zig/src/server/compute_default_test.zig
+index 3fa5d44b2cf9c3ba04b0536b3b1f64c04eb3a0e8..84e10c2056fcb7856696b936b72a67f576ca5b4c 100644
+--- a/zig/src/server/compute_default_test.zig
++++ b/zig/src/server/compute_default_test.zig
+@@ -68,7 +68,7 @@ fn chat(a: Allocator, ask: Ask) !Run {
+     defer conn.deinit();
+     const body = try json.newObject(a);
+     try body.put(a, "model", .{ .string = "m" });
+-    try body.put(a, "max_tokens", try json.intValue(a, 400));
++    try body.put(a, "max_tokens", try json.intValue(a, 2048)); // past turns.default_min_tokens
+     try body.put(a, "messages", history);
+     if (ask.tools) |tools| try body.put(a, "tools", try h.obj(a, tools));
+     if (ask.choice) |c| try body.put(a, "tool_choice", try h.obj(a, c));
+@@ -237,13 +237,18 @@ test "compute lane: the default takes the boot's guide over a request's runner_g
+     const srv = try @import("server.zig").Server.init(a, t.io, script.engine(), hf.text(), .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .use_drafts = false }, null);
+     defer srv.deinit();
+     const fields = try h.obj(a, "{\"runner_guide\":\"\"}");
+-    try t.expectEqualStrings("", turns.guideAsked(srv, fields).?.string); // no lane: the request's own
+-    try t.expect(turns.guideAsked(srv, try h.obj(a, "{}")) == null);
++    try t.expectEqualStrings("", turns.guideAsked(srv, fields, true).?.string); // no lane: the request's own
++    try t.expect(turns.guideAsked(srv, try h.obj(a, "{}"), true) == null);
+     srv.info.compute = .{ .python = python, .default = false };
+     srv.compute = lane.Pool.init(srv.info.compute.?, &.{"/nonexistent"});
+-    try t.expectEqualStrings("", turns.guideAsked(srv, fields).?.string);
++    try t.expectEqualStrings("", turns.guideAsked(srv, fields, true).?.string);
+     srv.info.compute.?.default = true;
+-    try t.expect(turns.guideAsked(srv, fields) == null);
++    try t.expect(turns.guideAsked(srv, fields, true) == null);
++    // a chat with thinking off gets no guide under the default (it writes cells into the visible answer)
++    try t.expectEqualStrings("", turns.guideAsked(srv, fields, false).?.string);
++    srv.info.compute.?.default = false;
++    try t.expectEqualStrings("", turns.guideAsked(srv, fields, false).?.string); // off: the request's own, as before
++    try t.expect(turns.guideAsked(srv, try h.obj(a, "{}"), false) == null);
+ }
+ 
+ test "compute lane: the executed counter adds built-in calls run and the runner cells the engine wrote" {
+diff --git a/zig/src/server/compute_segments.zig b/zig/src/server/compute_segments.zig
+index 28d5c7628923824aeb59a2eed56c533105030743..394c85e385eee058cd84f06caf6d83df5fee1e4c 100644
+--- a/zig/src/server/compute_segments.zig
++++ b/zig/src/server/compute_segments.zig
+@@ -93,7 +93,7 @@ fn finish(g: *Generation, cx: *Cx, p: chat.Prepared) chat.Failure!chat.Reply {
+ /// The segment after an inserted result: the same reply, its first tokens the result's, its own text and calls.
+ fn next(g: *Generation, inserted: []const u32, left: usize) chat.Failure!*Generation {
+     const n = try g.a.create(Generation);
+-    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns, .cells_sent = g.cells_sent, .cells_sig = g.cells_sig, .deadline_ns = g.deadline_ns, .deadline_hit = g.deadline_hit };
++    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns, .cells_sent = g.cells_sent, .cells_sig = g.cells_sig, .deadline_ns = g.deadline_ns, .deadline_hit = g.deadline_hit, .lane_own = g.lane_own };
+     if (g.calls != null) n.calls = try tool_stream.Streamer.init(g.a, g.tools);
+     return n;
+ }
+diff --git a/zig/src/server/compute_turns.zig b/zig/src/server/compute_turns.zig
+index da84c3a2b41685959ebf70e349b31a391142e107..ac06aaec201ebaeb02d6baacb2371e291f314e50 100644
+--- a/zig/src/server/compute_turns.zig
++++ b/zig/src/server/compute_turns.zig
+@@ -45,13 +45,36 @@ pub fn forced(srv: *const Server) bool {
+     return srv.compute != null and srv.info.compute.?.default;
+ }
+ 
+-/// The request's own "runner_guide", or null (the boot's guide) under the compute default, whatever the request sends.
+-pub fn guideAsked(srv: *const Server, fields: Value) ?Value {
+-    return if (forced(srv)) null else fields.get("runner_guide");
++/// The request's own "runner_guide"; under the default the boot's (null) for a thinking chat, else none (""), always.
++pub fn guideAsked(srv: *const Server, fields: Value, thinking: bool) ?Value {
++    // the boot's guide was measured inside thinking; in a visible answer it writes `<expr> =` cells at the client
++    return if (!forced(srv)) fields.get("runner_guide") else if (thinking) null else .{ .string = "" };
+ }
+ 
+-/// The request's tools with `{"type": "code_interpreter"}` as the built-in tool (in every chat under the default).
+-pub fn tools(srv: *Server, cx: *Cx, raw: ?Value, choice: ?Value) errors.Refused![]Value {
++/// Under this max_tokens the default offers no built-in tool unasked: a call, its result and an answer do not fit.
++pub const default_min_tokens = 1024;
++
++/// What a request asks, known before it renders, that decides whether its reply can hold for the lane (`arms`).
++pub const Fit = struct { max_tokens: i64, stop: bool = false, logprobs: bool = false, structured: bool = false };
++
++/// Whether a reply that asked `f` holds at its EOS and has room for a call, its result and an answer.
++fn fits(f: Fit) bool {
++    return !f.stop and !f.logprobs and !f.structured and f.max_tokens >= default_min_tokens;
++}
++
++/// A chat body's tools (`tools`) and `lane_own` into `input`, whose max_tokens is read; `logprobs`: rows asked.
++pub fn requestTools(srv: *Server, cx: *Cx, body: Value, input: *chat.Input, logprobs: bool) errors.Refused!void {
++    var structured = false;
++    for (@import("grammar.zig").fields) |k| structured = structured or json.truthyField(body, k);
++    // chat.zig's limit: max_tokens, or the server's default for 0 and unset
++    const budget = if (input.max_tokens) |m| (if (m != 0) m else srv.config.default_max_tokens) else srv.config.default_max_tokens;
++    const fit: Fit = .{ .max_tokens = budget, .stop = json.truthyField(body, "stop"), .logprobs = logprobs or json.truthyField(body, "prompt_logprobs"), .structured = structured };
++    input.tools = try tools(srv, cx, body.get("tools"), body.get("tool_choice"), fit);
++    input.lane_own = ownedByServer(srv, body.get("tools"), input.tools);
++}
++
++/// The request's tools, `{"type": "code_interpreter"}` as the built-in tool (the default's: every chat that `fit`s).
++pub fn tools(srv: *Server, cx: *Cx, raw: ?Value, choice: ?Value, fit: Fit) errors.Refused![]Value {
+     const always = forced(srv);
+     const list = raw orelse Value{ .array = &.{} };
+     if (list != .array and !always) return tool_specs.active(cx, raw, choice);
+@@ -61,7 +84,7 @@ pub fn tools(srv: *Server, cx: *Cx, raw: ?Value, choice: ?Value) errors.Refused!
+         const kind = if (t == .object) t.strField("type") orelse "" else "";
+         if (std.mem.eql(u8, kind, opt_in)) listed = true else try rest.append(cx.a, t);
+     };
+-    if (!listed and !always) return tool_specs.active(cx, raw, choice);
++    if (!listed and (!always or !fits(fit))) return tool_specs.active(cx, raw, choice);
+     if (srv.compute == null) return cx.other("code_interpreter is not enabled on this server");
+     var specs = try tool_specs.active(cx, if (list == .array) .{ .array = rest.items } else raw, choice);
+     // a client's own copy of the built-in definition is the same tool: one declaration, not a refusal (default only)
+@@ -116,6 +139,31 @@ pub fn isBuiltIn(t: Value) bool {
+     return std.mem.eql(u8, f.strField("name") orelse "", name) and std.mem.eql(u8, f.strField("description") orelse "", description);
+ }
+ 
++/// Whether `specs` hold the default's own built-in tool (no code_interpreter listed): its calls never reach the client.
++pub fn ownedByServer(srv: *const Server, raw: ?Value, specs: []const Value) bool {
++    if (!forced(srv)) return false;
++    if (raw) |list| if (list == .array) for (list.array) |t| {
++        if (t == .object and std.mem.eql(u8, t.strField("type") orelse "", opt_in)) return false;
++    };
++    for (specs) |t| if (isBuiltIn(t)) return true;
++    return false;
++}
++
++/// A reply's calls for its client (`own`: the default's tool, whose unrun calls end the reply at length, unseen).
++pub fn ownCalls(a: Allocator, own: bool, reply: *chat.Reply, found: ?[]Value, prose: []const u8) Allocator.Error!?[]Value {
++    if (!own) return found;
++    const all: []const Value = found orelse &.{};
++    var kept: std.ArrayList(Value) = .empty;
++    for (all) |c| if (!isBuiltInCall(c)) try kept.append(a, c);
++    const dropped = kept.items.len < all.len;
++    // a call the lane could not run (no room left), or one max_tokens cut: the budget ended the reply
++    if (dropped or (found == null and std.mem.eql(u8, reply.finish_reason, "length"))) {
++        reply.content = try @import("reply_text.zig").cutProse(a, prose, reply.owned);
++        reply.finish_reason = "length";
++    }
++    return if (kept.items.len > 0) kept.items else null;
++}
++
+ /// Whether a call names the built-in tool.
+ pub fn isBuiltInCall(call: Value) bool {
+     return std.mem.eql(u8, toolName(call), name);
+diff --git a/zig/src/server/generation.zig b/zig/src/server/generation.zig
+index 5d1e8cff9de4482ad24360e40efef15bddcbd17b..12b2cbddf1f47459d4d71c5e8217aa3fdd16bc57 100644
+--- a/zig/src/server/generation.zig
++++ b/zig/src/server/generation.zig
+@@ -63,6 +63,7 @@ pub const Generation = struct {
+     deadline_ns: ?i96 = null, // "deadline_s": when the server ends the reply itself
+     deadline_hit: bool = false, // it did: the engine was cancelled there; what it gave before its end still lands
+     base: usize = 0, // the reply's tokens before this segment's (compute_segments.zig): the runner records count them
++    lane_own: bool = false, // Input.lane_own: a call max_tokens cut never shows as prose, as the reply's own call
+ 
+     fn eos(g: *const Generation, t: u32) bool {
+         return !g.ignore_eos and std.mem.indexOfScalar(u32, g.srv.eos, t) != null;
+@@ -325,7 +326,8 @@ pub const Generation = struct {
+             const thought = g.streamed_reasoning.text.items;
+             if (reasoning) |r| if (std.mem.startsWith(u8, r, thought) and r.len > thought.len)
+                 try g.emit(sink, try deltaOf(a, "reasoning_content", r[thought.len..]));
+-            const shown = if (g.calls != null) try tool_stream.endProse(a, content, if (g.thinking) content else text, g.tools, reason, owned) else content;
++            const cut = g.lane_own and std.mem.eql(u8, reason, "length");
++            const shown = if (cut) try reply_text.cutProse(a, content, owned) else if (g.calls != null) try tool_stream.endProse(a, content, if (g.thinking) content else text, g.tools, reason, owned) else content;
+             const sent = g.streamed.text.items;
+             const rest = if (std.mem.startsWith(u8, shown, sent) and shown.len > sent.len) shown[sent.len..] else "";
+             if (g.lp) |*l| (if (try l.delta(g.srv, a, g.thinking, g.ignore_eos, g.collected.items, rest, shown.len, true)) |d| try g.emit(sink, d)) else if (rest.len > 0) try g.emit(sink, .{ .string = rest });
+diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
+index ec42375ac77a6f469a7103eb66dc04475dd1a5b0..8cb6a1f2ff2e0de859b10aa7b81928f697b16949 100644
+--- a/zig/src/server/openai.zig
++++ b/zig/src/server/openai.zig
+@@ -133,13 +133,6 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value) errors.Refused!Plan {
+     const logprobs = if (is_chat) try fields.probabilityOptions(cx, body, exact_bytes) else try fields.legacyLogprobs(cx, body, exact_bytes);
+     if (srv.config.request_log) |path| request_log.append(cx.a, path, body);
+     var input: chat.Input = .{ .fields = undefined };
+-    if (is_chat) {
+-        input.messages = try messages.normalizeWith(cx, body.get("messages"), "system", srv.needs_user_after_tool, .of(srv.info.vision));
+-        input.tools = try @import("compute_turns.zig").tools(srv, cx, body.get("tools"), body.get("tool_choice"));
+-    } else if (body.get("messages")) |m| if (m == .array and m.array.len > 0) {
+-        input.messages = try messages.normalizeWith(cx, m, "system", srv.needs_user_after_tool, .of(srv.info.vision));
+-    };
+-    if (!is_chat and input.messages.array.len == 0) input.prompt = try legacyPrompt(srv, cx, body.get("prompt"));
+     // ``body.get("max_tokens") or body.get("max_completion_tokens")``: both are ints or None by now
+     const first = body.get("max_tokens");
+     const max = if (first != null and first.?.truthy()) first else body.get("max_completion_tokens");
+@@ -148,6 +141,13 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value) errors.Refused!Plan {
+         .null => null,
+         else => 0,
+     } else null;
++    if (is_chat) {
++        input.messages = try messages.normalizeWith(cx, body.get("messages"), "system", srv.needs_user_after_tool, .of(srv.info.vision));
++        try @import("compute_turns.zig").requestTools(srv, cx, body, &input, logprobs != null); // after max_tokens
++    } else if (body.get("messages")) |m| if (m == .array and m.array.len > 0) {
++        input.messages = try messages.normalizeWith(cx, m, "system", srv.needs_user_after_tool, .of(srv.info.vision));
++    };
++    if (!is_chat and input.messages.array.len == 0) input.prompt = try legacyPrompt(srv, cx, body.get("prompt"));
+     if (body.get("temperature")) |t| if (t.truthy()) {
+         input.temperature = if (t == .float) t.float else std.fmt.parseFloat(f64, t.int) catch 0;
+     };
+@@ -338,7 +338,7 @@ const Run = struct {
+         // max_tokens cut a call the stream had begun: the whole reply returns it cut too, as the stream did (#1238)
+         const cut = if (!r.plan.policy.single and std.mem.eql(u8, reply.finish_reason, "length")) try tool_stream.cutCalls(r.a, reply.content, tools) else null;
+         if (cut != null) reply.content = try @import("reply_text.zig").cutProse(r.a, reply.content, reply.owned);
+-        const found = cut orelse parsed.calls;
++        const found = try @import("compute_turns.zig").ownCalls(r.a, r.plan.input.lane_own, reply, cut orelse parsed.calls, if (cut != null) reply.content else parsed.content);
+         const calls = (if (r.turn != null) cortheon.clientCalls(found) else found) orelse {
+             if (r.plan.policy.single or parsed.calls != null) reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
+             return null;
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 7918468919b56c7e598e6601385d8898319ea40b..aab727c8b7fe7cb4b0a7ce8d278b7b380116e6cc 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -160,6 +160,7 @@ test {
+     _ = @import("compute_segments.zig");
+     _ = @import("compute_lane_http_test.zig");
+     _ = @import("compute_default_test.zig");
++    _ = @import("compute_default_fit_test.zig");
+     _ = @import("runner_owned_http_test.zig");
+     _ = @import("runner_owned.zig");
+     // the benchmark command's serve child runs under POSIX signals and waits; Windows refuses the command

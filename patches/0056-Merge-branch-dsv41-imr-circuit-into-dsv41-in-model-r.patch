@@ -1,0 +1,813 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 13:55:37 +0700
+Subject: [PATCH 056/207] Merge branch 'dsv41/imr-circuit' into
+ dsv41/in-model-runner
+
+Squashed merge of 2 commits:
+- core: R1 ELF boot as data, and a conv history that keeps each lag (Jay Leaton)
+- build: R1 circuit bench takes its circuit through -Drunner-circuit; drop a stray line in the ROM module (Jay Leaton)
+---
+ zig/build/runner_t2.zig                     |   6 +-
+ zig/src/core/runner_circuit_elf.zig         | 196 ++++++++++++++++++-
+ zig/src/core/runner_circuit_eval.zig        |   4 +-
+ zig/src/core/runner_circuit_golden_test.zig |  25 +++
+ zig/src/core/runner_circuit_load.zig        |  20 +-
+ zig/src/core/runner_circuit_model.zig       |  17 +-
+ zig/src/core/runner_circuit_rom.zig         | 202 ++++++++++++++++++++
+ zig/src/core/runner_circuit_state.zig       |  24 ++-
+ zig/src/core/runner_circuit_test.zig        |  71 +++++++
+ zig/src/core/runner_circuit_tiny_test.zig   |  21 +-
+ 10 files changed, 566 insertions(+), 20 deletions(-)
+ create mode 100644 zig/src/core/runner_circuit_rom.zig
+
+diff --git a/zig/build/runner_t2.zig b/zig/build/runner_t2.zig
+index 04560c85a95bbe1cb428bbc9079ef6b7a94b67b2..e00e7d5caa8f814542e557d71d444a095538633e 100644
+--- a/zig/build/runner_t2.zig
++++ b/zig/build/runner_t2.zig
+@@ -9,6 +9,8 @@ pub fn tests(b: *std.Build, step: *std.Build.Step) void {
+     step.dependOn(&run.step);
+     const bench = b.addExecutable(.{ .name = "runner-circuit-bench", .root_module = b.createModule(.{ .root_source_file = b.path("zig/src/core/runner_circuit_bench.zig"), .target = host, .optimize = .ReleaseFast, .link_libc = true }) });
+     const run_bench = b.addRunArtifact(bench);
+-    if (b.args) |args| run_bench.addArgs(args);
+-    b.step("bench-runner-circuit", "CPU circuit steps/s on a circuit file: -- <circuit> <expression> [repeats]").dependOn(&run_bench.step);
++    const circuit = b.option([]const u8, "runner-circuit", "Circuit file for bench-runner-circuit");
++    const expr = b.option([]const u8, "runner-expr", "Calc expression for bench-runner-circuit") orelse "123456789012345678901234567890*987654321098765432109876543210";
++    if (circuit) |path| run_bench.addArgs(&.{ path, expr });
++    b.step("bench-runner-circuit", "CPU circuit steps/s: -Drunner-circuit=<file> [-Drunner-expr=<expression>]").dependOn(&run_bench.step);
+ }
+diff --git a/zig/src/core/runner_circuit_elf.zig b/zig/src/core/runner_circuit_elf.zig
+index 56065b117772c41ba9953ef615d1c49cf6a1c911..702c3b955069d703e17a9b8801727dee35eb7195 100644
+--- a/zig/src/core/runner_circuit_elf.zig
++++ b/zig/src/core/runner_circuit_elf.zig
+@@ -1,8 +1,194 @@
+-//! Loads an rv32im_zba ELF into a booted circuit state as data (Qwenputer core.snapshot), never executing it.
++//! Loads an rv32im_zba ELF into a booted circuit as data (upstream elf.program and core.snapshot), never running it.
++const std = @import("std");
++const model = @import("runner_circuit_model.zig");
++const rom = @import("runner_circuit_rom.zig");
+ const State = @import("runner_circuit_state.zig").State;
+ 
+-pub fn load(s: *State, image: []const u8) !void {
+-    _ = s;
+-    _ = image;
+-    return error.CircuitElfUnsupported;
++const hd = model.hd;
++pub const drom_base: u32 = 0x20000;
++pub const drom_bytes: u32 = 4 << 15;
++pub const ram_bytes: u32 = 4 << 13;
++const sp_init: u32 = ram_bytes;
++const n_rom_heads = rom.rom_words >> 11;
++const n_drom_heads = (drom_bytes / 4) >> 11;
++
++/// The pieces of a static ELF the machine holds: ROM words, DROM bytes, RAM bytes and the entry address.
++pub const Image = model.Image;
++
++/// elf.program: PT_LOAD segments (bss zero-filled) into ROM, DROM or RAM; anything else is refused.
++pub fn parse(a: std.mem.Allocator, b: []const u8) !Image {
++    if (b.len < 52 or !std.mem.eql(u8, b[0..7], "\x7fELF\x01\x01\x01")) return error.ElfHeader;
++    const r = std.mem.readInt;
++    if (r(u16, b[16..18], .little) != 2 or r(u16, b[18..20], .little) != 243) return error.ElfMachine;
++    const entry = r(u32, b[24..28], .little);
++    const phoff = r(u32, b[28..32], .little);
++    const phentsize = r(u16, b[42..44], .little);
++    const phnum = r(u16, b[44..46], .little);
++    if (phentsize != 32 or @as(u64, phoff) + @as(u64, phnum) * 32 > b.len) return error.ElfHeader;
++    const words = try a.alloc(u32, rom.rom_words);
++    errdefer a.free(words);
++    @memset(words, 0);
++    const drom = try a.alloc(u8, drom_bytes);
++    errdefer a.free(drom);
++    @memset(drom, 0);
++    const ram = try a.alloc(u8, ram_bytes);
++    errdefer a.free(ram);
++    @memset(ram, 0);
++    var drom_len: usize = 0;
++    for (0..phnum) |i| {
++        const p = b[phoff + 32 * i ..][0..32];
++        const typ = r(u32, p[0..4], .little);
++        if (typ == 2 or typ == 3) return error.ElfDynamic;
++        const off = r(u32, p[4..8], .little);
++        const vaddr = r(u32, p[8..12], .little);
++        const filesz = r(u32, p[16..20], .little);
++        const memsz = r(u32, p[20..24], .little);
++        if (typ != 1 or memsz == 0) continue;
++        if (filesz > memsz or @as(u64, off) + filesz > b.len) return error.ElfSegment;
++        const end = @as(u64, vaddr) + memsz;
++        const data = b[off..][0..filesz];
++        if (vaddr >= rom.rom_base and end <= rom.rom_base + 4 * @as(u64, rom.rom_words)) {
++            const bytes = std.mem.sliceAsBytes(words);
++            @memcpy(bytes[vaddr - rom.rom_base ..][0..filesz], data);
++        } else if (vaddr >= drom_base and end <= drom_base + @as(u64, drom_bytes)) {
++            @memcpy(drom[vaddr - drom_base ..][0..filesz], data);
++            drom_len = @max(drom_len, end - drom_base);
++        } else if (end <= ram_bytes) {
++            @memcpy(ram[vaddr..][0..filesz], data);
++        } else return error.ElfSegment;
++    }
++    for (words) |*w| w.* = std.mem.littleToNative(u32, w.*);
++    if (entry % 4 != 0 or entry < rom.rom_base or entry >= rom.rom_base + 4 * rom.rom_words) return error.ElfEntry;
++    return .{ .rom = words, .drom = drom, .ram = ram, .entry = entry };
++}
++
++pub fn load(s: *State, image_bytes: []const u8) !void {
++    const img = try parse(s.gpa, image_bytes);
++    defer img.deinit(s.gpa);
++    try boot(s, img);
++}
++
++fn named(s: *const State, name: []const u8) !u32 {
++    for (s.circuit.table_names, 0..) |n, i| if (std.mem.eql(u8, n, name)) return @intCast(i);
++    return error.CircuitTableMissing;
++}
++
++fn namedFmt(s: *const State, comptime fmt: []const u8, args: anytype) !u32 {
++    var buf: [32]u8 = undefined;
++    return named(s, try std.fmt.bufPrint(&buf, fmt, args));
++}
++
++const Row = [hd]model.Scalar;
++
++fn ballast(s: *const State) Row {
++    var row: Row = @splat(0);
++    row[0] = s.circuit.program.a_ref;
++    row[1] = s.circuit.program.a_ref;
++    return row;
++}
++
++/// The snapshot replaces a table whole: rows it does not name are absent.
++fn clear(s: *State, t: u32) !void {
++    try s.own(t);
++    @memset(s.tables[t], 0);
++    s.present[t] = 0;
++}
++
++/// core.snapshot: the machine's boot state written into the circuit's tables (the heads' initial states).
++pub fn boot(s: *State, img: Image) !void {
++    const a_bit = s.circuit.program.a_bit;
++    const anchor = (img.entry - rom.rom_base) >> 2;
++    var pc = ballast(s);
++    for (0..16) |i| pc[2 + i] = if (anchor >> @intCast(i) & 1 == 1) a_bit else 0;
++    const pc_t = try named(s, "pc");
++    try clear(s, pc_t);
++    try s.writeRow(pc_t, 0, &pc);
++    for ([_][]const u8{ "count", "j", "vcnt" }) |name| {
++        const t = try named(s, name);
++        try clear(s, t);
++        var r0: Row = @splat(0);
++        r0[2] = a_bit;
++        try s.writeRow(t, 0, &r0);
++        try s.writeRow(t, 1, &ballast(s));
++    }
++    const cols = try regColumns(s, try named(s, "regs.rd"));
++    for ([_][]const u8{ "regs.rs1", "regs.rs2", "regs.rd" }) |name| {
++        const t = try named(s, name);
++        try clear(s, t);
++        for (1..32) |reg| {
++            var row = ballast(s);
++            const value: u32 = if (reg == 2) sp_init else 0;
++            for (cols, 0..) |c, i| if (value >> @intCast(i) & 1 == 1) {
++                row[c] = a_bit;
++            };
++            try s.writeRow(t, @intCast(reg), &row);
++        }
++    }
++    for (0..4) |h| {
++        const t = try namedFmt(s, "quo{d}", .{h});
++        for (0..2) |x| {
++            try clear(s, t + @as(u32, @intCast(x)));
++            try s.writeRow(t + @as(u32, @intCast(x)), 0, &ballast(s));
++        }
++    }
++    const pre = try s.gpa.alloc(u32, rom.rom_words);
++    defer s.gpa.free(pre);
++    for (img.rom, pre, 0..) |w, *p, i| p.* = if (w == 0) 0 else rom.romWord(w, rom.rom_base + 4 * @as(u32, @intCast(i)));
++    try byteRows(s, "rom", n_rom_heads, pre);
++    const drom_words = try s.gpa.alloc(u32, drom_bytes / 4);
++    defer s.gpa.free(drom_words);
++    for (drom_words, 0..) |*w, i| w.* = std.mem.readInt(u32, img.drom[4 * i ..][0..4], .little);
++    try byteRows(s, "drom", n_drom_heads, drom_words);
++    for (1..3) |port| for (0..4) |h| {
++        const t = try namedFmt(s, "bn{d}.{d}", .{ port, h });
++        for (0..2) |x| {
++            try clear(s, t + @as(u32, @intCast(x)));
++            for (0..hd) |r| try s.writeRow(t + @as(u32, @intCast(x)), @intCast(r), &ballast(s));
++        }
++    };
++    const write = @import("runner_circuit.zig").writeWord;
++    for (0..ram_bytes / 4) |wi| try write(s, @intCast(wi), std.mem.readInt(u32, img.ram[4 * wi ..][0..4], .little));
++}
++
++/// core.byte_rows: per head two value heads of 64 row pairs; word wl of a block sits in row (wl >> 4) + 64 * half.
++fn byteRows(s: *State, comptime prefix: []const u8, heads: u32, words: []const u32) !void {
++    const per = words.len / heads;
++    for (0..heads) |h| {
++        const t = try namedFmt(s, prefix ++ "{d}", .{h});
++        for (0..2) |x| {
++            const tt = t + @as(u32, @intCast(x));
++            try clear(s, tt);
++            const blk = words[h * per + x * (per / 2) ..][0 .. per / 2];
++            for (0..hd) |r| try s.writeRow(tt, @intCast(r), &ballast(s));
++            for (blk, 0..) |w, wl| {
++                const half = wl >> 3 & 1;
++                const row = s.row(tt, @intCast((wl >> 4) + 64 * half));
++                for (0..4) |byte| row[2 + 32 * half + 4 * (wl & 7) + byte] = @floatFromInt(w >> @intCast(8 * byte) & 0xff);
++            }
++        }
++    }
++}
++
++/// core.reg_cols: register bit i is the first value column whose output lands in the i-th distinct x.<port> dim.
++fn regColumns(s: *const State, table: u32) ![32]u32 {
++    for (s.circuit.batches) |*b| switch (b.*) {
++        .ffn => {},
++        .heads => |*hs| for (hs.heads) |*head| for (head.value_heads) |*vh| {
++            if (vh.table != table) continue;
++            var cols: [32]u32 = undefined;
++            var dims: [32]u32 = undefined;
++            var n: usize = 0;
++            for (vh.out_cols, 0..) |c, i| {
++                const d = hs.outs[vh.out_first + i].dim;
++                if (std.mem.indexOfScalar(u32, dims[0..n], d) != null) continue;
++                if (n == 32) return error.CircuitRegisterLayout;
++                dims[n] = d;
++                cols[n] = c;
++                n += 1;
++            }
++            if (n != 32) return error.CircuitRegisterLayout;
++            return cols;
++        },
++    };
++    return error.CircuitTableMissing;
+ }
+diff --git a/zig/src/core/runner_circuit_eval.zig b/zig/src/core/runner_circuit_eval.zig
+index 6dd670ed3588ea89faa3ffca4a5930c5a787a988..f5e482c1f30b3fa9dfa4050cf4ef9b21805a4e0d 100644
+--- a/zig/src/core/runner_circuit_eval.zig
++++ b/zig/src/core/runner_circuit_eval.zig
+@@ -58,7 +58,9 @@ fn heads(s: *State, h: *const model.Heads) !void {
+         const past = s.channelHistory(h.first_channel + @as(u32, @intCast(i)));
+         const now = e.*;
+         e.* = @max(t[0] * now + t[1] * past[0] + t[2] * past[1] + t[3] * past[2], 0);
+-        past.* = .{ now, past[0], past[1] };
++        past[2] = past[1];
++        past[1] = past[0];
++        past[0] = now;
+     }
+     for (h.heads) |*head| {
+         scatter(head.k, p, keys, false);
+diff --git a/zig/src/core/runner_circuit_golden_test.zig b/zig/src/core/runner_circuit_golden_test.zig
+index f29d59dc953682933ca95ded933baba10dc0e2bb..9d0fe1934bccc7689df17d7a7fe9cc4e4dc3c16c 100644
+--- a/zig/src/core/runner_circuit_golden_test.zig
++++ b/zig/src/core/runner_circuit_golden_test.zig
+@@ -144,3 +144,28 @@ test "golden: the CPU circuit reproduces every reference trace token, step count
+     std.debug.print("golden: {d} cases token-exact, {d} steps, {d} steps/s, {d} skipped\n", .{ totals.cases, totals.steps, rate, totals.skipped });
+     try std.testing.expect(totals.cases > 0);
+ }
++
++test "golden: booting the circuit's own program image as an ELF reproduces its exported snapshot" {
++    const circuit_path = env("TF_RUNNER_CIRCUIT") orelse {
++        std.debug.print("skip image boot: TF_RUNNER_CIRCUIT unset\n", .{});
++        return error.SkipZigTest;
++    };
++    var circuit = try rc.Circuit.load(gpa, circuit_path);
++    defer circuit.deinit(gpa);
++    var exported = try rc.State.init(gpa, &circuit);
++    defer exported.deinit();
++    var booted = try rc.State.init(gpa, &circuit);
++    defer booted.deinit();
++    try @import("runner_circuit_elf.zig").boot(&booted, circuit.program.image);
++    const want = try exported.canonical(gpa);
++    defer gpa.free(want);
++    const got = try booted.canonical(gpa);
++    defer gpa.free(got);
++    try std.testing.expectEqual(want.len, got.len);
++    if (std.mem.indexOfDiff(u8, want, got)) |at| {
++        const table = (at - 8) / (8 * 128 * 128);
++        const row = (at - 8) / (8 * 128) % 128;
++        std.debug.print("image boot differs in table {d} ({s}) row {d}\n", .{ table, circuit.table_names[table], row });
++        return error.ImageBootMismatch;
++    }
++}
+diff --git a/zig/src/core/runner_circuit_load.zig b/zig/src/core/runner_circuit_load.zig
+index c6cb4f048750ebcc5e4ee4358bdaf2f5d87cf31c..f59186a94585af77f23ebd50e0d656f217815bae 100644
+--- a/zig/src/core/runner_circuit_load.zig
++++ b/zig/src/core/runner_circuit_load.zig
+@@ -38,7 +38,7 @@ const Doc = struct {
+     nodes: []const JNode,
+     tokens: struct { vocab: u32, families: []const JFamily, go: u32, halt: u32, byte_family: u32 },
+     output: struct { family_bits: u32, payload_bits: u32, code_dims: []const u32, families: []const JFamily },
+-    program: struct { kind: []const u8, input_address: u32, input_capacity: u32 },
++    program: struct { kind: []const u8, input_address: u32, input_capacity: u32, entry: u32, rom_le_hex: []const u8, drom_hex: []const u8, ram_hex: []const u8 },
+ };
+ 
+ /// The checked JSON payload of a container: magic, version, sizes, flags and SHA-256 all as the format requires.
+@@ -126,7 +126,7 @@ fn compile(a: std.mem.Allocator, tmp: std.mem.Allocator, doc: *const Doc) !model
+         .table_names = b.names.items,
+         .channels = b.channels,
+         .nodes = @intCast(doc.nodes.len),
+-        .program = try program(doc, b.names.items, b.tables.items),
++        .program = try program(a, doc, b.names.items, b.tables.items),
+         .payload_sha256 = undefined,
+         .arena = undefined,
+     };
+@@ -160,8 +160,21 @@ fn features(a: std.mem.Allocator, doc: *const Doc, dims: u32, n_families: u32) !
+     return out;
+ }
+ 
+-fn program(doc: *const Doc, names: []const []const u8, tables: []const model.Table) !model.Program {
++fn unhex(a: std.mem.Allocator, text: []const u8, len: usize) ![]u8 {
++    if (text.len % 2 != 0 or text.len / 2 > len) return error.CircuitProgram;
++    const out = try a.alloc(u8, len);
++    @memset(out, 0);
++    _ = std.fmt.hexToBytes(out[0 .. text.len / 2], text) catch return error.CircuitProgram;
++    return out;
++}
++
++fn program(a: std.mem.Allocator, doc: *const Doc, names: []const []const u8, tables: []const model.Table) !model.Program {
+     const p = doc.program;
++    const rom_bytes = try unhex(a, p.rom_le_hex, 4 << 16);
++    if (p.rom_le_hex.len != 2 * rom_bytes.len or p.ram_hex.len != 2 * (4 << 13)) return error.CircuitProgram;
++    const rom = try a.alloc(u32, 1 << 16);
++    for (rom, 0..) |*w, i| w.* = std.mem.readInt(u32, rom_bytes[4 * i ..][0..4], .little);
++    a.free(rom_bytes);
+     var out: model.Program = .{
+         .kind = if (std.mem.eql(u8, p.kind, "calc")) .calc else if (std.mem.eql(u8, p.kind, "elf")) .elf else return error.CircuitProgram,
+         .input_address = p.input_address,
+@@ -169,6 +182,7 @@ fn program(doc: *const Doc, names: []const []const u8, tables: []const model.Tab
+         .ram_tables = @splat(std.math.maxInt(u32)),
+         .a_ref = try exact(doc.constants.a_ref),
+         .a_bit = try exact(doc.constants.a_bit),
++        .image = .{ .rom = rom, .drom = try unhex(a, p.drom_hex, 4 << 15), .ram = try unhex(a, p.ram_hex, 4 << 13), .entry = p.entry },
+     };
+     for (names, 0..) |name, t| {
+         if (!std.mem.startsWith(u8, name, "ram")) continue;
+diff --git a/zig/src/core/runner_circuit_model.zig b/zig/src/core/runner_circuit_model.zig
+index 429b44ec57b52f698a37e6bd4fc22873a5579969..e2780112b64b3f04cd681d3dc81c807f3cb26d25 100644
+--- a/zig/src/core/runner_circuit_model.zig
++++ b/zig/src/core/runner_circuit_model.zig
+@@ -112,7 +112,21 @@ pub const Table = struct {
+     writable: bool,
+ };
+ 
+-/// Where the calc firmware takes its expression, and the RAM tables (ram<h>) the snapshot patch edits.
++/// A static program's memory: ROM instruction words, DROM bytes, RAM bytes and the entry address.
++pub const Image = struct {
++    rom: []u32,
++    drom: []u8,
++    ram: []u8,
++    entry: u32,
++
++    pub fn deinit(img: Image, a: std.mem.Allocator) void {
++        a.free(img.rom);
++        a.free(img.drom);
++        a.free(img.ram);
++    }
++};
++
++/// Where the calc firmware takes its expression, the RAM tables (ram<h>) the patch edits, and the boot image.
+ pub const Program = struct {
+     kind: enum { calc, elf },
+     input_address: u32,
+@@ -120,6 +134,7 @@ pub const Program = struct {
+     ram_tables: [32]u32,
+     a_ref: Scalar,
+     a_bit: Scalar,
++    image: Image,
+ };
+ 
+ pub const Circuit = struct {
+diff --git a/zig/src/core/runner_circuit_rom.zig b/zig/src/core/runner_circuit_rom.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..3206b7eef9e70bbd8a02733bfa95f8e3018dc999
+--- /dev/null
++++ b/zig/src/core/runner_circuit_rom.zig
+@@ -0,0 +1,202 @@
++//! Qwenputer's pre-decoded ROM word (ref.rom_word): the circuit's view of an RV32 instruction, as data.
++const std = @import("std");
++
++pub const rom_base: u32 = 0x40000;
++pub const rom_words: u32 = 1 << 16;
++
++/// Uop numbers of the ROM word's first byte (ref.UOPS, then the custom digit-file ops at 64).
++pub const Op = enum(u8) {
++    illegal,
++    lui,
++    auipc,
++    misa,
++    addi,
++    slti,
++    sltiu,
++    xori,
++    ori,
++    andi,
++    slli,
++    srli,
++    srai,
++    add,
++    sub,
++    sll,
++    slt,
++    sltu,
++    xor,
++    srl,
++    sra,
++    @"or",
++    @"and",
++    lb,
++    lh,
++    lw,
++    lbu,
++    lhu,
++    sb,
++    sh,
++    sw,
++    beq,
++    bne,
++    blt,
++    bge,
++    bltu,
++    bgeu,
++    jal,
++    jalr,
++    ecall,
++    ebreak,
++    fence,
++    mul,
++    mulh,
++    mulhsu,
++    mulhu,
++    div,
++    divu,
++    rem,
++    remu,
++    sh1add,
++    sh2add,
++    sh3add,
++    bmac = 64,
++    bmsb,
++    bld,
++    bget,
++    bprd,
++    bscan,
++    csrrw = 200,
++    csrrs,
++    csrrc,
++    csrrwi,
++    csrrsi,
++    csrrci,
++};
++
++pub const Inst = struct { op: Op, rd: u32 = 0, rs1: u32 = 0, rs2: u32 = 0, imm: i32 = 0, dd: u32 = 0 };
++
++fn sx(v: u32, comptime bits: u5) i32 {
++    const m = v & ((@as(u32, 1) << bits) - 1);
++    return if (m >> (bits - 1) == 1) @as(i32, @intCast(m)) - (@as(i32, 1) << bits) else @intCast(m);
++}
++
++/// ref.decode: one instruction word to its op and fields; anything unknown is illegal.
++pub fn decode(w: u32) Inst {
++    const opc = w & 0x7f;
++    const rd = w >> 7 & 31;
++    const f3 = w >> 12 & 7;
++    const rs1 = w >> 15 & 31;
++    const rs2 = w >> 20 & 31;
++    const f7 = w >> 25;
++    const i_imm = sx(w >> 20, 12);
++    const s_imm = sx((w >> 25) << 5 | (w >> 7 & 31), 12);
++    const b_imm = sx((w >> 31 & 1) << 12 | (w >> 7 & 1) << 11 | (w >> 25 & 63) << 5 | (w >> 8 & 15) << 1, 13);
++    const j_imm = sx((w >> 31 & 1) << 20 | (w >> 12 & 0xff) << 12 | (w >> 20 & 1) << 11 | (w >> 21 & 0x3ff) << 1, 21);
++    const upper: i32 = @bitCast(w & 0xfffff000);
++    switch (opc) {
++        0x37 => return .{ .op = .lui, .rd = rd, .imm = upper },
++        0x17 => return .{ .op = .auipc, .rd = rd, .imm = upper },
++        0x6f => return .{ .op = .jal, .rd = rd, .imm = j_imm },
++        0x67 => if (f3 == 0) return .{ .op = .jalr, .rd = rd, .rs1 = rs1, .imm = i_imm },
++        0x63 => if (f3 != 2 and f3 != 3) return .{ .op = ([_]Op{ .beq, .bne, .illegal, .illegal, .blt, .bge, .bltu, .bgeu })[f3], .rs1 = rs1, .rs2 = rs2, .imm = b_imm },
++        0x03 => if (f3 != 3 and f3 < 6) return .{ .op = ([_]Op{ .lb, .lh, .lw, .illegal, .lbu, .lhu })[f3], .rd = rd, .rs1 = rs1, .imm = i_imm },
++        0x23 => if (f3 < 3) return .{ .op = ([_]Op{ .sb, .sh, .sw })[f3], .rs1 = rs1, .rs2 = rs2, .imm = s_imm },
++        0x13 => {
++            if (f3 == 1 and f7 == 0) return .{ .op = .slli, .rd = rd, .rs1 = rs1, .imm = @intCast(rs2) };
++            if (f3 == 5 and (f7 == 0 or f7 == 0x20)) return .{ .op = if (f7 != 0) .srai else .srli, .rd = rd, .rs1 = rs1, .imm = @intCast(rs2) };
++            if (f3 != 1 and f3 != 5) return .{ .op = ([_]Op{ .addi, .illegal, .slti, .sltiu, .xori, .illegal, .ori, .andi })[f3], .rd = rd, .rs1 = rs1, .imm = i_imm };
++        },
++        0x33 => {
++            if (f7 == 0) return .{ .op = ([_]Op{ .add, .sll, .slt, .sltu, .xor, .srl, .@"or", .@"and" })[f3], .rd = rd, .rs1 = rs1, .rs2 = rs2 };
++            if (f7 == 0x20 and (f3 == 0 or f3 == 5)) return .{ .op = if (f3 == 0) .sub else .sra, .rd = rd, .rs1 = rs1, .rs2 = rs2 };
++            if (f7 == 1) return .{ .op = ([_]Op{ .mul, .mulh, .mulhsu, .mulhu, .div, .divu, .rem, .remu })[f3], .rd = rd, .rs1 = rs1, .rs2 = rs2 };
++            if (f7 == 0x10 and (f3 == 2 or f3 == 4 or f3 == 6)) return .{ .op = ([_]Op{ .sh1add, .sh2add, .sh3add })[f3 / 2 - 1], .rd = rd, .rs1 = rs1, .rs2 = rs2 };
++        },
++        0x0b => if (f3 < 5 and f7 == 0) return .{ .op = ([_]Op{ .bmac, .bmsb, .bld, .bget, .bscan })[f3], .rd = rd, .rs1 = rs1, .rs2 = rs2 },
++        0x2b => if (f3 == 0) return .{ .op = .bprd, .imm = @intCast(w >> 20 & 0x7f), .dd = rd & 7 },
++        else => {},
++    }
++    if (w == 0x00000073) return .{ .op = .ecall };
++    if (opc == 0x73 and f3 != 0 and f3 != 4) return .{ .op = ([_]Op{ .illegal, .csrrw, .csrrs, .csrrc, .illegal, .csrrwi, .csrrsi, .csrrci })[f3], .rd = rd, .rs1 = rs1, .imm = @intCast(w >> 20) };
++    if (w == 0x00100073) return .{ .op = .ebreak };
++    if (opc == 0x0f) return .{ .op = .fence };
++    return .{ .op = .illegal };
++}
++
++/// ref.csr_read: a pure read of a stubbed CSR (cycle, time, instret and high halves, mhartid read 0; misa).
++fn csrRead(ins: Inst) ?u32 {
++    const pure = (ins.op == .csrrs or ins.op == .csrrc or ins.op == .csrrsi or ins.op == .csrrci) and ins.rs1 == 0;
++    if (!pure) return null;
++    return switch (ins.imm) {
++        0xc00, 0xc01, 0xc02, 0xc80, 0xc81, 0xc82, 0xf14 => 0,
++        0x301 => 0x40001100,
++        else => null,
++    };
++}
++
++fn pack(op: Op, rd: u32, rs1: u32, rs2: u32, spare: u32) u32 {
++    const b0 = @backingInt(op) | (spare & 1) << 7;
++    const b1 = rd << 3 | (spare >> 1 & 7);
++    const b2 = rs1 << 3 | (spare >> 4 & 7);
++    const b3 = rs2 << 3 | (spare >> 7 & 7);
++    return b0 | b1 << 8 | b2 << 16 | b3 << 24;
++}
++
++fn inRom(t: u32) bool {
++    return t % 4 == 0 and t >= rom_base and t < rom_base + 4 * rom_words;
++}
++
++/// ref.rom_word: the pre-decoded word of instruction w at pc.
++pub fn romWord(w: u32, pc: u32) u32 {
++    const ins = decode(w);
++    const imm_u: u32 = @bitCast(ins.imm);
++    switch (ins.op) {
++        .csrrw, .csrrs, .csrrc, .csrrwi, .csrrsi, .csrrci => {
++            const v = csrRead(ins) orelse return pack(.illegal, 0, 0, 0, 0);
++            return pack(if (v != 0) .misa else .lui, ins.rd, 0, 0, 0);
++        },
++        .lui, .auipc => {
++            const up = (if (ins.op == .lui) imm_u else pc +% imm_u) >> 12 & 0xfffff;
++            return pack(ins.op, ins.rd, up & 31, up >> 5 & 31, up >> 10);
++        },
++        .addi, .slti, .sltiu, .xori, .ori, .andi, .slli, .srli, .srai, .lb, .lh, .lw, .lbu, .lhu, .jalr => {
++            const i = imm_u & 0xfff;
++            return pack(ins.op, ins.rd, ins.rs1, i & 31, i >> 5);
++        },
++        .sb, .sh, .sw => {
++            const i = imm_u & 0xfff;
++            return pack(ins.op, ins.rs2, ins.rs1, i & 31, i >> 5);
++        },
++        .beq, .bne, .blt, .bge, .bltu, .bgeu => {
++            const off: u32 = @as(u32, @bitCast(ins.imm >> 2)) & 0x7ff;
++            const bad: u32 = @intFromBool(!inRom(pc +% imm_u));
++            return pack(ins.op, off & 31, ins.rs1, ins.rs2, off >> 5 | bad << 6);
++        },
++        .jal => {
++            const t = pc +% imm_u;
++            const wi = (t -% rom_base) >> 2 & 0xffff;
++            return pack(.jal, ins.rd, wi & 31, wi >> 5 & 31, wi >> 10 | @as(u32, @intFromBool(!inRom(t))) << 6);
++        },
++        .ecall => return pack(.ecall, 0, 17, 10, 0),
++        .bprd => return pack(.bprd, 0, 0, imm_u & 31, imm_u >> 5 | ins.dd << 7),
++        .bmac, .bmsb, .bld, .bget, .bscan => return pack(ins.op, ins.rd, ins.rs1, ins.rs2, 0),
++        .ebreak, .fence, .illegal => return pack(ins.op, 0, 0, 0, 0),
++        else => return pack(ins.op, ins.rd, ins.rs1, ins.rs2, 0),
++    }
++}
++
++test "rom words match hand-packed upstream encodings" {
++    // addi a0, zero, 5 at the ROM base: uop ADDI, rd 10, rs1 0, imm 5
++    try std.testing.expectEqual(@as(u32, 4 | 10 << 11 | 0 << 19 | 5 << 27), romWord(0x00500513, rom_base));
++    // ecall: RS1 = a7, RS2 = a0
++    try std.testing.expectEqual(@as(u32, 39 | 17 << 19 | 10 << 27), romWord(0x00000073, rom_base));
++    // jal ra, -4 from the ROM base targets outside the ROM: bad bit S6
++    const jal = romWord(0xffdff0ef, rom_base);
++    try std.testing.expectEqual(@as(u32, 37), jal & 0x7f);
++    try std.testing.expectEqual(@as(u32, 1), jal >> 18 & 1);
++    // csrr a0, misa reads MISA; csrr a0, mcycle (unsupported) is illegal
++    try std.testing.expectEqual(@as(u32, 3 | 10 << 11), romWord(0x30102573, rom_base));
++    try std.testing.expectEqual(@as(u32, 0), romWord(0xb0002573, rom_base));
++    try std.testing.expectEqual(Op.sub, decode(0x40b50533).op);
++    try std.testing.expectEqual(Op.sh2add, decode(0x20b54533).op);
++}
+diff --git a/zig/src/core/runner_circuit_state.zig b/zig/src/core/runner_circuit_state.zig
+index 5ac4f92e08048642435815f95165af8cdcf6e96e..c19a8e499e803bbca77606e78b9ed8d6dc34d62b 100644
+--- a/zig/src/core/runner_circuit_state.zig
++++ b/zig/src/core/runner_circuit_state.zig
+@@ -12,6 +12,7 @@ pub const State = struct {
+     gpa: std.mem.Allocator,
+     circuit: *const model.Circuit,
+     tables: [][]Scalar,
++    owned: []bool,
+     present: []u128,
+     history: []Scalar,
+     steps: u64 = 0,
+@@ -27,6 +28,9 @@ pub const State = struct {
+             s.* = if (t.writable) try gpa.dupe(Scalar, t.rows) else @constCast(t.rows);
+             copied += 1;
+         }
++        const owned = try gpa.alloc(bool, c.tables.len);
++        errdefer gpa.free(owned);
++        for (c.tables, owned) |t, *o| o.* = t.writable;
+         const present = try gpa.alloc(u128, c.tables.len);
+         errdefer gpa.free(present);
+         for (c.tables, present) |t, *p| p.* = t.present;
+@@ -36,12 +40,13 @@ pub const State = struct {
+         const x = try gpa.alloc(Scalar, c.dims);
+         errdefer gpa.free(x);
+         const work = try gpa.alloc(Scalar, workSize(c));
+-        return .{ .gpa = gpa, .circuit = c, .tables = tables, .present = present, .history = hist, .x = x, .work = work };
++        return .{ .gpa = gpa, .circuit = c, .tables = tables, .owned = owned, .present = present, .history = hist, .x = x, .work = work };
+     }
+ 
+     pub fn deinit(s: *State) void {
+-        for (s.circuit.tables, s.tables) |t, rows| if (t.writable) s.gpa.free(rows);
++        for (s.owned, s.tables) |o, rows| if (o) s.gpa.free(rows);
+         s.gpa.free(s.tables);
++        s.gpa.free(s.owned);
+         s.gpa.free(s.present);
+         s.gpa.free(s.history);
+         s.gpa.free(s.x);
+@@ -61,16 +66,23 @@ pub const State = struct {
+         return s.present[table] >> @intCast(r) & 1 == 1;
+     }
+ 
+-    /// Replaces one row (the RAM op's write); only tables the circuit can change are writable.
++    /// Copies a shared table into this machine before the host rewrites it (an ELF boot's ROM and DROM).
++    pub fn own(s: *State, table: u32) !void {
++        if (s.owned[table]) return;
++        s.tables[table] = try s.gpa.dupe(Scalar, s.tables[table]);
++        s.owned[table] = true;
++    }
++
++    /// Replaces one row (the RAM op's write) of a table this machine owns.
+     pub fn writeRow(s: *State, table: u32, r: u32, values: []const Scalar) !void {
+-        if (!s.writable(table)) return error.CircuitTableReadOnly;
++        if (!s.owned[table]) return error.CircuitTableReadOnly;
+         if (r >= hd or values.len != hd) return error.CircuitIndex;
+         @memcpy(s.row(table, r), values);
+         s.present[table] |= @as(u128, 1) << @intCast(r);
+     }
+ 
+     pub fn clearRow(s: *State, table: u32, r: u32) !void {
+-        if (!s.writable(table)) return error.CircuitTableReadOnly;
++        if (!s.owned[table]) return error.CircuitTableReadOnly;
+         if (r >= hd) return error.CircuitIndex;
+         @memset(s.row(table, r), 0);
+         s.present[table] &= ~(@as(u128, 1) << @intCast(r));
+@@ -84,7 +96,7 @@ pub const State = struct {
+     /// Bytes this machine owns beyond the shared circuit (copied tables, history, scratch), for admission.
+     pub fn ownedBytes(s: *const State) usize {
+         var n: usize = (s.history.len + s.x.len + s.work.len) * @sizeOf(Scalar);
+-        for (s.circuit.tables) |t| n += if (t.writable) table_floats * @sizeOf(Scalar) else 0;
++        for (s.owned) |o| n += if (o) table_floats * @sizeOf(Scalar) else 0;
+         return n;
+     }
+ 
+diff --git a/zig/src/core/runner_circuit_test.zig b/zig/src/core/runner_circuit_test.zig
+index 5774a8db73192ffca9a5de61954dae50c0d5975f..34fc4e619c0838e8c7b4687005f84f49ce7b31d0 100644
+--- a/zig/src/core/runner_circuit_test.zig
++++ b/zig/src/core/runner_circuit_test.zig
+@@ -6,6 +6,7 @@ const load = @import("runner_circuit_load.zig");
+ const eval = @import("runner_circuit_eval.zig");
+ const rc = @import("runner_circuit.zig");
+ const tiny = @import("runner_circuit_tiny_test.zig");
++const elf = @import("runner_circuit_elf.zig");
+ 
+ const gpa = std.testing.allocator;
+ const tok = tiny.token;
+@@ -15,6 +16,7 @@ test {
+     _ = model;
+     _ = @import("runner_circuit_golden_test.zig");
+     _ = @import("runner_circuit_backend.zig");
++    _ = @import("runner_circuit_rom.zig");
+ }
+ 
+ fn tinyCircuit(variant: tiny.Variant) !model.Circuit {
+@@ -105,6 +107,20 @@ test "a lag-1 tap keys on the previous token, a clear decay empties the table, h
+         try std.testing.expectEqual(st.lag, s.x[tiny.dims.lagout]);
+     }
+     try std.testing.expectEqual(@as(u128, 0), s.present[0]);
++    try std.testing.expectEqual(@as(u128, 1), s.present[1]);
++}
++
++test "a lag-3 tap sees the projection three steps back, not a newer one" {
++    var c = try tinyCircuit(.good);
++    defer c.deinit(gpa);
++    var s = try rc.State.init(gpa, &c);
++    defer s.deinit();
++    const seq = [_]u32{ tok(2, 0), tok(1, 0), tok(1, 0), tok(1, 0), tok(1, 0) };
++    const want = [_]model.Scalar{ 0, 0, 0, 1, 1 };
++    for (seq, want) |t, w| {
++        _ = try eval.step(&s, t);
++        try std.testing.expectEqual(w, s.x[tiny.dims.lag3out]);
++    }
+ }
+ 
+ test "a node that reads a dim written earlier in stored order sees the write" {
+@@ -181,3 +197,58 @@ test "snapshots are canonical: equal histories give equal bytes, a write or a la
+     defer gpa.free(sb2);
+     try std.testing.expect(!std.mem.eql(u8, sa2, sb2));
+ }
++
++const Seg = struct { typ: u32 = 1, vaddr: u32, data: []const u8, memsz: u32 };
++
++/// A static ELF32 RISC-V executable with the given program headers, data after the header table.
++fn elfImage(entry: u32, segs: []const Seg) ![]u8 {
++    var size: usize = 52 + 32 * segs.len;
++    for (segs) |sg| size += sg.data.len;
++    const b = try gpa.alloc(u8, size);
++    @memset(b, 0);
++    @memcpy(b[0..7], "\x7fELF\x01\x01\x01");
++    const w = std.mem.writeInt;
++    w(u16, b[16..18], 2, .little);
++    w(u16, b[18..20], 243, .little);
++    w(u32, b[24..28], entry, .little);
++    w(u32, b[28..32], 52, .little);
++    w(u16, b[42..44], 32, .little);
++    w(u16, b[44..46], @intCast(segs.len), .little);
++    var off: u32 = @intCast(52 + 32 * segs.len);
++    for (segs, 0..) |sg, i| {
++        const p = b[52 + 32 * i ..][0..32];
++        w(u32, p[0..4], sg.typ, .little);
++        w(u32, p[4..8], off, .little);
++        w(u32, p[8..12], sg.vaddr, .little);
++        w(u32, p[16..20], @intCast(sg.data.len), .little);
++        w(u32, p[20..24], sg.memsz, .little);
++        @memcpy(b[off..][0..sg.data.len], sg.data);
++        off += @intCast(sg.data.len);
++    }
++    return b;
++}
++
++test "an ELF's PT_LOAD segments land in ROM words, DROM and zero-filled RAM; bad images are refused" {
++    const code = [_]u8{ 0x13, 0x05, 0x50, 0x00, 0x73, 0x00, 0x00, 0x00 };
++    const good = try elfImage(0x40004, &.{ .{ .vaddr = 0x40000, .data = &code, .memsz = 8 }, .{ .vaddr = 0x100, .data = "hi", .memsz = 8 }, .{ .vaddr = 0x20000, .data = "ro", .memsz = 2 } });
++    defer gpa.free(good);
++    const img = try elf.parse(gpa, good);
++    defer img.deinit(gpa);
++    try std.testing.expectEqual(@as(u32, 0x00500513), img.rom[0]);
++    try std.testing.expectEqual(@as(u32, 0x73), img.rom[1]);
++    try std.testing.expectEqual(@as(u32, 0), img.rom[2]);
++    try std.testing.expectEqualStrings("hi\x00\x00", img.ram[0x100..0x104]);
++    try std.testing.expectEqualStrings("ro", img.drom[0..2]);
++    try std.testing.expectEqual(@as(u32, 0x40004), img.entry);
++    const Bad = struct { entry: u32, seg: Seg, want: anyerror };
++    for ([_]Bad{
++        .{ .entry = 0x40000, .seg = .{ .typ = 3, .vaddr = 0x40000, .data = &code, .memsz = 8 }, .want = error.ElfDynamic },
++        .{ .entry = 0x40000, .seg = .{ .vaddr = 0x7fff, .data = "ab", .memsz = 2 }, .want = error.ElfSegment },
++        .{ .entry = 0x40002, .seg = .{ .vaddr = 0x40000, .data = &code, .memsz = 8 }, .want = error.ElfEntry },
++        .{ .entry = 0x40000, .seg = .{ .vaddr = 0x40000, .data = &code, .memsz = 4 }, .want = error.ElfSegment },
++    }) |bad| {
++        const bytes = try elfImage(bad.entry, &.{bad.seg});
++        defer gpa.free(bytes);
++        try std.testing.expectError(bad.want, elf.parse(gpa, bytes));
++    }
++}
+diff --git a/zig/src/core/runner_circuit_tiny_test.zig b/zig/src/core/runner_circuit_tiny_test.zig
+index 92f8c6e45c675f7ff5face3464bb6d9579bf0e16..ed4b0eb58b7537ce544c618679a73a82c0c6f1b7 100644
+--- a/zig/src/core/runner_circuit_tiny_test.zig
++++ b/zig/src/core/runner_circuit_tiny_test.zig
+@@ -13,7 +13,8 @@ pub const dims = struct {
+     pub const t1 = 33;
+     pub const t2 = 34;
+     pub const lagout = 35;
+-    pub const count = 36;
++    pub const lag3out = 36;
++    pub const count = 37;
+ };
+ pub const family_bits = 3;
+ 
+@@ -40,6 +41,8 @@ pub fn build(a: std.mem.Allocator, variant: Variant) ![]u8 {
+     try w.s("],\"format\":\"tensorfold.runner.p2\",\"nodes\":[");
+     try lagHead(w);
+     try w.s(",");
++    try lag3Head(w);
++    try w.s(",");
+     try ramHead(w, variant);
+     try w.s(",{\"kind\":\"ffn\",\"name\":\"h1\",\"out\":33,\"into\":false,\"terms\":[[1.0,[[0,1.0]],[[2,1.0]]]]}");
+     try w.s(",{\"kind\":\"ffn\",\"name\":\"h2\",\"out\":34,\"into\":false,\"terms\":[[1.0,[[33,1.0]],[[0,1.0]]]]}");
+@@ -48,7 +51,12 @@ pub fn build(a: std.mem.Allocator, variant: Variant) ![]u8 {
+     for (0..family_bits + 16) |i| try w.f("{s}{d}", .{ if (i == 0) "" else ",", dims.code + i });
+     try w.f("],\"family_bits\":{d},\"families\":", .{family_bits});
+     try families(w);
+-    try w.s(",\"payload_bits\":16},\"program\":{\"input_address\":256,\"input_capacity\":256,\"kind\":\"calc\"},");
++    try w.s(",\"payload_bits\":16},\"program\":{\"input_address\":256,\"input_capacity\":256,\"kind\":\"calc\",\"entry\":262144,");
++    try w.s("\"rom_le_hex\":\"");
++    for (0..1 << 16) |_| try w.s("00000000");
++    try w.s("\",\"drom_hex\":\"\",\"ram_hex\":\"");
++    for (0..1 << 13) |_| try w.s("00000000");
++    try w.s("\"},");
+     try w.f("\"stats\":{{\"dims\":{d}}},\"tokens\":{{\"byte_family\":4,\"families\":", .{dims.count});
+     try families(w);
+     try w.f(",\"go\":0,\"halt\":{d},\"vocab\":{d}}},\"version\":1}}", .{ token(5, 0), token(5, 0) + 1 });
+@@ -105,6 +113,15 @@ fn lagHead(w: Writer) !void {
+     try w.s("\"out\":[[2,35,16384.0]],\"into\":false,\"init\":[]}]}");
+ }
+ 
++/// A key from the token three back being W (taps 0,0,0,1), read on A, output to lag3out.
++fn lag3Head(w: Writer) !void {
++    try w.s("{\"kind\":\"head\",\"name\":\"lag3\",\"n_cols\":128,\"levels\":\"bit\",\"tiny\":0.0,");
++    try w.s("\"q\":[[0,{\"expr\":[[2,1.0]],\"taps\":[1.0,0.0,0.0,0.0]}]],\"k\":[[0,{\"expr\":[[3,1.0]],\"taps\":[0.0,0.0,0.0,1.0]}]],");
++    try w.s("\"value_heads\":[{\"v\":[[0,{\"expr\":[[0," ++ a_ref ++ "]],\"taps\":[1.0,0.0,0.0,0.0]}],[1,{\"expr\":[[0," ++ a_ref ++ "]],\"taps\":[1.0,0.0,0.0,0.0]}],");
++    try w.s("[2,{\"expr\":[[0,128.0]],\"taps\":[1.0,0.0,0.0,0.0]}]],\"a\":[],\"beta\":null,\"z\":[[2,[[0,1.0]]]],");
++    try w.s("\"out\":[[2,36,16384.0]],\"into\":false,\"init\":[]}]}");
++}
++
+ /// ram0: W writes row (payload bits 0-1) with data bit 2 in column 2; R reads its row into rd. Row 3 starts at 1.
+ fn ramHead(w: Writer, variant: Variant) !void {
+     try w.s("{\"kind\":\"head\",\"name\":\"ram0\",\"n_cols\":128,\"levels\":\"bit\",\"tiny\":0.0,\"q\":[");

@@ -1,0 +1,468 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 23:36:40 +0700
+Subject: [PATCH 013/207] Merge image decoder bounds and ownership fixes
+
+Integrate PNG palette and pass bounds, JPEG Huffman and frame ownership, GIF alphabet limits, zero-size preprocessing refusals and BMP RLE bounds. Preserve the six source commits and their authorship.
+
+Squashed merge of 6 commits:
+- deepseek: bound PNG palette transparency and pass sizes (Jay Leaton)
+- deepseek: reject an oversubscribed JPEG Huffman bucket before filling it (Jay Leaton)
+- deepseek: reject a second JPEG frame and release a partial one (Jay Leaton)
+- deepseek: refuse an image whose fitted side rounds to zero (Jay Leaton)
+- deepseek: limit the GIF LZW minimum code size to the byte alphabet (Jay Leaton)
+- deepseek: bound BMP RLE to the frame and its own bit depths (Jay Leaton)
+---
+ zig/src/families/deepseek_v41/vision/bmp.zig  | 52 +++++++++++++-
+ zig/src/families/deepseek_v41/vision/gif.zig  | 39 ++++++++++-
+ zig/src/families/deepseek_v41/vision/jpeg.zig | 49 ++++++++++++-
+ zig/src/families/deepseek_v41/vision/png.zig  | 70 ++++++++++++++++++-
+ zig/src/families/deepseek_v41/vision/prep.zig | 23 +++++-
+ .../families/deepseek_v41/vision/resample.zig | 25 ++++++-
+ 6 files changed, 245 insertions(+), 13 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision/bmp.zig b/zig/src/families/deepseek_v41/vision/bmp.zig
+index 9107a39449fad336562c2fd2f4c087ef7c79eb5f..8f95cefb627d2c363eae485a4adb3cae04adbb06 100644
+--- a/zig/src/families/deepseek_v41/vision/bmp.zig
++++ b/zig/src/families/deepseek_v41/vision/bmp.zig
+@@ -87,7 +87,11 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!pixels.Ima
+     var rle = false;
+     switch (compression) {
+         0 => {},
+-        1, 2 => rle = true,
++        1, 2 => {
++            const want_bits: u32 = if (compression == 1) 8 else 4; // RLE8 needs 8 bpp, RLE4 needs 4
++            if (bits != want_bits) return error.BadBmp;
++            rle = true;
++        },
+         3 => {
+             const m = masks;
+             if (bits == 32) {
+@@ -218,7 +222,8 @@ fn decodeRle(gpa: Allocator, raw: []const u8, offset: usize, rle4: bool, w: u32,
+             const right: usize = raw[at];
+             const up: usize = raw[at + 1];
+             at += 2;
+-            try data.appendNTimes(gpa, 0, right + up * w);
++            const want = right + up * w;
++            try data.appendNTimes(gpa, 0, @min(want, dest - data.items.len)); // a delta never extends the frame
+             x = data.items.len % w;
+         } else {
+             const want: usize = if (rle4) byte / 2 else byte;
+@@ -239,3 +244,46 @@ fn decodeRle(gpa: Allocator, raw: []const u8, offset: usize, rle4: bool, w: u32,
+         @memcpy(im.data[y * w ..][0..w], data.items[r * w ..][0..w]);
+     }
+ }
++
++test "RLE compression is refused at bit depths it cannot carry" {
++    var raw: [56]u8 = @splat(0);
++    raw[0] = 'B';
++    raw[1] = 'M';
++    std.mem.writeInt(u32, raw[2..6], @intCast(raw.len), .little);
++    std.mem.writeInt(u32, raw[10..14], 54, .little);
++    std.mem.writeInt(u32, raw[14..18], 40, .little);
++    std.mem.writeInt(u32, raw[18..22], 4, .little);
++    std.mem.writeInt(u32, raw[22..26], 1, .little);
++    std.mem.writeInt(u16, raw[26..28], 1, .little);
++    std.mem.writeInt(u16, raw[28..30], 24, .little);
++    std.mem.writeInt(u32, raw[30..34], 1, .little);
++    raw[54] = 4; // a four-pixel RLE8 run that a 24-bpp frame cannot hold
++    try std.testing.expectError(error.BadBmp, decode(std.testing.allocator, &raw, 64 * 1024 * 1024));
++    std.mem.writeInt(u16, raw[28..30], 8, .little);
++    std.mem.writeInt(u32, raw[30..34], 2, .little); // the same run at 8 bpp is RLE4
++    try std.testing.expectError(error.BadBmp, decode(std.testing.allocator, &raw, 64 * 1024 * 1024));
++}
++
++test "an RLE delta cannot extend the frame past its own size" {
++    var raw: [1082]u8 = @splat(0);
++    raw[0] = 'B';
++    raw[1] = 'M';
++    std.mem.writeInt(u32, raw[2..6], @intCast(raw.len), .little);
++    std.mem.writeInt(u32, raw[10..14], 1078, .little);
++    std.mem.writeInt(u32, raw[14..18], 40, .little);
++    std.mem.writeInt(u32, raw[18..22], 1000, .little);
++    std.mem.writeInt(u32, raw[22..26], 1, .little);
++    std.mem.writeInt(u16, raw[26..28], 1, .little);
++    std.mem.writeInt(u16, raw[28..30], 8, .little);
++    std.mem.writeInt(u32, raw[30..34], 1, .little);
++    raw[1078] = 0;
++    raw[1079] = 2;
++    raw[1080] = 0xff;
++    raw[1081] = 0xff; // delta right 255, up 255: 255,255 pixels requested for a 1,000-pixel row
++    var pool: [4096]u8 = undefined;
++    var fba = std.heap.FixedBufferAllocator.init(&pool);
++    var im = try decode(fba.allocator(), &raw, 64 * 1024 * 1024);
++    defer im.deinit(fba.allocator());
++    try std.testing.expectEqual(@as(u32, 1000), im.w);
++    try std.testing.expectEqual(@as(usize, 1000), im.data.len);
++}
+diff --git a/zig/src/families/deepseek_v41/vision/gif.zig b/zig/src/families/deepseek_v41/vision/gif.zig
+index 907ab8c075c2056db787f2bcded27aac89c2ad3c..48404b3e8a1cac4f4b9761cefcd4b46e7cf04128 100644
+--- a/zig/src/families/deepseek_v41/vision/gif.zig
++++ b/zig/src/families/deepseek_v41/vision/gif.zig
+@@ -76,7 +76,8 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!pixels.Ima
+     if (at >= raw.len) return error.BadGif;
+     const bits = raw[at];
+     at += 1;
+-    if (bits > 12) return error.BadGif;
++    // the LZW minimum code size's byte alphabet (2..8)
++    if (bits < 2 or bits > 8) return error.BadGif;
+     var im: pixels.Image = .{ .w = w, .h = h, .mode = if (palette != null) .p else .l, .data = try gpa.alloc(u8, @as(usize, w) * h) };
+     errdefer im.deinit(gpa);
+     @memset(im.data, transparency orelse 0);
+@@ -178,7 +179,8 @@ fn lzw(src: []const u8, bits: u8, interlace: bool, im: *pixels.Image, x0: u32, y
+             lastcode = this;
+         }
+         for (stack[table - n ..]) |v| {
+-            im.data[(@as(usize, y + y0)) * im.w + x0 + x] = v;
++            const dst = (@as(usize, y) + @as(usize, y0)) * @as(usize, im.w) + @as(usize, x0) + @as(usize, x);
++            im.data[dst] = v;
+             x += 1;
+             if (x < xs) continue;
+             x = 0;
+@@ -203,3 +205,36 @@ fn lzw(src: []const u8, bits: u8, interlace: bool, im: *pixels.Image, x0: u32, y
+         }
+     }
+ }
++
++fn testGif(bits: u8) [29]u8 {
++    var g: [29]u8 = @splat(0);
++    const sig = [_]u8{ 'G', 'I', 'F', '8', '9', 'a' };
++    @memcpy(g[0..6], &sig);
++    std.mem.writeInt(u16, g[6..8], 1, .little);
++    std.mem.writeInt(u16, g[8..10], 1, .little);
++    g[13] = ',';
++    std.mem.writeInt(u16, g[18..20], 1, .little);
++    std.mem.writeInt(u16, g[20..22], 1, .little);
++    g[23] = bits;
++    g[24] = 2;
++    g[25] = 0;
++    g[26] = 0;
++    g[27] = 0;
++    g[28] = ';';
++    return g;
++}
++
++test "the GIF LZW minimum code size is limited to the 2..8 byte alphabet" {
++    const a = std.testing.allocator;
++    for ([_]u8{ 0, 1, 9, 10, 11, 12 }) |bits| {
++        const raw = testGif(bits);
++        try std.testing.expectError(error.BadGif, decode(a, &raw, 64 * 1024 * 1024));
++    }
++    for (2..9) |bits| {
++        const raw = testGif(@intCast(bits));
++        var im = try decode(a, &raw, 64 * 1024 * 1024);
++        defer im.deinit(a);
++        try std.testing.expectEqual(@as(u32, 1), im.w);
++        try std.testing.expectEqual(@as(u8, 0), im.data[0]);
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/vision/jpeg.zig b/zig/src/families/deepseek_v41/vision/jpeg.zig
+index 259038c9f3e14f75b6560925a210dc2f673b5a91..6c2d8d64c53c0d304865e00ee08f0f270cc85119 100644
+--- a/zig/src/families/deepseek_v41/vision/jpeg.zig
++++ b/zig/src/families/deepseek_v41/vision/jpeg.zig
+@@ -21,6 +21,8 @@ const Huff = struct {
+         var k: usize = 0;
+         for (1..17) |len| {
+             const n = counts[len - 1];
++            // the whole bucket must fit the canonical code space before any entry is written
++            if (k + n > vals.len or k + n > h.vals.len or code + @as(i32, @intCast(n)) > (@as(i32, 1) << @intCast(len))) return error.BadJpeg;
+             h.valoff[len] = @as(i32, @intCast(k)) - code;
+             for (0..n) |_| {
+                 if (len <= 9) {
+@@ -32,7 +34,6 @@ const Huff = struct {
+                 code += 1;
+             }
+             h.maxcode[len] = if (n > 0) code - 1 else -1;
+-            if (code > (@as(i32, 1) << @intCast(len))) return error.BadJpeg;
+             code <<= 1;
+         }
+         h.maxcode[17] = std.math.maxInt(i32);
+@@ -202,7 +203,10 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!pixels.Ima
+         const seg = raw[at + 2 .. at + len];
+         at += len;
+         switch (m) {
+-            0xC0, 0xC1, 0xC2 => frame = try sof(gpa, seg, m == 0xC2, max_pixels),
++            0xC0, 0xC1, 0xC2 => {
++                if (frame != null) return error.BadJpeg; // one frame a container; a second would abandon the first
++                frame = try sof(gpa, seg, m == 0xC2, max_pixels);
++            },
+             0xC3, 0xC5...0xC7, 0xC9...0xCB, 0xCD...0xCF => return error.UnsupportedJpeg,
+             0xC4 => try dht(seg, &dc, &ac),
+             0xDB => try dqt(seg, &quant, &qset),
+@@ -252,6 +256,8 @@ fn sof(gpa: Allocator, s: []const u8, progressive: bool, max_pixels: u64) Error!
+     }
+     f.mcux = (w + 8 * @as(usize, f.hmax) - 1) / (8 * @as(usize, f.hmax));
+     f.mcuy = (h + 8 * @as(usize, f.vmax) - 1) / (8 * @as(usize, f.vmax));
++    var allocated: usize = 0;
++    errdefer for (f.comps[0..allocated]) |c| gpa.free(c.coef);
+     for (f.comps[0..nc]) |*c| {
+         c.bw = f.mcux * c.h;
+         c.bh = f.mcuy * c.v;
+@@ -260,6 +266,7 @@ fn sof(gpa: Allocator, s: []const u8, progressive: bool, max_pixels: u64) Error!
+         c.real_bw = (c.dw + 7) / 8;
+         c.real_bh = (c.dh + 7) / 8;
+         c.coef = try gpa.alloc(i16, c.bw * c.bh * 64);
++        allocated += 1;
+         @memset(c.coef, 0);
+     }
+     return f;
+@@ -528,3 +535,41 @@ fn finish(gpa: Allocator, f: *Frame, quant: *const [4][64]u16, jfif: bool, adobe
+     }
+     return im;
+ }
++
++test "an oversubscribed Huffman table is refused before its lookup is written" {
++    const raw = blk: {
++        var b: [28]u8 = @splat(0);
++        @memcpy(b[0..8], "\xff\xd8\xff\xc4\x00\x16\x00\x03");
++        b[23] = 0;
++        b[24] = 1;
++        b[25] = 2;
++        b[26] = 0xff;
++        b[27] = 0xd9;
++        break :blk b;
++    };
++    try std.testing.expectError(error.BadJpeg, decode(std.testing.allocator, &raw, 64 * 1024 * 1024));
++}
++
++test "a second frame header is refused before it allocates another coefficient image" {
++    const sof_hdr = [_]u8{ 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00 };
++    const soi = [_]u8{ 0xff, 0xd8 };
++    const eoi = [_]u8{ 0xff, 0xd9 };
++    var raw: [30]u8 = undefined;
++    @memcpy(raw[0..2], &soi);
++    @memcpy(raw[2..15], &sof_hdr);
++    @memcpy(raw[15..28], &sof_hdr);
++    @memcpy(raw[28..30], &eoi);
++    var pool: [128]u8 align(16) = undefined; // exactly one 1x1 frame's coefficients
++    var fba = std.heap.FixedBufferAllocator.init(&pool);
++    try std.testing.expectError(error.BadJpeg, decode(fba.allocator(), &raw, 64 * 1024 * 1024));
++}
++
++fn sofOnce(a: Allocator, seg: []const u8) !void {
++    const f = try sof(a, seg, false, 64 * 1024 * 1024);
++    for (f.comps[0..f.nc]) |c| a.free(c.coef);
++}
++
++test "a frame releases its earlier components when a later allocation fails" {
++    const seg = [_]u8{ 8, 0, 1, 0, 1, 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0 };
++    try std.testing.checkAllAllocationFailures(std.testing.allocator, sofOnce, .{&seg});
++}
+diff --git a/zig/src/families/deepseek_v41/vision/png.zig b/zig/src/families/deepseek_v41/vision/png.zig
+index fc9eacf7b154b6b7468f27f2ebcb052b50b22253..5b09c31f475ec39bb7901752e8a1e116c2edd9be 100644
+--- a/zig/src/families/deepseek_v41/vision/png.zig
++++ b/zig/src/families/deepseek_v41/vision/png.zig
+@@ -65,6 +65,7 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!Image {
+     var at: usize = 8;
+     var hd: ?Header = null;
+     var palette = pixels.defaultPalette();
++    var palette_len: usize = 0;
+     var transparent = false;
+     var idat: std.ArrayList(u8) = .empty;
+     defer idat.deinit(gpa);
+@@ -102,8 +103,10 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!Image {
+             if (hd == null or hd.?.mode != .p) continue;
+             const n = @min(len / 3, 256);
+             for (0..n) |i| @memcpy(palette[i * 4 ..][0..3], data[i * 3 ..][0..3]);
++            palette_len = n;
+         } else if (std.mem.eql(u8, cid, "tRNS")) {
+             if (hd == null or hd.?.mode != .p) continue;
++            if (data.len > palette_len or data.len > 256) return error.BadPng; // ``_MODES``: one alpha a palette entry
+             var simple_zero = false; // ``_simple_palette``: one 0, the rest 255
+             var zeros: usize = 0;
+             var others = false;
+@@ -135,8 +138,8 @@ const passes = [7][4]u8{ .{ 0, 0, 8, 8 }, .{ 4, 0, 8, 8 }, .{ 0, 4, 4, 8 }, .{ 2
+ 
+ fn passDims(h: Header, p: [4]u8) [2]usize {
+     if (!h.interlace) return .{ h.w, h.h };
+-    const w = if (h.w > p[0]) (h.w - p[0] + p[2] - 1) / p[2] else 0;
+-    const ht = if (h.h > p[1]) (h.h - p[1] + p[3] - 1) / p[3] else 0;
++    const w = if (h.w > p[0]) (@as(usize, h.w) - p[0] + p[2] - 1) / p[2] else 0;
++    const ht = if (h.h > p[1]) (@as(usize, h.h) - p[1] + p[3] - 1) / p[3] else 0;
+     return .{ w, ht };
+ }
+ 
+@@ -251,3 +254,66 @@ fn store(h: Header, im: *Image, row: []const u8, y: usize, x0: usize, dx: usize,
+         }
+     }
+ }
++
++fn appendChunk(gpa: Allocator, out: *std.ArrayList(u8), id: []const u8, data: []const u8) !void {
++    var len: [4]u8 = undefined;
++    std.mem.writeInt(u32, &len, @intCast(data.len), .big);
++    try out.appendSlice(gpa, &len);
++    try out.appendSlice(gpa, id);
++    try out.appendSlice(gpa, data);
++    var c = std.hash.Crc32.init();
++    c.update(id);
++    c.update(data);
++    var crc: [4]u8 = undefined;
++    std.mem.writeInt(u32, &crc, c.final(), .big);
++    try out.appendSlice(gpa, &crc);
++}
++
++/// A 1x1 8-bit indexed PNG with the given palette and tRNS chunks.
++fn testPng(gpa: Allocator, palette: []const u8, trns: []const u8) ![]u8 {
++    var out: std.ArrayList(u8) = .empty;
++    errdefer out.deinit(gpa);
++    try out.appendSlice(gpa, signature);
++    var ihdr: [13]u8 = @splat(0);
++    std.mem.writeInt(u32, ihdr[0..4], 1, .big);
++    std.mem.writeInt(u32, ihdr[4..8], 1, .big);
++    ihdr[8] = 8;
++    ihdr[9] = 3;
++    try appendChunk(gpa, &out, "IHDR", &ihdr);
++    try appendChunk(gpa, &out, "PLTE", palette);
++    try appendChunk(gpa, &out, "tRNS", trns);
++    try appendChunk(gpa, &out, "IDAT", "\x78\x9c\x63\x60\x00\x00\x00\x02\x00\x01");
++    try appendChunk(gpa, &out, "IEND", "");
++    return out.toOwnedSlice(gpa);
++}
++
++test "indexed transparency is bounded by the palette entry count and 256 entries" {
++    const a = std.testing.allocator;
++    const one = [_]u8{ 0, 0, 0 };
++    const full: [768]u8 = @splat(0);
++    var over: [257]u8 = @splat(0xff);
++    over[256] = 0;
++    for ([_][]const u8{ one[0..], full[0..] }) |palette| {
++        const raw = try testPng(a, palette, &over);
++        defer a.free(raw);
++        try std.testing.expectError(error.BadPng, decode(a, raw, 64 * 1024 * 1024));
++    }
++    // the largest valid tRNS: one zero on the last palette entry
++    var ok: [256]u8 = @splat(0xff);
++    ok[255] = 0;
++    const raw = try testPng(a, &full, &ok);
++    defer a.free(raw);
++    var im = try decode(a, raw, 64 * 1024 * 1024);
++    defer im.deinit(a);
++    try std.testing.expect(im.transparent);
++    try std.testing.expectEqual(@as(u8, 0), im.palette[255 * 4 + 3]);
++}
++
++test "an interlaced pass dimensions its rows without wrapping the header's 32 bits" {
++    var h: Header = .{ .w = std.math.maxInt(u32), .h = 1, .depth = 8, .color = 0, .interlace = true, .mode = .l };
++    const d = passDims(h, .{ 0, 0, 8, 8 });
++    try std.testing.expectEqual(@as(usize, 536_870_912), d[0]);
++    try std.testing.expectEqual(@as(usize, 1), d[1]);
++    h.w = 1;
++    try std.testing.expectEqual(@as(usize, 0), passDims(h, .{ 4, 0, 8, 8 })[0]);
++}
+diff --git a/zig/src/families/deepseek_v41/vision/prep.zig b/zig/src/families/deepseek_v41/vision/prep.zig
+index 32b5c7a4d4d7e7d154d97b26225d5435c96bd14a..c9eedc5eadb7366789c60349ef7f66da558f829f 100644
+--- a/zig/src/families/deepseek_v41/vision/prep.zig
++++ b/zig/src/families/deepseek_v41/vision/prep.zig
+@@ -10,7 +10,7 @@ pub const IMAGE_TOKEN: u32 = 129264;
+ 
+ pub const Type = enum(i8) { text = -1, start = 0, image = 1, newline = 2, end = 3 };
+ 
+-pub const Error = error{ NoGrid, BadSettings } || Allocator.Error;
++pub const Error = error{ NoGrid, BadSettings, ImageTooSmall } || Allocator.Error;
+ 
+ extern "c" fn pow(x: f64, y: f64) f64; // Python's float ** (libm), not a Zig reimplementation
+ 
+@@ -132,6 +132,10 @@ pub fn spanLen(h: u32, w: u32) u32 {
+     return h * (w + 1) + 2;
+ }
+ 
++fn spanLen64(h: u32, w: u32) u64 {
++    return @as(u64, h) * (@as(u64, w) + 1) + 2;
++}
++
+ /// ``llm_grid``: the aligner's grid of a pixel size.
+ fn llmGrid(height: f64, width: f64, patch: u32, ratio: u32) [2]u32 {
+     const p: f64 = @floatFromInt(patch);
+@@ -174,12 +178,12 @@ pub fn plan(width0: u32, height0: u32, s: *const Settings) Error![4]u32 {
+     var bw = @ceil(width / p) * p;
+     var bh = @ceil(height / p) * p;
+     var g = llmGrid(bh, bw, s.patch, s.downsample);
+-    if (spanLen(g[0], g[1]) > most) {
++    if (spanLen64(g[0], g[1]) > @as(u64, most)) {
+         const hw = solve(height, width, s.patch, s.downsample, most);
+         bh = hw[0];
+         bw = hw[1];
+         g = llmGrid(bh, bw, s.patch, s.downsample);
+-        if (spanLen(g[0], g[1]) > most) return error.NoGrid;
++        if (spanLen64(g[0], g[1]) > @as(u64, most)) return error.NoGrid;
+     }
+     return .{ g[0], g[1], @intFromFloat(bh), @intFromFloat(bw) };
+ }
+@@ -279,3 +283,16 @@ test "span types and the planned grid of a small image" {
+     try std.testing.expectEqual(@as(u16, 0xbf80), norm_table[0]); // -1.0
+     try std.testing.expectEqual(@as(u16, 0x3f80), norm_table[255]); // 1.0
+ }
++
++test "a valid tall or wide image whose fitted side rounds to zero is refused" {
++    const a = std.testing.allocator;
++    for ([_][2]u32{ [2]u32{ 1, 100_000 }, [2]u32{ 100_000, 1 } }) |wh| {
++        var rgb: pixels.Rgb = .{ .w = wh[0], .h = wh[1], .data = try a.alloc(u8, @as(usize, wh[0]) * wh[1] * 3) };
++        defer rgb.deinit(a);
++        @memset(rgb.data, 0);
++        for ([_]u32{ 5, 128, 1024 }) |most| { // the minimum, the reproducer's and the default budget
++            var s: Settings = .{ .cap_tokens = most };
++            try std.testing.expectError(error.ImageTooSmall, preprocess(a, rgb, &s));
++        }
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/vision/resample.zig b/zig/src/families/deepseek_v41/vision/resample.zig
+index a26cc0592d67cc2cfd7a6034216220075b380585..6bc091df641ce66b09d585ee633f5fa42614d2b2 100644
+--- a/zig/src/families/deepseek_v41/vision/resample.zig
++++ b/zig/src/families/deepseek_v41/vision/resample.zig
+@@ -6,6 +6,8 @@ const Rgb = pixels.Rgb;
+ 
+ const PRECISION_BITS = 32 - 8 - 2;
+ 
++pub const Error = error{ImageTooSmall} || Allocator.Error;
++
+ fn bicubic(x0: f64) f64 {
+     const a = -0.5;
+     const x = @abs(x0);
+@@ -75,7 +77,10 @@ fn clip8(ss: i32) u8 {
+ }
+ 
+ /// ``ImagingResample(im, w, h, BICUBIC, (0, 0, W, H))`` of an RGB image.
+-pub fn resize(gpa: Allocator, src: Rgb, w: u32, h: u32) Allocator.Error!Rgb {
++pub fn resize(gpa: Allocator, src: Rgb, w: u32, h: u32) Error!Rgb {
++    // Pillow's ImagingResize: a dimension below one pixel is refused, not fitted
++    if (w == 0 or h == 0 or src.w == 0 or src.h == 0) return error.ImageTooSmall;
++    if (src.w > std.math.maxInt(i32) or src.h > std.math.maxInt(i32)) return error.ImageTooSmall;
+     const need_h = w != src.w;
+     const need_v = h != src.h;
+     var vert = try Coeffs.init(gpa, src.h, h);
+@@ -140,7 +145,8 @@ pub fn roundHalfEven(x: f64) i64 {
+ }
+ 
+ /// ``ImageOps.pad(image, (bw, bh), color=(127, 127, 127))``: ``contain`` (aspect kept, BICUBIC), centred.
+-pub fn pad(gpa: Allocator, src: Rgb, bw: u32, bh: u32, fill: u8) Allocator.Error!Rgb {
++pub fn pad(gpa: Allocator, src: Rgb, bw: u32, bh: u32, fill: u8) Error!Rgb {
++    if (src.w == 0 or src.h == 0 or bw == 0 or bh == 0) return error.ImageTooSmall;
+     const im_ratio = @as(f64, @floatFromInt(src.w)) / @as(f64, @floatFromInt(src.h));
+     const dest_ratio = @as(f64, @floatFromInt(bw)) / @as(f64, @floatFromInt(bh));
+     var sw = bw;
+@@ -154,6 +160,8 @@ pub fn pad(gpa: Allocator, src: Rgb, bw: u32, bh: u32, fill: u8) Allocator.Error
+             if (nw != bw) sw = @intCast(nw);
+         }
+     }
++    // Pillow 12.3's contain can round a fitted side to 0; its resize then raises, so refuse it here
++    if (sw == 0 or sh == 0) return error.ImageTooSmall;
+     var resized: Rgb = if (sw == src.w and sh == src.h) .{ .w = sw, .h = sh, .data = try gpa.dupe(u8, src.data) } else try resize(gpa, src, sw, sh);
+     if (sw == bw and sh == bh) return resized;
+     defer resized.deinit(gpa);
+@@ -171,3 +179,16 @@ test "round half to even, as Python's round" {
+     try std.testing.expectEqual(@as(i64, 4), roundHalfEven(3.5));
+     try std.testing.expectEqual(@as(i64, 3), roundHalfEven(2.51));
+ }
++
++test "a fitted or requested zero dimension is refused, not divided by" {
++    const a = std.testing.allocator;
++    var src = pixels.Rgb{ .w = 1, .h = 1, .data = try a.alloc(u8, 3) };
++    defer src.deinit(a);
++    @memset(src.data, 0);
++    try std.testing.expectError(error.ImageTooSmall, resize(a, src, 0, 1));
++    try std.testing.expectError(error.ImageTooSmall, resize(a, src, 1, 0));
++    var tall = pixels.Rgb{ .w = 1, .h = 100_000, .data = try a.alloc(u8, 100_000 * 3) };
++    defer tall.deinit(a);
++    @memset(tall.data, 0);
++    try std.testing.expectError(error.ImageTooSmall, pad(a, tall, 42, 2646, 127));
++}

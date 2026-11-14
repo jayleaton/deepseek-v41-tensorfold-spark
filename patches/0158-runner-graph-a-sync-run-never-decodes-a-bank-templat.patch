@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 07:47:24 +0700
+Subject: [PATCH 158/207] runner graph: a sync run never decodes a bank
+ template on the engine thread
+
+Bank.load is lazy: each template (name, width) is decoded from its pack the
+first time a run uses it. A wide one, such as the 2^114 pow, takes 0.29-0.37 s
+the first time in a boot and 14-24 ms afterwards (T4 W5/W6). Under
+TF_DSV41_RUNNER_SYNC_GRAPH, Backend.now runs the program on the engine thread,
+so that first decode stalled every stream's round. In the r0-0c1c83 sync arm,
+reply 8 cell 0 ran 106 ms at 0 ticks.
+
+Machine gains a decode flag (default true). With it false, Machine.invoke
+returns error.GraphUnprepared for a template that is not yet prepared, and
+does not decode it. invoke is the single place where templates are used
+(plain ops, algorithms, prints and the emitter all call it). graph now()
+clears the flag, so a cold program makes now() return null: the cell holds as
+it does with sync off, and the worker's job decodes the template. Later cells
+then settle at their trigger.
+
+Not taken: warming every template at open. A test run with graph-v5-narrow
+(170 templates) went past 2 GiB of anon memory before finishing, and was
+OOM-killed in a 2 GiB scope. The lazy decode exists to save that memory.
+
+runner proof test: on a fresh bank, now() on 2^114 is null and prepares
+nothing; the job prints CPython's value and prepares templates; then now()
+gives the same bytes.
+
+(cherry picked from commit 64f0a914b728184bfaa48e84d0734d472a5990a2)
+---
+ zig/src/core/runner_graph.zig         |  1 +
+ zig/src/core/runner_graph_machine.zig |  2 ++
+ zig/src/core/runner_proof_test.zig    | 24 ++++++++++++++++++++++++
+ 3 files changed, 27 insertions(+)
+
+diff --git a/zig/src/core/runner_graph.zig b/zig/src/core/runner_graph.zig
+index 47de22389b9ed4964070aa2de47387ac8d8dae23..8b32950837fe9582ece7ad62867f7378d402f74a 100644
+--- a/zig/src/core/runner_graph.zig
++++ b/zig/src/core/runner_graph.zig
+@@ -136,6 +136,7 @@ fn now(ctx: *anyopaque, program: api.Program, budget: u64, quick: u64) ?api.Resu
+     _ = std.c.clock_gettime(.MONOTONIC, &t0);
+     var m = Machine.boot(c.gpa, c.bank, program.bytes) catch return null;
+     defer m.deinit();
++    m.decode = false; // the engine thread: a template's first decode (0.1-0.4 s wide) is the job's, in a hold
+     const cap = @min(budget, quick);
+     const end = m.run(cap, &c.now_out, null) catch return null;
+     if (end.end == .budget and cap < budget) return null;
+diff --git a/zig/src/core/runner_graph_machine.zig b/zig/src/core/runner_graph_machine.zig
+index ef0cd5fa496b53b63da09f86c537ac876cf78699..08851f4f9f0596b996d99102e1dad362689210c8 100644
+--- a/zig/src/core/runner_graph_machine.zig
++++ b/zig/src/core/runner_graph_machine.zig
+@@ -28,6 +28,7 @@ pub const Machine = struct {
+     width: u16 = 62,
+     precision: u8 = 0,
+     prints: []const packet.Print = &.{},
++    decode: bool = true, // false: a template not yet prepared is error.GraphUnprepared, never decoded on this thread
+ 
+     pub fn boot(a: Allocator, bank: *const bank_mod.Bank, bytes: []const u8) !Machine {
+         if (bytes.len > packet.max_packet) return error.GraphPacketSize;
+@@ -125,6 +126,7 @@ pub const Machine = struct {
+         if (m.steps >= budget) return .budget;
+         if (cancelled(cancel)) return .cancelled;
+         for (refs) |ref| try fits(&m.values[ref], t.width);
++        if (!m.decode and !t.isPrepared()) return error.GraphUnprepared;
+         try t.prepare();
+         if (cancelled(cancel)) return .cancelled;
+         var fresh: State = undefined;
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 0b7c1fc2aac465740cfc3ba818cddddee2ec01f6..3dba5ea61ad41149e846915f65c5699a5dc2c988 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -297,6 +297,30 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+     both.graph.release(1);
+ }
+ 
++test "runner proof: a sync run (now) never decodes a template; the job decodes it in its hold, then now runs it" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
++    const front = routed.frontend();
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const t = try front.translate(front.ctx, arena.allocator(), .{ .form = .inline_expr, .lang = "python", .code = "2^114" });
++    try std.testing.expect(t == .program and t.program.kind == .graph);
++    // a fresh bank decodes each template at its first use: cold, now declines (the cell holds) and decodes nothing
++    const cold = both.bank.preparedCount();
++    try std.testing.expect(both.graph.now(t.program, 4_000_000, 100_000) == null);
++    try std.testing.expectEqual(cold, both.bank.preparedCount());
++    const r = finish(both.graph, try both.graph.start(1, t.program, 4_000_000));
++    try std.testing.expectEqualStrings("20769187434139310514121985316880384\n", r.out);
++    try std.testing.expect(both.bank.preparedCount() > cold);
++    const warm = both.graph.now(t.program, 4_000_000, 100_000) orelse return error.TestUnexpectedNull;
++    try std.testing.expectEqualStrings(r.out, warm.out);
++    both.graph.release(1);
++}
++
+ test "runner proof: bn-011's inline cells (smoke r0-583d0cd875f6): powers through 3^400 own CPython's value" {
+     var both: Both = undefined;
+     try both.open();

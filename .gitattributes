@@ -1,0 +1,3 @@
+# The engine patch series is git format-patch output: context lines keep the engine source byte for byte,
+# trailing spaces included, so whitespace checks do not apply to it.
+patches/*.patch -whitespace

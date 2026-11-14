@@ -1,0 +1,115 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:37:02 +0700
+Subject: [PATCH 058/207] In-model runner: exact (calc) cells only with
+ TF_DSV41_RUNNER_EXACT; proof links with TF_RUNNER_LLD
+
+Results must be what the code prints in its own language, so a calc or exact
+cell's firmware rationals stay off unless the knob is 1. The proof passes an
+absolute ld.lld for hosts without lld beside clang.
+---
+ zig/src/core/runner.zig            |  7 +++++++
+ zig/src/core/runner_proof_test.zig |  5 ++++-
+ zig/src/core/runner_test.zig       | 20 +++++++++++++++++---
+ 3 files changed, 28 insertions(+), 4 deletions(-)
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 7bac74bad7888538da3530568c33088163fa542c..a9231094d83ea72b32b66d8a7514a5bdf5ea0744 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -13,6 +13,7 @@ pub const Config = struct {
+     workers: u8 = 2,
+     device: enum { cpu, cuda } = .cpu,
+     circuit: []const u8 = "",
++    exact: bool = false, // `calc` / `exact` cells (firmware exact rationals, not any language's print) run
+ 
+     /// PREFIX "1" enables (unset, "" or "0": null); PREFIX_* knobs override defaults; a bad value is error.BadKnob.
+     pub fn parse(get: *const fn ([]const u8) ?[]const u8, comptime prefix: []const u8) error{BadKnob}!?Config {
+@@ -29,6 +30,7 @@ pub const Config = struct {
+         c.workers = try knob(u8, get, prefix ++ "_WORKERS", c.workers, 1, 64);
+         c.max_steps = try knob(u64, get, prefix ++ "_MAX_STEPS", c.max_steps, 1, 1 << 40);
+         c.max_tokens = try knob(u32, get, prefix ++ "_MAX_TOKENS", c.max_tokens, 1, 1 << 20);
++        c.exact = try knob(u1, get, prefix ++ "_EXACT", 0, 0, 1) == 1;
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+@@ -140,6 +142,11 @@ pub const Session = struct {
+         const prior = try cell.arena.allocator().alloc([]const u8, s.cells.items.len);
+         for (s.cells.items, prior) |p, *dst| dst.* = p.code;
+         try s.cells.append(gpa, cell);
++        if (!s.r.cfg.exact and (std.mem.eql(u8, cell.lang, "calc") or std.mem.eql(u8, cell.lang, "exact"))) {
++            cell.translation = .{ .abstain = .language };
++            cell.translated.store(true, .release);
++            return;
++        }
+         const task: Translate = .{ .cell = cell, .fe = s.r.frontend, .prior = prior };
+         cell.thread = std.Thread.spawn(.{}, Translate.run, .{task}) catch blk: {
+             task.run();
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index d09f293bc73a7472b36e5a546ad95332f3ecb7d7..6c88f3f1eb5b4b11f3e09375f8dfd6aeaedca249 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -22,7 +22,10 @@ fn prove(leads: []const []const u8, wants: []const []const u8) !void {
+     const models = try gpa.alloc(rt.Model, leads.len);
+     defer gpa.free(models);
+     for (models, leads) |*m, l| m.* = .{ .lead = l };
+-    const texts = try rt.replies(models, .{ .frontend = frontend.frontend(), .backend = b, .wait_s = 600 }, &fake);
++    // TF_RUNNER_LLD: an absolute ld.lld for hosts without lld beside clang (the image installs lld-18 there)
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    const texts = try rt.replies(models, .{ .frontend = ctx.frontend(), .backend = b, .wait_s = 600 }, &fake);
+     defer rt.freeAll(texts);
+     try std.testing.expectEqual(@as(u32, 0), fake.started);
+     for (texts, leads, wants) |got, l, w| {
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index e7bf25a25904181cb3bb0dcdb7efea3c9bd67c00..6c44fe872bf5d163467b6a828c6cbf2836e08621 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -146,7 +146,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20 };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -161,7 +161,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     defer core.deinit();
+     var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
+     back.delay = o.delay;
+-    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test" }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode } };
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode } };
+     if (o.runner) host.runner = &run;
+     const boxes = try gpa.alloc(Box, models.len);
+     defer gpa.free(boxes);
+@@ -314,6 +314,16 @@ test "runner: an abstained cell, a cell with no header, and the runner off all k
+     }
+ }
+ 
++test "runner: an exact (calc) cell keeps the model's text unless TF_DSV41_RUNNER_EXACT is on" {
++    const lead = "```calc\n2**100\n```\nResult:\n";
++    const off = try one(lead, .{});
++    defer gpa.free(off);
++    try std.testing.expectEqualStrings(lead ++ "42\nDone.", off);
++    const on = try one(lead, .{ .exact = true });
++    defer gpa.free(on);
++    try std.testing.expectEqualStrings(lead ++ "1267650600228229401496703205376\nDone.", on);
++}
++
+ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     const K = struct {
+         var set: []const [2][]const u8 = &.{};
+@@ -328,7 +338,11 @@ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_FORMS", "repl" }, .{ "TF_R_SPANS", "reasoning" }, .{ "TF_R_MAX_STEPS", "99" } };
+     const c = (try runner.Config.parse(&K.get, "TF_R")).?;
+-    try std.testing.expect(!c.scan.fence and c.scan.repl and c.scan.reasoning_only and c.max_steps == 99);
++    try std.testing.expect(!c.scan.fence and c.scan.repl and c.scan.reasoning_only and c.max_steps == 99 and !c.exact);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_EXACT", "1" } };
++    try std.testing.expect((try runner.Config.parse(&K.get, "TF_R")).?.exact);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_EXACT", "2" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_BACKEND", "sandbox" } };
+     try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+ }

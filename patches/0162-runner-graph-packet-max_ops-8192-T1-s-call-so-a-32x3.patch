@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 05:22:51 +0700
+Subject: [PATCH 162/207] runner graph packet: max_ops 8192 (T1's call), so a
+ 32x32 edit distance fits one packet
+
+The literal edit-distance DP is five bank ops per cell, so 32x32 needs 5,120 ops against the
+packet's 4,096. Values stay at most 5,220, under the unchanged max_values (8192), so the
+per-request value memory bound does not move; max_packet (1 MB) is unchanged and a 32x32 packet
+is 618 KB. Measured on graph-v4: 32x32 in 55 ms, 5,124 steps. The offline verifier's generic
+packet cap follows; named plans keep their 4,096 offline cap. Separate from the route so it can
+be dropped if T1 objects (the route then stops at 819 cells).
+
+(cherry picked from commit 97ddaaf01011a73f7eaf92a3a9e4fcbd0b8baa10)
+---
+ tools/runner_graph_verify.py         | 2 +-
+ zig/src/core/runner_graph_packet.zig | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/tools/runner_graph_verify.py b/tools/runner_graph_verify.py
+index ba29e33d7997b1a7bf79670efe7ff85d22d88775..d29c64cb104796afabce448ab69e1b6a66a55ef9 100644
+--- a/tools/runner_graph_verify.py
++++ b/tools/runner_graph_verify.py
+@@ -114,7 +114,7 @@ def prepare_cases(cases, goldens, manifest, allow_generic):
+             require(len(plans[packet["plan"]]["ops"]) <= 4096, f"plan exceeds operation cap: {row['id']}")
+         else:
+             require(allow_generic, f"main corpus requires named packets: {row['id']}")
+-            require(len(packet.get("ops", [])) <= 4096, f"packet exceeds operation cap: {row['id']}")
++            require(len(packet.get("ops", [])) <= 8192, f"packet exceeds operation cap: {row['id']}")
+         prepared.append({"id": row["id"], "packet": packet, "expected_output": expected})
+     require(prepared, "empty corpus")
+     return prepared
+diff --git a/zig/src/core/runner_graph_packet.zig b/zig/src/core/runner_graph_packet.zig
+index 66bf91c28c3be3534856877059d58477723dc909..0a24cf256a961fda7d9bf2f46dedb15760583213 100644
+--- a/zig/src/core/runner_graph_packet.zig
++++ b/zig/src/core/runner_graph_packet.zig
+@@ -2,7 +2,7 @@
+ const std = @import("std");
+ const Allocator = std.mem.Allocator;
+ pub const max_packet = 1 << 20;
+-pub const max_ops = 4096;
++pub const max_ops = 8192;
+ pub const max_values = 8192;
+ pub const max_arity = 16;
+ pub const max_prints = 128;

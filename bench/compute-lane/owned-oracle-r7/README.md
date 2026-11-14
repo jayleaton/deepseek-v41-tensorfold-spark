@@ -18,9 +18,9 @@ scp -r bench/compute-lane/owned-oracle-r7 <user>@<cpu-host>:/absolute/checker-pa
 
 The host needs Linux cgroup v2, Bash, Python 3, Docker and `timeout`. Use the site's CPU admission
 controller for **the whole command**, including the image pull: check its QUIET/boot state, scope
-budget and free memory first. On the Sparks, never run this on dev-box, leave at least 6 GiB free,
-keep fewer than four CPU scopes per node, and run no CPU work during a GPU boot. Node02 is reached
-through node01. No GPU or model is needed.
+budget and free memory first. On the Sparks, never run this on the publishing workstation, leave at
+least 6 GiB free, keep fewer than four CPU scopes per node, and run no CPU work during a GPU boot. The
+rank-1 host is reached through the rank-0 host. No GPU or model is needed.
 
 `run.sh`, `gate.sh` and `selftest.sh` require an existing caller-owned scope with MemoryMax ≤2 GiB
 and MemorySwapMax=0; they do not create nested scopes. The site's controller must pause the whole
