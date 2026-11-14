@@ -56,6 +56,9 @@ done <<< "$forward_names"
 [[ ${#values[@]} == 0 ]] || safe_check_argv "${values[@]}" || exit 2
 case "${TF_DSV41_DEFAULT_EFFORT:-}" in ''|low|medium|high|xhigh) ;;
     *) echo 'TF_DSV41_DEFAULT_EFFORT must be low, medium, high or xhigh' >&2; exit 2 ;; esac
+# The compat image's entrypoint setting (docker/compat/tf-compat-entry), not the engine's: 0 forces the host driver.
+case "${TF_CUDA_COMPAT:-}" in ''|0|1) ;;
+    *) echo 'TF_CUDA_COMPAT must be 0 or 1' >&2; exit 2 ;; esac
 prefix=${CONTAINER_PREFIX:-tensorfold-zig}
 [[ "$prefix" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || { echo 'invalid CONTAINER_PREFIX' >&2; exit 2; }
 args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --network host
@@ -70,6 +73,7 @@ args=(docker run --rm --init --name "$prefix-r$rank" --gpus all --ipc=host --net
       -e TF_DSV41_ASSETS=/assets -e TF_DSV41_ENGRAM_DIR=/engram
       -e TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin)
 [[ -z "${CPUSET_CPUS:-}" ]] || args+=(--cpuset-cpus "$CPUSET_CPUS")
+[[ -z "${TF_CUDA_COMPAT:-}" ]] || args+=(-e "TF_CUDA_COMPAT=$TF_CUDA_COMPAT")
 # Authentication belongs to the head server alone. The native engine reads the
 # restricted file itself; neither Docker environment nor argv carries its keys.
 if [[ "$serving" == 1 && -n "${NATIVE_AUTH_FILE:-}" ]]; then

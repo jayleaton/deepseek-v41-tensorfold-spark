@@ -70,7 +70,8 @@ driver files out of NVIDIA's NGC PyTorch 26.07 container (by digest, the base of
 [`compat.links`](../docker/compat/compat.links), and sets the entrypoint
 [`tf-compat-entry`](../docker/compat/tf-compat-entry). The entry puts the driver first on the loader path only while
 the host kernel module is older than 610 and `cuInit` succeeds through it, and logs one line saying which driver runs;
-`TF_CUDA_COMPAT=0` forces the host driver. The engine files and labels are the runner image's.
+`TF_CUDA_COMPAT=0` in the profile forces the host driver (`run-zig.sh` accepts 0 or 1 and passes it to the
+entrypoint; the engine does not read it). The engine files and labels are the runner image's.
 
 [`config/tensorfold-settings.txt`](../config/tensorfold-settings.txt) lists every `TF_*` / `TENSORFOLD_*` setting
 the pinned engine reads. The launcher forwards exactly the ones a profile sets, plus `NCCL_*`, never credential
