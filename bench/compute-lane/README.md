@@ -244,6 +244,7 @@ Exact files adapted or restored in this repair (paths relative to this directory
 | `compute-dl/summary/RESULTS.before-A2-20261106.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
 | `compute-dl/summary/RESULTS.before-format-20261107.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
 | `configs/README.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
+| `configs/tool-full-ab3.env` | Replace the rank-0 host's name in a comment with its role; the engine lines are unchanged. |
 | `decl-control/RESULTS.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
 | `decl-control/T5-DECL-CONTROL-ADJUDICATION.md` | Correct published links/omission notices or configuration labels; preserve numerical findings and historical spec hashes. |
 | `decl-control/clashes3.py` | safe --help exit before historical top-level work |

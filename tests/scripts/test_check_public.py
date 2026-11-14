@@ -133,3 +133,37 @@ def test_patch_series_internal_names_fail_in_strings_too(tmp_path):
     patch.unlink()
     (root / "notes.txt").write_text(f"rank 1 runs on {host}\n")
     assert scan(root).returncode == 0
+
+
+def test_history_fails_on_a_removed_pre_scrub_patch(tmp_path):
+    # A patch committed with the test host's name and scrubbed in a later commit: the current tree is clean, but the
+    # history still carries the old blob, and --history must name it with the series rule (case-sensitive).
+    root = checkout(tmp_path)
+    author = "user@example.com"
+    env = {**os.environ, "ALLOWED_AUTHOR": author}
+
+    def commit(message):
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "-c", "user.name=Example", "-c", f"user.email={author}", "commit", "-qm", message],
+                       cwd=root, check=True)
+
+    def history():
+        return subprocess.run([os.environ.get("TEST_BASH", "bash"), "scripts/check-public.sh", "--history"],
+                              cwd=root, text=True, capture_output=True, env=env, check=False)
+
+    (root / "patches").mkdir()
+    patch = root / "patches" / "0001-fixture.patch"
+    patch.write_text('+    "timing_scope": "test host, nice 19"\n+# Node one and node two are prose, not names\n')
+    commit("clean series")
+    result = history()
+    assert result.returncode == 0, result.stdout
+    host = "node" + "01"
+    patch.write_text(f'+    "timing_scope": "{host} nice19"\n')
+    commit("pre-scrub patch")
+    patch.write_text('+    "timing_scope": "test host, nice 19"\n')
+    commit("scrub")
+    assert scan(root).returncode == 0
+    result = history()
+    assert result.returncode == 1, result.stdout
+    assert "== history: internal names in the engine patch series" in result.stdout
+    assert "patches/0001-fixture.patch:1:" in result.stdout and host in result.stdout

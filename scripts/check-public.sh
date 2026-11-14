@@ -6,8 +6,9 @@
 #   scripts/check-public.sh           precise patterns; exit 1 on any finding
 #   scripts/check-public.sh --broad   also list every secret / password / api-key / bearer / authorization mention
 #                                     for a manual read (informational, does not fail)
-#   scripts/check-public.sh --history the same patterns over every blob of every commit (git grep), plus every
-#                                     commit's author / committer address (only ALLOWED_AUTHOR passes)
+#   scripts/check-public.sh --history the same patterns over every blob of every commit (git grep), the patch series
+#                                     rule over every historical patch blob, plus every commit's author / committer
+#                                     address (only ALLOWED_AUTHOR passes)
 #
 # Scans every tracked and untracked (not ignored) file, the engine patches included, except the vendor/TensorFold
 # submodule (upstream TensorFold, unmodified) and this script.
@@ -148,7 +149,9 @@ if [[ "${1:-}" == --history ]]; then
     hsecrets=$(python3 scripts/check_secrets.py --history 2>&1)
     if [[ $? -ne 0 ]]; then fail=1; echo "== history: credentials (scripts/check_secrets.py)"; echo "$hsecrets"; fi
     # Repeated trees share blobs; scan each text blob once while retaining ALL its historical paths.
-    python3 scripts/check_public_history.py "${PATTERNS[@]}" || fail=1
+    # The patch series rule above, case-sensitive, over every blob ever stored as patches/NNNN-*.patch: a pre-scrub
+    # patch removed by a later commit still fails.
+    python3 scripts/check_public_history.py --patch-private "$PATCH_PRIVATE" "${PATTERNS[@]}" || fail=1
     msgs=$(git log --all --format='%h %B')
     for entry in "${PATTERNS[@]}"; do
         name="${entry%%|*}"; rest="${entry#*|}"; re="${rest%|*}"
