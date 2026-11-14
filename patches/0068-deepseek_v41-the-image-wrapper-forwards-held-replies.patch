@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 15:08:09 +0700
+Subject: [PATCH 68/72] deepseek_v41: the image wrapper forwards held replies
+ to its engine
+
+With vision on, Served hands the server G's vision_engine wrapper (the recorder returns its inner engine
+when no record path is set). The wrapper's vtable had no resume_held, so P1's compute lane refused to
+open at boot ("this engine cannot hold a reply for a tool result") and the rank exited. The wrapper now
+offers resume_held whenever its inner engine does, under the same id, so a held image reply keeps its
+inputs until its final event. A host test covers both vtables.
+---
+ .../families/deepseek_v41/vision_engine.zig   | 10 +++-
+ .../deepseek_v41/vision_engine_test.zig       | 46 +++++++++++++++++++
+ 2 files changed, 55 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision_engine.zig b/zig/src/families/deepseek_v41/vision_engine.zig
+index d6b027039b7c9003a27bfc0cd5f4bb4f7909c6f3..3ba50324db40cadbdc3695e801e2878213015d3e 100644
+--- a/zig/src/families/deepseek_v41/vision_engine.zig
++++ b/zig/src/families/deepseek_v41/vision_engine.zig
+@@ -32,9 +32,12 @@ pub fn Wrapper(comptime Rows: type) type {
+             e.active.deinit(e.gpa);
+         }
+ 
++        /// The inner engine's held replies stay resumable through the wrapper (the compute lane needs them).
+         pub fn engine(e: *Self) api.Engine {
+-            return .{ .ctx = e, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory } };
++            return .{ .ctx = e, .vtable = if (e.inner.vtable.resume_held != null) &holding else &plain };
+         }
++        const plain: api.Engine.VTable = .{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory };
++        const holding: api.Engine.VTable = .{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory, .resume_held = resumeHeld };
+ 
+         fn self(ctx: *anyopaque) *Self {
+             return @ptrCast(@alignCast(ctx));
+@@ -54,6 +57,11 @@ pub fn Wrapper(comptime Rows: type) type {
+         fn memory(ctx: *anyopaque, reset: bool) ?api.Memory {
+             return self(ctx).inner.memory(reset);
+         }
++        /// Same id, so an image request's retained inputs stay held until its final `finished`.
++        fn resumeHeld(ctx: *anyopaque, id: api.Id, r: api.hold.Resume) void {
++            const e = self(ctx);
++            e.inner.vtable.resume_held.?(e.inner.ctx, id, r);
++        }
+ 
+         fn submit(ctx: *anyopaque, id: api.Id, src: *const api.Request, sink: api.Sink) api.SubmitError!void {
+             const e = self(ctx);
+diff --git a/zig/src/families/deepseek_v41/vision_engine_test.zig b/zig/src/families/deepseek_v41/vision_engine_test.zig
+index 9e450a6d3f58f080f1d41f3f2c917410793df151..bde8b58327a38f5b71a2e4d34eca7d1f53583810 100644
+--- a/zig/src/families/deepseek_v41/vision_engine_test.zig
++++ b/zig/src/families/deepseek_v41/vision_engine_test.zig
+@@ -82,3 +82,49 @@ const pixels: [3 * 6 * 588]f32 = @splat(1.0);
+ test "image wrapper cancellation, submit rejection and synchronous completion release actual inputs" {
+     try lifecycle(t.allocator);
+ }
++
++const Holding = struct {
++    fake: Fake = .{},
++    resumed: ?api.Id = null,
++    tokens: usize = 0,
++    fn engine(h: *Holding) api.Engine {
++        return .{ .ctx = h, .vtable = &.{ .info = Fake.info, .submit = submit, .cancel = Fake.cancel, .status = Fake.status, .memory = Fake.memory, .resume_held = resumeHeld } };
++    }
++    fn submit(ctx: *anyopaque, id: api.Id, req: *const api.Request, sink: api.Sink) api.SubmitError!void {
++        const h: *Holding = @ptrCast(@alignCast(ctx));
++        return Fake.submit(&h.fake, id, req, sink);
++    }
++    fn resumeHeld(ctx: *anyopaque, id: api.Id, r: api.hold.Resume) void {
++        const h: *Holding = @ptrCast(@alignCast(ctx));
++        h.resumed = id;
++        h.tokens = r.tokens.len;
++    }
++};
++
++test "image wrapper forwards held replies only when its inner engine holds them" {
++    const a = t.allocator;
++    var n = try Native.init(a, t.io, .{}, .{});
++    defer n.deinit();
++    var store: Store = .{ .gpa = a };
++    defer store.deinit();
++    var plain: Fake = .{};
++    var without: Wrapper = .{ .gpa = a, .io = t.io, .inner = plain.engine(), .native = &n, .rows = &store };
++    defer without.deinit();
++    try t.expect(without.engine().vtable.resume_held == null);
++    try t.expect(!api.hold.resumeHeld(without.engine(), 4, .{ .tokens = &.{} }));
++    var holding: Holding = .{};
++    var with: Wrapper = .{ .gpa = a, .io = t.io, .inner = holding.engine(), .native = &n, .rows = &store };
++    defer with.deinit();
++    const image: api.Image = .{ .pixels = &pixels, .gh = 3, .gw = 6, .tokens = 5, .at = 0 };
++    const req: api.Request = .{ .prompt = &.{ 129264, 129264, 129264, 129264, 129264 }, .images = &.{image}, .max_tokens = 1 };
++    const sink: api.Sink = .{ .ctx = &holding.fake, .event = Fake.event };
++    try with.engine().submit(7, &req, sink);
++    try t.expect(api.hold.resumeHeld(with.engine(), 7, .{ .tokens = &.{ 1, 2, 3 } }));
++    try t.expectEqual(@as(?api.Id, 7), holding.resumed);
++    try t.expectEqual(@as(usize, 3), holding.tokens);
++    // a resumed image reply keeps its inputs until its final event
++    try t.expectEqual(@as(u32, 1), store.holds.count());
++    holding.fake.sink.?.event(holding.fake.sink.?.ctx, 7, &.{ .finished = .{ .reason = .stop } });
++    try t.expectEqual(@as(u32, 0), store.holds.count());
++    try t.expectEqual(@as(u32, 0), with.active.count());
++}

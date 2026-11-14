@@ -1,0 +1,423 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 19:38:12 +0700
+Subject: [PATCH 44/72] deepseek: opt in to lifetime-checked K4 scratch aliases
+
+---
+ .../families/deepseek_v41/forward_prefill.zig |   6 +-
+ .../deepseek_v41/forward_prefill_k4.zig       |  13 +-
+ zig/src/families/deepseek_v41/pf4k_test.zig   |   4 +
+ .../families/deepseek_v41/prefill_scratch.zig | 103 ++++++++++++
+ .../deepseek_v41/prefill_scratch_test.zig     | 152 ++++++++++++++++++
+ .../deepseek_v41/review_workspace_test.zig    |  35 ++++
+ 6 files changed, 306 insertions(+), 7 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/prefill_scratch.zig
+ create mode 100644 zig/src/families/deepseek_v41/prefill_scratch_test.zig
+
+diff --git a/zig/src/families/deepseek_v41/forward_prefill.zig b/zig/src/families/deepseek_v41/forward_prefill.zig
+index 2f28e189146482d0266be099a9adb32cb4376743..0848fe76e95d6471caf6c26cc0add1efd5628aeb 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill.zig
+@@ -137,6 +137,7 @@ pub fn plan(f: *Forward, p: *buffers.Plan, rows: u32) !void {
+     if (state(f).k4 or (state(f).mode == .replay and f.opts.pf_tbo)) {
+         const ws = &state(f).k4ws;
+         if (ws.plan == null) {
++            ws.alias = @import("prefill_scratch.zig").enabled(f.opts.pf_tbo);
+             ws.plan = .{ .a = f.gpa };
+             try planWorkspace(f, &ws.plan.?, rows, layers);
+             if (try keepsShared(f)) {
+@@ -430,7 +431,10 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
+         return e;
+     };
+     const cs = if (big) try block_prefill.ownCallsKeep(a, plain, K4.tag, &st.k4ws.keep) else plain;
+-    if (big) try k4Acquire(f);
++    if (big) {
++        if (st.k4ws.alias) try @import("prefill_scratch.zig").validate(cs);
++        try k4Acquire(f);
++    }
+     // the glue reads the ids (embedding, Engram) and the pending window (positions)
+     f.ids = ids;
+     f.slot.pending = .{ .start = start, .n = n };
+diff --git a/zig/src/families/deepseek_v41/forward_prefill_k4.zig b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+index 25382a9694c501c0daecfe21db8c6f167475d27c..58874b822038d1d56db33b483b4671656fe4fe76 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill_k4.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+@@ -1,6 +1,7 @@
+ //! The prefill's own workspace (TF_DSV41_PF_4K / _PF_TBO): plan, agreement, acquire, release.
+ 
+ const std = @import("std");
++const scratch = @import("prefill_scratch.zig");
+ const quiet = @import("builtin").is_test; // a test's stderr is the build runner's channel
+ const cuda = @import("cuda");
+ const calls = @import("block_calls.zig");
+@@ -95,7 +96,7 @@ pub fn workspaceBytes(f: *Forward, rows: u32) !u64 {
+         var keep: block_prefill.Keep = .empty;
+         try k4Trim(la.allocator(), &wp, &fp, &keep);
+     }
+-    return planBytes(&wp);
++    return scratch.Layout.init(&wp, scratch.enabled(f.opts.pf_tbo)).bytes;
+ }
+ 
+ pub fn planBytes(wp: *const buffers.Plan) u64 {
+@@ -116,6 +117,7 @@ pub const K4 = struct {
+     keep: block_prefill.Keep = .empty,
+     buf: ?cuda.DeviceBuffer = null,
+     ready: bool = false,
++    alias: bool = false,
+     bytes: u64 = 0,
+     allocs: u64 = 0,
+     releases: u64 = 0,
+@@ -136,7 +138,7 @@ pub fn wsAgreed(f: *Forward) !bool {
+     const ws = &st.k4ws;
+     if (ws.buf != null) return true;
+     const pl = ws.plan orelse return false;
+-    const bytes = planBytes(&pl);
++    const bytes = scratch.Layout.init(&pl, ws.alias).bytes;
+     const hard = (try wsFloorGiB());
+     const avail = graphs.memAvailableGiB();
+     const left = if (avail) |v| v - @as(f64, @floatFromInt(bytes)) / (1 << 30) else hard;
+@@ -193,7 +195,8 @@ pub fn k4Acquire(f: *Forward) !void {
+     const ws = &pf.state(f).k4ws;
+     if (ws.ready) return;
+     const pl = ws.plan orelse return error.Unbound;
+-    const total = planBytes(&pl);
++    var layout = scratch.Layout.init(&pl, ws.alias);
++    const total = layout.bytes;
+     // the room was agreed first (wsAgreed): every rank fits the workspace above the hard floor
+     const t0 = nowMs();
+     if (ws.buf != null) try f.runner.stream.synchronize();
+@@ -207,11 +210,9 @@ pub fn k4Acquire(f: *Forward) !void {
+         if (std.mem.indexOf(u8, k, K4.tag) != null) f.runner.forget(k);
+     };
+     try b.fill8(0, null);
+-    var at: u64 = 0;
+     for (pl.sizes.keys(), pl.sizes.values()) |k, v| {
+         if (std.mem.indexOf(u8, k, K4.tag) == null) continue;
+-        try f.runner.external(k, b.ptr + at);
+-        at += std.mem.alignForward(u64, v, 256);
++        try f.runner.external(k, b.ptr + layout.next(k, v));
+     }
+     try f.runner.stream.synchronize();
+     ws.ready = true;
+diff --git a/zig/src/families/deepseek_v41/pf4k_test.zig b/zig/src/families/deepseek_v41/pf4k_test.zig
+index 4e0ff7a9ab7057e835dac285cb194c9c5b1435ce..c0573cf61c04adfe13bc418c720d9b9817ef55f3 100644
+--- a/zig/src/families/deepseek_v41/pf4k_test.zig
++++ b/zig/src/families/deepseek_v41/pf4k_test.zig
+@@ -385,3 +385,7 @@ test {
+ test {
+     _ = @import("request_admission_test.zig");
+ }
++
++test {
++    _ = @import("prefill_scratch_test.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/prefill_scratch.zig b/zig/src/families/deepseek_v41/prefill_scratch.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cfdc4451be82240412c1aad2df9f18ebd40c4d13
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/prefill_scratch.zig
+@@ -0,0 +1,103 @@
++//! Optional K4 scratch placement; role names, views and launches stay unchanged.
++const std = @import("std");
++const buffers = @import("buffers.zig");
++const calls = @import("block_calls.zig");
++
++pub const members = [_][]const u8{ "L.k4~q", "L.k4~z", "s.k4~ex.xg", "L.k4~o", "s.k4~ex.z" };
++const groups = [_]usize{ 0, 0, 0, 1, 1 };
++
++pub fn enabled(tbo: bool) bool {
++    const raw = std.c.getenv("TF_DSV41_PF_SCRATCH_ALIAS");
++    return active(if (raw) |v| std.mem.span(v) else null, tbo);
++}
++
++pub fn active(raw: ?[]const u8, tbo: bool) bool {
++    return !tbo and std.mem.eql(u8, raw orelse return false, "1");
++}
++
++fn member(role: []const u8) ?usize {
++    for (members, 0..) |name, i| if (std.mem.eql(u8, role, name)) return i;
++    return null;
++}
++
++pub const Layout = struct {
++    on: bool,
++    bytes: u64 = 0,
++    at: u64 = 0,
++    size: [2]u64 = @splat(0),
++    base: [2]?u64 = @splat(null),
++
++    pub fn init(p: *const buffers.Plan, on: bool) Layout {
++        var l: Layout = .{ .on = on };
++        for (p.sizes.keys(), p.sizes.values()) |role, bytes| {
++            if (std.mem.indexOf(u8, role, "k4~") == null) continue;
++            const n = std.mem.alignForward(u64, bytes, 256);
++            if (on) if (member(role)) |i| {
++                l.size[groups[i]] = @max(l.size[groups[i]], n);
++                continue;
++            };
++            l.bytes += n;
++        }
++        for (l.size) |n| l.bytes += n;
++        return l;
++    }
++
++    /// Called in plan order, exactly once per K4 role; off retains every original aligned offset.
++    pub fn next(l: *Layout, role: []const u8, bytes: u64) u64 {
++        if (l.on) if (member(role)) |i| {
++            const g = groups[i];
++            if (l.base[g]) |at| return at;
++            const at = l.at;
++            l.base[g] = at;
++            l.at += l.size[g];
++            return at;
++        };
++        const at = l.at;
++        l.at += std.mem.alignForward(u64, bytes, 256);
++        return at;
++    }
++};
++
++fn touches(x: calls.Arg, i: usize) bool {
++    return switch (x) {
++        .t, .opaque_table => |t| t.role == .buf and std.mem.eql(u8, t.role.buf, members[i]),
++        .list => |xs| for (xs) |y| {
++            if (touches(y, i)) break true;
++        } else false,
++        else => false,
++    };
++}
++
++fn disjoint(first: [members.len]?usize, last: [members.len]usize) !void {
++    for (first, 0..) |a, i| {
++        const ai = a orelse continue;
++        for (first[i + 1 ..], i + 1..) |b, j| {
++            const bj = b orelse continue;
++            if (groups[i] == groups[j] and !(last[i] < bj or last[j] < ai)) return error.ScratchLifetimeOverlap;
++        }
++    }
++}
++
++/// Runner.issue sends these members only to main; FIFO device order, not host completion, ends each lifetime.
++pub fn validate(cs: []const calls.Call) !void {
++    var first: [members.len]?usize = @splat(null);
++    var last: [members.len]usize = @splat(0);
++    for (cs, 0..) |c, seq| {
++        // Seg.run sets begin only at the window start and the top of its layer loop.
++        if (c.begin != .none) {
++            try disjoint(first, last);
++            first = @splat(null);
++            last = @splat(0);
++        }
++        for (members, 0..) |_, i| {
++            var used = false;
++            for (c.args) |x| used = used or touches(x.arg, i);
++            if (!used) continue;
++            if (c.side or c.defer_side or std.mem.startsWith(u8, c.name, "tf_dsv41_l2p"))
++                return error.ScratchAsyncLifetime;
++            if (first[i] == null) first[i] = seq;
++            last[i] = seq;
++        }
++    }
++    try disjoint(first, last);
++}
+diff --git a/zig/src/families/deepseek_v41/prefill_scratch_test.zig b/zig/src/families/deepseek_v41/prefill_scratch_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..ad709b0578adf2b7ed1e3e17a7d6c068dabf2fdb
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/prefill_scratch_test.zig
+@@ -0,0 +1,152 @@
++//! Production K4 placement and launch lifetimes; no device allocation or model arithmetic is simulated.
++const std = @import("std");
++const t = std.testing;
++const scratch = @import("prefill_scratch.zig");
++const buffers = @import("buffers.zig");
++const calls = @import("block_calls.zig");
++const block = @import("block.zig");
++const bp = @import("block_prefill.zig");
++const ws = @import("forward_prefill_k4.zig");
++const check = @import("calls_check.zig");
++
++fn program(a: std.mem.Allocator, o: block.Options, rows: i64, start: i64) ![]calls.Call {
++    const cfg: @import("config.zig").Config = .{};
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    var enc: [21]u32 = undefined;
++    for (&enc, 0..) |*l, i| l.* = @intCast(i);
++    return bp.ownCalls(a, try bp.emitReplay(a, &cfg, &w, ws.k4Options(o), &enc, rows, start, .encoder), ws.K4.tag);
++}
++
++test "K4 scratch: real asynchronous overlap and deferred programs keep aliased members on the compute stream" {
++    for ([_]i64{ 2049, 3072, 4095, 4096 }) |rows| for ([_]i64{ 0, 8192, 131072 }) |start| {
++        for (0..4) |profile| {
++            var arena = std.heap.ArenaAllocator.init(t.allocator);
++            defer arena.deinit();
++            const a = arena.allocator();
++            const o: block.Options = .{
++                .gm_v2 = if (profile == 0) .off else .one,
++                .limit = 1 << 20,
++                .rope_rows = (1 << 20) + 2048,
++                .index_budget = 64 << 20,
++                .taps = true,
++                .branches = profile > 0,
++                .pf_overlap = if (profile > 0) 4 else 0,
++                .pf_overlap_site = profile > 1,
++                .r1 = profile == 3,
++                .mhc_defer = profile == 3,
++            };
++            const cs = try program(a, o, rows, start);
++            // No host synchronization separates launches: validate requires device FIFO on one stream.
++            try scratch.validate(cs);
++            var p: buffers.Plan = .{ .a = a };
++            try p.add(cs);
++            for (scratch.members) |role| try t.expect(p.sizes.contains(role));
++            var async = false;
++            var boundaries: usize = 0;
++            var complete: usize = 0;
++            var seen: [scratch.members.len]bool = @splat(false);
++            for (cs) |c| {
++                if (c.begin != .none) {
++                    if (boundaries > 0) {
++                        for (seen) |v| try t.expect(v);
++                        complete += 1;
++                    }
++                    boundaries += 1;
++                    seen = @splat(false);
++                }
++                for (scratch.members, 0..) |role, i| for (c.args) |x| {
++                    if (x.arg != .t or x.arg.t.role != .buf) continue;
++                    seen[i] = seen[i] or std.mem.eql(u8, role, x.arg.t.role.buf);
++                };
++                async = async or c.side or c.defer_side;
++            }
++            // Twenty whole layers, then the encoder endpoint compressor: no subphase resets.
++            try t.expectEqual(@as(usize, 21), boundaries);
++            try t.expectEqual(@as(usize, 20), complete);
++            for (seen) |v| try t.expect(!v);
++            if (profile > 0) try t.expect(async);
++        }
++    };
++}
++
++test "K4 scratch: unjoined side-stream use and interleaved live members are rejected before launches" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cs = try program(a, .{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048 }, 4096, 0);
++    try scratch.validate(cs);
++    // Moving the actual query producer to a side stream leaves its device work pending after host return.
++    var changed = false;
++    for (cs) |*c| {
++        if (!std.mem.eql(u8, c.name, "_rope")) continue;
++        c.side = true;
++        try t.expectError(error.ScratchAsyncLifetime, scratch.validate(cs));
++        c.side = false;
++        const original_name = c.name;
++        c.name = "tf_dsv41_l2p.planted";
++        try t.expectError(error.ScratchAsyncLifetime, scratch.validate(cs));
++        c.name = original_name;
++        changed = true;
++        break;
++    }
++    try t.expect(changed);
++    // One real tensor added to the query's consumer makes its alias live in the same launch.
++    const arg: calls.Arg = .{ .t = .{ .role = .{ .buf = "L.k4~z" }, .dt = .bf16, .shape = &.{1}, .stride = &.{1} } };
++    changed = false;
++    for (cs) |*c| {
++        if (!std.mem.eql(u8, c.name, "_rope")) continue;
++        const args = try a.alloc(calls.Named, c.args.len + 1);
++        @memcpy(args[0..c.args.len], c.args);
++        args[c.args.len] = .{ .arg = arg };
++        c.args = args;
++        try t.expectError(error.ScratchLifetimeOverlap, scratch.validate(cs));
++        changed = true;
++        break;
++    }
++    try t.expect(changed);
++}
++
++test "K4 scratch: flag off offsets are unchanged and flag on shares only the proven regions" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var p: buffers.Plan = .{ .a = a };
++    try p.add(try program(a, .{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048 }, 4096, 0));
++    var off = scratch.Layout.init(&p, false);
++    var on = scratch.Layout.init(&p, true);
++    var legacy: u64 = 0;
++    var found: [scratch.members.len]bool = @splat(false);
++    var offsets: [scratch.members.len]u64 = undefined;
++    for (p.sizes.keys(), p.sizes.values()) |role, bytes| {
++        if (std.mem.indexOf(u8, role, ws.K4.tag) == null) continue;
++        try t.expectEqual(legacy, off.next(role, bytes));
++        legacy += std.mem.alignForward(u64, bytes, 256);
++        const at = on.next(role, bytes);
++        try t.expectEqual(@as(u64, 0), at % 256);
++        try t.expect(at + bytes <= on.bytes);
++        for (scratch.members, 0..) |name, i| if (std.mem.eql(u8, role, name)) {
++            found[i] = true;
++            offsets[i] = at;
++        };
++    }
++    try t.expectEqual(legacy, off.bytes);
++    try t.expectEqual(ws.planBytes(&p), off.bytes);
++    try t.expectEqual(off.bytes, off.at);
++    try t.expectEqual(on.bytes, on.at);
++    for (found) |v| try t.expect(v);
++    try t.expectEqual(offsets[0], offsets[1]);
++    try t.expectEqual(offsets[0], offsets[2]);
++    try t.expectEqual(offsets[3], offsets[4]);
++    try t.expect(offsets[0] != offsets[3]);
++    try t.expectEqual(@as(u64, 214 << 20), off.bytes - on.bytes);
++}
++
++test "K4 scratch: explicit opt in only, and TBO leaves its in flight namespaces unchanged" {
++    try t.expect(!scratch.active(null, false));
++    try t.expect(!scratch.active("0", false));
++    try t.expect(!scratch.active("true", false));
++    try t.expect(scratch.active("1", false));
++    try t.expect(!scratch.active("1", true));
++}
+diff --git a/zig/src/families/deepseek_v41/review_workspace_test.zig b/zig/src/families/deepseek_v41/review_workspace_test.zig
+index be2a94dbd97462dd1ae3dc7b5bd986172452d49f..5fcb0d5a322c8a4ff644aa947833f31662880d17 100644
+--- a/zig/src/families/deepseek_v41/review_workspace_test.zig
++++ b/zig/src/families/deepseek_v41/review_workspace_test.zig
+@@ -116,3 +116,38 @@ fn mappingCase(a: std.mem.Allocator) !void {
+ test "Completion ownership: failed workspace mapping publication unwinds every partial external binding" {
+     try t.checkAllAllocationFailures(t.allocator, mappingCase, .{});
+ }
++
++test "Completion ownership: K4 acquire binds the alias layout and releases every name after completion" {
++    const scratch = @import("prefill_scratch.zig");
++    var d = mock.init();
++    var runner: run.Runner = .{ .gpa = t.allocator, .d = &d, .stream = .{ .d = &d, .handle = null }, .kernels = undefined, .triton = undefined, .weights = undefined };
++    defer runner.deinit();
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    var plan: @import("buffers.zig").Plan = .{ .a = arena.allocator() };
++    for (scratch.members, [_]u64{ 64, 512, 128, 256, 1024 }) |role, bytes|
++        try plan.sizes.put(arena.allocator(), role, bytes);
++    var state: pf.State = .{};
++    state.k4ws = .{ .plan = plan, .alias = true, .allocs = 4, .releases = 4 };
++    var f: fwd.Forward = undefined;
++    f.prefill_state = &state;
++    f.runner = &runner;
++    defer {
++        mock.fail_sync = false;
++        ws.k4Release(&f) catch unreachable;
++    }
++    try ws.k4Acquire(&f);
++    try t.expectEqual(@as(u64, 1536), state.k4ws.bytes);
++    try t.expectEqual(runner.addressOf(scratch.members[0]), runner.addressOf(scratch.members[1]));
++    try t.expectEqual(runner.addressOf(scratch.members[0]), runner.addressOf(scratch.members[2]));
++    try t.expectEqual(runner.addressOf(scratch.members[3]), runner.addressOf(scratch.members[4]));
++    mock.fail_sync = true;
++    try t.expectError(error.NotReady, ws.k4Release(&f));
++    for (scratch.members) |role| try t.expect(runner.addressOf(role) != null);
++    try t.expect(state.k4ws.buf != null);
++    mock.fail_sync = false;
++    try ws.k4Release(&f);
++    for (scratch.members) |role| try t.expect(runner.addressOf(role) == null);
++    try t.expectEqual(mock.allocated, mock.freed);
++    try t.expectEqual(@as(usize, 0), mock.early_free);
++}

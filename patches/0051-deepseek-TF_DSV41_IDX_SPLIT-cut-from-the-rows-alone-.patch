@@ -1,0 +1,403 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 20:26:11 +0700
+Subject: [PATCH 51/72] deepseek: TF_DSV41_IDX_SPLIT cut from the rows alone,
+ agreed at the TP bootstrap
+
+The split's cut is the 64-row grid's even one of the segment's rows, so no
+rank-local setting (the index budget) shapes the gather; each rank then steps
+its own part in its own row blocks. The glue's checks and transfers are
+idx_split.glueCut / Cut.plan, shared with the tests.
+
+The mode is agreed through tp.Config.family instead of a boot all-gather:
+off adds nothing (an off / off boot is byte-for-byte the base's), and a
+refused value hashes as invalid, so a mixed pair fails the agreement on both
+ranks and a refused pair fails BadKnob on both at apply.
+
+Tests: agreement bytes, the exchange plan for every n in 256..4200, and two
+ranks with unequal index budgets issuing the same collectives and owning each
+row once.
+---
+ .../deepseek_v41/block_prefill_select.zig     | 12 +--
+ zig/src/families/deepseek_v41/cuda_model.zig  |  1 +
+ .../families/deepseek_v41/forward_glue.zig    | 13 +--
+ .../families/deepseek_v41/gate_decode_tp.zig  |  3 +-
+ zig/src/families/deepseek_v41/idx_split.zig   | 92 +++++++++++++------
+ .../families/deepseek_v41/idx_split_test.zig  | 86 +++++++++++++++--
+ .../deepseek_v41/serve_knobs_apply.zig        | 18 +---
+ 7 files changed, 153 insertions(+), 72 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/block_prefill_select.zig b/zig/src/families/deepseek_v41/block_prefill_select.zig
+index bc2dd1fa723b2b89bfcdbb08b00ead0d67e145db..e5566261626528a38aacc41317d5bf124fdea11c 100644
+--- a/zig/src/families/deepseek_v41/block_prefill_select.zig
++++ b/zig/src/families/deepseek_v41/block_prefill_select.zig
+@@ -113,15 +113,15 @@ fn fullStep(e: *E, nvis: i64) i64 {
+     return if (e.n * nvis * 12 <= e.o.index_budget) e.n else step(e, nvis * 12);
+ }
+ 
+-/// TF_DSV41_IDX_SPLIT: layer `L`'s cut, from what every rank holds (null: every row here); reindex follows its source.
+-fn cutOf(s: *const Seg, L: u32, streamed: bool, reindexing: bool) ?idx_split.Cut {
++/// TF_DSV41_IDX_SPLIT: layer `L`'s cut (null: every row here); reindex follows its source.
++fn cutOf(s: *const Seg, L: u32, reindexing: bool) ?idx_split.Cut {
+     const e = s.e;
+     const src: u32 = if (reindexing) @intCast(e.cfg.candidate_source) else L;
+     const ratio: i64 = e.cfg.compressRatio(src);
+     const nvis = @max(@divFloor(e.end(), ratio), 1);
++    // only agreed inputs (the bootstrap's mode, world, the program's rows and end): no rank-local budget or step
+     if (!idx_split.engages(e.o.idx_split, e.o.world, e.o.rows, e.n, nvis)) return null;
+-    const st = if (streamed) longpf.plan(e.n, nvis, e.cfg.index_topk) else fullStep(e, nvis);
+-    const c = idx_split.Cut.of(e.n, st);
++    const c = idx_split.Cut.of(e.n);
+     return if (c.valid()) c else null;
+ }
+ 
+@@ -159,8 +159,8 @@ pub fn select(s: *Seg, L: u32) !void {
+         if (e.cfg.isCandidateSource(L)) s.cand = true;
+         return;
+     }
+-    // TF_DSV41_IDX_SPLIT: only this rank's rows [lo, hi), in row blocks stepped as the replicated loop steps them
+-    const cut = cutOf(s, L, streamed, reindexing);
++    // TF_DSV41_IDX_SPLIT: only this rank's rows [lo, hi), in this rank's own row blocks (the budget stays local)
++    const cut = cutOf(s, L, reindexing);
+     const mine: [2]i64 = if (cut) |c| c.mine(e.o.rank) else .{ 0, n };
+     if (reindexing) {
+         // backend.reindex: the row's own scores over its candidates' positions, in row blocks under the budget
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index da009c84e7eb291dc6a20fb93b9363ffc07a02ec..2042404dff3db18d3a04ffa4dd9c04eee119e638 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -170,6 +170,7 @@ pub const Model = struct {
+         const a = m.arena.allocator();
+         const cwd = std.Io.Dir.cwd();
+         m.tcfg = try tp.Config.fromEnv();
++        m.tcfg.family = @import("idx_split.zig").agreement(&@import("serve_knobs.zig").env); // ranks refuse a mixed split
+         m.driver = try cuda.Driver.open();
+         errdefer if (!keep_owner) m.driver.close();
+         try @import("dev_arena.zig").applySchedule(&m.driver, @intCast(m.tcfg.device)); // TF_CUDA_SCHED
+diff --git a/zig/src/families/deepseek_v41/forward_glue.zig b/zig/src/families/deepseek_v41/forward_glue.zig
+index 6d7357969991bb5cc50bf795b7a0670cdbed87ac..d72451f8365ff080dc492e9876d381087a20cf23 100644
+--- a/zig/src/families/deepseek_v41/forward_glue.zig
++++ b/zig/src/families/deepseek_v41/forward_glue.zig
+@@ -134,16 +134,13 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
+     if (std.mem.eql(u8, step, "ix_gather")) {
+         // TF_DSV41_IDX_SPLIT: each rank's int32 selection rows all-gathered, the other's copied into place
+         const sel = c.args[0].arg.t;
+-        const cut: idx_split.Cut = .{ .n = sel.shape[0], .h0 = c.args[2].arg.i };
+-        const cols: usize = @intCast(sel.shape[1]);
+-        if (W != 2 or !cut.valid() or sel.stride[0] != sel.shape[1] or numel(c.args[1].arg.t) < 2 * @as(usize, @intCast(cut.big())) * cols) return error.BadGlue;
+-        const row = 4 * cols;
++        const cut = try idx_split.glueCut(W, sel.shape[0], c.args[2].arg.i, sel.shape[1], sel.stride[0], numel(c.args[1].arg.t));
++        const p = cut.plan(f.comm.rank());
++        const row: usize = @intCast(4 * sel.shape[1]);
+         const base = try r.tensorAddr(sel);
+         const tmp = try r.tensorAddr(c.args[1].arg.t);
+-        const me = f.comm.rank();
+-        try f.comm.allGather(base + @as(usize, @intCast(cut.sendRow(me))) * row, tmp, @as(usize, @intCast(cut.big())) * cols, .i32, s);
+-        const t = cut.take(me);
+-        const src: usize, const dst: usize, const rows: usize = .{ @intCast(t.src), @intCast(t.dst), @intCast(t.rows) };
++        const send: usize, const count: usize, const src: usize, const dst: usize, const rows: usize = .{ @intCast(p.send), @intCast(p.count), @intCast(p.src), @intCast(p.dst), @intCast(p.rows) };
++        try f.comm.allGather(base + send * row, tmp, count * row / 4, .i32, s);
+         return r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(base + dst * row, tmp + src * row, rows * row, s), "cuMemcpyDtoDAsync");
+     }
+     if (std.mem.eql(u8, step, "exchange_f32")) {
+diff --git a/zig/src/families/deepseek_v41/gate_decode_tp.zig b/zig/src/families/deepseek_v41/gate_decode_tp.zig
+index 6c32f3f0507f0c8f4d908c076a9f26eb0e5e0efd..d0c8866871ddec63bdaf592e8c1154d0ac19a218 100644
+--- a/zig/src/families/deepseek_v41/gate_decode_tp.zig
++++ b/zig/src/families/deepseek_v41/gate_decode_tp.zig
+@@ -38,7 +38,8 @@ pub fn main(gpa: std.mem.Allocator, io: std.Io, pack_dir: []const u8, ref: []con
+     defer arena.deinit();
+     const a = arena.allocator();
+     const cwd = std.Io.Dir.cwd();
+-    const tcfg = try tp.Config.fromEnv();
++    var tcfg = try tp.Config.fromEnv();
++    tcfg.family = @import("idx_split.zig").agreement(&@import("serve_knobs.zig").env); // as cuda_model.zig
+     const rank = tcfg.rank;
+     const world = tcfg.world;
+     try cwd.createDirPath(io, out_dir);
+diff --git a/zig/src/families/deepseek_v41/idx_split.zig b/zig/src/families/deepseek_v41/idx_split.zig
+index bbb3e1f901a9c99aea64aa4b99906dc6397a5b38..4b820da38532396eb4212d9bfac2fe79ea887632 100644
+--- a/zig/src/families/deepseek_v41/idx_split.zig
++++ b/zig/src/families/deepseek_v41/idx_split.zig
+@@ -12,17 +12,50 @@ pub const min_rows: i64 = 256;
+ /// auto: a layer splits when rows x visible keys reach this (4,096 rows at 65,536 compressed keys).
+ pub const auto_work: i64 = 4096 * 65536;
+ 
+-/// The cut's grid when the layer's own loop is one block: rows a multiple of this.
++/// The cut's grid: rank 0's rows a multiple of this.
+ pub const grid: i64 = 64;
+ 
++const name = "TF_DSV41_IDX_SPLIT";
++
++/// The setting as read: a mode, or a value no rank accepts (kept apart so the ranks can agree on refusing it).
++const Read = union(enum) { mode: Mode, bad: []const u8 };
++
++fn read(get: *const fn ([]const u8) ?[]const u8) Read {
++    const raw = std.mem.trim(u8, get(name) orelse return .{ .mode = .off }, " \t");
++    if (raw.len == 0 or std.mem.eql(u8, raw, "0") or std.ascii.eqlIgnoreCase(raw, "off")) return .{ .mode = .off };
++    if (std.ascii.eqlIgnoreCase(raw, "auto")) return .{ .mode = .auto };
++    if (std.mem.eql(u8, raw, "1") or std.ascii.eqlIgnoreCase(raw, "on")) return .{ .mode = .all };
++    return .{ .bad = raw };
++}
++
+ /// TF_DSV41_IDX_SPLIT: unset / 0 / off = off, auto = the work threshold, 1 / on = every eligible segment.
+ pub fn mode(get: *const fn ([]const u8) ?[]const u8) !Mode {
+-    const raw = std.mem.trim(u8, get("TF_DSV41_IDX_SPLIT") orelse return .off, " \t");
+-    if (raw.len == 0 or std.mem.eql(u8, raw, "0") or std.ascii.eqlIgnoreCase(raw, "off")) return .off;
+-    if (std.ascii.eqlIgnoreCase(raw, "auto")) return .auto;
+-    if (std.mem.eql(u8, raw, "1") or std.ascii.eqlIgnoreCase(raw, "on")) return .all;
+-    if (!quiet) std.log.warn("TF_DSV41_IDX_SPLIT={s}: expected 0 / off, auto or 1", .{raw});
+-    return error.BadKnob;
++    return switch (read(get)) {
++        .mode => |m| m,
++        .bad => |raw| {
++            if (!quiet) std.log.warn("{s}={s}: expected 0 / off, auto or 1", .{ name, raw });
++            return error.BadKnob;
++        },
++    };
++}
++
++/// The bytes the TP bootstrap's settings agreement carries for this setting (tp.Config.family); null when off.
++pub fn agreement(get: *const fn ([]const u8) ?[]const u8) ?[32]u8 {
++    // off adds nothing: an off / off boot agrees on exactly the base digest; any other pair differs and both refuse
++    const tag: []const u8 = switch (read(get)) {
++        .mode => |m| switch (m) {
++            .off => return null,
++            .auto => "auto",
++            .all => "all",
++        },
++        .bad => "invalid",
++    };
++    var out: [32]u8 = undefined;
++    var h = std.crypto.hash.sha2.Sha256.init(.{});
++    h.update(name ++ "=");
++    h.update(tag);
++    h.final(&out);
++    return out;
+ }
+ 
+ /// Whether a layer over `keys` visible keys splits a segment of `n` rows; from values every rank holds alike.
+@@ -36,17 +69,9 @@ pub const Cut = struct {
+     n: i64,
+     h0: i64,
+ 
+-    /// The cut of `n` rows whose loop steps `st` rows: the loop's own boundary when about even, else the 64-row grid's.
+-    pub fn of(n: i64, st: i64) Cut {
+-        const even: Cut = .{ .n = n, .h0 = @divFloor(n, 2 * grid) * grid };
+-        if (st <= 0 or st >= n) return even;
+-        var h0: i64 = st;
+-        var s: i64 = 1;
+-        while (s * st < n) : (s += 1) {
+-            if (@max(s * st, n - s * st) < @max(h0, n - h0)) h0 = s * st;
+-        }
+-        const at: Cut = .{ .n = n, .h0 = h0 };
+-        return if (at.big() <= even.big() + grid) at else even;
++    /// The cut of `n` rows: the 64-row grid's even one, from the rows alone (no rank-local budget or step).
++    pub fn of(n: i64) Cut {
++        return .{ .n = n, .h0 = @divFloor(n, 2 * grid) * grid };
+     }
+ 
+     /// This rank's rows [lo, hi).
+@@ -59,19 +84,26 @@ pub const Cut = struct {
+         return @max(c.h0, c.n - c.h0);
+     }
+ 
+-    /// The first row a rank sends: rank 0 rows [0, big) (its own first), rank 1 rows [n - big, n) (its own last).
+-    pub fn sendRow(c: Cut, rank: u32) i64 {
+-        return if (rank == 0) 0 else c.n - c.big();
+-    }
+-
+-    /// The other rank's rows: from row `src` of the gathered [2 x big] rows into row `dst`, `rows` of them.
+-    pub fn take(c: Cut, rank: u32) struct { src: i64, dst: i64, rows: i64 } {
+-        const b = c.big();
+-        if (rank == 0) return .{ .src = b + c.h0 - (c.n - b), .dst = c.h0, .rows = c.n - c.h0 };
+-        return .{ .src = 0, .dst = 0, .rows = c.h0 };
+-    }
+-
+     pub fn valid(c: Cut) bool {
+         return c.h0 > 0 and c.h0 < c.n;
+     }
++
++    /// The glue's transfers for `rank`: the gather and the copy of the other rank's rows (`Plan`).
++    pub fn plan(c: Cut, rank: u32) Plan {
++        const b = c.big();
++        // rank 0 sends rows [0, big) (its own first), rank 1 rows [n - big, n) (its own last); the rest is dropped
++        if (rank == 0) return .{ .send = 0, .count = b, .src = b + c.h0 - (c.n - b), .dst = c.h0, .rows = c.n - c.h0 };
++        return .{ .send = c.n - b, .count = b, .src = 0, .dst = 0, .rows = c.h0 };
++    }
+ };
++
++/// In rows: send rows [send, send + count) into the [2 x count] gather, then its rows [src, src + rows) to row `dst`.
++pub const Plan = struct { send: i64, count: i64, src: i64, dst: i64, rows: i64 };
++
++/// The glue's checks of `ix_gather(sel [n, cols], tmp, h0)`: two ranks, a valid cut, contiguous rows, room in `tmp`.
++pub fn glueCut(world: usize, n: i64, h0: i64, cols: i64, stride: i64, tmp_elems: usize) error{BadGlue}!Cut {
++    const c: Cut = .{ .n = n, .h0 = h0 };
++    if (world != 2 or !c.valid() or cols < 1 or stride != cols) return error.BadGlue;
++    if (tmp_elems < @as(usize, @intCast(2 * c.big() * cols))) return error.BadGlue;
++    return c;
++}
+diff --git a/zig/src/families/deepseek_v41/idx_split_test.zig b/zig/src/families/deepseek_v41/idx_split_test.zig
+index b4d1eec4814d30126b3e8072d230944b4dc2b72c..a3dc015f54302f21e1ac03af58e5b8cf775f1b89 100644
+--- a/zig/src/families/deepseek_v41/idx_split_test.zig
++++ b/zig/src/families/deepseek_v41/idx_split_test.zig
+@@ -32,6 +32,27 @@ test "TF_DSV41_IDX_SPLIT: unset / empty / 0 / off off, auto the threshold, 1 / o
+     }
+ }
+ 
++test "TF_DSV41_IDX_SPLIT agreement: off adds nothing; auto, 1 and any refused value each carry their own bytes" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expect(xs.agreement(&Fake.get) == null);
++    for ([_][]const u8{ "", "0", "off", " OFF " }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", v }};
++        try testing.expect(xs.agreement(&Fake.get) == null);
++    }
++    var got: [6][32]u8 = undefined;
++    for ([_][]const u8{ "auto", "1", "on", "yes", "2", "auto1" }, &got) |v, *g| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", v }};
++        g.* = xs.agreement(&Fake.get).?;
++    }
++    // 1 and on agree; every refused value agrees with every other (both ranks then refuse at apply)
++    try testing.expectEqualSlices(u8, &got[1], &got[2]);
++    try testing.expectEqualSlices(u8, &got[3], &got[4]);
++    try testing.expectEqualSlices(u8, &got[3], &got[5]);
++    // auto, all and refused differ pairwise: a mixed pair fails the bootstrap's agreement on both ranks
++    for ([_][2]usize{ .{ 0, 1 }, .{ 0, 3 }, .{ 1, 3 } }) |p| try testing.expect(!std.mem.eql(u8, &got[p[0]], &got[p[1]]));
++}
++
+ test "idx split: every cut gives each rank whole rows, equal gather counts, and both ranks every row's bytes back" {
+     const k = 3;
+     var ref: [3 * 4200]i32 = undefined;
+@@ -39,14 +60,18 @@ test "idx split: every cut gives each rank whole rows, equal gather counts, and
+     var tmp: [2 * 3 * 4200]i32 = undefined;
+     for (&ref, 0..) |*v, i| v.* = @intCast(i * 7 + 1);
+     var n: i64 = xs.min_rows;
+-    while (n <= 4200) : (n += 1) for ([_]i64{ 16, 21, 64, 300, n - 1, n, n + 5 }) |st| {
+-        const c = xs.Cut.of(n, st);
+-        try testing.expect(c.valid());
+-        // the replicated loop's boundary, or the 64-row grid's; never far from even
+-        try testing.expect((st < n and @mod(c.h0, st) == 0) or @mod(c.h0, xs.grid) == 0);
+-        try testing.expect(2 * c.big() - n <= 4 * xs.grid);
++    while (n <= 4200) : (n += 1) {
++        const c = xs.Cut.of(n);
++        try testing.expect(c.valid() and @mod(c.h0, xs.grid) == 0);
++        try testing.expect(2 * c.big() - n <= 2 * xs.grid);
+         const un: usize = @intCast(n);
+         const big: usize = @intCast(c.big());
++        // the glue's checks: the cut, two ranks, contiguous rows, a gather buffer of two `big` parts
++        try testing.expectEqual(c, try xs.glueCut(2, n, c.h0, k, k, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, c.h0, k, k, 2 * big * k - 1));
++        try testing.expectError(error.BadGlue, xs.glueCut(1, n, c.h0, k, k, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, c.h0, k, k + 1, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, 0, k, k, 2 * big * k));
+         // a rank holds its own rows' selection; the rest of its buffer is another layer's (stale) rows
+         for (0..2) |r| {
+             const mi = c.mine(@intCast(r));
+@@ -55,18 +80,20 @@ test "idx split: every cut gives each rank whole rows, equal gather counts, and
+                 const own = row >= m[0] and row < m[1];
+                 local[r][row * k + j] = if (own) ref[row * k + j] else -7;
+             };
+-            const s0: usize = @intCast(c.sendRow(@intCast(r)));
++            const p = c.plan(@intCast(r));
++            const s0: usize = @intCast(p.send);
++            try testing.expectEqual(c.big(), p.count);
+             try testing.expect(s0 + big <= un and s0 <= m[0] and m[1] <= s0 + big);
+             @memcpy(tmp[r * big * k ..][0 .. big * k], local[r][s0 * k ..][0 .. big * k]);
+         }
+         for (0..2) |r| {
+-            const t = c.take(@intCast(r));
+-            const src: usize, const dst: usize, const rows: usize = .{ @intCast(t.src), @intCast(t.dst), @intCast(t.rows) };
++            const p = c.plan(@intCast(r));
++            const src: usize, const dst: usize, const rows: usize = .{ @intCast(p.src), @intCast(p.dst), @intCast(p.rows) };
+             try testing.expect(src + rows <= 2 * big);
+             @memcpy(local[r][dst * k ..][0 .. rows * k], tmp[src * k ..][0 .. rows * k]);
+             try testing.expectEqualSlices(i32, ref[0 .. un * k], local[r][0 .. un * k]);
+         }
+-    };
++    }
+ }
+ 
+ fn roleEq(x: calls.Role, y: calls.Role) bool {
+@@ -311,6 +338,45 @@ test "idx split: the candidate source and its reindex layers take one cut, so ca
+     };
+ }
+ 
++test "idx split: ranks with unequal index budgets still cut alike, issue the same collectives and own each row once" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    var layers: [40]u32 = undefined;
++    for (&layers, 0..) |*l, i| l.* = @intCast(i);
++    const k: i64 = fx.cfg.index_topk;
++    const n: i64 = 2048;
++    for ([_][2]i64{ .{ 32 << 20, 64 << 20 }, .{ 64 << 20, 1 << 20 } }) |budget| for ([_]xs.Mode{ .auto, .all }) |md| {
++        var cs: [2][]const calls.Call = undefined;
++        for (0..2) |rank| {
++            var o = longOpts(n);
++            o.idx_split = md;
++            o.rank = @intCast(rank);
++            o.index_budget = budget[rank];
++            cs[rank] = try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, 131072, false);
++        }
++        const c0 = try collectives(aa, cs[0]);
++        const c1 = try collectives(aa, cs[1]);
++        try testing.expectEqual(c0.len, c1.len);
++        for (c0, c1) |x, y| try testing.expectEqual(x, y);
++        // each split layer: one cut (the rows' canonical one) on both ranks, every row selected on exactly one
++        var gathers: usize = 0;
++        for (cs[0]) |c| if (std.mem.eql(u8, c.name, "glue.ix_gather")) {
++            gathers += 1;
++            const role = roleName(c.args[0].arg);
++            const L = try std.fmt.parseInt(u32, role["w.sel".len..], 10);
++            const cut = xs.Cut.of(n);
++            try testing.expectEqual(cut.h0, c.args[2].arg.i);
++            const seen = try aa.alloc(u8, @intCast(n));
++            @memset(seen, 0);
++            for (cs, 0..) |r, rank| try markRows(r, L, k, seen, cut.mine(@intCast(rank)));
++            for (seen) |v| try testing.expectEqual(@as(u8, 1), v);
++        };
++        try testing.expectEqual(@as(usize, 8), gathers);
++    };
++}
++
+ test "idx split: never off, on one rank or four, in row mode, under 256 rows; auto from 4,096 x 65,536" {
+     for ([_]xs.Mode{ .auto, .all }) |m| {
+         try testing.expect(xs.engages(m, 2, false, 4096, 1 << 20));
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_apply.zig b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+index 95b060df56e9b7ed142abc415fd87ef1969a7044..a1a64f49227b1dd81534c7e9185fca01c1822f01 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_apply.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+@@ -25,22 +25,6 @@ const routerGroupRot = pk.routerGroupRot;
+ const streamRb = pk.streamRb;
+ const x3ldEpi = pk.x3ldEpi;
+ const idx_split = @import("idx_split.zig");
+-const graphs = @import("graphs.zig");
+-
+-/// TF_DSV41_IDX_SPLIT: one mode on both ranks, else no start (a rank splitting alone pairs its gather with another).
+-fn idxSplitAgreed(f: *Forward) !void {
+-    var ag = try graphs.Agreement.init(f.runner.d, f.comm, f.runner.stream);
+-    defer ag.deinit();
+-    const h = ag.host.slice(i32);
+-    h[0] = @backingInt(f.opts.idx_split);
+-    try ag.dev.uploadAsync(0, std.mem.sliceAsBytes(h[0..1]), ag.stream.handle);
+-    try f.comm.allGather(ag.dev.ptr, ag.dev.ptr + 4, 1, .i32, ag.stream.handle);
+-    try ag.dev.downloadAsync(4, std.mem.sliceAsBytes(h[1..3]), ag.stream.handle);
+-    try ag.stream.synchronize();
+-    if (h[1] == h[2]) return;
+-    std.log.scoped(.dsv41).err("TF_DSV41_IDX_SPLIT differs between the ranks (modes {d} and {d}; 0 off, 1 auto, 2 all): set it alike", .{ h[1], h[2] });
+-    return error.BadKnob;
+-}
+ 
+ /// The knobs onto a forward before its buffer plan, on every rank; R1 is read where the forward is made (`r1`).
+ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+@@ -67,8 +51,8 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     f.opts.pf_tbo = try pfTbo(&env);
+     f.opts.stream_rb = try streamRb(&env);
+     f.opts.index_bound = try indexBound(&env);
++    // TF_DSV41_IDX_SPLIT: the ranks agreed on it at the TP bootstrap (cuda_model.zig: tp.Config.family)
+     f.opts.idx_split = try idx_split.mode(&env);
+-    if (f.comm.world() == 2) try idxSplitAgreed(f);
+     // TF_DSV41_BRANCHES: the side stream exists before any capture
+     if (f.branches == null) f.branches = try @import("branches.zig").install(f.gpa, f, rank);
+     // TF_DSV41_PF_OVERLAP: the pieces' exchanges go on the branches' side stream (one peer: TP=2)

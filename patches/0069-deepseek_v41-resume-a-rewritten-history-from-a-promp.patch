@@ -1,0 +1,1000 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 23:27:12 +0700
+Subject: [PATCH 69/72] deepseek_v41: resume a rewritten history from a prompt
+ checkpoint (TF_DSV41_SESSION_LCP_RESUME)
+
+Session reuse resumes only from a stored entry that strictly prefixes the new prompt. A client that rewrites the
+middle of a long history (a dropped image, an edited message, compaction) therefore prefilled from the last entry
+before the change, often token 0 (jayleaton/deepseek-v41-tensorfold-spark#80: 216-278 s at ~500K tokens).
+
+A longer entry cannot simply be cut at the divergence: every layer's SWA ring, the ratio-2 carries, the CED stash and
+the drafter rings at token N depend on the history, and only a snapshot taken at N holds them. So, behind
+TF_DSV41_SESSION_LCP_RESUME=1 (off by default):
+
+- the round planner also snapshots a prompt at every multiple of TF_DSV41_SESSION_LCP_EVERY (default 32768, on the
+  16-token grid) before its replay point; the snapshots are ordinary prompt entries of kind 2, sharing the slot's pages;
+- the store's anchor_kind policy keeps those checkpoints as recent as their chat (a RAM restore touches them first) and
+  drops them on eviction instead of parking them;
+- find never resumes inside a run of image positions: a hit there moves back to an entry at or before the image.
+
+Whatever the knob, an admission that loses at least 1,024 tokens of reuse logs
+"sessions: slot S: a N-token prompt diverged at token D (stored M); it prefills from P" (sessions/diverge.zig).
+
+Knob off, the planner's pieces and snapshots, the store's policy and every resumed row are unchanged.
+
+Tests (test-dsv41-kv, test-sessions): the issue's repro through the planner, pool, host pages and store (a dropped image
+resumes from the checkpoint before it, rows and state equal a fresh prefill; on 7b79ef92d it fails at runtime with
+cached 0), a negctl (the longer entry cut at the divergence keeps its own state: rows differ), the knob-off trace equal
+to 7b79ef92d's, the knob's parsing, the planner's checkpoint sequence and damaged restart, the image rule, anchor
+retention under the RAM budget and drop-not-park, and the divergence numbers.
+
+G port (5d25d4ff4): both knobs registered in platform/environment.zig and read with sys.environment, as G's
+other dsv41 knobs are; a malformed value is error.InvalidEnvironment. The strict-env table test counts 92 settings
+(53 switches, 18 integers).
+
+(cherry picked from commit a3cf60d672bc5dd71a5b45deba5ea965fbec4353)
+---
+ .../deepseek_v41/env_validate_test.zig        |   4 +-
+ zig/src/families/deepseek_v41/kv/kv.zig       |   3 +
+ zig/src/families/deepseek_v41/kv/lcp.zig      |  40 +++
+ .../deepseek_v41/kv/lcp_resume_host_test.zig  | 254 ++++++++++++++++++
+ zig/src/families/deepseek_v41/kv/lcp_test.zig | 196 ++++++++++++++
+ zig/src/families/deepseek_v41/kv/sched.zig    |  14 +-
+ .../families/deepseek_v41/sessions_gpu.zig    |  36 ++-
+ zig/src/platform/environment.zig              |   2 +
+ zig/src/sessions/diverge.zig                  | 105 ++++++++
+ zig/src/sessions/portable_test.zig            |   1 +
+ zig/src/sessions/prefix.zig                   |   3 +
+ zig/src/sessions/sessions.zig                 |   1 +
+ zig/src/sessions/store.zig                    |  21 ++
+ zig/src/sessions/store_ram.zig                |   1 +
+ 14 files changed, 670 insertions(+), 11 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/kv/lcp.zig
+ create mode 100644 zig/src/families/deepseek_v41/kv/lcp_resume_host_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/kv/lcp_test.zig
+ create mode 100644 zig/src/sessions/diverge.zig
+
+diff --git a/zig/src/families/deepseek_v41/env_validate_test.zig b/zig/src/families/deepseek_v41/env_validate_test.zig
+index e303108eea0de2a47fd7433435ce30d6f79f134f..bacfec08b9f6d10d7a1188bbb3fe448512e1e423 100644
+--- a/zig/src/families/deepseek_v41/env_validate_test.zig
++++ b/zig/src/families/deepseek_v41/env_validate_test.zig
+@@ -36,13 +36,13 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
+     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
+ }
+ 
+-test "DeepSeek strict env: the shared table holds all 90 settings: 52 switches, 17 integers, 16 reals, 3 structured, 2 presence" {
++test "DeepSeek strict env: the shared table holds all 92 settings: 53 switches, 18 integers, 16 reals, 3 structured, 2 presence" {
+     var counts: [5]usize = @splat(0);
+     for (e.rules) |r| if (r.scope == .dsv41) {
+         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
+         counts[@backingInt(group(r))] += 1;
+     };
+-    try t.expectEqual([5]usize{ 52, 17, 16, 3, 2 }, counts);
++    try t.expectEqual([5]usize{ 53, 18, 16, 3, 2 }, counts);
+ }
+ 
+ test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
+diff --git a/zig/src/families/deepseek_v41/kv/kv.zig b/zig/src/families/deepseek_v41/kv/kv.zig
+index fc94ff527104e1d9286165e87fac4fbf0c7d5b36..c813cc621da1402344380221237fde5003d30b9e 100644
+--- a/zig/src/families/deepseek_v41/kv/kv.zig
++++ b/zig/src/families/deepseek_v41/kv/kv.zig
+@@ -10,6 +10,7 @@ pub const device = @import("device.zig");
+ pub const DevicePool = device.DevicePool;
+ pub const sess = @import("sess.zig");
+ pub const sched = @import("sched.zig");
++pub const lcp = @import("lcp.zig");
+ pub const progress = @import("progress.zig");
+ 
+ test {
+@@ -26,5 +27,7 @@ test {
+     _ = @import("session_slots_test.zig");
+     _ = @import("resend_test.zig");
+     _ = sched;
++    _ = @import("lcp_test.zig");
++    _ = @import("lcp_resume_host_test.zig");
+     _ = progress;
+ }
+diff --git a/zig/src/families/deepseek_v41/kv/lcp.zig b/zig/src/families/deepseek_v41/kv/lcp.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ade6d2df1efa42ce1ee4f11a414afc5c1782194
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv/lcp.zig
+@@ -0,0 +1,40 @@
++//! Resume past a rewritten history (TF_DSV41_SESSION_LCP_RESUME): prompt checkpoints, their kind, the image rule.
++
++const std = @import("std");
++const sessions = @import("sessions");
++
++/// TF_DSV41_SESSION_LCP_EVERY's default: a checkpoint every 32,768 prompt tokens.
++pub const every_default: u64 = 32768;
++
++/// sessions.Entry.kind of a checkpoint (a turn's end is 0, a prompt's replay point 1): the store's anchor kind.
++pub const checkpoint_kind: u32 = 2;
++
++/// The checkpoint spacing (TF_DSV41_SESSION_LCP_EVERY, a multiple of the planner's grid); null: off.
++pub fn fromEnv() !?u64 {
++    const env = @import("sys").environment;
++    if (!try env.read(bool, "TF_DSV41_SESSION_LCP_RESUME", false)) return null;
++    const every = try env.read(u64, "TF_DSV41_SESSION_LCP_EVERY", every_default);
++    if (every % @import("sched.zig").grid != 0) return error.InvalidEnvironment;
++    return every;
++}
++
++/// A prompt snapshot's entry kind: a checkpoint at multiples of `every`, else the replay point's.
++pub fn kindAt(every: ?u64, pos: u64, prompt_kind: u32) u32 {
++    const e = every orelse return prompt_kind;
++    return if (pos > 0 and pos % e == 0) checkpoint_kind else prompt_kind;
++}
++
++/// The run of image positions (`isVid`) that `pos` falls strictly inside: its first position; null: none.
++pub fn imageStart(prompt: []const u32, pos: usize, isVid: *const fn (u32) bool) ?usize {
++    if (pos == 0 or pos >= prompt.len or !isVid(prompt[pos - 1]) or !isVid(prompt[pos])) return null;
++    var s = pos - 1;
++    while (s > 0 and isVid(prompt[s - 1])) s -= 1;
++    return s;
++}
++
++/// The hit `find` gives, moved back to an entry at or before the image's first position when it lands inside one.
++pub fn outsideImages(prompt: []const u32, ctx: anytype, find: anytype, isVid: *const fn (u32) bool) !?sessions.store.Hit {
++    var h = (try find(ctx, prompt)) orelse return null;
++    while (imageStart(prompt, @intCast(h.pos), isVid)) |s| h = (try find(ctx, prompt[0 .. s + 1])) orelse return null;
++    return h;
++}
+diff --git a/zig/src/families/deepseek_v41/kv/lcp_resume_host_test.zig b/zig/src/families/deepseek_v41/kv/lcp_resume_host_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fbf68cf695ec24aaf71d351de01aec6694ed475
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv/lcp_resume_host_test.zig
+@@ -0,0 +1,254 @@
++//! Issue #80 on the host: a history rewritten mid-way (a dropped image) through the planner, pool, pages and store.
++
++const std = @import("std");
++const sessions = @import("sessions");
++const sched = @import("sched.zig");
++const sess = @import("sess.zig");
++const t = std.testing;
++
++extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
++extern "c" fn unsetenv(name: [*:0]const u8) c_int;
++
++const fams = [_]sessions.Family{
++    .{ .name = "comp.2", .ratio = 2, .row_bytes = 4 },
++    .{ .name = "comp.1", .ratio = 1, .row_bytes = 4 },
++};
++const page: u32 = 32;
++const tag: u32 = 41;
++const vbase: i32 = 1 << 24;
++
++/// A fake model's bounded state: a hash of every token so far, as the SWA rings and carries depend on the history.
++const Bound = struct {
++    state: u64,
++    fn nbytes(_: *anyopaque) u64 {
++        return 8;
++    }
++    fn blobs(_: *anyopaque, _: std.mem.Allocator) ![]sessions.disk.Blob {
++        return error.Unused;
++    }
++    fn release(ptr: *anyopaque) void {
++        t.allocator.destroy(@as(*Bound, @ptrCast(@alignCast(ptr))));
++    }
++    fn make(state: u64) !sessions.store.Bounded {
++        const b = try t.allocator.create(Bound);
++        b.* = .{ .state = state };
++        return .{ .ptr = b, .vtable = &.{ .nbytes = nbytes, .blobs = blobs, .release = release } };
++    }
++};
++
++fn mix(s: u64, id: i32) u64 {
++    var h = std.hash.Wyhash.init(s);
++    h.update(std.mem.asBytes(&id));
++    return h.final();
++}
++
++const World = struct {
++    pool: sessions.Pool,
++    host: sessions.HostPool,
++    store: sessions.Store,
++    slot: *sessions.Slot,
++    /// the prompt snapshots of the last turn
++    saves: std.ArrayList(u64) = .empty,
++    /// every piece, snapshot and row of the turns: the knob-off trace
++    trace: std.hash.Wyhash = .init(0),
++
++    fn init(w: *World) !void {
++        w.pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = page }, 64 * 1024, 1, 0);
++        w.host = try sessions.HostPool.init(t.allocator, &w.pool);
++        w.store = try sessions.Store.init(t.allocator, t.io, &w.pool, w.host.store(), null, .{ .skip_covered = false, .delta = false });
++        w.slot = try w.pool.newSlot(4096);
++        w.saves = .empty;
++        w.trace = .init(0);
++    }
++
++    fn deinit(w: *World) void {
++        w.saves.deinit(t.allocator);
++        w.store.deinit();
++        w.host.deinit();
++        w.pool.deinit();
++    }
++
++    fn row(w: *World, slot: *sessions.Slot, fi: usize, pos: usize) []u8 {
++        const f = fams[fi];
++        const off = (pos % page) / f.ratio * f.row_bytes;
++        return w.host.pageOf(@intCast(fi), slot.tableAt(@intCast(pos / page)))[off..][0..f.row_bytes];
++    }
++
++    /// The fake forward over ids[start, end) from `state`: each position's rows, then the state past it.
++    fn prefill(w: *World, slot: *sessions.Slot, state: *u64, ids: []const i32, start: usize, end: usize) !void {
++        try slot.ensure(end);
++        for (start..end) |pos| {
++            state.* = mix(state.*, ids[pos]);
++            for (fams, 0..) |f, fi| if (pos % f.ratio == 0) {
++                const v: u32 = @truncate(state.* +% fi);
++                @memcpy(w.row(slot, fi, pos), std.mem.asBytes(&v));
++            };
++        }
++    }
++
++    /// A fresh run of ids[0, n) in its own slot has the same rows and state as `slot` resumed to `state`.
++    fn sameAsFresh(w: *World, slot: *sessions.Slot, state: u64, ids: []const i32, n: usize) !bool {
++        const fresh = try w.pool.newSlot(4096);
++        defer _ = fresh.releaseAll() catch unreachable;
++        var s: u64 = 0;
++        try w.prefill(fresh, &s, ids, 0, n);
++        if (s != state) return false;
++        for (fams, 0..) |f, fi| {
++            var pos: usize = 0;
++            while (pos < n) : (pos += f.ratio) if (!std.mem.eql(u8, w.row(fresh, fi, pos), w.row(slot, fi, pos))) return false;
++        }
++        return true;
++    }
++
++    const Ctx = struct { w: *World, ids: []const i32 };
++
++    fn findFn(ctx: *anyopaque, _: usize) anyerror!?sched.Store.Hit {
++        const c: *Ctx = @ptrCast(@alignCast(ctx));
++        const h = (try c.w.store.find(tag, c.ids)) orelse return null;
++        return .{ .id = h.id, .pos = h.pos, .ram = h.ram };
++    }
++
++    fn poolFn(_: *anyopaque, _: usize, _: ?sched.Store.Hit, _: []const u32, _: u32, _: *std.ArrayList(u32)) anyerror!sess.Plan {
++        return .{ .need = 0, .want = 0 };
++    }
++
++    const Turn = struct { cached: u64, state: u64 };
++
++    /// One turn's prompt ids[0, n) through the planner: admitted (a hit restored), pieces prefilled, snapshots saved.
++    fn turn(w: *World, p: *sched.Planner, ids: []const i32, n: usize) !Turn {
++        var ctx: Ctx = .{ .w = w, .ids = ids[0..n] };
++        const st: sched.Store = .{ .ctx = &ctx, .vtable = &.{ .find = findFn, .pool = poolFn } };
++        var round = p.beginAdmit();
++        defer round.deinit(t.allocator);
++        const adm = (try p.admit(&round, .{ .key = 1, .n = n, .max_new = ids.len - n + 1, .submitted = 0 }, st, 0, null)).admit;
++        var state: u64 = 0;
++        if (adm.hit) |h| state = @as(*Bound, @ptrCast(@alignCast((try w.store.restoreRam(h.id, w.slot)).ptr))).state;
++        w.saves.clearRetainingCapacity();
++        var pieces: std.ArrayList(sched.Piece) = .empty;
++        defer pieces.deinit(t.allocator);
++        var finals: std.ArrayList(usize) = .empty;
++        defer finals.deinit(t.allocator);
++        while (finals.items.len == 0) {
++            try p.plan(null, &pieces, &finals);
++            for (pieces.items) |pc| {
++                try w.prefill(w.slot, &state, ids, @intCast(pc.start), @intCast(pc.end));
++                w.trace.update(std.mem.asBytes(&[_]u64{ pc.start, pc.end, @intFromBool(pc.save) }));
++                if (!pc.save) continue;
++                _ = try w.store.save(w.slot, try Bound.make(state), ids[0..@intCast(pc.end)], tag, 1);
++                try w.saves.append(t.allocator, pc.end);
++            }
++        }
++        p.ended(1);
++        const cached = if (adm.hit) |h| h.pos else 0;
++        w.trace.update(std.mem.asBytes(&[_]u64{ cached, state }));
++        return .{ .cached = cached, .state = state };
++    }
++
++    /// The turn's last prompt token and its reply (ids[n-1, len)), its end saved, the slot emptied.
++    fn reply(w: *World, state: u64, ids: []const i32, n: usize) !void {
++        var s = state;
++        try w.prefill(w.slot, &s, ids, n - 1, ids.len);
++        _ = try w.store.save(w.slot, try Bound.make(s), ids, tag, 0);
++        _ = try w.slot.releaseAll();
++    }
++};
++
++/// A long agent turn holding a screenshot at [300, 364), then the next turn with that image replaced by a short note.
++const Chat = struct {
++    a: [1050]i32 = undefined,
++    b: [1041]i32 = undefined,
++    const a_prompt = 1000;
++    const b_prompt = 1021;
++    const image = .{ 300, 364 };
++
++    fn init() Chat {
++        var c: Chat = .{};
++        for (&c.a, 0..) |*x, i| x.* = if (i >= image[0] and i < image[1]) vbase + @as(i32, @intCast(i)) * 7 else @intCast(i % 997 + 1);
++        @memcpy(c.b[0..image[0]], c.a[0..image[0]]);
++        for (c.b[image[0]..][0..5], 0..) |*x, i| x.* = @intCast(9001 + i);
++        const kept = c.a[image[1]..];
++        @memcpy(c.b[image[0] + 5 ..][0..kept.len], kept);
++        for (c.b[image[0] + 5 + kept.len ..], 0..) |*x, i| x.* = @intCast(5000 + i);
++        return c;
++    }
++};
++
++fn planner(lcp: bool) !sched.Planner {
++    if (lcp) {
++        try t.expectEqual(@as(c_int, 0), setenv("TF_DSV41_SESSION_LCP_RESUME", "1", 1));
++        try t.expectEqual(@as(c_int, 0), setenv("TF_DSV41_SESSION_LCP_EVERY", "272", 1));
++    } else {
++        _ = unsetenv("TF_DSV41_SESSION_LCP_RESUME");
++        _ = unsetenv("TF_DSV41_SESSION_LCP_EVERY");
++    }
++    defer _ = unsetenv("TF_DSV41_SESSION_LCP_RESUME");
++    defer _ = unsetenv("TF_DSV41_SESSION_LCP_EVERY");
++    var s = try sched.Settings.fromEnv();
++    s.rows = 128;
++    s.sessions = true;
++    return sched.Planner.init(t.allocator, s);
++}
++
++test "issue #80: a turn whose image was dropped resumes from the last checkpoint before it, equal to a fresh prefill" {
++    var w: World = undefined;
++    try w.init();
++    defer w.deinit();
++    var p = try planner(true);
++    defer p.deinit();
++    const c = Chat.init();
++    const first = try w.turn(&p, &c.a, Chat.a_prompt);
++    const saved = try t.allocator.dupe(u64, w.saves.items);
++    defer t.allocator.free(saved);
++    try t.expectEqual(@as(u64, 0), first.cached);
++    try w.reply(first.state, &c.a, Chat.a_prompt);
++    // base: no entry prefixes the rewritten history, so all 1,021 tokens prefill again
++    const second = try w.turn(&p, &c.b, Chat.b_prompt);
++    try t.expectEqual(@as(u64, 272), second.cached);
++    try t.expectEqualSlices(u64, &.{ 272, 544, 816, 992 }, saved);
++    try t.expect(try w.sameAsFresh(w.slot, second.state, &c.b, Chat.b_prompt - 1));
++    _ = try w.slot.releaseAll();
++}
++
++test "issue #80 negctl: the longer entry cut at the divergence keeps its own bounded state and the rows differ" {
++    var w: World = undefined;
++    try w.init();
++    defer w.deinit();
++    var p = try planner(false);
++    defer p.deinit();
++    const c = Chat.init();
++    const first = try w.turn(&p, &c.a, Chat.a_prompt);
++    try w.reply(first.state, &c.a, Chat.a_prompt);
++    // the turn's end shares tokens [0, 300) with the rewritten prompt: adopt it, cut its pages there, prefill on
++    var longer: [1051]i32 = undefined;
++    @memcpy(longer[0..1050], &c.a);
++    longer[1050] = 1;
++    const h = (try w.store.find(tag, &longer)).?;
++    try t.expectEqual(@as(u64, 1050), h.pos);
++    var state = @as(*Bound, @ptrCast(@alignCast((try w.store.restoreRam(h.id, w.slot)).ptr))).state;
++    _ = try w.slot.truncate(Chat.image[0]);
++    try w.prefill(w.slot, &state, &c.b, Chat.image[0], Chat.b_prompt - 1);
++    try t.expect(!try w.sameAsFresh(w.slot, state, &c.b, Chat.b_prompt - 1));
++    _ = try w.slot.releaseAll();
++}
++
++test "issue #80, knob off: no checkpoints, the rewritten turn prefills from 0, and the trace is base's" {
++    var w: World = undefined;
++    try w.init();
++    defer w.deinit();
++    var p = try planner(false);
++    defer p.deinit();
++    const c = Chat.init();
++    const first = try w.turn(&p, &c.a, Chat.a_prompt);
++    try t.expectEqualSlices(u64, &.{992}, w.saves.items);
++    try w.reply(first.state, &c.a, Chat.a_prompt);
++    const second = try w.turn(&p, &c.b, Chat.b_prompt);
++    try t.expectEqual(@as(u64, 0), second.cached);
++    try t.expect(try w.sameAsFresh(w.slot, second.state, &c.b, Chat.b_prompt - 1));
++    for (fams, 0..) |f, fi| {
++        var pos: usize = 0;
++        while (pos < Chat.b_prompt - 1) : (pos += f.ratio) w.trace.update(w.row(w.slot, fi, pos));
++    }
++    _ = try w.slot.releaseAll();
++    // 7b79ef92d's value: the planner's pieces and snapshots, the resumes and every row of both turns
++    try t.expectEqual(@as(u64, 5385444483688252178), w.trace.final());
++}
+diff --git a/zig/src/families/deepseek_v41/kv/lcp_test.zig b/zig/src/families/deepseek_v41/kv/lcp_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..fed67d5812ea0f73919919d4cc118dbe0762b549
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv/lcp_test.zig
+@@ -0,0 +1,196 @@
++//! TF_DSV41_SESSION_LCP_RESUME's parts: the knob, checkpoint kinds, the image rule, the planner and store retention.
++
++const std = @import("std");
++const sessions = @import("sessions");
++const lcp = @import("lcp.zig");
++const sched = @import("sched.zig");
++const t = std.testing;
++
++extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
++extern "c" fn unsetenv(name: [*:0]const u8) c_int;
++
++const fams = [_]sessions.Family{.{ .name = "comp.1", .ratio = 1, .row_bytes = 4 }};
++
++const Bound = struct {
++    fn nbytes(_: *anyopaque) u64 {
++        return 8;
++    }
++    fn blobs(_: *anyopaque, gpa: std.mem.Allocator) ![]sessions.disk.Blob {
++        const b = try gpa.alloc(sessions.disk.Blob, 1);
++        b[0] = .{ .name = try gpa.dupe(u8, "s.ring"), .bytes = try gpa.dupe(u8, "ringdata") };
++        return b;
++    }
++    fn release(_: *anyopaque) void {}
++    var one: u8 = 0;
++    fn make() sessions.store.Bounded {
++        return .{ .ptr = &one, .vtable = &.{ .nbytes = nbytes, .blobs = blobs, .release = release }, .logical_bytes = 8 };
++    }
++};
++
++fn vid(x: u32) bool {
++    return x >= 1 << 24;
++}
++
++fn env(name: [*:0]const u8, value: ?[*:0]const u8) !void {
++    if (value) |v| try t.expectEqual(@as(c_int, 0), setenv(name, v, 1)) else _ = unsetenv(name);
++}
++
++test "LCP resume: the knob is off unless 1, and its spacing sits on the planner's grid" {
++    defer env("TF_DSV41_SESSION_LCP_RESUME", null) catch {};
++    defer env("TF_DSV41_SESSION_LCP_EVERY", null) catch {};
++    try env("TF_DSV41_SESSION_LCP_RESUME", null);
++    try env("TF_DSV41_SESSION_LCP_EVERY", null);
++    try t.expectEqual(@as(?u64, null), try lcp.fromEnv());
++    try env("TF_DSV41_SESSION_LCP_RESUME", "0");
++    try t.expectEqual(@as(?u64, null), try lcp.fromEnv());
++    try t.expectEqual(@as(u64, 0), (try sched.Settings.fromEnv()).lcp_every);
++    try env("TF_DSV41_SESSION_LCP_RESUME", "1");
++    try t.expectEqual(@as(?u64, lcp.every_default), try lcp.fromEnv());
++    try env("TF_DSV41_SESSION_LCP_EVERY", "272");
++    try t.expectEqual(@as(?u64, 272), try lcp.fromEnv());
++    try t.expectEqual(@as(u64, 272), (try sched.Settings.fromEnv()).lcp_every);
++    for ([_][*:0]const u8{ "100", "0", "x" }) |bad| {
++        try env("TF_DSV41_SESSION_LCP_EVERY", bad);
++        try t.expectError(error.InvalidEnvironment, lcp.fromEnv());
++    }
++    try env("TF_DSV41_SESSION_LCP_RESUME", "yes");
++    try t.expectError(error.InvalidEnvironment, lcp.fromEnv());
++}
++
++test "LCP resume: a snapshot at a multiple of the spacing is a checkpoint; off, every prompt snapshot keeps its kind" {
++    try t.expectEqual(lcp.checkpoint_kind, lcp.kindAt(272, 544, 1));
++    try t.expectEqual(@as(u32, 1), lcp.kindAt(272, 992, 1));
++    try t.expectEqual(@as(u32, 1), lcp.kindAt(null, 544, 1));
++    try t.expectEqual(@as(u32, 1), lcp.kindAt(272, 0, 1));
++}
++
++test "LCP resume: the planner snapshots at each checkpoint, then at the replay point; damaged, it starts over" {
++    for ([_]u64{ 0, 272 }) |every| {
++        var p = sched.Planner.init(t.allocator, .{ .rows = 128, .sessions = true, .lcp_every = every });
++        defer p.deinit();
++        var round = p.beginAdmit();
++        defer round.deinit(t.allocator);
++        _ = try p.admit(&round, .{ .key = 1, .n = 1000, .max_new = 8, .submitted = 0 }, null, 0, null);
++        var pieces: std.ArrayList(sched.Piece) = .empty;
++        defer pieces.deinit(t.allocator);
++        var finals: std.ArrayList(usize) = .empty;
++        defer finals.deinit(t.allocator);
++        var saves: std.ArrayList(u64) = .empty;
++        defer saves.deinit(t.allocator);
++        var rounds: u32 = 0;
++        while (finals.items.len == 0) : (rounds += 1) {
++            try p.plan(null, &pieces, &finals);
++            for (pieces.items) |pc| if (pc.save) try saves.append(t.allocator, pc.end);
++            if (rounds == 1 and every > 0) {
++                p.damaged(1);
++                p.after(0, 0);
++                try t.expectEqual(@as(?u64, 272), p.seq(1).?.save_at);
++            }
++        }
++        const want: []const u64 = if (every == 0) &.{992} else &.{ 272, 544, 816, 992 };
++        try t.expectEqualSlices(u64, want, saves.items);
++        try t.expectEqual(@as(?u64, null), p.seq(1).?.save_at);
++    }
++}
++
++fn findStore(st: *sessions.Store, prompt: []const u32) !?sessions.store.Hit {
++    var ids: [1024]i32 = undefined;
++    for (ids[0..prompt.len], prompt) |*d, x| d.* = @intCast(x);
++    const h = (try st.find(7, ids[0..prompt.len])) orelse return null;
++    return if (h.pos >= prompt.len) null else h;
++}
++
++const World = struct {
++    pool: sessions.Pool,
++    host: sessions.HostPool,
++    store: sessions.Store,
++    slot: *sessions.Slot,
++    ids: [512]i32,
++
++    fn init(w: *World, policy: sessions.store.Policy, disk: ?*sessions.Disk) !void {
++        w.pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 64 * 1024, 1, 0);
++        w.host = try sessions.HostPool.init(t.allocator, &w.pool);
++        w.store = try sessions.Store.init(t.allocator, t.io, &w.pool, w.host.store(), disk, policy);
++        w.slot = try w.pool.newSlot(2048);
++        for (&w.ids, 0..) |*x, i| x.* = @intCast(i + 1);
++    }
++
++    fn deinit(w: *World) void {
++        w.store.deinit();
++        w.host.deinit();
++        w.pool.deinit();
++    }
++
++    fn save(w: *World, pos: usize, kind: u32) !u32 {
++        try w.slot.ensure(pos);
++        return (try w.store.save(w.slot, Bound.make(), w.ids[0..pos], 7, kind)).?;
++    }
++
++    /// The slot emptied, then entry id back in it (a turn resumes its chat).
++    fn resume_(w: *World, id: u32) !void {
++        _ = try w.slot.releaseAll();
++        _ = try w.store.restoreRam(id, w.slot);
++    }
++};
++
++test "LCP resume: a hit inside an image's positions moves back to an entry at or before the image" {
++    var w: World = undefined;
++    try w.init(.{}, null);
++    defer w.deinit();
++    for (w.ids[300..340], 0..) |*x, i| x.* = @intCast((1 << 24) + i);
++    _ = try w.save(256, 0);
++    _ = try w.save(320, 0); // a checkpoint inside the image [300, 340)
++    var prompt: [400]u32 = undefined;
++    for (&prompt, w.ids[0..400]) |*d, x| d.* = @intCast(x);
++    prompt[330] = (1 << 24) + 999; // the image changed past the checkpoint
++    try t.expectEqual(@as(u64, 320), (try findStore(&w.store, &prompt)).?.pos);
++    try t.expectEqual(@as(u64, 256), (try lcp.outsideImages(&prompt, &w.store, findStore, &vid)).?.pos);
++    try t.expectEqual(@as(?usize, 300), lcp.imageStart(&prompt, 320, &vid));
++    try t.expectEqual(@as(?usize, null), lcp.imageStart(&prompt, 300, &vid)); // at its first position: outside
++    try t.expectEqual(@as(?usize, null), lcp.imageStart(&prompt, 256, &vid));
++    prompt[0] = 0; // nothing outside the image prefixes it: a miss
++    try t.expectEqual(@as(?sessions.store.Hit, null), try lcp.outsideImages(&prompt, &w.store, findStore, &vid));
++}
++
++test "LCP resume: checkpoints keep their chat's recency under the RAM budget; without anchors the oldest goes" {
++    for ([_]bool{ true, false }) |anchors| {
++        var w: World = undefined;
++        try w.init(.{ .ram_bytes = 3 * 8, .skip_covered = false, .delta = false, .anchor_kind = if (anchors) lcp.checkpoint_kind else null }, null);
++        defer w.deinit();
++        const ck = try w.save(64, lcp.checkpoint_kind);
++        var id = try w.save(100, 0);
++        for ([_]usize{ 150, 200, 250 }) |pos| {
++            try w.resume_(id);
++            id = try w.save(pos, 0);
++        }
++        _ = try w.slot.releaseAll();
++        const e = w.store.entry(ck);
++        try t.expectEqual(anchors, e.live and e.ram and e.pos == 64);
++        var prompt: [300]u32 = undefined;
++        for (&prompt, w.ids[0..300]) |*d, x| d.* = @intCast(x);
++        prompt[70] = 0; // the history rewritten past the checkpoint
++        const h = try findStore(&w.store, &prompt);
++        if (anchors) try t.expectEqual(@as(u64, 64), h.?.pos) else try t.expectEqual(@as(?sessions.store.Hit, null), h);
++    }
++}
++
++test "LCP resume: an evicted checkpoint is dropped, never parked; a turn's end still parks" {
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    try tmp.dir.createDirPath(t.io, "tier");
++    const root = try tmp.dir.realPathFileAlloc(t.io, "tier", t.allocator);
++    defer t.allocator.free(root);
++    const disk = try sessions.Disk.open(t.allocator, t.io, .{ .root = root, .compat = @splat(7), .min_tokens = 16, .chunk = 1 << 20, .staging = 4, .lanes = 2, .direct = false });
++    defer disk.close();
++    var w: World = undefined;
++    try w.init(.{ .skip_covered = false, .delta = false, .anchor_kind = lcp.checkpoint_kind }, disk);
++    defer w.deinit();
++    const ck = try w.save(64, lcp.checkpoint_kind);
++    const end = try w.save(100, 0);
++    _ = try w.slot.releaseAll();
++    _ = try w.store.evict(ck);
++    try t.expectEqual(@as(u64, 0), w.store.stats.parks);
++    try t.expect(!w.store.entry(ck).live);
++    _ = try w.store.evict(end);
++    try t.expectEqual(@as(u64, 1), w.store.stats.parks);
++}
+diff --git a/zig/src/families/deepseek_v41/kv/sched.zig b/zig/src/families/deepseek_v41/kv/sched.zig
+index 6f6e00ca7bb5156bd5e10522f64314be267bd8b6..54194e7f673429e99624287443f0cb9b29fc8174 100644
+--- a/zig/src/families/deepseek_v41/kv/sched.zig
++++ b/zig/src/families/deepseek_v41/kv/sched.zig
+@@ -174,6 +174,7 @@ pub const Settings = struct {
+     concurrent: u64 = 1,
+     session_min: u64 = 64, // shorter prompts are not snapshotted
+     sessions: bool = true, // a session store is open (prompt snapshots at the replay point)
++    lcp_every: u64 = 0, // TF_DSV41_SESSION_LCP_RESUME (lcp.zig): prompt checkpoints at multiples of this (0: none)
+     adapt: ?Adapt = null, // adaptive rows (on whenever the floor is): null = the fixed rows
+     floor: ?Floor = null, // the memory floor (null: no memory source)
+     price: PriceKnobs = .{},
+@@ -192,6 +193,7 @@ pub const Settings = struct {
+         if (try envFloat("TF_DSV41_FLOOR_PF_HOST_GIB")) |v| s.price.host_gib = v;
+         if (try envFloat("TF_DSV41_FLOOR_PF_OTHER_GIB")) |v| s.price.other_gib = v;
+         s.price.on = try @import("sys").environment.read(bool, "TF_DSV41_FLOOR_PRICE", s.price.on);
++        s.lcp_every = (try @import("lcp.zig").fromEnv()) orelse 0;
+         return s;
+     }
+ 
+@@ -261,7 +263,7 @@ pub const Seq = struct {
+     submitted: f64,
+     done: u64, // prompt tokens in the slot's state (prefill progress)
+     cached: u64 = 0, // the tokens its saved prefix gave it at admission
+-    save_at: ?u64, // the replay point still to snapshot at
++    save_at: ?u64, // the next checkpoint or the replay point still to snapshot at
+     decoding: bool = false,
+     long: bool = false,
+     price: ?Price = null,
+@@ -408,10 +410,12 @@ pub const Planner = struct {
+         return .{ .admit = .{ .need = pp.need, .hit = hit } };
+     }
+ 
+-    fn savePoint(p: *const Planner, n: u64, cached: u64) ?u64 {
++    /// The next snapshot past `from`: a checkpoint (a multiple of lcp_every) before the replay point, else that point.
++    fn savePoint(p: *const Planner, n: u64, from: u64) ?u64 {
+         if (!p.s.sessions) return null;
+         const s = snapshotPoint(n);
+-        return if (s > cached and s >= p.s.session_min) s else null;
++        const c = if (p.s.lcp_every > 0) (from / p.s.lcp_every + 1) * p.s.lcp_every else s;
++        return if (c < s and c >= p.s.session_min) c else if (s > from and s >= p.s.session_min) s else null;
+     }
+ 
+     /// Refused only when nothing is live and it waited `refuse_s` with its price still past usable less the hard floor.
+@@ -473,7 +477,7 @@ pub const Planner = struct {
+             // a piece is at least one grid step and may overrun the budget: saturating to 0 ends the round
+             budget -|= end - x.done;
+             x.done = end;
+-            if (save) x.save_at = null;
++            if (save) x.save_at = p.savePoint(x.n, end);
+         }
+         for (p.seqs.items) |*x| if (!x.decoding and x.done == x.n - 1) {
+             if (!x.damaged) try finals.append(p.gpa, x.key);
+@@ -520,7 +524,7 @@ pub const Planner = struct {
+             x.done = 0;
+             x.decoding = false;
+             x.long = x.n > p.s.long_prompt;
+-            x.save_at = if (p.s.sessions) snapshotPoint(x.n) else null;
++            x.save_at = if (p.s.sessions) p.savePoint(x.n, 0) orelse snapshotPoint(x.n) else null;
+         };
+         var prefilling = false;
+         for (p.seqs.items) |x| prefilling = prefilling or !x.decoding;
+diff --git a/zig/src/families/deepseek_v41/sessions_gpu.zig b/zig/src/families/deepseek_v41/sessions_gpu.zig
+index 17603394393320148704c5915fe021730f3f2fa5..31e5d64269b92b84a77ce431b5eb3d3386bcab53 100644
+--- a/zig/src/families/deepseek_v41/sessions_gpu.zig
++++ b/zig/src/families/deepseek_v41/sessions_gpu.zig
+@@ -38,6 +38,8 @@ pub const Options = struct {
+     delta: bool = false,
+     /// TF_DSV41_SESSION_SLOTS=1: the store with several live slots too (default off)
+     several: bool = false,
++    /// TF_DSV41_SESSION_LCP_RESUME=1: prompt checkpoints every this many tokens (kv/lcp.zig; null: off)
++    lcp_every: ?u64 = null,
+ };
+ 
+ fn flag(name: [:0]const u8) !bool {
+@@ -46,7 +48,8 @@ fn flag(name: [:0]const u8) !bool {
+ 
+ /// The store's policy from the family's options: an unset residency stays unlimited, as sessions.Policy reads null.
+ fn policy(o: Options) sessions.store.Policy {
+-    return .{ .ram_bytes = o.ram_bytes, .chats = o.resident, .resident_bytes = o.resident_bytes, .skip_covered = o.skip_covered, .delta = o.delta };
++    const anchors: ?u32 = if (o.lcp_every != null) kv.lcp.checkpoint_kind else null;
++    return .{ .ram_bytes = o.ram_bytes, .chats = o.resident, .resident_bytes = o.resident_bytes, .skip_covered = o.skip_covered, .delta = o.delta, .anchor_kind = anchors };
+ }
+ 
+ test "the default session options keep idle chats unlimited; an explicit 0 keeps none" {
+@@ -56,6 +59,8 @@ test "the default session options keep idle chats unlimited; an explicit 0 keeps
+     const zero = policy(.{ .resident = 0, .resident_bytes = 0 });
+     try std.testing.expectEqual(@as(?u32, 0), zero.chats);
+     try std.testing.expectEqual(@as(?u64, 0), zero.resident_bytes);
++    try std.testing.expectEqual(@as(?u32, null), unset.anchor_kind);
++    try std.testing.expectEqual(@as(?u32, kv.lcp.checkpoint_kind), policy(.{ .lcp_every = 272 }).anchor_kind);
+ }
+ 
+ pub fn optionsFromEnv() !Options {
+@@ -79,6 +84,7 @@ pub fn optionsFromEnv() !Options {
+     o.skip_covered = try flag("TF_DSV41_SESSION_SKIP_COVERED");
+     o.delta = try flag("TF_DSV41_SESSION_DELTA");
+     o.several = try flag("TF_DSV41_SESSION_SLOTS");
++    o.lcp_every = try kv.lcp.fromEnv();
+     return o;
+ }
+ 
+@@ -111,6 +117,8 @@ pub const Sessions = struct {
+     /// full mode: the drafter's rings ride in the snapshot; a restore sets the pass's context start through `ds_set`
+     ds_rings: bool = false,
+     ds_set: ?DsSet = null,
++    /// TF_DSV41_SESSION_LCP_RESUME: the checkpoint spacing (null: off)
++    lcp_every: ?u64 = null,
+ 
+     pub const DsSet = struct { ctx: *anyopaque, set: *const fn (ctx: *anyopaque, slot: u32, valid: u64) void, get: ?*const fn (*anyopaque, u32) u64 = null };
+ 
+@@ -120,7 +128,7 @@ pub const Sessions = struct {
+         if (kx.slots.len != shape.slots) return error.SlotRange;
+         const s = try gpa.create(Sessions);
+         errdefer gpa.destroy(s);
+-        s.* = .{ .gpa = gpa, .io = io, .f = f, .kx = kx, .store = undefined, .pieces = &.{}, .bounded_bytes = 0, .hist = &.{}, .ds_valid = &.{}, .measure = undefined, .names = std.heap.ArenaAllocator.init(gpa) };
++        s.* = .{ .gpa = gpa, .io = io, .f = f, .kx = kx, .store = undefined, .pieces = &.{}, .bounded_bytes = 0, .hist = &.{}, .ds_valid = &.{}, .measure = undefined, .names = std.heap.ArenaAllocator.init(gpa), .lcp_every = o.lcp_every };
+         errdefer s.names.deinit();
+         const na = s.names.allocator();
+         s.hist = try na.alloc(std.ArrayList(i32), shape.slots);
+@@ -395,7 +403,7 @@ pub const Sessions = struct {
+         const snap = try s.snapshot();
+         var bounded = snap.bounded();
+         bounded.logical_bytes = snap.measure;
+-        const id = s.store.save(s.kx.slot, bounded, h.items, s.tag(), prompt_kind) catch |e| {
++        const id = s.store.save(s.kx.slot, bounded, h.items, s.tag(), kv.lcp.kindAt(s.lcp_every, h.items.len, prompt_kind)) catch |e| {
+             Snap.release(snap);
+             return e;
+         };
+@@ -425,8 +433,13 @@ pub const Sessions = struct {
+         return (try @import("request_admission.zig").resumeRequest(s, prompt, max_new orelse 0)).at;
+     }
+ 
+-    /// The longest saved entry that strictly prefixes `prompt` (a row must remain to prefill), null: none.
++    /// The longest saved entry strictly prefixing `prompt` (null: none); LCP resume: never inside an image's positions.
+     pub fn find(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {
++        if (s.lcp_every == null) return s.findAny(prompt);
++        return kv.lcp.outsideImages(prompt, s, findAny, &@import("image_opts.zig").isVid);
++    }
++
++    fn findAny(s: *Sessions, prompt: []const u32) !?sessions.store.Hit {
+         const ids = try s.gpa.alloc(i32, prompt.len);
+         defer s.gpa.free(ids);
+         for (ids, prompt) |*d, t| d.* = @intCast(t);
+@@ -448,9 +461,24 @@ pub const Sessions = struct {
+         try s.f.sendSessAdmit(need, spills);
+         try s.applyAdmit(need, spills);
+         s.ds_valid[s.cur()] = 0;
++        s.logDivergence(prompt, if (hit) |h| h.pos else 0) catch {};
+         return s.resumeHit(prompt, hit);
+     }
+ 
++    /// A miss's line: the prompt left every stored entry at least `miss_log_min` tokens past where it resumes.
++    fn logDivergence(s: *Sessions, prompt: []const u32, at: u64) !void {
++        if (quiet) return;
++        const ids = try s.gpa.alloc(i32, prompt.len);
++        defer s.gpa.free(ids);
++        for (ids, prompt) |*d, t| d.* = @intCast(t);
++        const d = try s.store.diverge(s.tag(), ids);
++        if (d.stored == 0 or d.at < at + miss_log_min) return;
++        std.log.scoped(.dsv41).info("sessions: slot {d}: a {d}-token prompt diverged at token {d} (stored {d}); it prefills from {d}", .{ s.cur(), prompt.len, d.at, d.stored, at });
++    }
++
++    /// The reuse a miss line reports at least (tokens): shorter losses (a regenerated reply) stay quiet.
++    const miss_log_min: u64 = 1024;
++
+     fn resumeHit(s: *Sessions, prompt: []const u32, hit: ?sessions.store.Hit) !Resumed {
+         const h = hit orelse return .{};
+         const n = prompt.len;
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index aaa8e77bdabb600ee85d50a0a0b30a9ff4477145..19ec0f1394fec4befa974ecd90ff8e5395958665 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -110,6 +110,8 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_DSV41_SESSION_SKIP_COVERED", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SESSION_DELTA", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SESSION_SLOTS", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
++    .{ .name = "TF_DSV41_SESSION_LCP_RESUME", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
++    .{ .name = "TF_DSV41_SESSION_LCP_EVERY", .scope = .dsv41, .kind = .u64, .trim = " ", .min = 16, .forms = "a whole token count, a multiple of 16 (default 32768)" },
+     .{ .name = "TF_DSV41_GRAMMAR", .scope = .dsv41, .kind = .flag, .forms = "0 or 1 (blank serves structured output; 0 refuses it)" },
+     .{ .name = "TF_DSV41_ENGRAM_VALIDATE", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_PF_SCRATCH_ALIAS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+diff --git a/zig/src/sessions/diverge.zig b/zig/src/sessions/diverge.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..10b6e66135a4cfb02693292bd528bb209b07b340
+--- /dev/null
++++ b/zig/src/sessions/diverge.zig
+@@ -0,0 +1,105 @@
++//! Where a prompt leaves the stored entries: the session miss line's numbers (prefix.Index's paths and tails).
++
++const std = @import("std");
++const prefix = @import("prefix.zig");
++const Digest = prefix.Digest;
++const none = prefix.none;
++
++/// A prompt's first token no stored path holds (`at`) and the longest entry sharing tokens [0, at) (`stored`).
++pub const Divergence = struct {
++    at: u64 = 0,
++    stored: u64 = 0,
++
++    fn take(d: *Divergence, at: u64, stored: u64) void {
++        if (stored == 0) return;
++        if (at > d.at or d.stored == 0 or (at == d.at and stored > d.stored)) d.* = .{ .at = at, .stored = stored };
++    }
++};
++
++fn common(a: []const i32, b: []const i32) u64 {
++    const n = @min(a.len, b.len);
++    for (0..n) |i| if (a[i] != b[i]) return i;
++    return n;
++}
++
++/// Prompt against index x's tag paths (a page's tokens compared while RAM holds them); digests: its chain.
++pub fn diverge(x: anytype, tag: u32, prompt: []const i32, digests: []const Digest) !Divergence {
++    const full: u32 = @intCast(prompt.len / x.page);
++    const r = x.by_digest.get(prefix.root(tag)) orelse return .{};
++    // the deepest node on the prompt's path, as Index.find
++    var lo: u32 = 0;
++    var hi: u32 = full;
++    while (lo < hi) {
++        const mid = lo + (hi - lo + 1) / 2;
++        if (x.by_digest.contains(digests[mid - 1])) lo = mid else hi = mid - 1;
++    }
++    const n: u32 = if (lo == 0) r else x.by_digest.get(digests[lo - 1]).?;
++    const at: u64 = @as(u64, lo) * x.page;
++    const rest = prompt[@intCast(at)..];
++    var best: Divergence = .{ .at = at };
++    var e = x.nodes.items[n].first_entry;
++    while (e != none) : (e = x.entries.items[e].next_at) {
++        const en = &x.entries.items[e];
++        best.take(at + common(en.tail, rest), en.pos);
++    }
++    var c = x.nodes.items[n].first_child;
++    while (c != none) : (c = x.nodes.items[c].next_sib) {
++        const ch = &x.nodes.items[c];
++        if (ch.sub_all == 0) continue;
++        best.take(at + if (ch.tokens) |t| common(t, rest) else 0, try longest(x, c));
++    }
++    return best;
++}
++
++/// The longest entry's pos in node n's subtree.
++fn longest(x: anytype, n: u32) !u64 {
++    var stack: std.ArrayList(u32) = .empty;
++    defer stack.deinit(x.gpa);
++    try stack.append(x.gpa, n);
++    var m: u64 = 0;
++    while (stack.pop()) |k| {
++        const nd = &x.nodes.items[k];
++        var e = nd.first_entry;
++        while (e != none) : (e = x.entries.items[e].next_at) m = @max(m, x.entries.items[e].pos);
++        var c = nd.first_child;
++        while (c != none) : (c = x.nodes.items[c].next_sib) if (x.nodes.items[c].sub_all > 0) try stack.append(x.gpa, c);
++    }
++    return m;
++}
++
++const T = prefix.Index(u64);
++
++fn add(x: *T, ids: []const i32) !void {
++    var d: [64]Digest = undefined;
++    prefix.chain(7, ids, x.page, d[0 .. ids.len / x.page]);
++    _ = try x.insert(7, ids, d[0 .. ids.len / x.page], true, 0);
++}
++
++fn divergeOf(x: *T, prompt: []const i32) !Divergence {
++    var d: [64]Digest = undefined;
++    prefix.chain(7, prompt, x.page, d[0 .. prompt.len / x.page]);
++    return diverge(x, 7, prompt, d[0 .. prompt.len / x.page]);
++}
++
++test "divergence: the first token past every stored path, inside a page and at a tail, with the longest sharer" {
++    const gpa = std.testing.allocator;
++    var x = T.init(gpa, 16);
++    defer x.deinit();
++    var chat: [300]i32 = undefined;
++    for (&chat, 0..) |*t, i| t.* = @intCast(i + 1);
++    try std.testing.expectEqual(Divergence{}, try divergeOf(&x, &chat));
++    try add(&x, chat[0..40]);
++    try add(&x, chat[0..250]);
++    try add(&x, chat[0..120]);
++    var p = chat;
++    p[100] = -1; // inside a page past the 40-token entry: the 250- and 120-token entries both share 100 tokens
++    try std.testing.expectEqual(Divergence{ .at = 100, .stored = 250 }, try divergeOf(&x, &p));
++    p = chat;
++    p[37] = -1; // inside the 40-token entry's tail
++    try std.testing.expectEqual(Divergence{ .at = 37, .stored = 250 }, try divergeOf(&x, &p));
++    p = chat;
++    p[0] = -1;
++    try std.testing.expectEqual(Divergence{ .at = 0, .stored = 250 }, try divergeOf(&x, &p));
++    // a longer prompt holding every entry: nothing past the longest
++    try std.testing.expectEqual(Divergence{ .at = 250, .stored = 250 }, try divergeOf(&x, &chat));
++}
+diff --git a/zig/src/sessions/portable_test.zig b/zig/src/sessions/portable_test.zig
+index 0f1b64152e4960321d26d733de8e479c5584bd40..4da1c97d70f6df4f72b4838308606dca32e66dc5 100644
+--- a/zig/src/sessions/portable_test.zig
++++ b/zig/src/sessions/portable_test.zig
+@@ -9,5 +9,6 @@ test {
+     _ = @import("pool.zig");
+     _ = @import("pagestore.zig");
+     _ = @import("prefix.zig");
++    _ = @import("diverge.zig");
+     _ = @import("format.zig");
+ }
+diff --git a/zig/src/sessions/prefix.zig b/zig/src/sessions/prefix.zig
+index 7619eb6ca2d6f4b4eb6aeb84ec5511ada02c2351..73a34fbdeb1c4467fc2d071428082f0b9b28ada6 100644
+--- a/zig/src/sessions/prefix.zig
++++ b/zig/src/sessions/prefix.zig
+@@ -42,6 +42,7 @@ pub fn entryKey(node: Digest, pos: u64, tail: []const i32) Digest {
+ }
+ 
+ pub const Tier = enum { ram, any };
++pub const Divergence = @import("diverge.zig").Divergence;
+ 
+ pub fn Index(comptime Extra: type) type {
+     return struct {
+@@ -348,6 +349,8 @@ pub fn Index(comptime Extra: type) type {
+             return null;
+         }
+ 
++        pub const diverge = @import("diverge.zig").diverge;
++
+         /// A newer entry of id's chain holds every position it does (tier .ram: in RAM), so id need not be written.
+         pub fn covered(x: *Self, id: u32, tier: Tier) bool {
+             const e = &x.entries.items[id];
+diff --git a/zig/src/sessions/sessions.zig b/zig/src/sessions/sessions.zig
+index 10837c6326d526632742ae19821c396b14d8ef4b..0ef973311212317921d19da5515b7d66e415e2a9 100644
+--- a/zig/src/sessions/sessions.zig
++++ b/zig/src/sessions/sessions.zig
+@@ -22,6 +22,7 @@ pub const Store = store.Store;
+ test {
+     _ = @import("restore.zig");
+     _ = @import("prefix_fail_test.zig");
++    _ = @import("diverge.zig");
+     _ = @import("store_residency_linux_test.zig");
+     _ = @import("store_residency_test.zig");
+     _ = @import("store_failure_test.zig");
+diff --git a/zig/src/sessions/store.zig b/zig/src/sessions/store.zig
+index b8dfdbe6417e5f823013392e011b8d1acccc6608..c1cc0d9aa30998fabf72cc301a735e3d762552f6 100644
+--- a/zig/src/sessions/store.zig
++++ b/zig/src/sessions/store.zig
+@@ -44,6 +44,8 @@ pub const Policy = struct {
+     delta: bool = true,
+     /// parks and restores on the tier thread (settled by the plan)
+     async_io: bool = false,
++    /// entries of this kind (a family's prompt checkpoints) share their chat's recency and are dropped, never parked
++    anchor_kind: ?u32 = null,
+ };
+ 
+ pub const Extra = struct {
+@@ -152,6 +154,21 @@ pub const Store = struct {
+         return .{ .id = id, .ram = e.ram, .pos = e.pos };
+     }
+ 
++    /// Where prompt leaves everything stored under tag, and the longest entry sharing that much.
++    pub fn diverge(s: *Store, tag: u32, prompt: []const i32) !prefix.Divergence {
++        const d = try s.digests(tag, prompt);
++        return s.index.diverge(tag, prompt, d);
++    }
++
++    /// A RAM entry's older checkpoints (policy.anchor_kind) take its recency, before it does.
++    pub fn touchAnchors(s: *Store, id: u32) !void {
++        const k = s.policy.anchor_kind orelse return;
++        var m: std.ArrayList(u32) = .empty;
++        defer m.deinit(s.gpa);
++        _ = try s.index.members(id, &m, usedOf);
++        for (m.items) |o| if (s.index.get(o).extra.kind == k) s.touch(o);
++    }
++
+     pub fn link(s: *Store, id: u32) void {
+         const x = &s.index.get(id).extra;
+         x.older = s.newest;
+@@ -406,6 +423,10 @@ pub const Store = struct {
+             s.stats.covered_drops += 1;
+             return null;
+         }
++        if (s.policy.anchor_kind) |k| if (e.extra.kind == k) {
++            try s.drop(id);
++            return null;
++        };
+         if (s.disk) |d| if (d.accepts(e.pos)) {
+             const j = try s.beginPark(id) orelse return null;
+             if (!s.policy.async_io) _ = try s.settle(j);
+diff --git a/zig/src/sessions/store_ram.zig b/zig/src/sessions/store_ram.zig
+index f3a1899b16d26d2581847bd8c205ef43e401e0bd..ea3ea628943f8f0a1ea284aef9944384abbe6095 100644
+--- a/zig/src/sessions/store_ram.zig
++++ b/zig/src/sessions/store_ram.zig
+@@ -78,6 +78,7 @@ pub fn restoreRam(s: *Store, id: u32, slot: *Slot) !Bounded {
+         try slot.push(dst);
+     }
+     if (e.extra.origin) |o| slot.origin = .{ .key = o.key, .pages = @min(o.pages, full) };
++    try s.touchAnchors(id);
+     s.touch(id);
+     s.stats.hits_ram += 1;
+     return e.extra.bounded.?;

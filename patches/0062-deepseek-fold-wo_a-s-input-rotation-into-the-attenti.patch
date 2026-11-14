@@ -1,0 +1,1737 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:37:57 +0700
+Subject: [PATCH 62/72] deepseek: fold wo_a's input rotation into the attention
+ split-merge (TF_DSV41_ROT_FOLD bit 1)
+
+With TF_DSV41_ROT_FOLD bit 1 set, the attention split-merge also writes
+wo_a's rotated fp16 input rows: each 128-column block of the merged output
+is rounded as the bf16 store rounds it, widened as rot_in reads it, then
+scaled by wo_a's suh, transformed and stored exactly as seg_rot_in_kernel
+does. wo_a's rot_in launch is dropped (one per layer per rank and round);
+L.o is still written. A layer keeps H's path unless every wo_a group starts
+and ends on the 128-column grid. Bit 2 (q-norm) stays reserved and refused.
+
+The fold runs new split_rot instances beside the existing split kernel;
+with bit 1 clear the emitted windows are unchanged. Host tests cover the
+knob, the emitted windows, and a bitwise twin of the rotation path. Each
+first-stage product is a bf16 times an f16 and so exact in fp32, which
+keeps the twin exact whether or not the compiler contracts it.
+`tf-dsv41-test rot-fold-attn` compares the bytes on a GPU.
+
+Mechanism after Bertholomus's dsv41 attention-merge RotOut fold
+(tri_attn.zig, round.zig), re-implemented here; credited in docs/credits.md.
+
+Co-authored-by: bertholomus <311723197+bertholomus@users.noreply.github.com>
+---
+ docs/credits.md                               |   4 +
+ zig/kernels/cuda/deepseek_v41/attn_cuda.cu    |   6 +
+ zig/kernels/cuda/deepseek_v41/attn_rot.cuh    | 487 ++++++++++++++++++
+ zig/src/core/contract/dsv41_pending_2.zig     |   4 +
+ zig/src/families/deepseek_v41/block.zig       |   4 +-
+ zig/src/families/deepseek_v41/block_attn.zig  |  26 +-
+ zig/src/families/deepseek_v41/catalog.zig     |   1 +
+ .../deepseek_v41/catalog_geometry.zig         |   3 +
+ zig/src/families/deepseek_v41/kernels.zig     |  10 +-
+ .../deepseek_v41/kernels_attn_rot.zig         | 104 ++++
+ zig/src/families/deepseek_v41/kernels_ops.zig |   3 +
+ .../deepseek_v41/kernels_replay_ops.zig       |  27 +-
+ .../deepseek_v41/rot_fold_attn_test.zig       | 349 +++++++++++++
+ .../families/deepseek_v41/rot_fold_test.zig   |  34 +-
+ zig/src/families/deepseek_v41/serve_knobs.zig |   8 +-
+ .../deepseek_v41/serve_knobs_apply.zig        |   1 +
+ .../deepseek_v41/serve_knobs_test.zig         |   1 +
+ .../cuda/deepseek_v41/rot_fold_attn_check.zig | 259 ++++++++++
+ zig/tests/cuda/dsv41_main.zig                 |   3 +
+ 19 files changed, 1309 insertions(+), 25 deletions(-)
+ create mode 100644 zig/kernels/cuda/deepseek_v41/attn_rot.cuh
+ create mode 100644 zig/src/families/deepseek_v41/kernels_attn_rot.zig
+ create mode 100644 zig/src/families/deepseek_v41/rot_fold_attn_test.zig
+ create mode 100644 zig/tests/cuda/deepseek_v41/rot_fold_attn_check.zig
+
+diff --git a/docs/credits.md b/docs/credits.md
+index 6fdcf9850482d75877ed9fccb4a7f42c8003e08d..4ffc808a071840a32842b14a68ee1d0c40e5856c 100644
+--- a/docs/credits.md
++++ b/docs/credits.md
+@@ -253,5 +253,9 @@ Some opt-in DeepSeek-V4.1 decode settings follow mechanisms in Bertholomus's (Al
+ - `TF_DSV41_ROT_FOLD=1` has wo_a's linear epilogue write wo_b's rotated input rows, so wo_b needs no rotation
+   launch, as his grouped linear's `RotOut` fold does (`zig/src/families/dsv41/exl3_linear.zig`, `round.zig`).
+   Here it is a new dense3 kernel beside the existing one, and its rows equal the rotation launch's bytes.
++- `TF_DSV41_ROT_FOLD` bit 1 has the attention merge write wo_a's rotated input rows, so wo_a needs no rotation
++  launch either, as his merge's `rot` does (`Rot` in `zig/src/families/dsv41/tri_attn.zig`, `round.zig`). Here it
++  is a copy of the R1 split attention kernel whose merge re-reads its stored rows and rotates them as the rotation
++  launch's compiled code does.
+ 
+ [bert-dsv41]: https://github.com/bertholomus/TensorFold/tree/a57deb9d470b27e1e3fab2a9494915a0049415aa
+diff --git a/zig/kernels/cuda/deepseek_v41/attn_cuda.cu b/zig/kernels/cuda/deepseek_v41/attn_cuda.cu
+index e8ed6ce612c242c4da1b1915f9e8bf4700dba0f6..3d3e4c9102701c66c87d55bad098b365c2346823 100644
+--- a/zig/kernels/cuda/deepseek_v41/attn_cuda.cu
++++ b/zig/kernels/cuda/deepseek_v41/attn_cuda.cu
+@@ -404,6 +404,7 @@ cudaError_t launch_one(const Args& a, cudaStream_t stream) {
+ }
+ 
+ #include "attn_split.cuh"
++#include "attn_rot.cuh"
+ 
+ template <int KW, bool ROWS, bool HAS_HI, int P>
+ cudaError_t launch_split(const Args& a, cudaStream_t stream) {
+@@ -539,3 +540,8 @@ template __global__ void dsv41_attn::split_kernel<4, false, false, 4>(dsv41_attn
+ template __global__ void dsv41_attn::split_kernel<4, false, true, 4>(dsv41_attn::Args);
+ template __global__ void dsv41_attn::split_kernel<4, true, false, 4>(dsv41_attn::Args);
+ template __global__ void dsv41_attn::split_kernel<4, true, true, 4>(dsv41_attn::Args);
++// TF_DSV41_ROT_FOLD bit 1's split_rot_kernel<4, ROWS, false, P> (kernels_attn_rot.zig): R1's decode launches
++template __global__ void dsv41_attn::split_rot_kernel<4, false, false, 1>(dsv41_attn::Args, const dsv41_attn::RotIn);
++template __global__ void dsv41_attn::split_rot_kernel<4, true, false, 1>(dsv41_attn::Args, const dsv41_attn::RotIn);
++template __global__ void dsv41_attn::split_rot_kernel<4, false, false, 4>(dsv41_attn::Args, const dsv41_attn::RotIn);
++template __global__ void dsv41_attn::split_rot_kernel<4, true, false, 4>(dsv41_attn::Args, const dsv41_attn::RotIn);
+diff --git a/zig/kernels/cuda/deepseek_v41/attn_rot.cuh b/zig/kernels/cuda/deepseek_v41/attn_rot.cuh
+new file mode 100644
+index 0000000000000000000000000000000000000000..1427c791c5ba4187e70c0f4c4e556925105077db
+--- /dev/null
++++ b/zig/kernels/cuda/deepseek_v41/attn_rot.cuh
+@@ -0,0 +1,487 @@
++// TF_DSV41_ROT_FOLD bit 1 (attn_cuda.cu includes this inside namespace dsv41_attn): the merge writes wo_a's rows
++#pragma once
++
++constexpr float ROT_HAD = 0.08838834764831845f;          // exl3_decode.cuh HAD_SCALE, 1 / sqrt(128)
++
++// wo_a's rot_in rows: group s reads o's row columns [s gk, (s + 1) gk); its fp16 rows (stride gk) and suh at column 0
++struct RotIn {
++    half* xh[8];
++    const half* suh[8];
++    int gk;
++};
++
++// x3seg seg_rot_in_kernel's v *= suh, fwht128, v *= HAD_SCALE as its SASS runs them (that unit contracts; this one not)
++__device__ __forceinline__ void rot128(const float (&x)[4], const float (&s)[4], int lane, float (&v)[4]) {
++    const float p1 = __fmul_rn(x[1], s[1]), p3 = __fmul_rn(x[3], s[3]);   // the scale fused into the first butterfly
++    const float a = __fmaf_rn(x[0], s[0], p1), b = __fmaf_rn(x[0], s[0], -p1);
++    const float c = __fmaf_rn(x[2], s[2], p3), d = __fmaf_rn(x[2], s[2], -p3);
++    v[0] = __fadd_rn(a, c);
++    v[1] = __fadd_rn(b, d);
++    v[2] = __fsub_rn(a, c);
++    v[3] = __fsub_rn(b, d);
++#pragma unroll
++    for (int m = 1; m < 32; m <<= 1) {
++#pragma unroll
++        for (int j = 0; j < 4; ++j) {
++            const float o = __shfl_xor_sync(FULL, v[j], m);
++            v[j] = (lane & m) ? __fsub_rn(o, v[j]) : __fadd_rn(v[j], o);
++        }
++    }
++#pragma unroll
++    for (int j = 0; j < 4; ++j) v[j] = __fmul_rn(v[j], ROT_HAD);
++}
++
++// merge_cols verbatim (attn_split.cuh), so split_kernel's own merge keeps its callers and its code
++template <bool ROWS, int NC>
++__device__ void merge_cols_r(const Args& a, uint8_t* sm, int smt, int r, int hb, int c0) {
++    const int tid = threadIdx.x, H = a.H, R = a.R;
++    float* ca = reinterpret_cast<float*>(sm + smt);              // [5][16] a, [5][16] b, [16] af, [16] den
++    float* cb = ca + NCH * BMQ;
++    float* fa = cb + NCH * BMQ;
++    float* fd = fa + BMQ;
++    bool cw[NCH];
++#pragma unroll
++    for (int c = 0; c < NCH; ++c) cw[c] = chunk_works(a, r, c);
++    constexpr int UB = BMQ * (NC / 4) / NT;                      // float4 units a thread (8 at P = 1, 2 at P = 4)
++    static_assert(UB * NT == BMQ * (NC / 4), "whole units");
++    float4 pv[UB][NCH];
++#pragma unroll
++    for (int ub = 0; ub < UB; ++ub) {                            // the partials in flight first
++        const int u = tid + ub * NT, hl = u / (NC / 4), d = c0 + (u % (NC / 4)) * 4, h = hb * BMQ + hl;
++#pragma unroll
++        for (int c = 0; c < NCH; ++c)
++            pv[ub][c] = cw[c] ? __ldcg(reinterpret_cast<const float4*>(
++                                    a.po + ((static_cast<long long>(c) * R + r) * H + h) * D + d))
++                              : make_float4(0.f, 0.f, 0.f, 0.f);
++    }
++    if (tid < BMQ) {                                             // a head's scalar chain (Triton's _merge, unrolled)
++        const int h = hb * BMQ + tid;
++        float pmv[NCH], plv[NCH];
++#pragma unroll
++        for (int c = 0; c < NCH; ++c) {
++            const long long base = (static_cast<long long>(c) * R + r) * H + h;
++            pmv[c] = cw[c] ? __ldcg(a.pm + base) : -INFINITY;
++            plv[c] = cw[c] ? __ldcg(a.pl + base) : 0.f;
++        }
++        const float sink = a.sink[h];
++        float m = -INFINITY, l = 0.f;
++#pragma unroll
++        for (int c = 0; c < NCH; ++c) {
++            const float cm = pmv[c], cl = plv[c];
++            const bool act = cl > 0.f;
++            float aa, bb;
++            if (c == 0) {
++                const float nm = act ? fmaxf(cm, -INFINITY) : -INFINITY;
++                bb = act ? texp(__fsub_rn(cm, nm)) : 0.f;
++                aa = 0.f;
++                l = __fmaf_rn(bb, cl, 0.f);
++                m = nm;
++            } else {
++                const float nm = act ? fmaxf(m, cm) : m;
++                aa = act ? (m == -INFINITY ? 0.f : texp(__fsub_rn(m, nm))) : 1.f;
++                bb = act ? texp(__fsub_rn(cm, nm)) : 0.f;
++                l = __fmaf_rn(l, aa, __fmul_rn(bb, cl));
++                m = nm;
++            }
++            ca[c * BMQ + tid] = aa;
++            cb[c * BMQ + tid] = bb;
++        }
++        const float top = fmaxf(m, sink);
++        const float af = m == -INFINITY ? 0.f : texp(__fsub_rn(m, top));
++        const float e = sink == -INFINITY ? 0.f : texp(__fsub_rn(sink, top));
++        fa[tid] = af;
++        fd[tid] = __fmaf_rn(l, af, e);
++    }
++    __syncthreads();
++    const float* csr = a.cs + static_cast<long long>(row_pos<ROWS>(a, r)) * a.csst;
++#pragma unroll
++    for (int ub = 0; ub < UB; ++ub) {
++        const int u = tid + ub * NT, hl = u / (NC / 4), d = c0 + (u % (NC / 4)) * 4, h = hb * BMQ + hl;
++        float o[4];
++#pragma unroll
++        for (int c = 0; c < NCH; ++c) {
++            const float4 v = pv[ub][c];
++            const float co[4] = {v.x, v.y, v.z, v.w};
++            const float aa = ca[c * BMQ + hl], bb = cb[c * BMQ + hl];
++#pragma unroll
++            for (int i = 0; i < 4; ++i)
++                o[i] = c == 0 ? __fmaf_rn(bb, co[i], 0.f) : __fmaf_rn(o[i], aa, __fmul_rn(co[i], bb));
++        }
++        float x[4];
++#pragma unroll
++        for (int i = 0; i < 4; ++i) x[i] = div_full(__fmul_rn(o[i], fa[hl]), fd[hl]);
++        uint16_t ob[4];
++#pragma unroll
++        for (int i = 0; i < 4; i += 2) {                         // pair (d + i, d + i + 1): GPT-J, inverse
++            const int p = (d + i) >> 1;
++            const float c = p >= 224 ? csr[p - 224] : 1.f, s = p >= 224 ? csr[32 + p - 224] : 0.f;
++            const float ne = __fmaf_rn(x[i], c, __fmul_rn(x[i + 1], s));
++            const float no = __fmaf_rn(x[i + 1], c, -__fmul_rn(x[i], s));
++            const __nv_bfloat16 b0 = __float2bfloat16_rn(ne), b1 = __float2bfloat16_rn(no);
++            ob[i] = *reinterpret_cast<const uint16_t*>(&b0);
++            ob[i + 1] = *reinterpret_cast<const uint16_t*>(&b1);
++        }
++        uint2 w;
++        w.x = ob[0] | (static_cast<uint32_t>(ob[1]) << 16);
++        w.y = ob[2] | (static_cast<uint32_t>(ob[3]) << 16);
++        *reinterpret_cast<uint2*>(a.out + (static_cast<long long>(r) * H + h) * D + d) = w;
++    }
++}
++
++// merge_cols_r's units again: a warp holds one head's 128-column block (lane L its columns 4L..4L+3), as rot_in's
++template <int NC>
++__device__ __forceinline__ void rot_cols(const Args& a, const RotIn& ro, int r, int hb, int c0) {
++    const int tid = threadIdx.x, lane = tid & 31, H = a.H;
++    constexpr int UB = BMQ * (NC / 4) / NT;
++#pragma unroll
++    for (int ub = 0; ub < UB; ++ub) {
++        const int u = tid + ub * NT, hl = u / (NC / 4), d = c0 + (u % (NC / 4)) * 4, h = hb * BMQ + hl;
++        // this thread's own 4 bf16 of o as merge_cols_r stored them, widened as x3seg's load4 widens them
++        const uint2 w = *reinterpret_cast<const uint2*>(a.out + (static_cast<long long>(r) * H + h) * D + d);
++        const float2 o0 = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(&w.x));
++        const float2 o1 = __bfloat1622float2(*reinterpret_cast<const __nv_bfloat162*>(&w.y));
++        const float x[4] = {o0.x, o0.y, o1.x, o1.y};
++        const int col = h * D + d, s = col / ro.gk, j = col - s * ro.gk;   // wo_a's group and its k
++        half* xh = ro.xh[0];
++        const half* suh = ro.suh[0];
++#pragma unroll
++        for (int i = 1; i < 8; ++i)
++            if (i == s) {
++                xh = ro.xh[i];
++                suh = ro.suh[i];
++            }
++        const uint2 su = *reinterpret_cast<const uint2*>(suh + j);
++        const float2 s0 = __half22float2(*reinterpret_cast<const half2*>(&su.x));
++        const float2 s1 = __half22float2(*reinterpret_cast<const half2*>(&su.y));
++        const float sc[4] = {s0.x, s0.y, s1.x, s1.y};
++        float v[4];
++        rot128(x, sc, lane, v);
++        const half2 p = __floats2half2_rn(v[0], v[1]), q = __floats2half2_rn(v[2], v[3]);
++        uint2 st;
++        st.x = *reinterpret_cast<const uint32_t*>(&p);
++        st.y = *reinterpret_cast<const uint32_t*>(&q);
++        *reinterpret_cast<uint2*>(xh + static_cast<long long>(r) * ro.gk + j) = st;   // x3seg's store4 (fp16)
++    }
++}
++
++// split_kernel's statements verbatim (attn_split.cuh) on merge_cols_r, then rot_cols over the columns it stored
++template <int KW, bool ROWS, bool HAS_HI, int P>
++__global__ void __launch_bounds__(NT, 1) split_rot_kernel(Args a, const RotIn ro) {
++    using G = Split<P>;
++    extern __shared__ __align__(16) uint8_t sm[];
++    const int k = P == 1 ? 0 : static_cast<int>(cl_rank());
++    const int c = blockIdx.x / P, hb = blockIdx.y, r = blockIdx.z;
++    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5, g = lane >> 2, t = lane & 3;
++    const int H = a.H, R = a.R;
++    if (!chunk_works(a, r, c)) return;                           // the whole cluster: no barrier is pending
++    uint4 qv[32 * 32 / NT];                                      // q's A fragments: every load in flight at once
++    {
++        const uint16_t* qb = a.q + (static_cast<long long>(r) * H + hb * BMQ) * D;
++#pragma unroll
++        for (int u = 0; u < 32 * 32 / NT; ++u) {
++            const int i = tid + u * NT, s = i >> 5, ln = i & 31, gg = ln >> 2, tt = ln & 3;
++            const int k0 = klo<KW>(s, tt), k1 = khi<KW>(s, tt);
++            qv[u].x = *reinterpret_cast<const uint32_t*>(qb + gg * D + k0);
++            qv[u].y = *reinterpret_cast<const uint32_t*>(qb + (gg + 8) * D + k0);
++            qv[u].z = *reinterpret_cast<const uint32_t*>(qb + gg * D + k1);
++            qv[u].w = *reinterpret_cast<const uint32_t*>(qb + (gg + 8) * D + k1);
++        }
++        if (a.qrope) {                                           // the rope dims (k >= 448): their pair's rotation
++            const float* csr = a.cs + static_cast<long long>(row_pos<ROWS>(a, r)) * a.csst;
++#pragma unroll
++            for (int u = 0; u < 32 * 32 / NT; ++u) {
++                const int i = tid + u * NT, s = i >> 5, tt = (i & 31) & 3;
++                const int k0 = klo<KW>(s, tt), k1 = khi<KW>(s, tt);
++                if (k0 >= NOPE) {
++                    qv[u].x = rope_word(qv[u].x, csr, (k0 - NOPE) >> 1);
++                    qv[u].y = rope_word(qv[u].y, csr, (k0 - NOPE) >> 1);
++                }
++                if (k1 >= NOPE) {
++                    qv[u].z = rope_word(qv[u].z, csr, (k1 - NOPE) >> 1);
++                    qv[u].w = rope_word(qv[u].w, csr, (k1 - NOPE) >> 1);
++                }
++            }
++        }
++    }
++    int* phys = reinterpret_cast<int*>(sm + G::SM_PHYS);
++    const long long sl = ROWS ? a.sl[r] : 0;
++    if (tid < CH) {                                              // attn_kernel's row map
++        int row = -1;
++        if (c < NCOMP) {
++            const int idx = c * CH + tid;
++            if (idx < a.cnt[r]) {
++                const int tk = a.tok[static_cast<long long>(r) * a.ts + idx];
++                if (tk >= 0) {
++                    row = tk;
++                    if (a.psh > 0) {
++                        const int* ptr = a.pt + (ROWS ? sl * a.pts : 0);
++                        row = (ptr[tk >> a.psh] << a.psh) + (tk & ((1 << a.psh) - 1));
++                    }
++                }
++            }
++        } else {
++            const int hi = HAS_HI ? a.hi[r] : row_pos<ROWS>(a, r);
++            const int lo = max(a.lo[r], hi - (WINDOW - 1));
++            const int p = hi - (WINDOW - 1) + tid;
++            if (p >= lo && p >= 0) row = (p % a.ring) + (ROWS ? static_cast<int>(sl) * a.ring : 0);
++        }
++        phys[tid] = row;
++    }
++    __syncthreads();
++    {                                                            // the rows in flight before q's fragments
++        const bool comp = c < NCOMP;
++        const uint8_t* V = comp ? a.cv : a.sv;
++        const uint8_t* S = comp ? a.csc : a.ssc;
++        const long long vs = comp ? a.cvs : a.svs, ss = comp ? a.css : a.sss;
++        const bool v16 = ((reinterpret_cast<uintptr_t>(V) | static_cast<uintptr_t>(vs)) & 15) == 0;
++        const uint32_t base = static_cast<uint32_t>(__cvta_generic_to_shared(sm));
++        const int x0 = col2byte(G::W * k), nsl = (col2byte(G::W * k + G::W) - x0) / 16;   // the slice's pieces a key
++        for (int i = tid; i < CH * nsl; i += NT) {
++            const int key = i / nsl, pc = i % nsl, row = phys[key];
++            const long long rr = row >= 0 ? row : 0;
++            stage_piece(base, G::SM_KP, key, G::SLB, pc, V + rr * vs + x0 + pc * 16, row >= 0, v16);
++        }
++        if (P > 1) {                                             // the S tiles' whole rows
++            for (int i = tid; i < G::KS * (VB / 16); i += NT) {
++                const int key = i / (VB / 16), pc = i % (VB / 16), row = phys[G::KS * k + key];
++                const long long rr = row >= 0 ? row : 0;
++                stage_piece(base, G::SM_KS, key, VB, pc, V + rr * vs + pc * 16, row >= 0, v16);
++            }
++        }
++        for (int key = tid; key < CH; key += NT) {
++            const int row = phys[key];
++            cp8(base + G::SM_SC + key * SB, S + (row >= 0 ? row : 0) * ss, row >= 0);
++        }
++        asm volatile("cp.async.commit_group;" ::: "memory");
++    }
++#pragma unroll
++    for (int u = 0; u < 32 * 32 / NT; ++u) reinterpret_cast<uint4*>(sm + G::SM_Q)[tid + u * NT] = qv[u];
++    asm volatile("cp.async.wait_group 0;" ::: "memory");
++    __syncthreads();
++    if (P > 1) {                                                 // S's operands -> bf16 pairs, 4 k a step (deq2)
++        uint32_t* kb = reinterpret_cast<uint32_t*>(sm + G::SM_KB);
++        for (int i = tid; i < G::KS * (D / 4); i += NT) {
++            const int key = i / (D / 4), k4 = (i % (D / 4)) * 4, w = k4 >> 1;
++            uint32_t w0, w1;
++            if (k4 < NOPE) {
++                const uint32_t b = *reinterpret_cast<const uint32_t*>(sm + G::SM_KS + swz16(key, k4, VB));
++                const float sc = pow2b(sm[G::SM_SC + (key + G::KS * k) * SB + (k4 >> 6)]);
++                w0 = deq2(b & 0xffffu, sc, sc);
++                w1 = deq2(b >> 16, sc, sc);
++            } else {
++                const uint2 b = *reinterpret_cast<const uint2*>(sm + G::SM_KS + swz16(key, NOPE + 2 * (k4 - NOPE), VB));
++                w0 = b.x;
++                w1 = b.y;
++            }
++            kb[key * (D / 2) + (w ^ bsw<KW>(key))] = w0;
++            kb[key * (D / 2) + ((w + 1) ^ bsw<KW>(key))] = w1;
++        }
++        __syncthreads();
++    }
++    const float NINF = -INFINITY;
++    float* tmax = reinterpret_cast<float*>(sm + G::SM_TMAX);
++    float* wsum = reinterpret_cast<float*>(sm + G::SM_WSUM);
++    float* rowv = reinterpret_cast<float*>(sm + G::SM_ROW);
++    // S: chain pair w (+ 8): local tile w >> 2, block n8 = w & 3 (P = 1: attn_kernel's tiles ta and ta + 2)
++    const int n8 = warp & 3;
++    const bool sw = warp < 4 * G::TPC;                           // this warp has S chains
++    float sv[G::NPW][4];
++    bool val[G::NPW][2];
++    int tile_of[G::NPW];
++#pragma unroll
++    for (int j = 0; j < G::NPW; ++j) {
++        tile_of[j] = G::TPC * k + (warp >> 2) + 2 * j;
++        for (int e = 0; e < 4; ++e) sv[j][e] = 0.f;
++    }
++    if (sw) {
++        const uint4* qf = reinterpret_cast<const uint4*>(sm + G::SM_Q);
++        int lk[G::NPW];
++#pragma unroll
++        for (int j = 0; j < G::NPW; ++j) lk[j] = 32 * (tile_of[j] - G::TPC * k) + 8 * n8 + g;
++#pragma unroll 4
++        for (int s = 0; s < 32; ++s) {
++            const uint4 af = qf[s * 32 + lane];
++            const int k0 = klo<KW>(s, t), k1 = khi<KW>(s, t);
++#pragma unroll
++            for (int j = 0; j < G::NPW; ++j) {
++                if (P == 1) {
++                    mma(sv[j], af, spair_k<P>(sm, lk[j], lk[j], k0), spair_k<P>(sm, lk[j], lk[j], k1));
++                } else {
++                    mma(sv[j], af, sbf_k<KW, P>(sm, lk[j], k0), sbf_k<KW, P>(sm, lk[j], k1));
++                }
++            }
++        }
++#pragma unroll
++        for (int j = 0; j < G::NPW; ++j) {
++            const int tile = tile_of[j], kc = 32 * tile + 8 * n8 + 2 * t;
++            val[j][0] = phys[kc] >= 0;
++            val[j][1] = phys[kc + 1] >= 0;
++            for (int e = 0; e < 4; ++e)
++                sv[j][e] = val[j][e & 1] ? __fmul_rn(sv[j][e], __int_as_float(0x3D3504F3)) : NINF;
++            float m0 = fmaxf(sv[j][0], sv[j][1]), m1 = fmaxf(sv[j][2], sv[j][3]);
++            m0 = fmaxf(m0, __shfl_xor_sync(FULL, m0, 2));
++            m0 = fmaxf(m0, __shfl_xor_sync(FULL, m0, 1));
++            m1 = fmaxf(m1, __shfl_xor_sync(FULL, m1, 2));
++            m1 = fmaxf(m1, __shfl_xor_sync(FULL, m1, 1));
++            if (t == 0) {
++                tmax[(tile * 4 + n8) * 16 + g] = m0;
++                tmax[(tile * 4 + n8) * 16 + g + 8] = m1;
++            }
++        }
++    }
++    if (P > 1) {                                                 // this rank's tile maxima pushed to the others
++        __syncthreads();
++        for (int i = tid; i < 64 * G::TPC * (P - 1); i += NT) {
++            const int e = 64 * G::TPC * k + i % (64 * G::TPC), q = (k + 1 + i / (64 * G::TPC)) % P;
++            st_peer(tmax + e, q, __float_as_uint(tmax[e]));
++        }
++        cl_arrive();
++        const int x0 = col2byte(G::W * k);                       // meanwhile: PV's B pairs, the fp8 slice -> bf16,
++        uint32_t* vb = reinterpret_cast<uint32_t*>(sm + G::SM_VB);   // 4 columns a step (deq2 per column)
++        for (int i = tid; i < (CH / 2) * (G::W / 4); i += NT) {
++            const int kp = i / (G::W / 4), x = (i % (G::W / 4)) * 4, n = G::W * k + x, k0 = 2 * kp, k1 = k0 + 1;
++            uint32_t o[4];
++            if (n < NOPE) {
++                const uint32_t b0 = *reinterpret_cast<const uint32_t*>(sm + G::SM_KP + swz16(k0, n - x0, G::SLB));
++                const uint32_t b1 = *reinterpret_cast<const uint32_t*>(sm + G::SM_KP + swz16(k1, n - x0, G::SLB));
++                const float s0 = pow2b(sm[G::SM_SC + k0 * SB + (n >> 6)]), s1 = pow2b(sm[G::SM_SC + k1 * SB + (n >> 6)]);
++#pragma unroll
++                for (int e = 0; e < 4; ++e) o[e] = deq2(((b0 >> (8 * e)) & 0xffu) | (((b1 >> (8 * e)) & 0xffu) << 8), s0, s1);
++            } else {
++                const uint2 a0 = *reinterpret_cast<const uint2*>(sm + G::SM_KP + swz16(k0, col2byte(n) - x0, G::SLB));
++                const uint2 a1 = *reinterpret_cast<const uint2*>(sm + G::SM_KP + swz16(k1, col2byte(n) - x0, G::SLB));
++                o[0] = (a0.x & 0xffffu) | (a1.x << 16);
++                o[1] = (a0.x >> 16) | (a1.x & 0xffff0000u);
++                o[2] = (a0.y & 0xffffu) | (a1.y << 16);
++                o[3] = (a0.y >> 16) | (a1.y & 0xffff0000u);
++            }
++#pragma unroll
++            for (int e = 0; e < 4; ++e) vb[kp * G::W + ((x + e) ^ vsw<KW>(kp))] = o[e];
++        }
++        cl_wait();
++    }
++    __syncthreads();
++    if (tid < BMQ) {                                             // the running max over the tiles, a row a thread
++        float m = NINF;
++        for (int tile = 0; tile < 4; ++tile) {
++            const float* tm4 = tmax + tile * 64 + tid;
++            const float tm = fmaxf(fmaxf(tm4[0], tm4[16]), fmaxf(tm4[32], tm4[48]));
++            const bool act = tm != NINF;
++            const float nm = act ? fmaxf(m, tm) : m;
++            const float al = act ? (m == NINF ? 0.f : texp(__fsub_rn(m, nm))) : 1.f;
++            rowv[tile * 16 + tid] = nm;
++            rowv[64 + tile * 16 + tid] = al;
++            rowv[128 + tile * 16 + tid] = act ? 1.f : 0.f;
++            m = nm;
++        }
++        reinterpret_cast<float*>(sm + G::SM_MISC)[tid] = m;
++    }
++    __syncthreads();
++    uint32_t* pf = reinterpret_cast<uint32_t*>(sm + G::SM_P);    // [tile][step][lane][4]
++    if (sw) {
++#pragma unroll
++        for (int j = 0; j < G::NPW; ++j) {                       // p, the quad sums, bf16(p) -> fragments
++            const int tile = tile_of[j];
++            float p[4];
++            for (int e = 0; e < 4; ++e) {
++                const int row = g + (e >> 1) * 8;
++                const bool act = rowv[128 + tile * 16 + row] != 0.f;
++                p[e] = (val[j][e & 1] && act) ? texp(__fsub_rn(sv[j][e], rowv[tile * 16 + row])) : 0.f;
++            }
++            float a0 = __fadd_rn(p[0], p[1]), a1 = __fadd_rn(p[2], p[3]);
++            a0 = __fadd_rn(a0, __shfl_xor_sync(FULL, a0, 2));
++            a0 = __fadd_rn(a0, __shfl_xor_sync(FULL, a0, 1));
++            a1 = __fadd_rn(a1, __shfl_xor_sync(FULL, a1, 2));
++            a1 = __fadd_rn(a1, __shfl_xor_sync(FULL, a1, 1));
++            if (t == 0) {
++                wsum[(tile * 4 + n8) * 16 + g] = a0;
++                wsum[(tile * 4 + n8) * 16 + g + 8] = a1;
++            }
++            int step, tq, hi;
++            frag_of<KW>(8 * n8 + 2 * t, step, tq, hi);
++            const __nv_bfloat162 lo2 = __floats2bfloat162_rn(p[0], p[1]), hi2 = __floats2bfloat162_rn(p[2], p[3]);
++            uint32_t* f = pf + ((tile * 2 + step) * 32 + g * 4 + tq) * 4;
++            f[2 * hi] = *reinterpret_cast<const uint32_t*>(&lo2);
++            f[2 * hi + 1] = *reinterpret_cast<const uint32_t*>(&hi2);
++        }
++    }
++    if (P > 1) {                                                 // this rank's row sums and fragments pushed
++        __syncthreads();
++        constexpr int NW = G::TPC * (64 + 256);                  // words of this rank's tiles
++        for (int i = tid; i < NW * (P - 1); i += NT) {
++            const int e = i % NW, q = (k + 1 + i / NW) % P;
++            uint32_t* w = e < 64 * G::TPC ? reinterpret_cast<uint32_t*>(wsum) + 64 * G::TPC * k + e
++                                          : pf + 256 * G::TPC * k + (e - 64 * G::TPC);
++            st_peer(w, q, *w);
++        }
++        cl_arrive();                                             // the last cluster access: no barrier before exit
++        cl_wait();
++    }
++    __syncthreads();
++    if (tid < BMQ) {                                             // l: fma(l, alpha, (W0 + W2) + (W1 + W3))
++        float l = 0.f;
++        for (int tile = 0; tile < 4; ++tile) {
++            const float* w4 = wsum + tile * 64 + tid;
++            const float sum = __fadd_rn(__fadd_rn(w4[0], w4[32]), __fadd_rn(w4[16], w4[48]));
++            l = __fmaf_rn(l, rowv[64 + tile * 16 + tid], sum);
++        }
++        reinterpret_cast<float*>(sm + G::SM_MISC)[16 + tid] = l;
++    }
++    const int x0 = col2byte(G::W * k);
++    float acc[G::J][4];
++#pragma unroll
++    for (int j = 0; j < G::J; ++j)
++        for (int e = 0; e < 4; ++e) acc[j][e] = 0.f;
++    for (int tile = 0; tile < 4; ++tile) {                       // o = mma(P, kv, rn(o * alpha)), 2 k steps a tile
++        const float al0 = rowv[64 + tile * 16 + g], al1 = rowv[64 + tile * 16 + g + 8];
++#pragma unroll
++        for (int j = 0; j < G::J; ++j) {
++            acc[j][0] = __fmul_rn(acc[j][0], al0);
++            acc[j][1] = __fmul_rn(acc[j][1], al0);
++            acc[j][2] = __fmul_rn(acc[j][2], al1);
++            acc[j][3] = __fmul_rn(acc[j][3], al1);
++        }
++        for (int step = 0; step < 2; ++step) {
++            const uint4 af = reinterpret_cast<const uint4*>(pf)[(tile * 2 + step) * 32 + lane];
++            const int k0 = 32 * tile + klo<KW>(step, t), k1 = 32 * tile + khi<KW>(step, t);
++#pragma unroll
++            for (int j = 0; j < G::J; ++j) {
++                const int n = 64 * (G::J * k + j) + 8 * warp + g;
++                if (P == 1) {
++                    mma(acc[j], af, spair_n<P>(sm, k0, k0 + 1, n, x0), spair_n<P>(sm, k1, k1 + 1, n, x0));
++                } else {
++                    const uint32_t* vb = reinterpret_cast<const uint32_t*>(sm + G::SM_VB);
++                    const int x = n - G::W * k;
++                    mma(acc[j], af, vb[(k0 >> 1) * G::W + (x ^ vsw<KW>(k0 >> 1))],
++                        vb[(k1 >> 1) * G::W + (x ^ vsw<KW>(k1 >> 1))]);
++                }
++            }
++        }
++    }
++    const long long pbase = (static_cast<long long>(c) * R + r) * H + hb * BMQ;
++#pragma unroll
++    for (int j = 0; j < G::J; ++j) {
++        const int n = 64 * (G::J * k + j) + 8 * warp + 2 * t;
++        *reinterpret_cast<float2*>(a.po + (pbase + g) * D + n) = make_float2(acc[j][0], acc[j][1]);
++        *reinterpret_cast<float2*>(a.po + (pbase + g + 8) * D + n) = make_float2(acc[j][2], acc[j][3]);
++    }
++    if (tid < BMQ) {                                             // every rank: the same (m, l), so each merge sees it
++        a.pm[pbase + tid] = reinterpret_cast<float*>(sm + G::SM_MISC)[tid];
++        a.pl[pbase + tid] = reinterpret_cast<float*>(sm + G::SM_MISC)[16 + tid];
++    }
++    int* flag = reinterpret_cast<int*>(sm + G::SM_MISC) + 32;
++    int* tk = a.ticket + (r * (H / BMQ) + hb) * MAXP + k;
++    __threadfence();
++    __syncthreads();
++    if (tid == 0) {
++        int need = 0;
++        for (int cc = 0; cc < NCH; ++cc) need += chunk_works(a, r, cc) ? 1 : 0;
++        *flag = atomicAdd(tk, 1) == need - 1;
++    }
++    __syncthreads();
++    if (!*flag) return;
++    __threadfence();
++    if (tid == 0) atomicExch(tk, 0);                             // self-cleaning: the next launch / replay
++    merge_cols_r<ROWS, G::W>(a, sm, G::SM_TMAX, r, hb, G::W * k);
++    rot_cols<G::W>(a, ro, r, hb, G::W * k);                     // the fold: its own columns' rows
++}
+diff --git a/zig/src/core/contract/dsv41_pending_2.zig b/zig/src/core/contract/dsv41_pending_2.zig
+index 64a9ed898e0d040029b46d96c44df1dc177639e7..d68b6d0d9721248f606fae5642f6572425e7140b 100644
+--- a/zig/src/core/contract/dsv41_pending_2.zig
++++ b/zig/src/core/contract/dsv41_pending_2.zig
+@@ -82,6 +82,10 @@ pub const records = [_]registry.CudaRecord{
+     .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn12split_kernelILi4ELb0ELb1ELi4EEEvNS_4ArgsE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn12split_kernelILi4ELb0ELb1ELi4EEEvNS_4ArgsE", .threads = 256, .dynamic = 100864, .cluster = 4, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 88, .static = 0, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn12split_kernelILi4ELb1ELb0ELi4EEEvNS_4ArgsE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn12split_kernelILi4ELb1ELb0ELi4EEEvNS_4ArgsE", .threads = 256, .dynamic = 100864, .cluster = 4, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 90, .static = 0, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn12split_kernelILi4ELb1ELb1ELi4EEEvNS_4ArgsE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn12split_kernelILi4ELb1ELb1ELi4EEEvNS_4ArgsE", .threads = 256, .dynamic = 100864, .cluster = 4, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 90, .static = 0, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn16split_rot_kernelILi4ELb0ELb0ELi1EEEvNS_4ArgsENS_5RotInE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn16split_rot_kernelILi4ELb0ELb0ELi1EEEvNS_4ArgsENS_5RotInE", .threads = 256, .dynamic = 98816, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn16split_rot_kernelILi4ELb1ELb0ELi1EEEvNS_4ArgsENS_5RotInE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn16split_rot_kernelILi4ELb1ELb0ELi1EEEvNS_4ArgsENS_5RotInE", .threads = 256, .dynamic = 98816, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn16split_rot_kernelILi4ELb0ELb0ELi4EEEvNS_4ArgsENS_5RotInE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn16split_rot_kernelILi4ELb0ELb0ELi4EEEvNS_4ArgsENS_5RotInE", .threads = 256, .dynamic = 100864, .cluster = 4, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_attn _ZN10dsv41_attn16split_rot_kernelILi4ELb1ELb0ELi4EEEvNS_4ArgsENS_5RotInE", .image = "dsv41_attn", .symbol = "_ZN10dsv41_attn16split_rot_kernelILi4ELb1ELb0ELi4EEEvNS_4ArgsENS_5RotInE", .threads = 256, .dynamic = 100864, .cluster = 4, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_topk _ZN10dsv41_topk11topk_kernelENS_4ArgsE", .image = "dsv41_topk", .symbol = "_ZN10dsv41_topk11topk_kernelENS_4ArgsE", .threads = 512, .dynamic = 63488, .cluster = 8, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 64, .static = 3232, .bound = 512 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_topk_b _ZN10dsv41_topk13topk_b_kernelENS_4ArgsE", .image = "dsv41_topk_b", .symbol = "_ZN10dsv41_topk13topk_b_kernelENS_4ArgsE", .threads = 512, .dynamic = 63488, .cluster = 8, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 3232, .bound = 512 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_mhc _ZN9dsv41_mhc15boundary_kernelILb1ELi2ELb1ELb0ELb0ELb0EEEvNS_4ArgsE", .image = "dsv41_mhc", .symbol = "_ZN9dsv41_mhc15boundary_kernelILb1ELi2ELb1ELb0ELb0ELb0EEEvNS_4ArgsE", .threads = 128, .dynamic = 2048, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 113, .static = 20496, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 68eec8aa95ef6719b333fae30925c9b2e80e11c2..907aa4b65a0ae3d207436fcdfb8db269dec065a5 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -86,7 +86,7 @@ pub const Options = struct {
+     index_bound: bool = false,
+     /// TF_DSV41_IDX_IOTA: an index layer whose top-k takes every entry it reads skips its query and scores (same bits)
+     idx_iota: bool = false,
+-    /// TF_DSV41_ROT_FOLD mask (same bits): bit 0 wo_a's epilogue writes wo_b's rotated rows (block_attn.woFold)
++    /// TF_DSV41_ROT_FOLD mask (same bits): bit 0 wo_a writes wo_b's rotated rows, bit 1 the merge wo_a's (block_attn)
+     rot_fold: u3 = 0,
+     /// decode knob set (same bits): ATTN_SPLIT, ATTN_ROPE, MHC_TAIL, MHC_DEFER, RG_PRUNE, PRUNE_KIT, MOE_BF16, RMS_FOLD
+     r1: bool = false,
+@@ -351,7 +351,7 @@ pub const Emitter = struct {
+         }
+         const xh = try e.buf("L.{s}.xh", .{tag}, .f16, &.{@intCast(lay.xh_total)});
+         if (rot.in) {
+-            if (norm != null or rot.out != null) return error.Unsupported; // the rows were rotated without a norm
++            if (norm != null) return error.Unsupported; // the rows were rotated without a norm
+         } else if (norm) |nm| {
+             const ws = try e.a.alloc(Arg, ps.len);
+             @memset(ws, nm.w);
+diff --git a/zig/src/families/deepseek_v41/block_attn.zig b/zig/src/families/deepseek_v41/block_attn.zig
+index b47b832a4af7db14f6df3f953755c9738bb04994..701031fb6a9d04b063442beae96dec32173e2727 100644
+--- a/zig/src/families/deepseek_v41/block_attn.zig
++++ b/zig/src/families/deepseek_v41/block_attn.zig
+@@ -329,6 +329,12 @@ pub fn attention(e: *Emitter, L: u32) !void {
+     // o: wo_a's groups over the heads' columns, then wo_b (this rank's partial)
+     const g: usize = try e.rankGroups();
+     const gk: i64 = @divExact(H * hd, @as(i64, @intCast(g)));
++    // TF_DSV41_ROT_FOLD bit 1: the merge also writes wo_a's rot_in rows (L.o.xh), so wo_a has no rot_in launch
++    const merged = attnFold(e, g, gk);
++    if (merged) {
++        const rows = try woaRows(e, L, g, gk);
++        try e.appendLast(&rows);
++    }
+     const oa = try e.buf("L.oa", .{}, .bf16, &.{ n, @as(i64, @intCast(g)) * e.cfg.o_lora });
+     var po: [8]Proj = undefined;
+     for (po[0..g], 0..) |*p, i| p.* = .{
+@@ -343,11 +349,29 @@ pub fn attention(e: *Emitter, L: u32) !void {
+     const wo_b = try e.fmt("L{d}.attn.wo_b", .{L});
+     const kb: i64 = @intCast(g * e.cfg.o_lora);
+     const fold = woFold(e, po[0..g]);
+-    const rot: block.Emitter.Rot = if (fold) .{ .out = .{ .suh = try e.weight("{s}.suh", .{wo_b}, .f16, &.{kb}), .xh = try e.buf("L.wo_b.xh", .{}, .f16, &.{n * kb}), .ld = kb } } else .{};
++    const rot: block.Emitter.Rot = if (fold) .{ .out = .{ .suh = try e.weight("{s}.suh", .{wo_b}, .f16, &.{kb}), .xh = try e.buf("L.wo_b.xh", .{}, .f16, &.{n * kb}), .ld = kb }, .in = merged } else .{ .in = merged };
+     try e.fusedRot("o", po[0..g], null, rot);
+     try e.fusedRot("wo_b", &.{.{ .w = wo_b, .x = oa, .y = try e.buf("L.part", .{}, .bf16, &.{ n, D }), .k = @intCast(kb), .n = @intCast(D) }}, null, .{ .in = fold });
+ }
+ 
++/// TF_DSV41_ROT_FOLD bit 1 (3b): R1's split merge, whose warps each store one head's 128-column block, rotates them
++pub fn attnFold(e: *const Emitter, g: usize, gk: i64) bool {
++    if (e.o.rot_fold & 2 == 0 or !e.o.r1) return false;
++    // whole groups of whole blocks (o's columns are wo_a's k), at most the kernel's 8 groups and its 512-wide heads
++    return e.cfg.head_dim == 512 and g >= 1 and g <= 8 and @mod(gk, 128) == 0;
++}
++
++/// The fold's attention arguments as fusedRot lays out wo_a's rot_in: each group's suh, L.o.xh and group i at i n gk.
++pub fn woaRows(e: *Emitter, L: u32, g: usize, gk: i64) ![3]Arg {
++    const suh = try e.a.alloc(Arg, g);
++    const offs = try e.a.alloc(i64, g);
++    for (suh, offs, 0..) |*s, *off, i| {
++        s.* = try e.weight("L{d}.attn.wo_a.{d}.suh", .{ L, i }, .f16, &.{gk});
++        off.* = @as(i64, @intCast(i)) * e.n * gk;
++    }
++    return .{ .{ .list = suh }, try e.buf("L.o.xh", .{}, .f16, &.{@as(i64, @intCast(g)) * e.n * gk}), try e.ints(offs) };
++}
++
+ /// TF_DSV41_ROT_FOLD bit 0 (3a): wo_a's groups on whole 128-column blocks, so the epilogue rotates as rot_in does
+ pub fn woFold(e: *const Emitter, po: []const Proj) bool {
+     if (e.o.rot_fold & 1 == 0) return false;
+diff --git a/zig/src/families/deepseek_v41/catalog.zig b/zig/src/families/deepseek_v41/catalog.zig
+index e73d99714cc6ba8a640b5d6d3a974a9c2afc9400..308f9ca8f40b7048092778d26e0ca23ccc660124 100644
+--- a/zig/src/families/deepseek_v41/catalog.zig
++++ b/zig/src/families/deepseek_v41/catalog.zig
+@@ -66,6 +66,7 @@ pub fn collectWithLimit(optin: u32) !void {
+     @import("catalog_geometry.zig").rot(try dk.dense.Rot.resolve(m[6]));
+     @import("catalog_geometry.zig").lin2(try dk.dense.Lin2.resolve(m[30], .{ .lanes = true, .linear = true, .cluster = true }));
+     @import("catalog_geometry.zig").lin2(try dk.dense.Lin2.resolve(m[30], .{ .lanes = true, .linear = true, .cluster = true, .pf = false }));
++    @import("catalog_geometry.zig").attnRot(try dk.attn_rot.Rot.resolve(m[7], 262144));
+     @import("catalog_geometry.zig").operators(try dk.ops.Functions.resolve(m[7], m[8], m[9], m[10], m[11], .{ m[12], m[13], m[14], m[15] }, m[16], m[17], m[18], m[20], m[21], m[22], m[23], m[25], m[29], 262144));
+     const kv = try dk.kv_glue.Functions.resolve(m[27]);
+     entries[@intFromPtr(kv.norm_store.handle.?) - 1].threads = 128;
+diff --git a/zig/src/families/deepseek_v41/catalog_geometry.zig b/zig/src/families/deepseek_v41/catalog_geometry.zig
+index d59a6143eafce41dab03b416e6b9990877298c99..dd1043ee9fc45c0508b9a014cce17b6c5ae7d15f 100644
+--- a/zig/src/families/deepseek_v41/catalog_geometry.zig
++++ b/zig/src/families/deepseek_v41/catalog_geometry.zig
+@@ -103,6 +103,9 @@ pub fn rot(f: dk.dense.Rot) void {
+         note(fun, wk * 32, wk * 4096, 1);
+     };
+ }
++pub fn attnRot(f: dk.attn_rot.Rot) void {
++    for (f.split, 0..) |row, pi| for (row) |fun| note(fun, dk.ops.attn.NT, dk.ops.attn.splitSmem(if (pi == 0) 1 else 4), if (pi == 0) 1 else 4);
++}
+ pub fn lin2(f: dk.dense.Lin2) void {
+     for (f.lanes) |row| for (row, 0..) |fun, i| {
+         const wk: u32 = if (i == 0) 4 else 8;
+diff --git a/zig/src/families/deepseek_v41/kernels.zig b/zig/src/families/deepseek_v41/kernels.zig
+index 5430de678beccd3550f1a8371e4b3b61e830ed1c..cdfff2d30c89e89385c5132c131c08274f8ee3fc 100644
+--- a/zig/src/families/deepseek_v41/kernels.zig
++++ b/zig/src/families/deepseek_v41/kernels.zig
+@@ -9,6 +9,8 @@ pub const dense = @import("cuda").qlinear.block.dense;
+ pub const kv_glue = @import("kernels_kv_glue.zig");
+ pub const replay = @import("kernels_replay.zig");
+ pub const ops = @import("kernels_ops.zig");
++/// TF_DSV41_ROT_FOLD bit 1: the R1 attention whose merge writes wo_a's rot_in rows (attn_rot.cuh)
++pub const attn_rot = @import("kernels_attn_rot.zig");
+ pub const vision = @import("vision_kernels.zig");
+ /// sampling.cu (its own module, loaded by the keyed sampler)
+ pub const sampling = @import("sampling_kernels.zig");
+@@ -102,8 +104,10 @@ pub const Kernels = struct {
+             lm.cluster = try dense.lin2Cluster(env("TF_DSV41_LIN2_CLUSTER"));
+             break :blk lm;
+         });
+-        // TF_DSV41_ROT_FOLD bit 0: dense3's rotated-output instances, resolved only then (an older image still loads)
+-        if ((try dense.rotFoldMask(env("TF_DSV41_ROT_FOLD"))) & 1 != 0) k.dense.rot = try dense.Rot.resolve(k.mods[6]);
++        // TF_DSV41_ROT_FOLD: each bit's instances resolved only when set (an older image still loads)
++        const fold = try dense.rotFoldMask(env("TF_DSV41_ROT_FOLD"));
++        if (fold & 1 != 0) k.dense.rot = try dense.Rot.resolve(k.mods[6]); // bit 0: dense3's rotated-output linears
++        if (fold & 2 != 0) k.ops.attn_rot = try attn_rot.Rot.resolve(k.mods[7], optin); // bit 1: the folded merge
+         return k;
+     }
+ 
+@@ -157,6 +161,7 @@ test {
+     std.testing.refAllDecls(ops);
+     std.testing.refAllDecls(ops.Ops);
+     std.testing.refAllDecls(ops.Functions);
++    std.testing.refAllDecls(attn_rot);
+ }
+ 
+ test {
+@@ -166,6 +171,7 @@ test {
+     _ = exl3;
+     _ = kv_glue;
+     _ = @import("kernels_shapes.zig");
++    _ = attn_rot;
+ }
+ 
+ test "DeepSeek refuses pre-cluster GPUs before loading any image" {
+diff --git a/zig/src/families/deepseek_v41/kernels_attn_rot.zig b/zig/src/families/deepseek_v41/kernels_attn_rot.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9eebfd0a6e7b61764fc24e39b2452354848cd50f
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kernels_attn_rot.zig
+@@ -0,0 +1,104 @@
++//! TF_DSV41_ROT_FOLD bit 1 (attn_rot.cuh): R1's split attention whose merge also writes wo_a's rot_in rows.
++
++const std = @import("std");
++const cuda = @import("cuda");
++const ops = @import("kernels_ops.zig");
++const fitShared = @import("cuda").qlinear.block.experts.fitShared;
++
++const attn = ops.attn;
++
++/// The attention kernels' head width (attn_cuda.cu D): a merge warp holds 128 of one head's columns.
++pub const head_dim = 512;
++pub const max_groups = 8;
++
++/// attn_rot.cuh RotIn: wo_a group s's fp16 rows (row stride gk) and suh, s reading o's columns [s gk, (s + 1) gk).
++pub const RotIn = extern struct { xh: [max_groups]u64 = @splat(0), suh: [max_groups]u64 = @splat(0), gk: c_int = 0 };
++
++comptime {
++    std.debug.assert(@sizeOf(RotIn) == 136 and @offsetOf(RotIn, "gk") == 128);
++}
++
++/// split_rot_kernel<4, ROWS, false, P>: the decode window's KW and no window ends; P 1 and 4 as attn.splitFor.
++pub fn symbol(comptime rows: bool, comptime p: u32) [:0]const u8 {
++    return std.fmt.comptimePrint("_ZN10dsv41_attn16split_rot_kernelILi4ELb{d}ELb0ELi{d}EEEvNS_4ArgsENS_5RotInE", .{ @intFromBool(rows), p });
++}
++
++/// The fold's instances in the attention image (resolved only with the knob: an older image still loads).
++pub const Rot = struct {
++    split: [2][2]cuda.Function, // [P 1, P 4][rows]
++
++    pub fn resolve(m_attn: cuda.Module, optin: u32) !Rot {
++        var r: Rot = undefined;
++        inline for (.{ 1, 4 }, 0..) |p, pi| inline for (.{ false, true }, 0..) |rows, ri| {
++            const name = symbol(rows, p);
++            r.split[pi][ri] = try m_attn.function(name);
++            if (!try fitShared(r.split[pi][ri], name, attn.splitSmem(p), optin)) return error.SharedMemoryTooSmall;
++        };
++        return r;
++    }
++};
++
++/// One launch's RotIn for `heads` heads: group s's suh `suh[s]`, its rows at xh + 2 offs[s] (fp16 elements).
++pub fn rotIn(heads: usize, suh: []const u64, gk: usize, xh: u64, offs: []const usize) !RotIn {
++    // whole groups of whole Hadamard blocks: a merge warp's 128 columns are then one rot_in block of one group
++    if (suh.len < 1 or suh.len > max_groups or offs.len != suh.len) return error.Unsupported;
++    if (gk == 0 or gk % 128 != 0 or gk > std.math.maxInt(c_int) or suh.len * gk != heads * head_dim) return error.Unsupported;
++    var r: RotIn = .{ .gk = @intCast(gk) };
++    for (suh, offs, 0..) |s, off, i| {
++        if (s == 0 or xh == 0) return error.Unsupported;
++        r.xh[i] = xh + 2 * off;
++        r.suh[i] = s;
++    }
++    return r;
++}
++
++/// A launch the fold admits: `heads` heads' columns covered by the set groups, a built (KW, window ends, P).
++pub fn admits(ro: RotIn, heads: c_int, kw: u32, has_hi: bool, split: u32) bool {
++    if (kw != 4 or has_hi or (split != 1 and split != 4) or ro.gk <= 0 or @mod(ro.gk, 128) != 0) return false;
++    var groups: i64 = 0;
++    for (ro.xh, ro.suh) |x, s| {
++        if (x == 0 or s == 0) break;
++        groups += 1;
++    }
++    return groups >= 1 and groups * ro.gk == @as(i64, heads) * head_dim;
++}
++
++/// ops.attention's split launch of split_rot_kernel: o as before, plus wo_a's rot_in rows `ro`.
++pub fn launch(o: ops.Ops, a: attn.Args, ro: RotIn, kw: u32, rows: bool, has_hi: bool, split: u32) !void {
++    const f = o.f.attn_rot orelse return error.RotFoldNotLoaded;
++    _ = try attn.instance(a, kw, rows, has_hi);
++    if (!admits(ro, a.H, kw, has_hi, split)) return error.Unsupported;
++    var args: cuda.Args = .{};
++    args.add(a);
++    args.add(ro);
++    const hb: usize = @intCast(@divTrunc(a.H, attn.BMQ));
++    const R: usize = @intCast(a.R);
++    const cluster: ?cuda.Dim3 = if (split == 4) .{ .x = 4 } else null;
++    try o.go(f.split[@intFromBool(split == 4)][@intFromBool(rows)], .{ attn.NCH * split, hb, R }, attn.NT, attn.splitSmem(split), cluster, &args);
++}
++
++test "attention rot fold: symbols, RotIn's layout and the groups it admits" {
++    const t = std.testing;
++    try t.expectEqualStrings("_ZN10dsv41_attn16split_rot_kernelILi4ELb0ELb0ELi1EEEvNS_4ArgsENS_5RotInE", symbol(false, 1));
++    try t.expectEqualStrings("_ZN10dsv41_attn16split_rot_kernelILi4ELb1ELb0ELi4EEEvNS_4ArgsENS_5RotInE", symbol(true, 4));
++    // TP2's rank: 32 heads, 4 groups of 4,096 columns, rows of 3 at L.o.xh's fusedRot offsets
++    const suh = [_]u64{ 0x1000, 0x3000, 0x5000, 0x7000 };
++    const offs = [_]usize{ 0, 3 * 4096, 6 * 4096, 9 * 4096 };
++    const ro = try rotIn(32, &suh, 4096, 0x100000, &offs);
++    try t.expectEqual(@as(u64, 0x100000 + 2 * 6 * 4096), ro.xh[2]);
++    try t.expectEqual(@as(u64, 0x5000), ro.suh[2]);
++    try t.expectEqual(@as(u64, 0), ro.xh[4]);
++    try t.expect(admits(ro, 32, 4, false, 1));
++    try t.expect(admits(ro, 32, 4, false, 4));
++    try t.expect(!admits(ro, 64, 4, false, 4)); // the groups cover only half of 64 heads' columns
++    try t.expect(!admits(ro, 32, 2, false, 4)); // no KW 2 instance
++    try t.expect(!admits(ro, 32, 4, true, 4)); // nor with window ends
++    try t.expect(!admits(ro, 32, 4, false, 0)); // attn_kernel (no split) has no fold
++    // groups that do not tile the heads' columns, a group off the 128-column grid, too many groups: refused
++    try t.expectError(error.Unsupported, rotIn(32, suh[0..3], 4096, 0x100000, offs[0..3]));
++    try t.expectError(error.Unsupported, rotIn(1, suh[0..1], 512 + 64, 0x100000, offs[0..1]));
++    const nine: [9]u64 = @splat(0x1000);
++    const at: [9]usize = @splat(0);
++    try t.expectError(error.Unsupported, rotIn(72, &nine, 4096, 0x100000, &at));
++    try t.expectError(error.Unsupported, rotIn(32, &suh, 4096, 0, &offs));
++}
+diff --git a/zig/src/families/deepseek_v41/kernels_ops.zig b/zig/src/families/deepseek_v41/kernels_ops.zig
+index 768d789a947088ed7b410489a7bd86a5194bb08e..f910406956876c6837cbd73a9a8efe59fe06d9b9 100644
+--- a/zig/src/families/deepseek_v41/kernels_ops.zig
++++ b/zig/src/families/deepseek_v41/kernels_ops.zig
+@@ -23,6 +23,8 @@ pub const pfd = shapes.pfd;
+ pub const Functions = struct {
+     attn: [8]cuda.Function,
+     attn_split: [2][8]cuda.Function, // [P 1, P 4][instance]
++    /// TF_DSV41_ROT_FOLD bit 1: split_rot_kernel's instances, set by Kernels.load when the knob asks for them
++    attn_rot: ?@import("kernels_attn_rot.zig").Rot = null,
+     topk: cuda.Function,
+     /// topk_b.cu's row-bounded twin (tf_dsv41_topk_b_v1.topk)
+     topk_b: cuda.Function,
+@@ -65,6 +67,7 @@ pub const Functions = struct {
+     /// `pf`: the four pfdense modules (K2 8, 10, 12, 16).
+     pub fn resolve(m_attn: cuda.Module, m_topk: cuda.Module, m_mhc: cuda.Module, m_mhc_pf: cuda.Module, m_rg: cuda.Module, pf: [4]cuda.Module, m_gate: cuda.Module, m_pace: cuda.Module, m_l2pf: cuda.Module, m_keys: cuda.Module, m_pw: cuda.Module, m_kv: cuda.Module, m_glue: cuda.Module, m_pfglue: cuda.Module, m_topk_b: cuda.Module, optin: u32) !Functions {
+         var f: Functions = undefined;
++        f.attn_rot = null;
+         inline for (0..8) |i| f.attn[i] = try m_attn.function(attn.symbol(if (i >= 4) 4 else 2, (i & 2) != 0, (i & 1) != 0));
+         inline for (f.attn, 0..) |fun, i| {
+             if (!try fitShared(fun, attn.symbol(if (i >= 4) 4 else 2, (i & 2) != 0, (i & 1) != 0), attn.SMEM, optin)) return error.SharedMemoryTooSmall;
+diff --git a/zig/src/families/deepseek_v41/kernels_replay_ops.zig b/zig/src/families/deepseek_v41/kernels_replay_ops.zig
+index 8be2b1bdf19e36c15cec52b173aa1f88048ec17b..fbbbc4a22dd6517d6d382e4a2a4148549d3580d8 100644
+--- a/zig/src/families/deepseek_v41/kernels_replay_ops.zig
++++ b/zig/src/families/deepseek_v41/kernels_replay_ops.zig
+@@ -1,6 +1,7 @@
+ //! Replays the other kernels' extension calls: attention, top-k, mHC, router, prefill dense GEMM and L2 prefetch.
+ 
+ const ops = @import("kernels_ops.zig");
++const attn_rot = @import("kernels_attn_rot.zig");
+ const replay = @import("kernels_replay.zig");
+ 
+ const Call = replay.Call;
+@@ -23,7 +24,7 @@ fn stride0(t: Tensor) i64 {
+ // tf_dsv41_attn_cuda_v1 (csa2/attn_cuda.cpp): attn and topk as dsv41_attn_run_cuda / dsv41_topk_run_cuda fill Args
+ pub fn attnExt(o: ops.Ops, func: []const u8, args: []const Arg, kwargs: []const Kw) !bool {
+     if (is(func, "attn")) {
+-        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "q", "cv", "csc", "tok", "cnt", "sv", "ssc", "lo", "hi", "pos", "sl", "pt", "sink", "cs", "po", "pm", "pl", "out", "ticket", "ring", "psh", "pts", "kw", "split", "qrope" } };
++        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "q", "cv", "csc", "tok", "cnt", "sv", "ssc", "lo", "hi", "pos", "sl", "pt", "sink", "cs", "po", "pm", "pl", "out", "ticket", "ring", "psh", "pts", "kw", "split", "qrope", "rsuh", "rxh", "rxh_off" } };
+         const q = try c.tensor(0);
+         const cv = try c.tensor(1);
+         const csc = try c.tensor(2);
+@@ -76,6 +77,12 @@ pub fn attnExt(o: ops.Ops, func: []const u8, args: []const Arg, kwargs: []const
+             else => return error.WrongArgument,
+         } else 0;
+         b.qrope = @intFromBool(qrope != 0 and split > 0);
++        // TF_DSV41_ROT_FOLD bit 1: the merge also writes wo_a's rot_in rows, group s at its offset of rxh
++        if ((try c.opt(25)) != null) {
++            const ro = try rotIn(c, b);
++            try attn_rot.launch(o, b, ro, try c.u(22), numel(sl) > 0, numel(hi) > 0, split);
++            return true;
++        }
+         try o.attention(b, try c.u(22), numel(sl) > 0, numel(hi) > 0, split);
+         return true;
+     }
+@@ -83,6 +90,24 @@ pub fn attnExt(o: ops.Ops, func: []const u8, args: []const Arg, kwargs: []const
+     return false;
+ }
+ 
++/// The attention call's rsuh (each wo_a group's suh), rxh (fp16) and rxh_off: rot_in's arguments for the same rows.
++fn rotIn(c: Call, a: ops.attn.Args) !attn_rot.RotIn {
++    const suh = try c.list(25);
++    const offs = try c.list(27);
++    const xh = try c.tensor(26);
++    if (suh.len < 1 or suh.len > attn_rot.max_groups or offs.len != suh.len) return error.WrongArgument;
++    var sp: [attn_rot.max_groups]u64 = undefined;
++    var op: [attn_rot.max_groups]usize = undefined;
++    const gk: i64 = if (suh[0] == .tensor) numel(suh[0].tensor) else return error.WrongArgument;
++    for (suh, offs, 0..) |sa, oa, i| {
++        if (sa != .tensor or oa != .int or oa.int < 0 or numel(sa.tensor) != gk) return error.WrongArgument;
++        if (oa.int + @as(i64, a.R) * gk > numel(xh)) return error.WrongArgument; // group i's R rows inside rxh
++        sp[i] = sa.tensor.ptr;
++        op[i] = @intCast(oa.int);
++    }
++    return attn_rot.rotIn(@intCast(a.H), sp[0..suh.len], @intCast(gk), xh.ptr, op[0..suh.len]) catch return error.Unsupported;
++}
++
+ /// tf_dsv41_attn_cuda_v1.topk, or with `bounded` tf_dsv41_topk_b_v1.topk (TF_DSV41_INDEX_BOUND, same arguments)
+ pub fn topkCall(o: ops.Ops, args: []const Arg, kwargs: []const Kw, bounded: bool) !bool {
+     const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "s0", "c0", "o0", "n0", "nk0", "k0", "m0", "e0", "s1", "c1", "o1", "n1", "nk1", "k1", "m1", "e1", "jobs", "pos", "ratio", "bs", "R", "CL" } };
+diff --git a/zig/src/families/deepseek_v41/rot_fold_attn_test.zig b/zig/src/families/deepseek_v41/rot_fold_attn_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a967548b4fc540364e92c24149ccc5840a90c387
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/rot_fold_attn_test.zig
+@@ -0,0 +1,349 @@
++//! TF_DSV41_ROT_FOLD (3b): the decode windows with the merge's fold on and off, and its rows against rot_in's.
++
++const std = @import("std");
++const testing = std.testing;
++const block = @import("block.zig");
++const block_attn = @import("block_attn.zig");
++const calls = @import("block_calls.zig");
++const check = @import("calls_check.zig");
++const p3a = @import("rot_fold_test.zig");
++const ar = @import("dsv41_kernels").attn_rot;
++const Config = @import("config.zig").Config;
++
++const oneKey = p3a.oneKey;
++const key = p3a.key;
++const firstRole = p3a.firstRole;
++
++fn isAttn(c: calls.Call) bool {
++    return std.mem.eql(u8, c.name, "tf_dsv41_attn_cuda_v1.attn");
++}
++
++/// An x3seg rotation whose first input is a view of `role` (wo_a's: L.o; wo_b's: L.oa).
++fn rotInOf(c: calls.Call, role: []const u8) bool {
++    if (!std.mem.eql(u8, c.name, "tf_dsv41_x3seg_v3.rot_in")) return false;
++    const r = firstRole(c.args[0].arg) orelse return false;
++    return std.mem.eql(u8, r, role);
++}
++
++const Counts = struct { attn: usize = 0, wo_a: usize = 0, wo_b: usize = 0, linears: usize = 0 };
++
++/// `on` (mask m) is `off` less the rot_ins m drops, R1's attention and wo_a's linears gaining arguments; nothing else
++fn compareWindows(a: std.mem.Allocator, off: []const calls.Call, on: []const calls.Call, m: u3) !Counts {
++    var k: Counts = .{};
++    var j: usize = 0;
++    var rows: ?[3][]const u8 = null; // the attention's appended (suh, xh, offsets), for the rot_in they replace
++    for (off) |c| {
++        if (rotInOf(c, "L.o") and m & 2 != 0) {
++            // exactly the rotation H runs: the same suh list, the same L.o.xh and the same row offsets
++            const want = rows orelse return error.NoFoldedAttention;
++            try testing.expectEqualStrings(try oneKey(a, c.args[1].arg), want[0]);
++            try testing.expectEqualStrings(try oneKey(a, c.args[2].arg), want[1]);
++            try testing.expectEqualStrings(try oneKey(a, c.args[3].arg), want[2]);
++            try testing.expectEqual(@as(usize, 5), c.args.len); // no folded norm
++            k.wo_a += 1;
++            rows = null;
++            continue;
++        }
++        if (rotInOf(c, "L.oa") and m & 1 != 0) {
++            k.wo_b += 1;
++            continue;
++        }
++        try testing.expect(j < on.len);
++        const d = on[j];
++        j += 1;
++        if (isAttn(c) and m & 2 != 0) {
++            k.attn += 1;
++            try testing.expectEqual(@as(usize, 25), c.args.len);
++            try testing.expectEqual(@as(usize, 28), d.args.len);
++            try testing.expectEqualStrings(try key(a, c, 25), try key(a, d, 25));
++            rows = .{ try oneKey(a, d.args[25].arg), try oneKey(a, d.args[26].arg), try oneKey(a, d.args[27].arg) };
++            continue;
++        }
++        if (p3a.writes(c, "L.oa") and m & 1 != 0) {
++            k.linears += 1;
++            try testing.expectEqual(@as(usize, 15), d.args.len);
++            try testing.expectEqualStrings(try key(a, c, 12), try key(a, d, 12));
++            continue;
++        }
++        try testing.expectEqualStrings(try key(a, c, c.args.len), try key(a, d, d.args.len));
++    }
++    try testing.expectEqual(on.len, j);
++    try testing.expect(rows == null);
++    return k;
++}
++
++fn widths(a: std.mem.Allocator) !block.Widths {
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    return w;
++}
++
++test "TF_DSV41_ROT_FOLD: bit 1 drops each layer's wo_a rot_in and only adds its arguments to R1's attention" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    const cfg: Config = .{};
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const limit: i64 = 8192;
++    const pages = @divExact(limit, block.Pool.page);
++    var served: block.Options = .{ .limit = limit, .r1 = true, .index_bound = true, .expert_topp = 0.85, .branches = true, .mhc_defer = true, .kv_norm_store = true };
++    served.pool = .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages, .split = true };
++    var rows = served;
++    rows.rows = true;
++    for ([_]block.Options{ served, rows }) |o| for ([_]i64{ 1, 2, 3, 5, 16, 17, 64 }) |n| {
++        const off_cs = try block.emit(a, &cfg, &w, o, &backbone, n, 300, true);
++        // flag off: H's calls (every layer's wo_a rot_in, every attention at R1's 25 arguments)
++        var rot_ins: usize = 0;
++        for (off_cs) |c| {
++            rot_ins += @intFromBool(rotInOf(c, "L.o"));
++            if (isAttn(c)) try testing.expectEqual(@as(usize, 25), c.args.len);
++        }
++        try testing.expectEqual(backbone.len, rot_ins);
++        for ([_]u3{ 2, 3 }) |m| {
++            var on = o;
++            on.rot_fold = m;
++            const on_cs = try block.emit(a, &cfg, &w, on, &backbone, n, 300, true);
++            const k = try compareWindows(a, off_cs, on_cs, m);
++            try testing.expectEqual(backbone.len, k.attn);
++            try testing.expectEqual(backbone.len, k.wo_a);
++            // bits 0 and 1 together: wo_b's rot_in goes too, and wo_a's linears (which read L.o.xh) write its rows
++            try testing.expectEqual(if (m & 1 != 0) backbone.len else 0, k.wo_b);
++            try testing.expectEqual(if (m & 1 != 0) backbone.len else 0, k.linears);
++            try testing.expectEqual(off_cs.len - k.wo_a - k.wo_b, on_cs.len);
++        }
++    };
++}
++
++test "TF_DSV41_ROT_FOLD: without R1 bit 1 emits H's window exactly (attn_kernel has no fold)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    const cfg: Config = .{};
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    for ([_]i64{ 1, 5, 64 }) |n| for ([_]u3{ 0, 1 }) |base| {
++        const off_cs = try block.emit(a, &cfg, &w, .{ .limit = 8192, .rot_fold = base }, &backbone, n, 300, true);
++        const on_cs = try block.emit(a, &cfg, &w, .{ .limit = 8192, .rot_fold = base | 2 }, &backbone, n, 300, true);
++        try testing.expectEqual(off_cs.len, on_cs.len);
++        for (off_cs, on_cs) |c, d| try testing.expectEqualStrings(try key(a, c, c.args.len), try key(a, d, d.args.len));
++    };
++}
++
++test "TF_DSV41_ROT_FOLD: attnFold takes R1 with bit 1 and whole 128-column groups of 512-wide heads only" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    var cfg: Config = .{};
++    var e: block.Emitter = .{ .a = a, .cfg = &cfg, .w = &w, .o = .{ .rot_fold = 2, .r1 = true }, .n = 4, .start = 0 };
++    try testing.expect(block_attn.attnFold(&e, 4, 4096)); // TP2's rank: 32 heads, 4 groups
++    try testing.expect(block_attn.attnFold(&e, 8, 4096)); // TP1: 64 heads, 8 groups
++    try testing.expect(!block_attn.attnFold(&e, 4, 4096 + 64)); // a group boundary inside a merge warp's block
++    try testing.expect(!block_attn.attnFold(&e, 9, 4096)); // past the kernel's 8 groups
++    for ([_]u3{ 0, 1, 4, 5 }) |m| {
++        e.o.rot_fold = m;
++        try testing.expect(!block_attn.attnFold(&e, 4, 4096));
++    }
++    e.o.rot_fold = 3;
++    try testing.expect(block_attn.attnFold(&e, 4, 4096));
++    e.o.r1 = false; // attn_kernel's merge: H's rot_in stays
++    try testing.expect(!block_attn.attnFold(&e, 4, 4096));
++    e.o.r1 = true;
++    cfg.head_dim = 256;
++    try testing.expect(!block_attn.attnFold(&e, 4, 2048));
++}
++
++// -- the merge's rotation against rot_in's, on the host -----------------------------------------------------------
++
++const Rot = *const fn (x: *const [32][4]f32, s: *const [32][4]f32, v: *[32][4]f32) void;
++
++/// rot_in as seg_rot_in_kernel's SASS runs it (attn_rot.cuh rot128): the scale fused into the first butterfly.
++fn rot128(x: *const [32][4]f32, s: *const [32][4]f32, v: *[32][4]f32) void {
++    for (x, s, v) |xl, sl, *l| {
++        const p1 = xl[1] * sl[1];
++        const p3 = xl[3] * sl[3];
++        const a = @mulAdd(f32, xl[0], sl[0], p1);
++        const b = @mulAdd(f32, xl[0], sl[0], -p1);
++        const c = @mulAdd(f32, xl[2], sl[2], p3);
++        const d = @mulAdd(f32, xl[2], sl[2], -p3);
++        l.* = .{ a + c, b + d, a - c, b - d };
++    }
++    var m: usize = 1;
++    while (m < 32) : (m <<= 1) {
++        const old = v.*;
++        for (0..32) |lane| for (0..4) |j| {
++            const o = old[lane ^ m][j];
++            v[lane][j] = if (lane & m != 0) o - old[lane][j] else old[lane][j] + o;
++        };
++    }
++    for (v) |*l| for (l) |*y| {
++        y.* *= p3a.had;
++    };
++}
++
++/// The source's order (v *= suh, then fwht128, no contraction); bf16 * f16 is exact in fp32, so it matches rot128.
++fn rotSource(x: *const [32][4]f32, s: *const [32][4]f32, v: *[32][4]f32) void {
++    for (x, s, v) |xl, sl, *l| l.* = .{ xl[0] * sl[0], xl[1] * sl[1], xl[2] * sl[2], xl[3] * sl[3] };
++    p3a.fwht128(v);
++    for (v) |*l| for (l) |*y| {
++        y.* *= p3a.had;
++    };
++}
++
++/// H: wo_a's x3seg rot_in, group s reading o's columns from s gk (row stride heads 512), xh at offs[s] (stride gk).
++fn rotIns(o: []const u16, heads: usize, rows: usize, gk: usize, suh: []const []const u16, offs: []const usize, xh: []u16, f: Rot) void {
++    const ld = heads * ar.head_dim;
++    for (suh, offs, 0..) |sg, off, s| for (0..rows) |row| for (0..gk / 128) |blk| {
++        var x: [32][4]f32 = undefined;
++        var sc: [32][4]f32 = undefined;
++        var v: [32][4]f32 = undefined;
++        for (0..32) |lane| for (0..4) |j| {
++            const k = blk * 128 + 4 * lane + j;
++            x[lane][j] = p3a.widenBf16(o[row * ld + s * gk + k]);
++            sc[lane][j] = p3a.widenF16(sg[k]);
++        };
++        f(&x, &sc, &v);
++        for (0..32) |lane| for (0..4) |j| {
++            xh[off + row * gk + blk * 128 + 4 * lane + j] = p3a.f16Bits(v[lane][j]);
++        };
++    };
++}
++
++/// The fold: rot_cols over split_kernel P's merge units (thread tid, unit tid + ub NT), through rotIn's pointers.
++fn foldRows(o: []const u16, heads: usize, rows: usize, gk: usize, suh: []const []const u16, offs: []const usize, xh: []u16, p: usize) !void {
++    const base: u64 = 0x100000;
++    const tag: u64 = 1 << 32; // suh pointers name their group: (s + 1) << 32
++    var sp: [ar.max_groups]u64 = undefined;
++    for (sp[0..suh.len], 0..) |*x, s| x.* = tag * @as(u64, s + 1);
++    const ro = try ar.rotIn(heads, sp[0..suh.len], gk, base, offs);
++    const ld: usize = @intCast(ro.gk);
++    const nc = ar.head_dim / p;
++    const units = 16 * (nc / 4) / 256;
++    for (0..rows) |r| for (0..heads / 16) |hb| for (0..p) |k| for (0..units) |ub| for (0..8) |warp| {
++        var x: [32][4]f32 = undefined;
++        var sc: [32][4]f32 = undefined;
++        var v: [32][4]f32 = undefined;
++        var at: [32]usize = undefined;
++        for (0..32) |lane| {
++            const u = 32 * warp + lane + ub * 256;
++            const h = hb * 16 + u / (nc / 4);
++            const d = nc * k + (u % (nc / 4)) * 4;
++            const col = h * ar.head_dim + d;
++            const s = col / ld;
++            const j = col - s * ld;
++            const g: usize = @intCast(ro.suh[s] / tag - 1);
++            for (0..4) |e| {
++                x[lane][e] = p3a.widenBf16(o[(r * heads + h) * ar.head_dim + d + e]);
++                sc[lane][e] = p3a.widenF16(suh[g][j + e]);
++            }
++            at[lane] = @as(usize, @intCast((ro.xh[s] - base) / 2)) + r * ld + j;
++        }
++        rot128(&x, &sc, &v);
++        for (0..32) |lane| for (0..4) |e| {
++            xh[at[lane] + e] = p3a.f16Bits(v[lane][e]);
++        };
++    };
++}
++
++const Shape = struct { heads: usize, groups: usize };
++
++/// TP2's rank (32 heads in 4 groups), TP1 (64 in 8), one head tile in 2 groups, and 8 groups ending mid-tile.
++const shapes = [_]Shape{ .{ .heads = 32, .groups = 4 }, .{ .heads = 64, .groups = 8 }, .{ .heads = 16, .groups = 2 }, .{ .heads = 32, .groups = 8 } };
++
++fn randomO(r: std.Random, o: []u16) void {
++    for (o) |*v| v.* = switch (r.uintLessThan(u8, 6)) {
++        0 => p3a.bf16Bits(@bitCast(p3a.y_edges[r.uintLessThan(usize, p3a.y_edges.len)])),
++        1 => r.int(u16), // any bf16, NaN payloads included
++        2 => p3a.bf16Bits(@floatCast(@as(f64, @floatFromInt(r.int(i16))) * 64.0)), // past fp16 once rotated
++        else => p3a.bf16Bits(@floatCast(r.floatNorm(f64) * 0.25)),
++    };
++}
++
++const Case = struct { o: []u16, suh: [][]u16, offs: []usize, gk: usize, len: usize };
++
++fn makeCase(a: std.mem.Allocator, r: std.Random, sh: Shape, rows: usize) !Case {
++    const gk = sh.heads * ar.head_dim / sh.groups;
++    const o = try a.alloc(u16, rows * sh.heads * ar.head_dim);
++    randomO(r, o);
++    const suh = try a.alloc([]u16, sh.groups);
++    const offs = try a.alloc(usize, sh.groups);
++    for (suh, offs, 0..) |*s, *off, i| {
++        s.* = try a.alloc(u16, gk);
++        p3a.randomSuh(r, s.*);
++        off.* = i * rows * gk; // fusedRot's layout (block_attn.woaRows)
++    }
++    return .{ .o = o, .suh = suh, .offs = offs, .gk = gk, .len = sh.groups * rows * gk };
++}
++
++test "rotation twin: the folded merge writes rot_in's exact wo_a rows at P 1 and 4 (random and edge values)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var prng = std.Random.DefaultPrng.init(0x3b_a77e);
++    const r = prng.random();
++    for (shapes) |sh| for ([_]usize{ 1, 2, 3 }) |rows| {
++        const c = try makeCase(a, r, sh, rows);
++        const want = try a.alloc(u16, c.len);
++        rotIns(c.o, sh.heads, rows, c.gk, c.suh, c.offs, want, &rot128);
++        for ([_]usize{ 1, 4 }) |p| {
++            const got = try a.alloc(u16, c.len);
++            @memset(got, 0xdead); // every element must be written
++            try foldRows(c.o, sh.heads, rows, c.gk, c.suh, c.offs, got, p);
++            try testing.expectEqualSlices(u16, want, got);
++        }
++    };
++}
++
++test "rotation twin controls: contraction is exact on bf16 inputs, a mid-block start and an off-grid group fail" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var prng = std.Random.DefaultPrng.init(0xc0_47e2);
++    const r = prng.random();
++    const sh = shapes[0];
++    const c = try makeCase(a, r, sh, 2);
++    for (c.o) |*v| v.* = p3a.bf16Bits(@floatCast(r.floatNorm(f64))); // finite
++    const want = try a.alloc(u16, c.len);
++    rotIns(c.o, sh.heads, 2, c.gk, c.suh, c.offs, want, &rot128);
++    // bf16 * f16 products are exact, so rot_in's fused scale matches the source; full fp32 inputs tell them apart
++    var x: [32][4]f32 = undefined;
++    var sc: [32][4]f32 = undefined;
++    var v: [32][4]f32 = undefined;
++    var u: [32][4]f32 = undefined;
++    var differs = false;
++    for (0..c.o.len / 128) |blk| {
++        for (0..32) |lane| for (0..4) |j| {
++            x[lane][j] = p3a.widenBf16(c.o[128 * blk + 4 * lane + j]);
++            sc[lane][j] = p3a.widenF16(c.suh[0][(4 * lane + j) % c.suh[0].len]);
++        };
++        rot128(&x, &sc, &v);
++        rotSource(&x, &sc, &u);
++        try testing.expectEqualSlices(u8, std.mem.asBytes(&u), std.mem.asBytes(&v));
++        for (&x) |*l| for (l) |*y| {
++            y.* = r.float(f32) * 2 - 1;
++        };
++        rot128(&x, &sc, &v);
++        rotSource(&x, &sc, &u);
++        if (!std.mem.eql(u8, std.mem.asBytes(&v), std.mem.asBytes(&u))) differs = true;
++    }
++    try testing.expect(differs);
++    // a block 64 columns into a head: not one of rot_in's blocks
++    for (0..32) |lane| for (0..4) |j| {
++        x[lane][j] = p3a.widenBf16(c.o[64 + 4 * lane + j]);
++        sc[lane][j] = p3a.widenF16(c.suh[0][64 + 4 * lane + j]);
++    };
++    rot128(&x, &sc, &v);
++    var shifted: [128]u16 = undefined;
++    for (0..32) |lane| for (0..4) |j| {
++        shifted[4 * lane + j] = p3a.f16Bits(v[lane][j]);
++    };
++    try testing.expect(!std.mem.eql(u16, want[64..192], &shifted));
++    // groups off the 128-column grid are refused before any launch
++    const sp = [_]u64{ 0x1000, 0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x7000, 0x8000 };
++    const offs: [8]usize = @splat(0);
++    try testing.expectError(error.Unsupported, ar.rotIn(9, &sp, 576, 0x100000, &offs));
++}
+diff --git a/zig/src/families/deepseek_v41/rot_fold_test.zig b/zig/src/families/deepseek_v41/rot_fold_test.zig
+index 4e19676e6af52a0ed688d080f288c154723898c3..18c6110f6ab61230634c9aec17d7f6855fc3f741 100644
+--- a/zig/src/families/deepseek_v41/rot_fold_test.zig
++++ b/zig/src/families/deepseek_v41/rot_fold_test.zig
+@@ -18,7 +18,7 @@ const Fake = struct {
+     }
+ };
+ 
+-test "TF_DSV41_ROT_FOLD: unset and 0 off, 1 bit 0, the reserved bits and anything else refused" {
++test "TF_DSV41_ROT_FOLD: unset and 0 off, 1-3 bits 0-1, the reserved bit 2 and anything else refused" {
+     defer Fake.pairs = &.{};
+     Fake.pairs = &.{};
+     try testing.expectEqual(@as(u3, 0), try pk.rotFold(&Fake.get));
+@@ -26,8 +26,12 @@ test "TF_DSV41_ROT_FOLD: unset and 0 off, 1 bit 0, the reserved bits and anythin
+     try testing.expectEqual(@as(u3, 0), try pk.rotFold(&Fake.get));
+     Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", " 1 " }};
+     try testing.expectEqual(@as(u3, 1), try pk.rotFold(&Fake.get));
+-    // 3b (bit 1) and 3c (bit 2) are reserved: a mask naming them is refused until they are built
+-    for ([_][]const u8{ "2", "3", "4", "5", "7", "8", "-1", "on", "0x1", "1,2" }) |v| {
++    Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", "2" }};
++    try testing.expectEqual(@as(u3, 2), try pk.rotFold(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", "3" }};
++    try testing.expectEqual(@as(u3, 3), try pk.rotFold(&Fake.get));
++    // 3c (bit 2) is reserved: a mask naming it is refused until it is built
++    for ([_][]const u8{ "4", "5", "6", "7", "8", "-1", "on", "0x1", "1,2" }) |v| {
+         Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", v }};
+         try testing.expectError(error.BadKnob, pk.rotFold(&Fake.get));
+     }
+@@ -58,14 +62,14 @@ fn argKey(a: std.mem.Allocator, out: *std.ArrayList(u8), x: calls.Arg) !void {
+     }
+ }
+ 
+-fn oneKey(a: std.mem.Allocator, x: calls.Arg) ![]const u8 {
++pub fn oneKey(a: std.mem.Allocator, x: calls.Arg) ![]const u8 {
+     var out: std.ArrayList(u8) = .empty;
+     try argKey(a, &out, x);
+     return out.items;
+ }
+ 
+ /// A call as compared here: name, grid, scope, streams and marks, and its first `upto` arguments.
+-fn key(a: std.mem.Allocator, c: calls.Call, upto: usize) ![]const u8 {
++pub fn key(a: std.mem.Allocator, c: calls.Call, upto: usize) ![]const u8 {
+     var out: std.ArrayList(u8) = .empty;
+     try out.print(a, "{s} {any} {t} side={any} fork={any} join={any} mark={d} wait={d} dside={any} djoin={any}", .{ c.name, c.grid, c.begin, c.side, c.fork, c.join, c.mark, c.wait, c.defer_side, c.defer_join });
+     for (c.args[0..@min(upto, c.args.len)]) |x| {
+@@ -75,7 +79,7 @@ fn key(a: std.mem.Allocator, c: calls.Call, upto: usize) ![]const u8 {
+     return out.items;
+ }
+ 
+-fn firstRole(x: calls.Arg) ?[]const u8 {
++pub fn firstRole(x: calls.Arg) ?[]const u8 {
+     return switch (x) {
+         .t => |t| switch (t.role) {
+             .buf => |r| r,
+@@ -94,7 +98,7 @@ fn woBRotIn(c: calls.Call) bool {
+ }
+ 
+ /// A dense3 linear writing `role` (its first output).
+-fn writes(c: calls.Call, role: []const u8) bool {
++pub fn writes(c: calls.Call, role: []const u8) bool {
+     if (!std.mem.eql(u8, c.name, "tf_dsv41_dense3_v1.linear")) return false;
+     const r = firstRole(c.args[3].arg) orelse return false;
+     return std.mem.eql(u8, r, role);
+@@ -225,29 +229,29 @@ test "TF_DSV41_ROT_FOLD: woFold takes only whole 128-column groups; the knob's o
+ 
+ // -- the epilogue's rotation against rot_in's, on the host --------------------------------------------------------
+ 
+-const had: f32 = 0.08838834764831845; // exl3_decode.cuh HAD_SCALE
++pub const had: f32 = 0.08838834764831845; // exl3_decode.cuh HAD_SCALE
+ 
+ /// __float2bfloat16_rn (cvt.rn.bf16.f32): nearest even, a NaN as the canonical 0x7fff.
+-fn bf16Bits(x: f32) u16 {
++pub fn bf16Bits(x: f32) u16 {
+     if (std.math.isNan(x)) return 0x7fff;
+     const u: u32 = @bitCast(x);
+     return @truncate((u +% 0x7fff +% ((u >> 16) & 1)) >> 16);
+ }
+ 
+-fn widenBf16(b: u16) f32 {
++pub fn widenBf16(b: u16) f32 {
+     return @bitCast(@as(u32, b) << 16);
+ }
+ 
+-fn widenF16(b: u16) f32 {
++pub fn widenF16(b: u16) f32 {
+     return @as(f16, @bitCast(b));
+ }
+ 
+-fn f16Bits(x: f32) u16 {
++pub fn f16Bits(x: f32) u16 {
+     return @bitCast(@as(f16, @floatCast(x)));
+ }
+ 
+ /// exl3_decode.cuh fwht128: each lane's 4-point transform, then the xor-shuffle butterflies (lane bit m: o - v).
+-fn fwht128(v: *[32][4]f32) void {
++pub fn fwht128(v: *[32][4]f32) void {
+     for (v) |*l| {
+         const a = l[0] + l[1];
+         const b = l[0] - l[1];
+@@ -325,7 +329,7 @@ fn foldAll(a: std.mem.Allocator, segs: []const dense.Seg, y: []const f32, suh: [
+ }
+ 
+ /// y's edge classes: signed zeros, infinities, NaNs, f32's largest, subnormals, bf16 ties, fp16 overflow.
+-const y_edges = [_]u32{ 0x00000000, 0x80000000, 0x7f800000, 0xff800000, 0x7fc00000, 0xffc00123, 0x7f7fffff, 0xff7fffff, 0x00000001, 0x807fffff, 0x3f808000, 0x3f818000, 0x3f80ffff, 0x477fe000, 0x47800000, 0xc7801000 };
++pub const y_edges = [_]u32{ 0x00000000, 0x80000000, 0x7f800000, 0xff800000, 0x7fc00000, 0xffc00123, 0x7f7fffff, 0xff7fffff, 0x00000001, 0x807fffff, 0x3f808000, 0x3f818000, 0x3f80ffff, 0x477fe000, 0x47800000, 0xc7801000 };
+ const suh_edges = [_]u16{ 0x3c00, 0xbc00, 0x0000, 0x8000, 0x7bff, 0xfbff, 0x0001, 0x8001, 0x3555 };
+ 
+ fn randomY(r: std.Random, y: []f32) void {
+@@ -337,7 +341,7 @@ fn randomY(r: std.Random, y: []f32) void {
+     };
+ }
+ 
+-fn randomSuh(r: std.Random, suh: []u16) void {
++pub fn randomSuh(r: std.Random, suh: []u16) void {
+     for (suh) |*s| s.* = switch (r.uintLessThan(u8, 6)) {
+         0 => suh_edges[r.uintLessThan(usize, suh_edges.len)],
+         1, 2 => 0x3c00,
+diff --git a/zig/src/families/deepseek_v41/serve_knobs.zig b/zig/src/families/deepseek_v41/serve_knobs.zig
+index 924a2c53661f9d3961a86fa21fd7094f511d6925..b6f6a3de5d6d79b48934728fbb4fcc640667e6bb 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs.zig
+@@ -172,17 +172,17 @@ pub fn idxIota(get: Get) !bool {
+     return error.BadKnob;
+ }
+ 
+-/// TF_DSV41_ROT_FOLD (unset / 0 off; 1 = bit 0, wo_a -> wo_b): bits 1-2 are reserved for 3b / 3c, refused until built
++/// TF_DSV41_ROT_FOLD (unset / 0 off; bit 0 wo_a -> wo_b, bit 1 the merge -> wo_a): bit 2 (3c) refused until built
+ pub fn rotFold(get: Get) !u3 {
+     const raw = std.mem.trim(u8, get("TF_DSV41_ROT_FOLD") orelse "0", " ");
+     const m = dk.dense.rotFoldMask(raw) catch null;
+     if (m) |v| if (v & ~rot_fold_built == 0) return v;
+-    if (!quiet) std.log.warn("TF_DSV41_ROT_FOLD={s}: 0 or 1 (bit 0 wo_a -> wo_b; bits 1-2 reserved)", .{raw});
++    if (!quiet) std.log.warn("TF_DSV41_ROT_FOLD={s}: 0-3 (bit 0 wo_a -> wo_b, bit 1 attention -> wo_a; bit 2 reserved)", .{raw});
+     return error.BadKnob;
+ }
+ 
+-/// The TF_DSV41_ROT_FOLD bits this build implements: 3a (wo_a -> wo_b) alone.
+-pub const rot_fold_built: u3 = 0b001;
++/// The TF_DSV41_ROT_FOLD bits this build implements: 3a (wo_a -> wo_b) and 3b (the attention merge -> wo_a).
++pub const rot_fold_built: u3 = 0b011;
+ 
+ /// TF_DSV41_PREFETCH_AHEAD (0 by default): the next prompt segment's Engram reads before this one runs.
+ pub fn prefetchAhead(get: Get) !bool {
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_apply.zig b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+index 148ad3d4ceedc1c12ca4dd1ce56bac20f1538ffe..1176a51c67293fb8402534ebbe59a927500a0fa2 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_apply.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+@@ -102,6 +102,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     log.info("KV norm/store fusion: {s}", .{if (f.opts.kv_norm_store) "on" else "off"});
+     log.info("router grouping/rotation fusion: {s}", .{if (f.opts.router_group_rot) "on" else "off"});
+     if (f.opts.rot_fold & 1 != 0) log.info("rot fold: wo_a's epilogue writes wo_b's rotated rows (no wo_b rot_in launch)", .{});
++    if (f.opts.rot_fold & 2 != 0) log.info("rot fold: {s}", .{if (f.opts.r1) "R1's attention merge writes wo_a's rotated rows (no wo_a rot_in launch)" else "bit 1 folds R1's split attention only; without R1 wo_a keeps its rot_in launch"});
+     if (f.opts.index_bound) log.info("index bound: decode index scores stop at each row's own keys (_scores_b)", .{});
+     if (f.opts.idx_iota) log.info("index iota: an index layer whose top-k takes all its entries skips its query and scores", .{});
+     if (f.opts.x3ld_epi) log.info("x3ld epilogues: gateup_epilogue / down_combine fused into the decode expert streamer (TF_DSV41_X3LD_EPI)", .{});
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_test.zig b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+index fe981405703cdde0a0da6741f8400739d2f33bbf..d8c506a7b4098ac5418084706543303ec18b935b 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_test.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+@@ -19,6 +19,7 @@ test {
+     _ = @import("streamrb_test.zig");
+     _ = @import("idx_iota_test.zig"); // TF_DSV41_IDX_IOTA on the decode emitter and the top-k twin
+     _ = @import("rot_fold_test.zig"); // TF_DSV41_ROT_FOLD on the decode emitter and the rotation twin
++    _ = @import("rot_fold_attn_test.zig"); // TF_DSV41_ROT_FOLD bit 1: the merge fold and its rows' twin
+ }
+ 
+ const Fake = struct {
+diff --git a/zig/tests/cuda/deepseek_v41/rot_fold_attn_check.zig b/zig/tests/cuda/deepseek_v41/rot_fold_attn_check.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..4aa1d490b41fc8a48bcdaab4d727e0834647fa4e
+--- /dev/null
++++ b/zig/tests/cuda/deepseek_v41/rot_fold_attn_check.zig
+@@ -0,0 +1,259 @@
++//! TF_DSV41_ROT_FOLD bit 1: split_rot_kernel against split_kernel + wo_a's seg_rot_in, byte for byte (synthetic).
++
++const std = @import("std");
++const cuda = @import("cuda");
++const dsv41 = @import("dsv41_kernels");
++const check = @import("../check.zig");
++
++const dense = dsv41.dense;
++const ops = dsv41.ops;
++const attn = ops.attn;
++const ar = dsv41.attn_rot;
++const Gpu = check.Gpu;
++
++const Rng = struct {
++    s: u64,
++    fn next(r: *Rng) u64 {
++        r.s ^= r.s << 13;
++        r.s ^= r.s >> 7;
++        r.s ^= r.s << 17;
++        return r.s;
++    }
++    fn unit(r: *Rng) f32 {
++        return @as(f32, @floatFromInt(r.next() >> 40)) / @as(f32, 1 << 24);
++    }
++    fn normalish(r: *Rng) f32 {
++        return (r.unit() + r.unit() + r.unit() - 1.5) * 2;
++    }
++};
++
++fn bf16(x: f32) u16 {
++    const u: u32 = @bitCast(x);
++    return @truncate((u +% 0x7fff +% ((u >> 16) & 1)) >> 16);
++}
++
++fn upload(d: *const cuda.Driver, data: []const u8) !cuda.DeviceBuffer {
++    return cuda.DeviceBuffer.fromHost(d, data);
++}
++
++fn zeroed(d: *const cuda.Driver, n: usize) !cuda.DeviceBuffer {
++    const b = try cuda.DeviceBuffer.alloc(d, @max(n, 4));
++    try b.fill8(0, null);
++    return b;
++}
++
++fn bytes(gpa: std.mem.Allocator, b: cuda.DeviceBuffer, n: usize) ![]u8 {
++    const x = try gpa.alloc(u8, n);
++    errdefer gpa.free(x);
++    try b.download(0, x);
++    return x;
++}
++
++const ring = 256; // the SWA ring (rows a slot); row mode's single slot 0
++const comp_rows = 1024; // compressed rows the selection points into
++const ts = 512; // selection columns a row (index_topk)
++const pos0 = 300; // row 0's position: every row's window holds 128 keys
++const rope_rows = 1024;
++
++/// KV rows: 448 e4m3 bytes (no NaN encoding), then 64 bf16 rope values; `hot`: rope values far past fp16 once rotated.
++fn kvRows(gpa: std.mem.Allocator, d: *const cuda.Driver, rng: *Rng, rows: usize, hot: bool) ![2]cuda.DeviceBuffer {
++    const v = try gpa.alloc(u8, rows * 576);
++    defer gpa.free(v);
++    const s = try gpa.alloc(u8, rows * 8);
++    defer gpa.free(s);
++    for (0..rows) |r| {
++        for (v[r * 576 ..][0..448]) |*b| b.* = @as(u8, @truncate(rng.next())) & 0xbf;
++        for (0..64) |i| std.mem.writeInt(u16, v[r * 576 + 448 + 2 * i ..][0..2], bf16(rng.normalish() * @as(f32, if (hot) 3000 else 0.5)), .little);
++        for (s[r * 8 ..][0..8]) |*b| b.* = 120 + @as(u8, @truncate(rng.next() % 8)); // 2^-7 .. 2^0
++    }
++    return .{ try upload(d, v), try upload(d, s) };
++}
++
++fn halves(gpa: std.mem.Allocator, d: *const cuda.Driver, rng: *Rng, n: usize, lo: f32, hi: f32, hot: bool) !cuda.DeviceBuffer {
++    const h = try gpa.alloc(f16, n);
++    defer gpa.free(h);
++    for (h) |*v| {
++        v.* = @floatCast(lo + (hi - lo) * rng.unit());
++        if (hot and rng.next() % 97 == 0) v.* = if (rng.next() & 1 == 0) std.math.inf(f16) else -std.math.inf(f16);
++    }
++    return upload(d, std.mem.sliceAsBytes(h));
++}
++
++fn floats(gpa: std.mem.Allocator, d: *const cuda.Driver, rng: *Rng, n: usize, scale: f32) !cuda.DeviceBuffer {
++    const h = try gpa.alloc(f32, n);
++    defer gpa.free(h);
++    for (h) |*v| v.* = rng.normalish() * scale;
++    return upload(d, std.mem.sliceAsBytes(h));
++}
++
++/// A rank's attention: `heads` heads, wo_a in `groups` groups; `hot`: fp16 overflow and infinite suh in wo_a's rows.
++const Shape = struct { heads: usize, groups: usize, hot: bool = false };
++
++const shapes = [_]Shape{
++    .{ .heads = 32, .groups = 4 }, // TP2's rank
++    .{ .heads = 64, .groups = 8 }, // TP1
++    .{ .heads = 32, .groups = 4, .hot = true },
++};
++
++fn runShape(gpu: Gpu, o: ops.Ops, lin: dense.Ops, stream: cuda.Stream, rng: *Rng, sh: Shape, rows: []const usize) !usize {
++    const gpa = gpu.gpa;
++    const d = gpu.d;
++    const H = sh.heads;
++    const gk = H * ar.head_dim / sh.groups;
++    const max_r: usize = 64;
++    var swa = try kvRows(gpa, d, rng, ring, sh.hot);
++    defer for (&swa) |*b| b.free();
++    var comp = try kvRows(gpa, d, rng, comp_rows, sh.hot);
++    defer for (&comp) |*b| b.free();
++    var q = blk: {
++        const h = try gpa.alloc(u16, max_r * H * 512);
++        defer gpa.free(h);
++        for (h) |*v| v.* = bf16(rng.normalish() * 0.5);
++        break :blk try upload(d, std.mem.sliceAsBytes(h));
++    };
++    defer q.free();
++    var tok = blk: {
++        const h = try gpa.alloc(i32, max_r * ts);
++        defer gpa.free(h);
++        for (h) |*v| v.* = if (rng.next() % 16 == 0) -1 else @intCast(rng.next() % comp_rows);
++        break :blk try upload(d, std.mem.sliceAsBytes(h));
++    };
++    defer tok.free();
++    var cnt = blk: {
++        var h: [max_r]i32 = undefined;
++        for (&h, 0..) |*v, r| v.* = ([_]i32{ 512, 0, 77, 300 })[r % 4]; // 4, 0, 1 and 3 compressed chunks
++        break :blk try upload(d, std.mem.sliceAsBytes(h[0..]));
++    };
++    defer cnt.free();
++    const at0 = [_]i32{pos0};
++    var pos32 = try upload(d, std.mem.sliceAsBytes(at0[0..]));
++    defer pos32.free();
++    var pos64 = blk: {
++        var h: [max_r]i64 = undefined;
++        for (&h, 0..) |*v, r| v.* = @intCast(pos0 + r);
++        break :blk try upload(d, std.mem.sliceAsBytes(h[0..]));
++    };
++    defer pos64.free();
++    var slots = try zeroed(d, max_r * 8);
++    defer slots.free();
++    var lo = try zeroed(d, max_r * 4);
++    defer lo.free();
++    var sink = try floats(gpa, d, rng, H, 1.0);
++    defer sink.free();
++    var cs = blk: {
++        const h = try gpa.alloc(f32, rope_rows * 64);
++        defer gpa.free(h);
++        for (h) |*v| v.* = rng.unit() * 2 - 1;
++        break :blk try upload(d, std.mem.sliceAsBytes(h));
++    };
++    defer cs.free();
++    var po = try zeroed(d, attn.NCH * max_r * H * 512 * 4);
++    defer po.free();
++    var pm = try zeroed(d, attn.NCH * max_r * H * 4);
++    defer pm.free();
++    var pl = try zeroed(d, attn.NCH * max_r * H * 4);
++    defer pl.free();
++    var ticket = try zeroed(d, max_r * (H / attn.BMQ) * attn.MAXP * 4);
++    defer ticket.free();
++    var suh: [ar.max_groups]cuda.DeviceBuffer = undefined;
++    const lim: f32 = if (sh.hot) 64.0 else 2.0; // hot: wo_a's suh past fp16 once rotated, and some infinities
++    for (suh[0..sh.groups]) |*s| s.* = try halves(gpa, d, rng, gk, -lim, lim, sh.hot);
++    defer for (suh[0..sh.groups]) |*s| s.free();
++    var outs: [4]cuda.DeviceBuffer = undefined; // o and wo_a's rows: H's, then the fold's
++    for (&outs) |*b| b.* = try zeroed(d, max_r * H * 512 * 2);
++    defer for (&outs) |*b| b.free();
++    var name: [160]u8 = undefined;
++    var n_cases: usize = 0;
++    for (rows) |R| for ([_]u32{ 1, 4 }) |split| for ([_]bool{ false, true }) |row_mode| {
++        for (&outs) |*b| try b.fill8(0, null);
++        var sp: [ar.max_groups]u64 = undefined;
++        var offs: [ar.max_groups]usize = undefined;
++        for (0..sh.groups) |i| {
++            sp[i] = suh[i].ptr;
++            offs[i] = i * R * gk; // fusedRot's L.o.xh layout
++        }
++        for ([_]bool{ false, true }) |fold| {
++            const out = outs[if (fold) 2 else 0];
++            const xh = outs[if (fold) 3 else 1];
++            const a: attn.Args = .{
++                .q = q.ptr,
++                .has_comp = 1,
++                .cv = comp[0].ptr,
++                .csc = comp[1].ptr,
++                .cvs = 576,
++                .css = 8,
++                .tok = tok.ptr,
++                .ts = ts,
++                .cnt = cnt.ptr,
++                .sv = swa[0].ptr,
++                .ssc = swa[1].ptr,
++                .svs = 576,
++                .sss = 8,
++                .lo = lo.ptr,
++                .pos = if (row_mode) pos64.ptr else pos32.ptr,
++                .sl = if (row_mode) slots.ptr else 0,
++                .sink = sink.ptr,
++                .cs = cs.ptr,
++                .csst = 64,
++                .po = po.ptr,
++                .pm = pm.ptr,
++                .pl = pl.ptr,
++                .out = out.ptr,
++                .ticket = ticket.ptr,
++                .R = @intCast(R),
++                .H = @intCast(H),
++                .ring = ring,
++                .qrope = 1,
++            };
++            if (fold) {
++                const ro = try ar.rotIn(H, sp[0..sh.groups], gk, xh.ptr, offs[0..sh.groups]);
++                try ar.launch(o, a, ro, 4, row_mode, false, split);
++            } else {
++                try o.attention(a, 4, row_mode, false, split);
++                // H: wo_a's rot_in over the groups' column views of o, one launch, into L.o.xh at fusedRot's offsets
++                var t = std.mem.zeroes(dense.RotTable);
++                t.n = @intCast(sh.groups);
++                for (0..sh.groups) |i| t.s[i] = .{ .x = out.ptr + 2 * @as(u64, i * gk), .suh = sp[i], .xh = xh.ptr + 2 * @as(u64, offs[i]), .ld = @intCast(H * 512), .K = @intCast(gk), .x_dtype = @backingInt(dense.DType.bf16) };
++                try lin.segRotIn(t, R, false);
++            }
++        }
++        try stream.synchronize();
++        const tag = try std.fmt.bufPrint(&name, "heads {d} groups {d} hot {any} R {d} P {d} rows {any}", .{ H, sh.groups, sh.hot, R, split, row_mode });
++        const lens = [_]usize{ R * H * 512 * 2, sh.groups * R * gk * 2 };
++        var got: [4][]u8 = undefined;
++        for (&got, outs, 0..) |*g, b, i| g.* = try bytes(gpa, b, lens[i % 2]);
++        defer for (got) |g| gpa.free(g);
++        try check.sameBytes(tag, got[2], got[0]); // the merge's own bf16 rows (L.o)
++        try check.sameBytes(tag, got[3], got[1]); // wo_a's rotated fp16 rows (L.o.xh)
++        const tk = try bytes(gpa, ticket, max_r * (H / attn.BMQ) * attn.MAXP * 4);
++        defer gpa.free(tk);
++        for (tk) |b| try check.expect(b == 0, "{s}: merge tickets not back at zero", .{tag});
++        n_cases += 1;
++    };
++    return n_cases;
++}
++
++pub fn run(gpu: Gpu, k: *const dsv41.Kernels, rows_arg: ?[]const u8) !void {
++    var rows_buf: [32]usize = undefined;
++    var rows: []const usize = &.{ 1, 2, 3, 5, 16, 33, 64 };
++    if (rows_arg) |r| {
++        var it = std.mem.tokenizeScalar(u8, r, ',');
++        var n: usize = 0;
++        while (it.next()) |t| : (n += 1) {
++            if (n == rows_buf.len) return error.TooManyRows;
++            rows_buf[n] = try std.fmt.parseInt(usize, t, 10);
++            if (rows_buf[n] < 1 or rows_buf[n] > 64) return error.BadRows;
++        }
++        rows = rows_buf[0..n];
++    }
++    var stream = try cuda.Stream.init(gpu.d, false);
++    defer stream.deinit();
++    // the fold's instances from the same attention image as H's split_kernel
++    var f = k.ops;
++    f.attn_rot = try ar.Rot.resolve(k.mods[7], @intCast(try gpu.ctx.attribute(.max_shared_memory_per_block_optin)));
++    const o: ops.Ops = .{ .f = &f, .s = stream };
++    var rng: Rng = .{ .s = 0x9e3779b97f4a7c15 };
++    var total: usize = 0;
++    for (shapes) |sh| total += try runShape(gpu, o, k.linears(stream), stream, &rng, sh, rows);
++    check.pass("rot-fold-attn: {d} launches' L.o and L.o.xh equal to split_kernel + seg_rot_in byte for byte", .{total});
++}
+diff --git a/zig/tests/cuda/dsv41_main.zig b/zig/tests/cuda/dsv41_main.zig
+index 386a3978ccd0056906480a00044250f62cba6e10..32b3d3f25253da05def99817bd4d1558459691dd 100644
+--- a/zig/tests/cuda/dsv41_main.zig
++++ b/zig/tests/cuda/dsv41_main.zig
+@@ -15,6 +15,7 @@ const x3gm3_bench = @import("deepseek_v41/x3gm3_bench.zig");
+ const stream_rb_bench = @import("deepseek_v41/stream_rb_bench.zig");
+ const lin2_bench = @import("deepseek_v41/lin2_bench.zig");
+ const rot_fold = @import("deepseek_v41/rot_fold_check.zig");
++const rot_fold_attn = @import("deepseek_v41/rot_fold_attn_check.zig");
+ const scores_b_bench = @import("deepseek_v41/scores_b_bench.zig");
+ const x3ld_epi_bench = @import("deepseek_v41/x3ld_epi_bench.zig");
+ const topk_b_bench = @import("deepseek_v41/topk_b_bench.zig");
+@@ -34,6 +35,7 @@ const usage =
+     \\  stream-rb <aot dir> [--reps N]  _stream_rb2 / _rb4 against _stream (Triton AOT set): bits and time (synthetic)
+     \\  lin2 [reps]        TF_DSV41_LIN2's two-tile linears against the originals: bits at 17-32 rows, time (synthetic data)
+     \\  rot-fold [rows,..] TF_DSV41_ROT_FOLD's wo_a epilogue against lanes_linear + seg_rot_in: every byte (synthetic)
++    \\  rot-fold-attn [rows,..]  TF_DSV41_ROT_FOLD bit 1's merge against split_kernel + wo_a's seg_rot_in (synthetic)
+     \\  scores-b <aot dir> [--reps N]   _scores_b against _scores (Triton AOT set): bits and time, mixed 131K / short rows
+     \\  topk-b <aot dir> [--reps N]     TF_DSV41_INDEX_BOUND's top-k twins (topk_b.cu, _dtopk_b) against topk_cuda.cu /
+     \\                                  _dtopk: every output byte and time, mixed 154K / short rows (fatbins + AOT set)
+@@ -89,6 +91,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
+     if (std.mem.eql(u8, cmd, "mhc-alloc")) return mhc_alloc.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "lin2")) return lin2_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "rot-fold")) return rot_fold.run(gpu, &k, if (rest.len > 0) rest[0] else null);
++    if (std.mem.eql(u8, cmd, "rot-fold-attn")) return rot_fold_attn.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "x3gm3-bench")) return x3gm3_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null, if (rest.len > 1) rest[1] else null);
+     if (std.mem.eql(u8, cmd, "topk-b")) return topk_b_bench.run(gpu, &k, rest);
+     if (std.mem.eql(u8, cmd, "x3ld-epi")) return x3ld_epi_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null, if (rest.len > 1) rest[1] else null);
