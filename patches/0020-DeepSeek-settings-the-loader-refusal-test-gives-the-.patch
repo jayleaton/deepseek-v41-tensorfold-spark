@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 10:22:46 +0700
+Subject: [PATCH 20/72] DeepSeek settings: the loader refusal test gives the
+ presence row a malformed value
+
+TF_DSV41_BIAS_VL accepts any text without control characters, so the
+"every malformed setting stops the real loader" test now sets it to text
+with a newline; every other row keeps "mistyped value".
+---
+ zig/src/families/deepseek_v41/env_startup_test.zig | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/env_startup_test.zig b/zig/src/families/deepseek_v41/env_startup_test.zig
+index 05d88adbc5dc88e7cf0a62088e998531bdc49995..686e9c7ea10bf11db1fae3ab647b5f89c6cac4ee 100644
+--- a/zig/src/families/deepseek_v41/env_startup_test.zig
++++ b/zig/src/families/deepseek_v41/env_startup_test.zig
+@@ -7,8 +7,10 @@ const rules = sys.environment.rules;
+ const model = @import("cuda_model.zig");
+ const t = std.testing;
+ 
+-fn refused(name: [:0]const u8) !void {
+-    try t.expectEqual(@as(c_int, 0), env.setenv(name, "mistyped value", 1));
++fn refused(r: sys.environment.Rule) !void {
++    const name = r.name;
++    // any text is a presence row's value; a control character is malformed for every kind
++    try t.expectEqual(@as(c_int, 0), env.setenv(name, if (r.kind == .present) "mistyped\nvalue" else "mistyped value", 1));
+     defer _ = env.unsetenv(name);
+     try t.expectError(error.InvalidEnvironment, model.Model.open(t.failing_allocator, t.io, "missing-checkpoint", "missing-assets", .{}));
+     try t.expectError(error.InvalidEnvironment, @import("aot_needs.zig").Served.fromEnv());
+@@ -23,7 +25,7 @@ fn blank(name: [:0]const u8) !void {
+ 
+ test "DeepSeek strict env: every malformed setting stops the real loader before resources" {
+     _ = env.unsetenv("TENSORFOLD_TOOL_GRAMMAR");
+-    for (rules) |r| if (r.scope == .dsv41) try refused(r.name);
++    for (rules) |r| if (r.scope == .dsv41) try refused(r);
+ }
+ 
+ test "DeepSeek strict env: a blank setting is unset, so the loader and planner pass the check" {

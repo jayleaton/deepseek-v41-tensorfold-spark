@@ -1,0 +1,20 @@
+#!/bin/sh
+# tf-compat-entry CMD...: run CMD on the image's CUDA forward-compatibility driver (/opt/tensorfold/compat, libcuda
+# 610.43.02 from NVIDIA's NGC PyTorch 26.07 container) while the host's kernel module is older than it and cuInit succeeds
+# through it, as NGC images do; otherwise on the host's driver. One line to stderr says which.
+compat=/opt/tensorfold/compat
+umd=610
+kmd=$(sed -n 's/^NVRM.*Kernel Module\( for [a-z0-9_]*\| \) *\([0-9][0-9.]*\).*$/\2/p' /proc/driver/nvidia/version 2>/dev/null)
+use=0
+if [ "${TF_CUDA_COMPAT:-1}" != 0 ] && [ -f "$compat/libcuda.so.1" ] && [ -n "$kmd" ] && [ "${kmd%%.*}" -lt "$umd" ]; then
+  if LD_LIBRARY_PATH="$compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" python3 -I -c '
+import ctypes, sys
+sys.exit(ctypes.CDLL(sys.argv[1] + "/libcuda.so.1").cuInit(0) != 0)' "$compat" 2>/dev/null; then use=1; fi
+fi
+if [ "$use" = 1 ]; then
+  export LD_LIBRARY_PATH="$compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  echo "tf-compat-entry: CUDA forward compatibility on: driver $umd (image) over kernel module $kmd" >&2
+else
+  echo "tf-compat-entry: host CUDA driver (kernel module ${kmd:-unknown}; TF_CUDA_COMPAT=${TF_CUDA_COMPAT:-1})" >&2
+fi
+exec "$@"

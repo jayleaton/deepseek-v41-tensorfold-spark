@@ -1,0 +1,124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 19:45:50 +0700
+Subject: [PATCH 48/72] deepseek: cover no-copy speculation and cancelled slot
+ reuse
+
+---
+ ports/decode-gap.md                           | 25 +++++++++
+ .../deepseek_v41/draft/lanes_test.zig         | 56 ++++++++++++++++++-
+ 2 files changed, 78 insertions(+), 3 deletions(-)
+
+diff --git a/ports/decode-gap.md b/ports/decode-gap.md
+index 90b2fc10cd7060a9aa53ef93ec6a8e368cfae2f8..f00f9f812ed93559414852e3c2b911ec0de5b544 100644
+--- a/ports/decode-gap.md
++++ b/ports/decode-gap.md
+@@ -372,3 +372,28 @@ outputs or caches were generated. No push, PR, kit, export or public publication
+ HeNryous rail detail verified from pinned serve/serve_example.sh:64: both NCCL_IB_HCA and EXL3_RDMA_DEVICES
+ select rocep1s0f0,roceP2p1s0f0. This is two devices (opposite port functions from our cabling), not evidence
+ that our two active f1 devices need changing. The same launcher caps redirected gathers at3072KiB (:67).
++
++## D2 P3 follow-up contract
++
++Address REVIEW-D2-decode-gap.md's one P3 on the existing branch, after cba19b2f9, in a new commit.
++Only tests/notes change: cover speculation in no-copy parity and cancel/reuse of the actual lane adapter slot.
++Standards/checks remain those recorded above (AGENTS.md, CONTRIBUTING.md, docs/recipes/SKILL.md,
++.zig-version, build.zig/zig/build/dsv41_draft.zig, format/no-GPU workflows and tools/zig/lean_check.py).
++Required checks remain fmt, lean baseline/candidate identity comparison, test-cuda-host and test-dsv41-draft.
++No nested native test standards were found. User explicitly says the lock is held and prohibits builds/tests;
++all executable gates and baseline counts stay unrun. ATC publication remains skipped. No helper needed for
++this small sequential test-only extension; use the existing twin and asynchronous Pass contract directly.
++
++D2 P3 addressed in source: the existing priced/unpriced C1/C2/C4 parity matrix now covers speculation both off
++and on, retaining greedy/keyed full off==on==fresh-serial comparisons. An eligible greedy C1 no-copy run must
++report a nonzero launched count, so speculation coverage cannot silently pass without executing the feature.
++The added cancellation/reuse test uses the twin's actual asynchronous Pass.begin/collect path with one lane
++slot and no-copies enabled for both core and priced planner. It steps with a bounded launch wait, requires a
++real speculative launch before cancelling an unfinished request through Engine.discard, checks cancellation,
++released slot ownership and cleared speculative/pass state, then admits a different prompt onto that exact
++slot and compares its complete emitted tokens with a separate fresh serial twin execution.
++
++Verification for this follow-up: actual diff, asynchronous pass implementation, Engine.discard and slot-retire
++paths inspected; git diff --check passed. No formatter, lean checker, build, host test or model test was run.
++Baseline/candidate counts remain unmeasured; required gates listed above are still pending, not passing.
++The benchmark lock is still held. No production behavior, flag defaults, transport, kernels or assets changed.
+diff --git a/zig/src/families/deepseek_v41/draft/lanes_test.zig b/zig/src/families/deepseek_v41/draft/lanes_test.zig
+index e52a5a91b6aa947bee9d718a4134c61604846e1b..c17929a9523eac4ab23c07efd321772d14adc198 100644
+--- a/zig/src/families/deepseek_v41/draft/lanes_test.zig
++++ b/zig/src/families/deepseek_v41/draft/lanes_test.zig
+@@ -275,7 +275,7 @@ test "Draft state: every draft depth preserves plain output and concurrent equal
+ 
+ test "copy suppression beside DSpark preserves serial tokens through priced and unpriced request paths" {
+     const repeated = p1 ++ p1;
+-    for ([_]bool{ false, true }) |priced| for ([_]?lanes.Sampling{ null, hot }) |sampling| {
++    for ([_]bool{ false, true }) |priced| for ([_]?lanes.Sampling{ null, hot }) |sampling| for ([_]bool{ false, true }) |speculate| {
+         const cases = [_]Case{
+             .{ .prompt = &repeated, .sampling = sampling, .max_new = 48, .copies = true },
+             .{ .prompt = &p3, .sampling = sampling, .max_new = 48, .copies = true },
+@@ -283,14 +283,64 @@ test "copy suppression beside DSpark preserves serial tokens through priced and
+             .{ .prompt = &p1, .sampling = sampling, .max_new = 48, .drafts = false },
+         };
+         for ([_]usize{ 1, 2, 4 }) |n| {
+-            const off = try run(cases[0..n], .{ .priced = priced, .costs = .cheap });
++            const off = try run(cases[0..n], .{ .priced = priced, .costs = .cheap, .spec = speculate });
+             defer off.deinit();
+-            const on = try run(cases[0..n], .{ .priced = priced, .costs = .cheap, .no_copies = true });
++            const on = try run(cases[0..n], .{ .priced = priced, .costs = .cheap, .no_copies = true, .spec = speculate });
+             defer on.deinit();
+             try expectSerial(cases[0..n], off, .{});
+             try expectSerial(cases[0..n], on, .{});
+             for (off.out, on.out) |a, b| try std.testing.expectEqualSlices(u32, a, b);
+             try std.testing.expect(on.drafted > 0);
++            if (speculate and sampling == null and n == 1) try std.testing.expect(on.spec.launched > 0);
+         }
+     };
+ }
++
++test "copy suppression survives cancellation after speculation and reuses the same slot with fresh serial tokens" {
++    const t = try twin.Twin.init(gpa, .{}, 1);
++    defer t.deinit();
++    const d = try twin.Drafter.init(gpa, t, 1);
++    defer d.deinit();
++    var c = try servedCosts(gpa);
++    defer c.deinit(gpa);
++    const x = try ln.Lanes.init(gpa, t.target(), d.passAsync(), c, .{ .shape = d.shape, .slots = 1, .spec = .{ .on = true } });
++    defer x.deinit();
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const copies: copy_policy.Settings = .{ .no_copies = true };
++    var model = try x.model(arena.allocator(), 64);
++    copies.apply(true, &model);
++    var cfg = try lanes.Config.init(gpa, model, 16, 15);
++    defer cfg.deinit(gpa);
++    try std.testing.expectEqual(@as(u32, 0), cfg.max_copy);
++    var clock: lanes.fake.FixedClock = .{};
++    var e = lanes.Engine.init(gpa, &cfg, x.backend(), clock.clock());
++    defer e.deinit();
++    x.attach(&e);
++    const planner = lookup.Planner.init(copies.lookup(true, .{ .plan = true }), &c, true);
++    var old_proposer = try lookup.Proposer.init(&planner, gpa, &p1, &.{});
++    defer old_proposer.deinit();
++    var cancelled = try lanes.Stream.init(gpa, .{ .id = "cancelled", .prompt = &p1, .max_new = 120, .proposer = old_proposer.proposer() });
++    defer cancelled.deinit(gpa);
++    try e.addStream(&cancelled);
++    const slot = x.state(&cancelled).?.slot;
++    var steps: usize = 0;
++    while (steps < 16 and !cancelled.finished and x.spec.?.stats.launched == 0) : (steps += 1) try e.step();
++    try std.testing.expect(x.spec.?.stats.launched > 0 and !cancelled.finished);
++    e.discard(&cancelled);
++    try std.testing.expectEqual(.cancelled, cancelled.reason);
++    try std.testing.expect(x.state(&cancelled) == null);
++    try std.testing.expect(!x.spec.?.begun and !x.spec.?.live and !d.begun);
++    try std.testing.expectEqual(@as(usize, 1), x.free.items.len);
++    const replacement: Case = .{ .prompt = &p2, .max_new = 80, .copies = true };
++    var new_proposer = try lookup.Proposer.init(&planner, gpa, replacement.prompt, &.{});
++    defer new_proposer.deinit();
++    var reused = try lanes.Stream.init(gpa, .{ .id = "replacement", .prompt = replacement.prompt, .max_new = replacement.max_new, .proposer = new_proposer.proposer() });
++    defer reused.deinit(gpa);
++    try e.addStream(&reused);
++    try std.testing.expectEqual(slot, x.state(&reused).?.slot);
++    while (e.activeCount() > 0) try e.step();
++    const want = try serial(replacement, .{});
++    defer gpa.free(want);
++    try std.testing.expectEqualSlices(u32, want, reused.emitted());
++}

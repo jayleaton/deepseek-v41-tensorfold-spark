@@ -17,10 +17,15 @@ scripts/build-native.sh -t tensorfold-dsv41:local   # fetches config/tensorfold.
 # config/runner-assets.release and checked against config/runner-assets.sha256 (docs/compute-lane.md, "Runner image")
 scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner
 scripts/check-zig-image.sh tensorfold-dsv41:local-runner
-docker save tensorfold-dsv41:local-runner -o build-native-image.tar
+# the CUDA 13.3 forward-compatibility layer the pair serves on (ENGINE, "CUDA forward compatibility"); the driver files
+# come from NVIDIA's NGC PyTorch 26.07 container (pulled by digest) and are checked against docker/compat/
+scripts/build-compat-image.sh tensorfold-dsv41:local-runner -t tensorfold-dsv41:local-compat
+docker save tensorfold-dsv41:local-compat -o build-native-image.tar
 ```
 
-The flash17 profile's default (the in-thinking compute profile) needs `tensorfold-dsv41:local-runner`; set `IMAGE` to it.
+The flash17 profile's default (the in-thinking compute profile) needs the runner layer; set `IMAGE` to
+`tensorfold-dsv41:local-compat` (the runner image on the CUDA 13.3 compat driver, as the pair serves;
+`tensorfold-dsv41:local-runner` is the same engine on the host driver).
 `tensorfold-dsv41:local` alone serves the rollback profile and the profile's arm L block. Transfer the image to the
 worker and `docker load -i build-native-image.tar`. Both nodes must have the same image
 content and runtime config, an `org.tensorfold.revision` label matching `config/tensorfold.rev` and an

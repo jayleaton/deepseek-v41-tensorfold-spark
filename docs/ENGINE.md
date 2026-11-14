@@ -1,7 +1,7 @@
 # Native TensorFold engine
 
 The recipe builds unmodified upstream [TensorFold](https://github.com/ashhart/TensorFold) at the exact commit in
-[`config/tensorfold.rev`](../config/tensorfold.rev) (`0d51120a8`, on upstream `main`), fetched from
+[`config/tensorfold.rev`](../config/tensorfold.rev) (`f212eeabd`, on upstream `main`), fetched from
 [`config/tensorfold.repo`](../config/tensorfold.repo), and applies this recipe's patch series over it:
 [`patches/`](../patches/) `0001` to the number in [`config/tensorfold.patches`](../config/tensorfold.patches), in
 order, with `git am`. The result must be the engine tree in [`config/tensorfold.tree`](../config/tensorfold.tree), or
@@ -13,13 +13,14 @@ existing generator/reference dependencies pending their equivalence audit.
 
 ## The patch series
 
-The 207 patches are the DeepSeek-V4.1 engine work that is not on upstream `main` yet, one patch per commit, with each
-commit's author (Sergey Tretyak's two `Disk.validate` commits keep his name). A merge in that history is one patch
-holding the merge's change, and its message lists the commits it brought in. As this work reaches upstream `main`,
-the pin moves forward and the series gets shorter. Applied to `0d51120a8`, `0001`-`0207` give tree
-`6571ad430`, which is the content of the engine commit `12257eb51` except for 29 lines in 10 files that named
-internal machines, tools and people (28 comment and notes lines and one tool's report string). The checkout's last
-commit is `7e1fa712a` with the fixed committer `fetch-source.sh` uses.
+The 72 patches are the DeepSeek-V4.1 engine the pair serves (G, `6c4eeccda`) that is not on upstream `main` yet: G's
+first-parent history over its upstream base `f212eeabd`, one patch per commit, each with its author. Two of those
+commits were merges of a side branch holding one commit each, whose diff is exactly that commit's; each is one patch
+carrying that commit's message, author and date, with a note that it came from a merge (`0013`, Flash-Next's compute
+binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
+`main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
+`8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
+machines, tools and people. The checkout's last commit is `986206947` with the fixed committer `fetch-source.sh` uses.
 
 To get the patched engine source, for example to regenerate the settings list or build by hand:
 
@@ -28,24 +29,48 @@ bash docker/zig/fetch-source.sh "$(cat config/tensorfold.rev)" /absolute/new-dir
   "$(cat config/tensorfold.repo)" "$PWD/patches" "$(cat config/tensorfold.patches)" "$(cat config/tensorfold.tree)"
 ```
 
-The earlier engines this recipe has pinned are prefixes of the same series. To roll back, put the number and tree from
-this table in `config/tensorfold.patches` and `config/tensorfold.tree`, regenerate the settings list, and rebuild the
-image:
+The previous recipe engine (`12257eb51`: upstream `0d51120a8` plus `0001`-`0207` of the earlier series, tree
+`1d4482025`) and the engines before it (G `58bece1d3`, F `56200688d`, H `20ad77878`) are prefixes of that earlier
+series, not of this one. To roll back, check out the recipe's previous commit: its `config/` and `patches/` pin it,
+and its ENGINE has the rollback table for the older engines.
 
-| Engine | `config/tensorfold.patches` | `config/tensorfold.tree` | Original commit |
-| --- | --- | --- | --- |
-| current: undeclared calls must be whole | `0207` | `6571ad43034aae5486bbd83fc1c0f32282de1ae3` | `12257eb51` |
-| undeclared tool calls go out as calls | `0206` | `156d157a8179ce331b4abbb94ac6268b2e4f463f` | `3ca06dd4b` |
-| prompt checkpoints for rewritten histories (#80) | `0205` | `4bb6cf7a4c154b0c6ae43493f7c1b2013157daba` | `1ea71240a` |
-| NVMe session-restore fix (#86) | `0203` | `d53f80f2880d363e23bb963643b95f949a413b5f` | `7b79ef92d` |
-| compute default, before #86 | `0201` | `32a36908894fb75e46d42c5b66e86809241cf4d9` | `01a62132c` |
-| release candidate G | `0050` | `abb4567df0569bdff1aeebfd129d9ca0f5919877` | `58bece1d3` |
-| candidate F | `0047` | `a8c7888c4827bf2a9d9e4691b578ba68e2662927` | `56200688d` |
-| stable head H | `0039` | `cc79d3a2d9175b2e1e1fa5a11059b221c9dc5efd` | `20ad77878` |
+### This engine against the previous recipe engine
 
-G and F do not read the profile's runner lines, so the launcher warns and does not forward them; for F also unset
-`TF_DSV41_COMPUTE_LANE`. The original commit column names the engine history the measurements below cite. Those
-commits are not where the recipe gets its engine.
+`6c4eeccda` sits on upstream `f212eeabd` (2026-11-09), 2,517 commits newer than the previous pin `0d51120a8`.
+Among the upstream changes: tool-call ids keyed over the request (a replay names its calls again;
+`TENSORFOLD_TOOL_ID_KEY_FILE`), opt-in chunked prefill admission for long prompts (`TENSORFOLD_PREFILL_POLICY`,
+`_ORDER`, `_TOKENS`), `TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS`, and Engram shards whose direct reads refuse a sector read
+buffered instead of failing. Flash17's `dsq-1` checkpoint admission is on upstream itself at this base (`b284ce1e2`,
+the upstream form of the previous series' `98f2a3896`). The G line adds:
+
+- the compute lane and the in-thinking runner in TensorFold's shared core, each family binding its own names: the
+  generic `TF_COMPUTE_LANE*` / `TF_RUNNER*`, or DeepSeek-V4.1's `TF_DSV41_COMPUTE_LANE*` / `TF_DSV41_RUNNER*` as
+  before (a boot sets one or the other; both is a startup error). The flash17 profile keeps the `TF_DSV41_*` names;
+- engine-owned reply bytes (the runner's written values) that survive every prose strip, cut at each format's own call
+  openers;
+- `TF_DSV41_ENGRAM_READERS` and `TF_DSV41_PROMPT_PROF`;
+- the image's CUDA 13.3 forward-compatibility layer (below).
+
+The image does not ship PDFium, so PDF inputs (`--vision-pdf`, upstream) stay unavailable, as on G's own image; the
+image's library check lists `libpdfium.so` with the HIP runtimes as not requested.
+
+Both engines have IDX_SPLIT, IDX_IOTA, ROT_FOLD, KV_MIRROR, DEPTH_OVERHEAD_MS, `TF_DSV41_SESSION_LCP_RESUME` (#80),
+the NVMe session-restore fix (#86), `deadline_s`, `compute_executed`, `TF_DSV41_COMPUTE_LANE_DEFAULT`, the runner's
+COMMIT / ABSTAINS / INLINE_CHAIN / INLINE_MARK, and undeclared tool calls returned whole. Only the previous engine has
+`TF_DSV41_RUNNER_SPEC_HOLD` (speculation that survives a runner fire, off in the profile); the launcher refuses
+nothing for it but warns that this engine does not read it.
+
+### CUDA forward compatibility
+
+G serves on NVIDIA's CUDA 13.3 user-mode driver (libcuda 610.43.02) over the Sparks' older kernel module.
+[`scripts/build-compat-image.sh`](../scripts/build-compat-image.sh) layers it over the runner image: it copies the
+driver files out of NVIDIA's NGC PyTorch 26.07 container (by digest, the base of Mia / MiaAI-Lab's dual-Spark image;
+`COMPAT_IMAGE` / `COMPAT_PATH` take another image holding the same files), requires exactly the files and links in
+[`docker/compat/compat.sha256`](../docker/compat/compat.sha256) and
+[`compat.links`](../docker/compat/compat.links), and sets the entrypoint
+[`tf-compat-entry`](../docker/compat/tf-compat-entry). The entry puts the driver first on the loader path only while
+the host kernel module is older than 610 and `cuInit` succeeds through it, and logs one line saying which driver runs;
+`TF_CUDA_COMPAT=0` forces the host driver. The engine files and labels are the runner image's.
 
 [`config/tensorfold-settings.txt`](../config/tensorfold-settings.txt) lists every `TF_*` / `TENSORFOLD_*` setting
 the pinned engine reads. The launcher forwards exactly the ones a profile sets, plus `NCCL_*`, never credential
@@ -60,7 +85,8 @@ python3 scripts/engine_settings.py generate /absolute/new-dir   # the patched ch
 `tensorfold-dsv41 serve` owns rank 0; `tf-dsv41 follow` owns rank 1. `dsv41-serve` is the upstream build target,
 not the executable name. The experimental family requires `TF_EXPERIMENTAL=deepseek`.
 
-The current engine is patches `0001`-`0207` (`12257eb51`): `1ea71240a` plus two server commits (see
+The previous recipe engine was patches `0001`-`0207` of the earlier series (`12257eb51`): `1ea71240a` plus two
+server commits (see
 [Undeclared tool calls](#undeclared-tool-calls-at-this-pin)). `1ea71240a` (`0205`) is `7b79ef92d`
 plus two commits for [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80) (see
 [Rewritten histories](#rewritten-histories-at-this-pin)).
@@ -105,6 +131,9 @@ fallback, as described below. This source support is not a new
 pack/device qualification. Do not edit a pack config to bypass admission checks. Native images, structured output,
 defaults, sessions and sampling still require migration qualification; historical production results do not
 qualify this pin.
+
+> The sections from here on measured the previous recipe engines: "this pin" in them means the engine each one
+> names (`7b79ef92d`, `1ea71240a`, `12257eb51`, H), not `6c4eeccda`.
 
 ## Session restore at this pin
 

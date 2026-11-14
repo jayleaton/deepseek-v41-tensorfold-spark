@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 22:57:19 +0700
+Subject: [PATCH 30/72] deepseek: reject an oversubscribed JPEG Huffman bucket
+ before filling it
+
+The canonical-space check ran after lookup writes, so a 3-code length-one
+table wrote h.look[512]. Check the whole bucket and the value extent before
+any entry is written; an oversubscribed tree is BadJpeg.
+---
+ zig/src/families/deepseek_v41/vision/jpeg.zig | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision/jpeg.zig b/zig/src/families/deepseek_v41/vision/jpeg.zig
+index 259038c9f3e14f75b6560925a210dc2f673b5a91..798cc67ccbc1ceafe5abc23585a4413f8b7c59c1 100644
+--- a/zig/src/families/deepseek_v41/vision/jpeg.zig
++++ b/zig/src/families/deepseek_v41/vision/jpeg.zig
+@@ -21,6 +21,8 @@ const Huff = struct {
+         var k: usize = 0;
+         for (1..17) |len| {
+             const n = counts[len - 1];
++            // the whole bucket must fit the canonical code space before any entry is written
++            if (k + n > vals.len or k + n > h.vals.len or code + @as(i32, @intCast(n)) > (@as(i32, 1) << @intCast(len))) return error.BadJpeg;
+             h.valoff[len] = @as(i32, @intCast(k)) - code;
+             for (0..n) |_| {
+                 if (len <= 9) {
+@@ -32,7 +34,6 @@ const Huff = struct {
+                 code += 1;
+             }
+             h.maxcode[len] = if (n > 0) code - 1 else -1;
+-            if (code > (@as(i32, 1) << @intCast(len))) return error.BadJpeg;
+             code <<= 1;
+         }
+         h.maxcode[17] = std.math.maxInt(i32);
+@@ -528,3 +529,18 @@ fn finish(gpa: Allocator, f: *Frame, quant: *const [4][64]u16, jfif: bool, adobe
+     }
+     return im;
+ }
++
++test "an oversubscribed Huffman table is refused before its lookup is written" {
++    const raw = blk: {
++        var b: [28]u8 = @splat(0);
++        @memcpy(b[0..8], "\xff\xd8\xff\xc4\x00\x16\x00\x03");
++        b[23] = 0;
++        b[24] = 1;
++        b[25] = 2;
++        b[26] = 0xff;
++        b[27] = 0xd9;
++        break :blk b;
++    };
++    try std.testing.expectError(error.BadJpeg, decode(std.testing.allocator, &raw, 64 * 1024 * 1024));
++}
++

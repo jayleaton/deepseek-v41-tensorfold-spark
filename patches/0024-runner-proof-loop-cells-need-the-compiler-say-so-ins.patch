@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 06:39:51 +0700
+Subject: [PATCH 24/72] runner proof: loop cells need the compiler; say so
+ instead of failing as 42
+
+The loop-cells proof builds RV32 ELF programs, but unlike the other ELF
+proofs it ran without TF_RUNNER_CLANG and fell back to /usr/bin/clang with
+the default ld.lld. On a host without ld.lld the build failed, the runner
+abstained, and the fake model's own guess (42) failed the test. In the
+serial proof host that stopped every later shard.
+
+Without TF_RUNNER_CLANG the proof now skips, as the other ELF proofs do.
+A compiler that cannot build an ELF (no ld.lld: TF_RUNNER_LLD) fails up
+front with its clang and linker named.
+---
+ zig/src/core/runner_proof_test.zig | 18 +++++++++++++++---
+ 1 file changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 3485342ab712167e7e2bc341b2b23881b370f025..fc83e08be3622f589ad3a82aa0a75d5c3c9484a5 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -8,7 +8,7 @@ const frontend = @import("runner_frontend.zig");
+ const gpa = std.testing.allocator;
+ 
+ /// One reply per lead on the circuit at TF_RUNNER_CIRCUIT; each must equal its lead, `want`, then the model's tail.
+-fn prove(leads: []const []const u8, wants: []const []const u8) !void {
++fn prove(leads: []const []const u8, wants: []const []const u8, elf: bool) !void {
+     const path = std.c.getenv("TF_RUNNER_CIRCUIT") orelse {
+         std.debug.print("skip runner proof: TF_RUNNER_CIRCUIT unset\n", .{});
+         return error.SkipZigTest;
+@@ -26,6 +26,7 @@ fn prove(leads: []const []const u8, wants: []const []const u8) !void {
+     var ctx: frontend.Context = .{ .io = std.testing.io };
+     if (std.c.getenv("TF_RUNNER_CLANG")) |clang| ctx.compiler.clang = std.mem.span(clang);
+     if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    if (elf) try compilerBuilds(ctx.compiler); // the cells build RV32 programs
+     const texts = try rt.replies(models, .{ .frontend = ctx.frontend(), .backend = b, .wait_s = 600 }, &fake);
+     defer rt.freeAll(texts);
+     try std.testing.expectEqual(@as(u32, 0), fake.started);
+@@ -37,13 +38,24 @@ fn prove(leads: []const []const u8, wants: []const []const u8) !void {
+ }
+ 
+ test "runner proof: a 30-digit multiply cell's Result: is the exact product, computed by the circuit" {
+-    try prove(&.{rt.mul_cell}, &.{rt.product});
++    try prove(&.{rt.mul_cell}, &.{rt.product}, false);
+ }
+ 
+ test "runner proof: loop cells (a generator sum and an accumulator) print 285 through the circuit" {
+     const sum = "```python\nprint(sum(i*i for i in range(10)))\n```\nOutput:\n";
+     const acc = "```python\ntotal = 0\nfor i in range(10):\n    total += i * i\nprint(total)\n```\nResult:\n";
+-    try prove(&.{ sum, acc }, &.{ "285", "285" });
++    try prove(&.{ sum, acc }, &.{ "285", "285" }, true);
++}
++
++/// Unset TF_RUNNER_CLANG skips, as the other ELF proofs do; a compiler that cannot build fails here, not as the guess.
++fn compilerBuilds(c: @import("runner_frontend_program.zig").Config) !void {
++    if (std.c.getenv("TF_RUNNER_CLANG") == null) {
++        std.debug.print("skip runner proof: loop cells build ELF programs; TF_RUNNER_CLANG unset\n", .{});
++        return error.SkipZigTest;
++    }
++    if (try @import("runner_frontend_boot.zig").selfTest(gpa, std.testing.io, .{ .compiler = c })) return;
++    std.debug.print("runner proof: {s} cannot build an RV32 ELF (linker {s}; TF_RUNNER_LLD)\n", .{ c.clang, c.linker orelse "ld.lld" });
++    return error.RunnerCompilerUnavailable;
+ }
+ 
+ const rapi = @import("runner_api.zig");

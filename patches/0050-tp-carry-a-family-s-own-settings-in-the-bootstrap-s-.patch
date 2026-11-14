@@ -1,0 +1,94 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 20:26:11 +0700
+Subject: [PATCH 50/72] tp: carry a family's own settings in the bootstrap's
+ settings digest
+
+Config.family (null: none, the digest bytes unchanged) is hashed after the
+graph cache's settings, so both ranks refuse to start when a family setting
+differs, before any device work. Tests pin the null digest to the base fields
+and cover mixed, different, equal and absent family settings over the socket.
+---
+ zig/src/fabric/tp/bootstrap.zig | 15 +++++++++++++++
+ zig/src/fabric/tp/config.zig    | 17 +++++++++++++++++
+ zig/src/fabric/tp/tp.zig        |  2 +-
+ 3 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/fabric/tp/bootstrap.zig b/zig/src/fabric/tp/bootstrap.zig
+index 84eb13d0160687afc62c887ba4a2c668c530174a..45ca044ce7c94f2128a5405f87557d6ffb013884 100644
+--- a/zig/src/fabric/tp/bootstrap.zig
++++ b/zig/src/fabric/tp/bootstrap.zig
+@@ -311,6 +311,21 @@ test "a graph cache switched off on one rank stops both at start; 0 and OFF on t
+     try std.testing.expectEqual(@as(?anyerror, error.Mismatch), family[0]);
+ }
+ 
++test "a family setting on one rank only, or a different one, stops both at start; the same or none on both starts" {
++    const a: [32]u8 = @splat(1);
++    const b: [32]u8 = @splat(2);
++    for ([_][2]?[32]u8{ .{ null, a }, .{ a, null }, .{ a, b } }) |p| {
++        const r = try agreeDigests(.{ .family = p[0] }, .{ .family = p[1] });
++        try std.testing.expectEqual(@as(?anyerror, error.Mismatch), r[0]);
++        try std.testing.expectEqual(@as(?anyerror, error.Mismatch), r[1]);
++    }
++    for ([_]?[32]u8{ null, a }) |v| {
++        const r = try agreeDigests(.{ .family = v }, .{ .family = v });
++        try std.testing.expectEqual(@as(?anyerror, null), r[0]);
++        try std.testing.expectEqual(@as(?anyerror, null), r[1]);
++    }
++}
++
+ test "Failure boundaries: acceptOn validates the world before touching a descriptor" {
+     try std.testing.expectError(error.Protocol, Bootstrap.acceptOn(-1, max_ranks + 1, 0));
+ }
+diff --git a/zig/src/fabric/tp/config.zig b/zig/src/fabric/tp/config.zig
+index 8df760b545e2d50fca36001e2746e71ce1ea232a..8345332ea3b5e88ba185d68937dcdcfff3aed219 100644
+--- a/zig/src/fabric/tp/config.zig
++++ b/zig/src/fabric/tp/config.zig
+@@ -73,6 +73,8 @@ pub const Config = struct {
+     graph_cache: ?graph_cache.Settings = null,
+     /// TF_GRAPH_CACHE as read (`Cache.init` applies the same value); only its effect on `graph_cache` is compared.
+     graph_cache_env: ?[]const u8 = null,
++    /// A family's own settings every rank must share, set before `Session.open` (null: none, the digest unchanged).
++    family: ?[32]u8 = null,
+ 
+     /// Reads every setting from `get` (the environment in `fromEnv`); unset names keep the defaults.
+     pub fn parse(get: *const fn ([]const u8) ?[]const u8) Error!Config {
+@@ -194,6 +196,7 @@ pub const Config = struct {
+             h.update(std.mem.asBytes(&c.roce_relay_max_bytes));
+         }
+         if (c.graph_cache) |g| h.update(&g.effective(c.graph_cache_env).digest());
++        if (c.family) |f| h.update(&f);
+         var out: [32]u8 = undefined;
+         h.final(&out);
+         return out;
+@@ -373,3 +376,17 @@ test "relay ceiling: default, named validation, slot independence and rank agree
+     }
+     Fake.pairs = &.{};
+ }
++
++test "no family setting leaves the digest the base's, byte for byte; a family setting changes it" {
++    const c: Config = .{ .graph_cache = .{ .max = 8 } };
++    // the pre-family digest's fields, in its order (an off / off family boot agrees on exactly these bytes)
++    var h = std.crypto.hash.sha2.Sha256.init(.{});
++    inline for (.{ "world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast", "roce_wire", "roce_fallback" }) |f| h.update(std.mem.asBytes(&@field(c, f)));
++    h.update(&c.graph_cache.?.effective(c.graph_cache_env).digest());
++    var base: [32]u8 = undefined;
++    h.final(&base);
++    try std.testing.expectEqualSlices(u8, &base, &c.digest());
++    var f = c;
++    f.family = @splat(0);
++    try std.testing.expect(!std.mem.eql(u8, &base, &f.digest()));
++}
+diff --git a/zig/src/fabric/tp/tp.zig b/zig/src/fabric/tp/tp.zig
+index 9893b7f8a4fa1fb35d25013f1a374f0d4850e890..8f83b2274813fb9e8b5acae866d997c390744bdf 100644
+--- a/zig/src/fabric/tp/tp.zig
++++ b/zig/src/fabric/tp/tp.zig
+@@ -47,7 +47,7 @@ pub const Session = struct {
+         const cfg = requested.resolved();
+         var b = try Bootstrap.open(cfg);
+         defer b.close();
+-        try b.agree(&cfg.digest(), "settings (TF_TP_WORLD, TF_COMM_BACKEND, TF_TP_MAILBOX_MAX_KB, TF_TP_ROCE_RELAY_MAX_KB, TF_TP_ROCE_CHUNKED_KB, TF_TP_FAILFAST, TF_TP_ROCE_WIRE / _FALLBACK, TF_GRAPH_CACHE)");
++        try b.agree(&cfg.digest(), "settings (TF_TP_WORLD, TF_COMM_BACKEND, TF_TP_MAILBOX_MAX_KB, TF_TP_ROCE_RELAY_MAX_KB, TF_TP_ROCE_CHUNKED_KB, TF_TP_FAILFAST, TF_TP_ROCE_WIRE / _FALLBACK, TF_GRAPH_CACHE, family settings)");
+         var diag = cuda.p2p_report.begin(cfg.rank, cfg.world);
+         defer diag.end();
+         var lib = try cuda.nccl.Library.openPath(cfg.nccl_lib);

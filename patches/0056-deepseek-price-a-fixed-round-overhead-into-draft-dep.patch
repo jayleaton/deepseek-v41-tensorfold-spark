@@ -1,0 +1,145 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 12:22:41 +0700
+Subject: [PATCH 56/72] deepseek: price a fixed round overhead into draft depth
+ (TF_DSV41_DEPTH_OVERHEAD_MS)
+
+The cost-derived depth verifies the k drafts maximising E(k) - r * verify[k],
+with r the slot's committed tokens per modelled ms. The modelled ms leaves out
+the round's host and transition time, so r runs high and drafts with prefix
+survival around 0.3 are cut that a wall-clock objective would verify.
+
+Bertholomus's dsv41 engine instead maximises expected tokens per
+(table ms + observed round overhead). This adds that overhead term to every
+modelled round in the rate (slot rounds, the joint aggregate and the cold
+start rate), which moves our optimum the same way.
+
+TF_DSV41_DEPTH_OVERHEAD_MS=<ms> (0..100), unset or 0 = off. Off returns the
+modelled ms unchanged, so depth choices are those of H. Only drafts and
+depths change; verified replies are the target's.
+
+Tests: the knob's default/parse/range; a solo window at 0.65 confidences
+verifies 2 drafts off and 3 at 8 ms, and the slot and joint rates carry the
+overhead.
+
+Co-authored-by: bertholomus <311723197+bertholomus@users.noreply.github.com>
+---
+ .../families/deepseek_v41/draft/calib_env.zig |  3 +-
+ .../deepseek_v41/draft/calib_env_test.zig     | 12 +++++++
+ zig/src/families/deepseek_v41/draft/depth.zig | 34 ++++++++++++++++---
+ 3 files changed, 44 insertions(+), 5 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/draft/calib_env.zig b/zig/src/families/deepseek_v41/draft/calib_env.zig
+index 9505e344ac346a58cbab3290f2c3b62958746149..8dea35a67f9a7df8b8ec5a71dfec94dfae196447 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_env.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_env.zig
+@@ -206,7 +206,7 @@ pub fn store(gpa: Allocator, io: std.Io, dir: []const u8, want: Shape, c: Costs,
+     return path;
+ }
+ 
+-/// The depth's knobs (TF_DSV41_DEPTH, _DRAFT_DEPTH, _DRAFT_SKIP, _DEPTH_JOINT, _DEPTH_FAIR, _DEPTH_HOST_MS, rows cap).
++/// The depth's knobs (TF_DSV41_DEPTH, _DRAFT_DEPTH, _DRAFT_SKIP, _DEPTH_JOINT/_FAIR/_HOST_MS/_OVERHEAD_MS, rows cap).
+ pub fn depthSettings(get: *const fn ([*:0]const u8) ?[]const u8) !depth.Settings {
+     var s: depth.Settings = .{};
+     if (trimmed(get("TF_DSV41_CODE_ACCEPT"))) |v| s.code_accept = try flag(v, error.CodeAccept);
+@@ -224,6 +224,7 @@ pub fn depthSettings(get: *const fn ([*:0]const u8) ?[]const u8) !depth.Settings
+     if (trimmed(get("TF_DSV41_DEPTH_JOINT"))) |v| s.joint = if (std.mem.eql(u8, v, "2")) 2 else @intFromBool(try flag(v, error.DepthJoint));
+     s.fair = try float(get("TF_DSV41_DEPTH_FAIR"), joint.fair, 0.0, 4.0);
+     s.host_ms = try float(get("TF_DSV41_DEPTH_HOST_MS"), joint.host_ms, 0.0, 100.0);
++    s.overhead_ms = try float(get("TF_DSV41_DEPTH_OVERHEAD_MS"), 0.0, 0.0, 100.0);
+     if (trimmed(get("TF_DSV41_GRAPH_ROWS_MAX"))) |v| s.max_rows = @max(1, @min(try std.fmt.parseInt(u64, v, 10), costs_mod.max_rows));
+     return s;
+ }
+diff --git a/zig/src/families/deepseek_v41/draft/calib_env_test.zig b/zig/src/families/deepseek_v41/draft/calib_env_test.zig
+index 97cf7eae874c9cce6a76ee17f1b44aea0e4f18fb..afb46ec9870be0a1fe4ff9e57307d8c170f855ec 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_env_test.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_env_test.zig
+@@ -126,6 +126,18 @@ test "the depth's knobs read as Python's" {
+     try std.testing.expectError(error.DepthJoint, calib_env.depthSettings(&Env.get));
+ }
+ 
++test "the round overhead is off unless set and rejects out-of-range values" {
++    Env.pairs = &.{};
++    try std.testing.expectEqual(@as(f64, 0.0), (try calib_env.depthSettings(&Env.get)).overhead_ms);
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "8" }};
++    try std.testing.expectEqual(@as(f64, 8.0), (try calib_env.depthSettings(&Env.get)).overhead_ms);
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "-1" }};
++    try std.testing.expectError(error.DepthKnob, calib_env.depthSettings(&Env.get));
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "101" }};
++    try std.testing.expectError(error.DepthKnob, calib_env.depthSettings(&Env.get));
++    Env.pairs = &.{};
++}
++
+ test "TF_DSV41_CALIB=measure / zig: the engine measures; a stored Zig table is read back by zig only" {
+     var tmp = std.testing.tmpDir(.{});
+     defer tmp.cleanup();
+diff --git a/zig/src/families/deepseek_v41/draft/depth.zig b/zig/src/families/deepseek_v41/draft/depth.zig
+index f1953f6cfa27d3213520690127c0508c218d1768..caa93a3feccc9c3a8b06c15d64bad6e7bf8e962b 100644
+--- a/zig/src/families/deepseek_v41/draft/depth.zig
++++ b/zig/src/families/deepseek_v41/draft/depth.zig
+@@ -22,6 +22,7 @@ pub const Settings = struct {
+     max_rows: u64 = 64,
+     code_accept: bool = false, // TF_DSV41_CODE_ACCEPT: expand high-acceptance short-context chains
+     context_bucket: u64 = 2048, // TF_DSV41_GRAPH_BUCKET; short contexts only use its linear buckets
++    overhead_ms: f64 = 0.0, // TF_DSV41_DEPTH_OVERHEAD_MS: a round's unmodelled ms in its rate (bertholomus dsv41)
+ };
+ 
+ /// [E(0) .. E(len)]: tokens a round verifying k drafts commits on average, into `out` (len + 1).
+@@ -146,7 +147,12 @@ pub const Depth = struct {
+             const s = st.rounds.sums();
+             return s.tokens / s.ms;
+         }
+-        return 2.0 / (d.costs.windowMs(2) + d.costs.draft);
++        return 2.0 / d.overhead(d.costs.windowMs(2) + d.costs.draft);
++    }
++
++    /// `ms` with the fixed round overhead added (off: `ms` itself, the same bits).
++    fn overhead(d: *const Depth, ms: f64) f64 {
++        return if (d.set.overhead_ms > 0.0) ms + d.set.overhead_ms else ms;
+     }
+ 
+     fn least(d: *const Depth, alone: bool, first: ?u32) usize {
+@@ -182,8 +188,8 @@ pub const Depth = struct {
+ 
+     /// Modelled ms of a round: its window of `rows` total rows, each further window's overhead, the pass.
+     pub fn roundMs(d: *const Depth, rows: u64, windows: u64, drafted: bool) f64 {
+-        return d.costs.rowsMs(@intCast(rows)) + d.costs.slot * @as(f64, @floatFromInt(windows -| 1)) +
+-            (if (drafted) d.costs.draft else 0.0) + (if (d.set.joint == 2) d.set.host_ms else 0.0);
++        return d.overhead(d.costs.rowsMs(@intCast(rows)) + d.costs.slot * @as(f64, @floatFromInt(windows -| 1)) +
++            (if (drafted) d.costs.draft else 0.0) + (if (d.set.joint == 2) d.set.host_ms else 0.0));
+     }
+ 
+     /// The open round's commits -> one (tokens, modelled ms) of the aggregate rate by its windows.
+@@ -372,7 +378,7 @@ pub const Depth = struct {
+         }
+         var ms = d.costs.windowMs(@intCast(rows)) + (if (st.drafted) d.costs.draft else 0.0);
+         if (st.ms) |m| ms = m;
+-        st.rounds.push(.{ .tokens = got, .ms = ms });
++        st.rounds.push(.{ .tokens = got, .ms = d.overhead(ms) });
+         st.used_len = 0;
+         st.drafted = false;
+         st.ms = null;
+@@ -447,3 +453,23 @@ test "high acceptance fills paid padding and preserves cold, prose, context and
+         }
+     }
+ }
++
++test "a fixed round overhead in the rate verifies deeper, as Bert's E/(table ms + overhead) does" {
++    const gpa = std.testing.allocator;
++    var verify: [16]f64 = undefined;
++    for (&verify, 0..) |*v, r| v.* = 21.4 + 4.6 * @as(f64, @floatFromInt(r));
++    const c: Costs = .{ .verify = &verify, .draft = 3.52, .slot = 0.65 };
++    const conf = [_]f64{ 0.65, 0.65, 0.65, 0.65, 0.65 };
++    var off = try Depth.init(gpa, c, 5, .{});
++    defer off.deinit();
++    var on = try Depth.init(gpa, c, 5, .{ .overhead_ms = 8.0 });
++    defer on.deinit();
++    // the third draft's 0.27 survival misses the modelled rate's bar and clears the overhead's lower one
++    try std.testing.expectEqual(@as(usize, 2), try off.choose(0, &conf, 5, false, null));
++    try std.testing.expectEqual(@as(usize, 3), try on.choose(0, &conf, 5, false, null));
++    try off.record(0, 3, 3, null);
++    try on.record(0, 4, 3, null);
++    try std.testing.expectEqual(3.0 / (verify[2] + 3.52), try off.rate(0));
++    try std.testing.expectEqual(3.0 / (verify[3] + 3.52 + 8.0), try on.rate(0));
++    try std.testing.expectEqual(off.roundMs(6, 1, true) + 8.0, on.roundMs(6, 1, true));
++}

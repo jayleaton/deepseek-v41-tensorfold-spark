@@ -46,7 +46,8 @@ LAUNCHER_OWNED = frozenset({
 # engine source shows it is per-rank. `family` is a family's own agreement bytes (DeepSeek-V4.1:
 # TF_DSV41_IDX_SPLIT, cuda_model.zig), a forwarded setting the pair identity already shares.
 DIGEST_FIELDS = frozenset({"world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast",
-                           "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env", "family"})
+                           "roce_wire", "roce_fallback", "graph_cache", "graph_cache_env", "family",
+                           "roce_relay", "roce_relay_max_bytes"})
 # Config fields Bootstrap.open reads (bootstrap.zig:34-53): world, rank and master/port are
 # launcher-owned (master and port are hashed as transport); link_port is TF_TP_PLAN_PORT;
 # connect_timeout_ns is this rank's own deadline (bootstrap.zig:26-30).
@@ -54,7 +55,7 @@ BOOTSTRAP_FIELDS = frozenset({"world", "rank", "master", "link_port", "connect_t
 TRANSPORT_COMMON = frozenset({
     # Config.digest inputs (world and backend are launcher-owned)
     "TF_TP_MAILBOX_MAX_KB", "TF_TP_ROCE_CHUNKED_KB", "TF_TP_FAILFAST", "TF_TP_ROCE_WIRE",
-    "TF_TP_ROCE_FALLBACK", "TF_GRAPH_CACHE",
+    "TF_TP_ROCE_FALLBACK", "TF_GRAPH_CACHE", "TF_TP_ROCE_RELAY", "TF_TP_ROCE_RELAY_MAX_KB",
     # the bootstrap endpoint: both ranks meet on master:TF_TP_PLAN_PORT before the digest
     "TF_TP_PLAN_PORT",
     # not proven per-rank: the HCA stripe count feeds the peer port exchange (roce_pick.zig),
@@ -218,8 +219,23 @@ def profile_command(argv):
 SOURCE = ("zig/src/*.zig", ":!*_test.zig")
 # A knob group parsed under a `comptime prefix` reads `prefix ++ "_SUFFIX"`, and its caller passes the literal prefix
 # (`compute_lane.Config.parse(&env, "TF_DSV41_COMPUTE_LANE")` reads TF_DSV41_COMPUTE_LANE_WORKERS and the rest).
-SUFFIX = re.compile(r'\bprefix \+\+ "(_[A-Z0-9_]+)"')
+SUFFIX = re.compile(r'(?<![\w.])prefix \+\+ "(_[A-Z0-9_]+)"')
 PREFIXED_CALL = re.compile(r'\b([a-z0-9_]+)\.(?:[A-Za-z0-9_]+\.)?parse\(.*?"((?:TF|TENSORFOLD)_[A-Z0-9_]+)"\)')
+# `const lane = @import("compute_lane.zig")`: a module reached under another name.
+IMPORT = re.compile(r'\bconst ([A-Za-z0-9_]+) = @import\("(?:[^"]*/)?([A-Za-z0-9_]+)\.zig"\)')
+# A knob group handing its own comptime prefix on to another: `place.Config.parse(get, prefix)`.
+PASS_ON = re.compile(r'\b([a-z0-9_]+)\.(?:[A-Za-z0-9_]+\.)?parse\(\s*[a-z_&]+,\s*prefix\s*\)')
+# A family binding (`pub const Binding = struct { prefix: []const u8 = "TF_X", alias: ?[]const u8 = null, ... }`) whose
+# parse reads a knob group under the binding's names: `lane.Config.parse(get, b.prefix)` / `(get, old)` (old = b.alias).
+BINDING_PARSE = re.compile(r'\b([a-z0-9_]+)\.Config\.parse\(\s*get,\s*(?:b\.prefix|old)\s*\)')
+BINDING_NAME = re.compile(r'(?:\.prefix|\.alias|\bprefix:\s*\[\]const u8)\s*=\s*"((?:TF|TENSORFOLD)_[A-Z0-9_]+)"')
+# A binding derived from another module's (`fn binding(comptime b: @import("compute_binding.zig").Binding)
+# @import("runner_binding.zig").Binding` returning `.prefix = b.prefix ++ "_RUNNER"`), whose own knob group the deriving
+# module parses under the derived names (`Config.parse(get, rb.prefix)` / `rb.alias.?`).
+DERIVE_SIGNATURE = re.compile(r'comptime b: @import\("([A-Za-z0-9_]+)\.zig"\)\.Binding\) @import\("([A-Za-z0-9_]+)\.zig"\)\.Binding')
+DERIVE_SUFFIX = re.compile(r'\.prefix = b\.prefix \+\+ "(_[A-Z0-9_]+)"')
+DERIVED_PARSE = re.compile(r'(?<![\w.])Config\.parse\(\s*get,\s*rb\.(?:prefix|alias)')
+GROUPED = (r'prefix \+\+ "_[A-Z0-9_]+"|\.parse\(|@import\("[^"]*\.zig"\)|(\.prefix|\.alias|prefix: \[\]const u8) = "(TF|TENSORFOLD)_')
 
 
 def _grep(source, revision, *args):
@@ -232,15 +248,56 @@ def _grep(source, revision, *args):
 
 
 def composed_names(lines):
-    """`REV:path:text` grep lines -> the names a prefix-parsed knob group reads through its literal-prefix callers."""
-    suffixes, prefixes = {}, set()
+    """`REV:path:text` grep lines -> the names a prefix-parsed knob group reads: through its literal-prefix callers,
+    through a family binding's prefix / alias names (and bindings derived from them), and through knob groups that
+    hand their prefix on to another group."""
+    texts, imports = {}, {}
     for line in lines:
         _, path, text = (line.split(":", 2) + ["", ""])[:3]
         module = Path(path).stem
-        for suffix in SUFFIX.findall(text):
-            suffixes.setdefault(module, set()).add(suffix)
-        prefixes.update(PREFIXED_CALL.findall(text))
-    return {prefix + suffix for module, prefix in prefixes for suffix in suffixes.get(module, ())}
+        texts.setdefault(module, []).append(text)
+        for name, target in IMPORT.findall(text):
+            imports.setdefault(module, {})[name] = target
+
+    def resolve(module, name):
+        return imports.get(module, {}).get(name, name)
+
+    suffixes, prefixes, pass_on, binding_group, binding_names, derived = {}, {}, set(), {}, {}, []
+    for module, lines_of in texts.items():
+        signature, derive_suffix, derived_parse = None, None, False
+        for text in lines_of:
+            for suffix in SUFFIX.findall(text):
+                suffixes.setdefault(module, set()).add(suffix)
+            for name, prefix in PREFIXED_CALL.findall(text):
+                prefixes.setdefault(resolve(module, name), set()).add(prefix)
+            pass_on.update((module, resolve(module, name)) for name in PASS_ON.findall(text))
+            for name in BINDING_PARSE.findall(text):
+                binding_group[module] = resolve(module, name)
+            binding_names.setdefault(module, set()).update(BINDING_NAME.findall(text))
+            signature = signature or (DERIVE_SIGNATURE.search(text) and DERIVE_SIGNATURE.search(text).groups())
+            derive_suffix = derive_suffix or (DERIVE_SUFFIX.search(text) and DERIVE_SUFFIX.search(text).group(1))
+            derived_parse = derived_parse or bool(DERIVED_PARSE.search(text))
+        if signature and derive_suffix:
+            derived.append((module, signature[0], signature[1], derive_suffix, derived_parse))
+    # A module that is no binding's (no knob-group parse of its names) contributes no binding names.
+    bindings = {m: set(binding_names.get(m, ())) for m in binding_group}
+    while True:
+        before = sum(map(len, bindings.values())), sum(map(len, prefixes.values()))
+        for module, source, target, suffix, parses in derived:
+            names = {p + suffix for p in bindings.get(source, ())}
+            if target in bindings:
+                bindings[target] |= names
+            if parses:
+                prefixes.setdefault(module, set()).update(names)
+        for module, group in binding_group.items():
+            prefixes.setdefault(group, set()).update(bindings[module])
+        for module, group in pass_on:
+            prefixes.setdefault(group, set()).update(prefixes.get(module, ()))
+        if (sum(map(len, bindings.values())), sum(map(len, prefixes.values()))) == before:
+            break
+    # A binding's own name is its switch (PREFIX=1 enables), derived bindings' included.
+    switches = set().union(*bindings.values()) if bindings else set()
+    return switches | {p + s for module, ps in prefixes.items() for p in ps for s in suffixes.get(module, ())}
 
 
 def engine_names(source, revision):
@@ -248,7 +305,7 @@ def engine_names(source, revision):
     if not literal:
         raise SystemExit("cannot read the engine source at " + revision)
     names = {line.strip().strip('"') for line in literal if line.strip()}
-    grouped = _grep(source, revision, "-E", r'prefix \+\+ "_[A-Z0-9_]+"|\.parse\(.*"(TF|TENSORFOLD)_')
+    grouped = _grep(source, revision, "-E", GROUPED)
     return sorted(names | composed_names(grouped))
 
 

@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 12:06:01 +0700
+Subject: [PATCH 39/72] deepseek: keep eight images a request under
+ TF_DSV41_IMAGES=native
+
+The legacy environment path opened the tower with Open.vision's generic
+limit of four images a request. The published engine admits eight under
+TF_DSV41_IMAGES=native and honours TF_DSV41_VISION_MAX_IMAGES. Carry the
+family default and its override through the root-selected boot frame;
+an explicit --vision still wins.
+
+Host test covers the default, the override, blank and malformed values
+and the disabled modes.
+---
+ zig/src/families/deepseek_v41/vision_boot.zig | 16 ++++++++++----
+ .../deepseek_v41/vision_boot_test.zig         | 22 ++++++++++++++-----
+ 2 files changed, 28 insertions(+), 10 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision_boot.zig b/zig/src/families/deepseek_v41/vision_boot.zig
+index 5cc665766b9d6479114cc735b3fc58546060bdca..0990969c042c04776774bc8626e813201857ed20 100644
+--- a/zig/src/families/deepseek_v41/vision_boot.zig
++++ b/zig/src/families/deepseek_v41/vision_boot.zig
+@@ -41,11 +41,19 @@ fn decode(frame: []const i64) !?VisionOpen {
+ pub fn fromEnv(explicit: ?VisionOpen) !?VisionOpen {
+     if (explicit != null) return explicit;
+     const raw: ?[]const u8 = if (std.c.getenv("TF_DSV41_IMAGES")) |value| std.mem.span(value) else null;
+-    return legacy(null, raw);
++    const max: ?[]const u8 = if (std.c.getenv("TF_DSV41_VISION_MAX_IMAGES")) |value| std.mem.span(value) else null;
++    return legacy(null, raw, max);
+ }
+ 
+-/// The old placeholder/reject choices leave native images disabled; only native enables the tower.
+-pub fn legacy(explicit: ?VisionOpen, raw: ?[]const u8) !?VisionOpen {
++/// Only native enables the tower, with its own images a request (TF_DSV41_VISION_MAX_IMAGES, default 8).
++pub fn legacy(explicit: ?VisionOpen, raw: ?[]const u8, max_images: ?[]const u8) !?VisionOpen {
+     if (explicit != null) return explicit;
+-    return if (try @import("image_mode.zig").enabled(raw)) @as(VisionOpen, .{}) else null;
++    if (!try @import("image_mode.zig").enabled(raw)) return null;
++    var limits: VisionOpen = .{ .max_images = (@import("vision/prep.zig").Settings{}).max_images };
++    if (max_images) |text| {
++        const trimmed = std.mem.trim(u8, text, " \t\r\n");
++        if (trimmed.len > 0) limits.max_images = std.fmt.parseInt(u32, trimmed, 10) catch return error.BadVisionBootSettings;
++    }
++    if (limits.max_images == 0) return error.BadVisionBootSettings;
++    return limits;
+ }
+diff --git a/zig/src/families/deepseek_v41/vision_boot_test.zig b/zig/src/families/deepseek_v41/vision_boot_test.zig
+index 811e402fef8d3b472a2614125553baf6a8c4f5da..97143ca3bde31d19c36f5a0457da65708cdf57a4 100644
+--- a/zig/src/families/deepseek_v41/vision_boot_test.zig
++++ b/zig/src/families/deepseek_v41/vision_boot_test.zig
+@@ -109,12 +109,22 @@ test "vision boot propagates link failures and legacy native is root-selectable"
+     try t.expectError(error.PeerClosed, boot.select(&failed, null));
+     failed.rank = 1;
+     try t.expectError(error.PeerClosed, boot.select(&failed, null));
+-    const native = (try boot.legacy(null, " Native \n")).?;
++    const native = (try boot.legacy(null, " Native \n", null)).?;
+     try t.expect(!native.image_tokens_set);
+-    try t.expect(try boot.legacy(null, null) == null);
+-    try t.expect(try boot.legacy(null, "reject") == null);
+-    try t.expect(try boot.legacy(null, "placeholder") == null);
+-    try t.expectError(error.BadImagesMode, boot.legacy(null, "on"));
+-    const explicit = (try boot.legacy(.{ .image_tokens = 256 }, "bad setting")).?;
++    try t.expect(try boot.legacy(null, null, null) == null);
++    try t.expect(try boot.legacy(null, "reject", null) == null);
++    try t.expect(try boot.legacy(null, "placeholder", null) == null);
++    try t.expectError(error.BadImagesMode, boot.legacy(null, "on", null));
++    const explicit = (try boot.legacy(.{ .image_tokens = 256 }, "bad setting", "0")).?;
+     try t.expectEqual(@as(u32, 256), explicit.image_tokens);
+ }
++
++test "vision boot legacy native keeps the published eight images a request and its override" {
++    // The published engine admits 8 images a request under TF_DSV41_IMAGES=native; Open.vision's generic default is 4.
++    try t.expectEqual(@as(u32, 8), (try boot.legacy(null, "native", null)).?.max_images);
++    try t.expectEqual(@as(u32, 8), (try boot.legacy(null, "native", " ")).?.max_images);
++    try t.expectEqual(@as(u32, 2), (try boot.legacy(null, "native", "2")).?.max_images);
++    try t.expectError(error.BadVisionBootSettings, boot.legacy(null, "native", "0"));
++    try t.expectError(error.BadVisionBootSettings, boot.legacy(null, "native", "many"));
++    try t.expect(try boot.legacy(null, "reject", "2") == null);
++}

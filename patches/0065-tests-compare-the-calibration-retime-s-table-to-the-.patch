@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 23:05:09 +0700
+Subject: [PATCH 65/72] tests: compare the calibration retime's table to the
+ spiked one instead of an assumed envelope value
+
+The built table does not carry a burst row's median unchanged to the wider rows, so the test now
+checks that the burst lifts row 8 above its own time and that the retime lowers rows 6 and 8.
+
+(cherry picked from commit e6c963fde90c650d43284ad7878a06488f8b8e62)
+---
+ zig/src/families/deepseek_v41/draft/calib_measure_test.zig | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/draft/calib_measure_test.zig b/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
+index dfb604de87908cd2d677e9147752892a6801fcba..3a4e9cd5ffae558e7dca9eb785b23baa8e3ad63d 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
+@@ -226,7 +226,7 @@ test "retime: suspect rows cycled after one warm-up round, each kept the lower;
+     @memcpy(v[1..17], &spiked_s10);
+     var before = try p.build(gpa, &.{v});
+     defer before.deinit(gpa);
+-    try std.testing.expectEqual(spiked_s10[5], before.verify[7]); // the burst carried to row 8 by the envelope
++    try std.testing.expect(before.verify[7] > spiked_s10[7] + 1.0); // the burst lifts row 8 over its own time
+     var both: [cm.max_rows]f64 = undefined;
+     try p.combined(&.{v}, &both);
+     var flag: [cm.max_rows]bool = undefined;
+@@ -246,7 +246,7 @@ test "retime: suspect rows cycled after one warm-up round, each kept the lower;
+     try std.testing.expectEqual(@as(f64, 43.1), v[6]);
+     var after = try p.build(gpa, &.{v});
+     defer after.deinit(gpa);
+-    try std.testing.expect(after.verify[5] < 44.0 and after.verify[7] < 52.0);
++    try std.testing.expect(after.verify[5] < before.verify[5] - 10.0 and after.verify[7] < before.verify[7] - 1.0);
+     try p.combined(&.{v}, &both);
+     try std.testing.expectEqual(@as(usize, 0), try cm.suspects(gpa, &both, m.spike, &flag));
+ }

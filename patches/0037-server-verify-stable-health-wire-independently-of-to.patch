@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 00:28:50 +0700
+Subject: [PATCH 37/72] server: verify stable health wire independently of
+ totals
+
+Address eduffd's issue #50 using the current native health and wire contracts. Compare actual health bodies before and after independent metrics updates and preserve strict recorded-run totals. Exercise native wire normalization with negative changes instead of carrying the retired engine harness.
+---
+ tools/zig/wire_test.py         | 50 ++++++++++++++++++++++++++++++++++
+ zig/src/server/health_test.zig | 22 +++++++++++++++
+ 2 files changed, 72 insertions(+)
+ create mode 100644 tools/zig/wire_test.py
+
+diff --git a/tools/zig/wire_test.py b/tools/zig/wire_test.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8e0dfc17418ea2eb21ffb96c6f12560aa0660faf
+--- /dev/null
++++ b/tools/zig/wire_test.py
+@@ -0,0 +1,50 @@
++"""Native frozen-wire controls for issue 50; the retired Spark fixture is not imported."""
++from pathlib import Path
++import importlib.util
++import json
++import unittest
++
++ROOT = Path(__file__).resolve().parents[2]
++SPEC = importlib.util.spec_from_file_location("native_wire", ROOT / "zig/tests/server/wire.py")
++wire = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(wire)
++
++
++class HealthWireTest(unittest.TestCase):
++    def setUp(self):
++        path = ROOT / "zig/tests/server/golden/status/get-health.json"
++        self.reply = json.loads(path.read_text())["replies"][0]
++        self.reply["body"] = self.reply["body"].encode()
++        self.reply["interim"] = b""
++
++    def changed(self, body):
++        reply = dict(self.reply, body=json.dumps(body).encode())
++        reply["headers"] = [(k, str(len(reply["body"])) if k.lower() == "content-length" else v)
++                            for k, v in self.reply["headers"]]
++        return wire.normal(reply)
++
++    def test_native_health_fixture_has_no_historical_request_totals(self):
++        body = json.loads(self.reply["body"])
++        counters = {"requests", "requests_total", "prompt_tokens_total", "completion_tokens_total",
++                    "cached_tokens_total", "rounds_total", "drafted_total", "accepted_total"}
++        self.assertFalse(counters.intersection(body))
++        self.assertEqual(self.changed(body), wire.normal(self.reply))
++
++    def test_missing_malformed_and_nonvolatile_health_changes_remain_red(self):
++        original = json.loads(self.reply["body"])
++        for key, value in (("model", "wrong-model"), ("max_batch_size", "4"), ("live", None)):
++            with self.subTest(key=key):
++                changed = dict(original, **{key: value})
++                self.assertNotEqual(self.changed(changed), wire.normal(self.reply))
++        missing = dict(original)
++        del missing["status"]
++        self.assertNotEqual(self.changed(missing), wire.normal(self.reply))
++
++    def test_normalization_does_not_erase_usage_or_counting_regressions(self):
++        one = dict(self.reply, body=b'{"usage": {"prompt_tokens": 10}, "requests_total": 1}')
++        two = dict(self.reply, body=b'{"usage": {"prompt_tokens": 11}, "requests_total": 2}')
++        self.assertNotEqual(wire.normal(one)["body"], wire.normal(two)["body"])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/zig/src/server/health_test.zig b/zig/src/server/health_test.zig
+index f2c6620df8df44d4b35111f5f339fa8213135ae3..d5c03633236fb0199d6fb1801de8d1b2906baad6 100644
+--- a/zig/src/server/health_test.zig
++++ b/zig/src/server/health_test.zig
+@@ -555,4 +555,26 @@ test "benchmark group: HTTP manifest copies the loaded four-rank topology" {
+     const got = o.get("group").?.object;
+     try std.testing.expectEqualStrings("multi-node", got.get("category").?.string);
+     try std.testing.expect(got.get("nodes").?.array.items.len == 4);
++test "health wire stays independent of recorded-run totals while native counting remains exact" {
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var engine: Idle = .{};
++    var text: Bytes = .{};
++    const srv = try server.Server.init(std.testing.allocator, std.testing.io, engine.engine(), text.text(), .{ .served_name = "m", .model_ids = &.{"m"} }, null);
++    defer srv.deinit();
++    const before = try json.stringify(a, try status_routes.openHealth(srv, a, false), .{});
++    srv.metrics.note(srv.io, 101, 17, 7, 9, 4, 3, 1, null, null, null, null);
++    srv.metrics.note(srv.io, 23, 2, 5, 6, 2, 4, 1, null, null, null, null);
++    const after = try json.stringify(a, try status_routes.openHealth(srv, a, false), .{});
++    try std.testing.expectEqualStrings(before, after);
++    const parsed = try std.json.parseFromSliceLeaky(std.json.Value, a, after, .{});
++    for ([_][]const u8{ "requests", "requests_total", "prompt_tokens_total", "completion_tokens_total", "cached_tokens_total", "rounds_total", "drafted_total", "accepted_total" }) |field_name|
++        try std.testing.expect(!parsed.object.contains(field_name));
++    try std.testing.expectEqual(@as(u64, 124), srv.metrics.prompt);
++    try std.testing.expectEqual(@as(u64, 19), srv.metrics.cached);
++    try std.testing.expectEqual(@as(u64, 12), srv.metrics.generation);
++    try std.testing.expectEqual(@as(u64, 15), srv.metrics.drafted);
++    try std.testing.expectEqual(@as(u64, 6), srv.metrics.accepted);
++    try std.testing.expectEqual(@as(u64, 7), srv.metrics.rounds);
+ }

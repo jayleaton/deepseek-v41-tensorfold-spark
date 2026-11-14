@@ -3,6 +3,19 @@
 The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a) -> `da5ae43` (G16) -> `cd4245a`
 (G18) -> **`7bd2d67`** (G19). Each window's write-up is in [`docs/campaign/`](campaign/README.md).
 
+## Engine: the engine G serves (pin `6c4eeccda`)
+
+- **The recipe builds the engine the pair serves.** Upstream `f212eeabd` plus `patches/0001`-`0072` give `6c4eeccda`'s
+  content (24 comment lines reworded), 2,517 upstream commits newer than the previous pin. The compute lane and runner
+  now live in TensorFold's shared core; the profile's `TF_DSV41_*` names still work. `TF_DSV41_RUNNER_SPEC_HOLD` is
+  gone. The image gains the CUDA 13.3 forward-compatibility layer G serves on (`scripts/build-compat-image.sh`), and
+  the flash17 profile sets G's RoCE poller / stagger values and its draft acceptance log. See
+  [ENGINE](ENGINE.md#this-engine-against-the-previous-recipe-engine).
+- **The settings list missed names the engine composes through a family binding.** `scripts/engine_settings.py
+  generate` now follows a binding's prefix and alias names, bindings derived from them and knob groups that hand their
+  prefix on, so `TF_DSV41_RUNNER_CPUS` / `_NICE` and the `TF_DSV41_COMPUTE_LANE_RUNNER_*` names are listed (at the
+  previous pin it already listed all but the `CPUS` / `NICE` four).
+
 ## Bugs fixed
 
 - **A tool call to an undeclared name ended an agent's turn** (pin `12257eb51`). When the model called a tool the

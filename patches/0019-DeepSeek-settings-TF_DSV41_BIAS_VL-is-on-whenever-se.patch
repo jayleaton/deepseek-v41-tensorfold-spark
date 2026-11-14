@@ -1,0 +1,168 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 09:45:15 +0700
+Subject: [PATCH 19/72] DeepSeek settings: TF_DSV41_BIAS_VL is on whenever set,
+ as its reader takes it
+
+e17c6ff09 gave TF_DSV41_BIAS_VL a 0/1 flag row, but its one reader
+(env_validate.imageBiasEnv) selects the vision bias for any non-blank text,
+and the shipped default profile sets the checkpoint directory
+(TF_DSV41_BIAS_VL=/model). Every boot of that profile stopped with
+InvalidEnvironment before loading the model.
+
+A new `present` kind takes any text without control characters as on (1),
+blank or unset as off, so the row validates exactly what the reader uses.
+Tests cover /model, 0, 1 and words selecting the bias and control
+characters refusing; docs/profiles.md says the same.
+---
+ docs/profiles.md                              |  5 +++--
+ .../deepseek_v41/env_startup_test.zig         |  4 ++--
+ .../deepseek_v41/env_validate_test.zig        | 19 ++++++++++++++-----
+ zig/src/platform/environment.zig              | 10 +++++-----
+ zig/src/platform/environment_test.zig         |  2 +-
+ 5 files changed, 25 insertions(+), 15 deletions(-)
+
+diff --git a/docs/profiles.md b/docs/profiles.md
+index 52ca5bdd2d10c2b73a48d2d223716be6616ef264..7b52f7462d792fa0ae16e5094e9f6a7a1aa052d6 100644
+--- a/docs/profiles.md
++++ b/docs/profiles.md
+@@ -196,8 +196,9 @@ The table row, the batch reader and the planner use that list, and a host test k
+ Every floor reader shares its row's space trim and named refusal. The hard floor has one reader in the KV budget,
+ used by the pool, graph room, scheduler and prefill path; its unset value remains 4 GiB.
+ 
+-`BIAS_VL` retains its accepted presence forms: unset/blank off, while both `0` and `1` select vision bias.
+-Other text refuses. Engram queue depth remains 64 by default and permits 0 for serial reads. Reader threads
++`BIAS_VL` keeps its presence meaning: unset/blank is off, and any other text selects vision bias, including `0`,
++`1` and the checkpoint directory that shipped profiles name (`TF_DSV41_BIAS_VL=/model`); only control characters
++refuse. Engram queue depth remains 64 by default and permits 0 for serial reads. Reader threads
+ remain 16 by default and accept 0 through 32; larger values refuse instead of clamping. Generation streams
+ remain 1 by default.
+ 
+diff --git a/zig/src/families/deepseek_v41/env_startup_test.zig b/zig/src/families/deepseek_v41/env_startup_test.zig
+index 790af32cb8d596f30e8e892940660dea0b37e286..05d88adbc5dc88e7cf0a62088e998531bdc49995 100644
+--- a/zig/src/families/deepseek_v41/env_startup_test.zig
++++ b/zig/src/families/deepseek_v41/env_startup_test.zig
+@@ -107,7 +107,7 @@ test "DeepSeek strict env: shared floor, graph room and reader counts retain the
+     _ = env.setenv("TF_DSV41_FLOOR_HARD_GIB", "", 1);
+     try t.expectEqual(@as(f64, 4), try b.hardFloorGiB());
+     try t.expect(!try v.imageBiasEnv());
+-    for ([_][:0]const u8{ "0", "1", " 0 " }) |raw| {
++    for ([_][:0]const u8{ "0", "1", " 0 ", "/model", "on" }) |raw| {
+         _ = env.setenv("TF_DSV41_BIAS_VL", raw, 1);
+         try t.expect(try v.imageBiasEnv());
+     }
+@@ -115,7 +115,7 @@ test "DeepSeek strict env: shared floor, graph room and reader counts retain the
+         _ = env.setenv("TF_DSV41_BIAS_VL", raw, 1);
+         try t.expect(!try v.imageBiasEnv());
+     }
+-    _ = env.setenv("TF_DSV41_BIAS_VL", "on", 1);
++    _ = env.setenv("TF_DSV41_BIAS_VL", "/model\n", 1);
+     try t.expectError(error.InvalidEnvironment, v.imageBiasEnv());
+ }
+ 
+diff --git a/zig/src/families/deepseek_v41/env_validate_test.zig b/zig/src/families/deepseek_v41/env_validate_test.zig
+index 2234e65e32edb5deb1bc43cb3e9130205d804ce5..fb64f6234c28254e9cc7d0f937af1e463a9c894b 100644
+--- a/zig/src/families/deepseek_v41/env_validate_test.zig
++++ b/zig/src/families/deepseek_v41/env_validate_test.zig
+@@ -13,10 +13,11 @@ const Fixture = struct {
+     }
+ };
+ 
+-const Group = enum { switches, integers, reals, structured };
++const Group = enum { switches, integers, reals, structured, present };
+ 
+ fn group(r: e.Rule) Group {
+     if (r.kind == .flag or r.kind == .toggle) return .switches;
++    if (r.kind == .present) return .present;
+     if (e.isReal(r.kind)) return .reals;
+     return if (r.kind == .word or r.kind == .range or r.only.len > 0) .structured else .integers;
+ }
+@@ -35,20 +36,20 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
+     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
+ }
+ 
+-test "DeepSeek strict env: the shared table holds all 81 settings: 48 switches, 14 integers, 16 reals and 3 structured" {
+-    var counts: [4]usize = @splat(0);
++test "DeepSeek strict env: the shared table holds all 81 settings: 47 switches, 14 integers, 16 reals, 3 structured, 1 presence" {
++    var counts: [5]usize = @splat(0);
+     for (e.rules) |r| if (r.scope == .dsv41) {
+         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
+         counts[@backingInt(group(r))] += 1;
+     };
+-    try t.expectEqual([4]usize{ 48, 14, 16, 3 }, counts);
++    try t.expectEqual([5]usize{ 47, 14, 16, 3, 1 }, counts);
+ }
+ 
+ test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
+     for (e.rules) |r| if (r.scope == .dsv41) for ([_]?[]const u8{ null, "", " ", "\t", " \t\r\n" }) |raw| {
+         if (raw) |v| try check(r.name, v, true);
+         switch (group(r)) {
+-            .switches => for ([_]bool{ false, true }) |d| try t.expectEqual(d, try e.value(bool, r.name, raw, d)),
++            .switches, .present => for ([_]bool{ false, true }) |d| try t.expectEqual(d, try e.value(bool, r.name, raw, d)),
+             .reals => try t.expectEqual(@as(f64, 2), try e.value(f64, r.name, raw, 2)),
+             else => if (r.kind == .range) try t.expect(try e.range(r.name, raw) == null) else try t.expectEqual(@as(u64, 2), try e.value(u64, r.name, raw, 2)),
+         }
+@@ -117,6 +118,14 @@ test "DeepSeek strict env: layer ranges, row buckets and image modes refuse igno
+     for ([_][]const u8{ "nativee", "1" }) |raw| try check("TF_DSV41_IMAGES", raw, false);
+ }
+ 
++test "DeepSeek strict env: the vision bias is on whenever set, as its reader and the shipped profile's directory use it" {
++    for ([_][]const u8{ "/model", "1", "0", "on", " /model " }) |raw| {
++        try check("TF_DSV41_BIAS_VL", raw, true);
++        try t.expect(try e.value(bool, "TF_DSV41_BIAS_VL", raw, false));
++    }
++    for ([_][]const u8{ "/model\n", "/mo\x1bdel" }) |raw| try t.expectError(error.InvalidEnvironment, e.parse("TF_DSV41_BIAS_VL", raw));
++}
++
+ test "DeepSeek strict env: the row-cap list is exactly the batch's buckets" {
+     const only = e.rule("TF_DSV41_ROWS_CAP").only;
+     for (1..65) |n| {
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index b6030814308c6b35e7e1a3420d07a087d58a59fa..7a5f4965f5407e3e2d54cb30196bb332afd37f9d 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -4,7 +4,7 @@ const sys = @import("sys.zig");
+ 
+ pub const Error = error{InvalidEnvironment};
+ pub const Scope = enum { common, cuda, metal, xpu, slide, hooks, dsv41, gemma4, drama3 };
+-pub const Kind = enum { u32, u64, size, percent, positive, device, segments, mib, bit_width, word, prompt, flag, toggle, real, positive_real, signed_real, range, path };
++pub const Kind = enum { u32, u64, size, percent, positive, device, segments, mib, bit_width, word, prompt, flag, toggle, real, positive_real, signed_real, range, path, present };
+ pub const Rule = struct {
+     name: [:0]const u8,
+     scope: Scope,
+@@ -70,7 +70,7 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_DSV41_GRAPHS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_AOT_GUARD", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_ENGRAM_PREFETCH", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+-    .{ .name = "TF_DSV41_BIAS_VL", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1 (either selects the vision bias; unset or blank does not)" },
++    .{ .name = "TF_DSV41_BIAS_VL", .scope = .dsv41, .kind = .present, .trim = " ", .forms = "any text without control characters, such as 1 or the checkpoint directory (any of them selects the vision bias; unset or blank does not)" },
+     .{ .name = "TF_DSV41_FLOOR_PRICE", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SESSIONS", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SAMPLING", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+@@ -166,10 +166,10 @@ pub fn parse(name: []const u8, raw: ?[]const u8) Error!?u64 {
+         return error.InvalidEnvironment;
+     }
+     if (r.kind == .toggle) return toggle(r, text) orelse error.InvalidEnvironment;
+-    // a path travels as 0, its text read by `path`; the file itself is its reader's to check
+-    if (r.kind == .path) return if (for (text) |ch| {
++    // a path travels as 0 (`path` reads its text; the file is its reader's to check), a set `.present` row as 1
++    if (r.kind == .path or r.kind == .present) return if (for (text) |ch| {
+         if (ch < 0x20 or ch == 0x7f) break true;
+-    } else false) error.InvalidEnvironment else 0;
++    } else false) error.InvalidEnvironment else @as(u64, @intFromBool(r.kind == .present));
+     // a real travels as its f64 bits and a range as lo above hi; `value` and `range` decode them
+     if (isReal(r.kind)) return @bitCast(try real(r, text));
+     if (r.kind == .range) {
+diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
+index 50d31c66f68ff4bf735784d0b0c965125c89907b..7137ee8d30b477f6ccfa7d6d15a0998e78cf7510 100644
+--- a/zig/src/platform/environment_test.zig
++++ b/zig/src/platform/environment_test.zig
+@@ -17,7 +17,7 @@ const Env = struct {
+ test "environment: every strict reader refuses bad text before opening a model, naming value and accepted forms" {
+     for (e.rules) |r| {
+         try t.expectEqual(@as(?u64, null), try e.parse(r.name, null));
+-        const bad: []const []const u8 = if (r.kind == .path) &.{ "key\nfile", "key\x1b[2Kfile", "\x7f" } else if (e.isReal(r.kind)) &.{ "typo", "nan", "-inf", "1\nwrong" } else &.{ "typo", "-1", "18446744073709551616", "1\nwrong" };
++        const bad: []const []const u8 = if (r.kind == .path or r.kind == .present) &.{ "key\nfile", "key\x1b[2Kfile", "\x7f" } else if (e.isReal(r.kind)) &.{ "typo", "nan", "-inf", "1\nwrong" } else &.{ "typo", "-1", "18446744073709551616", "1\nwrong" };
+         for (bad) |raw| {
+             try t.expectError(error.InvalidEnvironment, e.parse(r.name, raw));
+             const why = (try e.refusal(a, Env{ .name = r.name, .raw = raw }, all)).?;

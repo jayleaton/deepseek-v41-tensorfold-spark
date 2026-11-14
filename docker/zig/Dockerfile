@@ -110,8 +110,10 @@ set -u
 need="libnccl.so.2 libibverbs.so.1 libcublas.so.13 libcublasLt.so.13 libtfgrammar.so libturbojpeg.so.0 libwebpdecoder.so.3"
 pins="8062c27c479c249292b48c4bc73af1deb22edee4dfff191fb48a7491ac506410  libcublas.so.13.6.0.2
 4198b8726952fbf25a4e78f07178d66509aca4919b7324e935fe3915bff3efc8  libcublasLt.so.13.6.0.2"
-# platform/optional_libraries.zig: HIP RCCL and FFmpeg video are other features, not requested by this image.
-optional=" librccl.so librccl.so.1 libtfvideo.so "
+# platform/optional_libraries.zig: features this CUDA image does not request. HIP (RCCL ranks, rocBLAS / hipBLASLt
+# projections, MIOpen convolutions, AOTriton attention), FFmpeg video inputs and PDFium PDF inputs (--vision-pdf).
+optional=" librccl.so librccl.so.1 librocblas.so librocblas.so.5 libhipblaslt.so libhipblaslt.so.1 libMIOpen.so \
+libMIOpen.so.1 libaotriton_v2.so.0.11.1 libtfvideo.so libpdfium.so "
 known=" libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 libcuda.so.1 libcublas.so libcublasLt.so $need "
 fail=0
 # Token boundaries keep the debug symbol video_library.soname from reading as library.so.
@@ -119,7 +121,7 @@ names=$(grep -aohE '\blib[A-Za-z0-9_]+\.so(\.[0-9]+)*\b' /opt/tensorfold/bin/* |
 echo "libproof: engine dlopen names: $names"
 for n in $names; do
     case "$known" in *" $n "*) continue ;; esac
-    case "$optional" in *" $n "*) echo "libproof: NOT_REQUESTED $n (HIP / video)" ;;
+    case "$optional" in *" $n "*) echo "libproof: NOT_REQUESTED $n (HIP / video / PDF)" ;;
         *) echo "libproof: UNCOVERED dlopen name $n"; fail=1 ;; esac
 done
 grep -aq 'libjpeg-turbo version 3.1.4.1 (build ' /opt/tensorfold/lib/libturbojpeg.so.0 \
