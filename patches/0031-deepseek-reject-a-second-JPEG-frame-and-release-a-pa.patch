@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 22:57:25 +0700
+Subject: [PATCH 31/72] deepseek: reject a second JPEG frame and release a
+ partial one
+
+A repeated SOF replaced the frame after allocating new coefficient images,
+leaking the old arrays and letting 13-byte headers amplify allocations.
+Refuse a second frame before allocating it, and free components already
+allocated when a later allocation in the same frame fails.
+---
+ zig/src/families/deepseek_v41/vision/jpeg.zig | 31 ++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision/jpeg.zig b/zig/src/families/deepseek_v41/vision/jpeg.zig
+index 798cc67ccbc1ceafe5abc23585a4413f8b7c59c1..6c2d8d64c53c0d304865e00ee08f0f270cc85119 100644
+--- a/zig/src/families/deepseek_v41/vision/jpeg.zig
++++ b/zig/src/families/deepseek_v41/vision/jpeg.zig
+@@ -203,7 +203,10 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!pixels.Ima
+         const seg = raw[at + 2 .. at + len];
+         at += len;
+         switch (m) {
+-            0xC0, 0xC1, 0xC2 => frame = try sof(gpa, seg, m == 0xC2, max_pixels),
++            0xC0, 0xC1, 0xC2 => {
++                if (frame != null) return error.BadJpeg; // one frame a container; a second would abandon the first
++                frame = try sof(gpa, seg, m == 0xC2, max_pixels);
++            },
+             0xC3, 0xC5...0xC7, 0xC9...0xCB, 0xCD...0xCF => return error.UnsupportedJpeg,
+             0xC4 => try dht(seg, &dc, &ac),
+             0xDB => try dqt(seg, &quant, &qset),
+@@ -253,6 +256,8 @@ fn sof(gpa: Allocator, s: []const u8, progressive: bool, max_pixels: u64) Error!
+     }
+     f.mcux = (w + 8 * @as(usize, f.hmax) - 1) / (8 * @as(usize, f.hmax));
+     f.mcuy = (h + 8 * @as(usize, f.vmax) - 1) / (8 * @as(usize, f.vmax));
++    var allocated: usize = 0;
++    errdefer for (f.comps[0..allocated]) |c| gpa.free(c.coef);
+     for (f.comps[0..nc]) |*c| {
+         c.bw = f.mcux * c.h;
+         c.bh = f.mcuy * c.v;
+@@ -261,6 +266,7 @@ fn sof(gpa: Allocator, s: []const u8, progressive: bool, max_pixels: u64) Error!
+         c.real_bw = (c.dw + 7) / 8;
+         c.real_bh = (c.dh + 7) / 8;
+         c.coef = try gpa.alloc(i16, c.bw * c.bh * 64);
++        allocated += 1;
+         @memset(c.coef, 0);
+     }
+     return f;
+@@ -544,3 +550,26 @@ test "an oversubscribed Huffman table is refused before its lookup is written" {
+     try std.testing.expectError(error.BadJpeg, decode(std.testing.allocator, &raw, 64 * 1024 * 1024));
+ }
+ 
++test "a second frame header is refused before it allocates another coefficient image" {
++    const sof_hdr = [_]u8{ 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x11, 0x00 };
++    const soi = [_]u8{ 0xff, 0xd8 };
++    const eoi = [_]u8{ 0xff, 0xd9 };
++    var raw: [30]u8 = undefined;
++    @memcpy(raw[0..2], &soi);
++    @memcpy(raw[2..15], &sof_hdr);
++    @memcpy(raw[15..28], &sof_hdr);
++    @memcpy(raw[28..30], &eoi);
++    var pool: [128]u8 align(16) = undefined; // exactly one 1x1 frame's coefficients
++    var fba = std.heap.FixedBufferAllocator.init(&pool);
++    try std.testing.expectError(error.BadJpeg, decode(fba.allocator(), &raw, 64 * 1024 * 1024));
++}
++
++fn sofOnce(a: Allocator, seg: []const u8) !void {
++    const f = try sof(a, seg, false, 64 * 1024 * 1024);
++    for (f.comps[0..f.nc]) |c| a.free(c.coef);
++}
++
++test "a frame releases its earlier components when a later allocation fails" {
++    const seg = [_]u8{ 8, 0, 1, 0, 1, 3, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0 };
++    try std.testing.checkAllAllocationFailures(std.testing.allocator, sofOnce, .{&seg});
++}

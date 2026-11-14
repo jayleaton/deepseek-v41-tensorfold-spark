@@ -1,0 +1,1448 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 18:39:17 +0700
+Subject: [PATCH 63/72] deepseek: keep a replicated mirror of each slot's first
+ compressed KV rows (TF_DSV41_KV_MIRROR)
+
+TF_DSV41_KV_MIRROR=<positions> keeps each slot's first compressed KV rows
+whole on every rank. Split KV stays on. A window whose program ends at or
+before the mirror reads it instead of exchanging rows, so the split-KV
+exchange (kx_dense / kx_union) and its early path are skipped. The
+condition uses the program's end (a graph bucket's end, or the replicated
+slot position for an eager window). Every rank decides alike, and no graph
+key, capture or bucket is added.
+
+Each compressed _kv_store (decode and prefill compress) is followed by a
+second store of the same rows into the mirror. Rows past the mirror go to a
+discard page. The store runs in every window while the knob is on, because
+row mode mixes slots. Session restores fill the mirror after syncTables:
+each rank gathers its owned rows, then an all-gather fills the slot's run.
+The rows are the same bytes as split KV's exchanged rows, read in the same
+entry order, so attention gives the same bits. Values round up to page
+times world. Setting it without KV split is refused. The boot check counts
+the mirror's bytes, and rank 0 logs them.
+
+Unset or 0 emits what H emits and allocates nothing. Host tests cover the
+knob, the layout, the fill and the emitted programs on and off.
+`tf-dsv41-test kv-mirror` compares attention through the mirror with split
+KV's exchanged rows on a GPU.
+
+Mechanism after Bertholomus's dsv41 replicated compressed-KV plane
+(model.zig), re-implemented here in bounded form; credited in docs/credits.md.
+
+Co-authored-by: bertholomus <311723197+bertholomus@users.noreply.github.com>
+---
+ docs/credits.md                               |   3 +
+ zig/src/families/deepseek_v41/block.zig       |   7 +
+ zig/src/families/deepseek_v41/block_attn.zig  |  43 ++-
+ .../deepseek_v41/block_prefill_attn.zig       |   1 +
+ zig/src/families/deepseek_v41/cuda_kv.zig     |  34 +-
+ .../families/deepseek_v41/cuda_kv_mirror.zig  | 110 ++++++
+ .../deepseek_v41/device_host_test.zig         |   1 +
+ zig/src/families/deepseek_v41/kv/kv.zig       |   2 +
+ zig/src/families/deepseek_v41/kv/mirror.zig   |  88 +++++
+ .../families/deepseek_v41/kv/mirror_test.zig  | 188 ++++++++++
+ .../families/deepseek_v41/kv_mirror_test.zig  | 332 ++++++++++++++++++
+ zig/src/families/deepseek_v41/rowmode.zig     |   7 +-
+ .../families/deepseek_v41/sessions_gpu.zig    |   1 +
+ zig/src/families/deepseek_v41/slots.zig       |   1 +
+ .../cuda/deepseek_v41/kv_mirror_check.zig     | 282 +++++++++++++++
+ zig/tests/cuda/dsv41_main.zig                 |   3 +
+ 16 files changed, 1091 insertions(+), 12 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/cuda_kv_mirror.zig
+ create mode 100644 zig/src/families/deepseek_v41/kv/mirror.zig
+ create mode 100644 zig/src/families/deepseek_v41/kv/mirror_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/kv_mirror_test.zig
+ create mode 100644 zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
+
+diff --git a/docs/credits.md b/docs/credits.md
+index 4ffc808a071840a32842b14a68ee1d0c40e5856c..542712377d81c4b765ced6ec8a12bd9e412f7edf 100644
+--- a/docs/credits.md
++++ b/docs/credits.md
+@@ -257,5 +257,8 @@ Some opt-in DeepSeek-V4.1 decode settings follow mechanisms in Bertholomus's (Al
+   launch either, as his merge's `rot` does (`Rot` in `zig/src/families/dsv41/tri_attn.zig`, `round.zig`). Here it
+   is a copy of the R1 split attention kernel whose merge re-reads its stored rows and rotates them as the rotation
+   launch's compiled code does.
++- `TF_DSV41_KV_MIRROR=<positions>` keeps each slot's first compressed KV rows whole on every rank, as his engine keeps
++  all compressed rows replicated in one shared plane with no exchange (`zig/src/families/dsv41/model.zig`). Here split
++  KV stays on, and windows ending inside the mirror read it instead of exchanging rows; the rows are the same bytes.
+ 
+ [bert-dsv41]: https://github.com/bertholomus/TensorFold/tree/a57deb9d470b27e1e3fab2a9494915a0049415aa
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 907aa4b65a0ae3d207436fcdfb8db269dec065a5..54bd03e1486c4074f4d01ed6b8322c5358f8bfc1 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -133,6 +133,9 @@ pub const Pool = struct {
+     early: bool = false,
+     /// split's union cap (TF_DSV41_KV_SPLIT_UNION_MIB): the prefill receive buffer's bytes
+     union_cap: i64 = 128 << 20,
++    /// TF_DSV41_KV_MIRROR (split): positions each slot keeps whole on every rank (0: off), its tensors' pages
++    mirror: i64 = 0,
++    mirror_pages: i64 = 0,
+     pub const page: i64 = 256;
+     pub const row_bytes: i64 = 584;
+     pub const ik_bytes: i64 = 132;
+@@ -483,6 +486,10 @@ pub const Emitter = struct {
+ 
+     pub const received = block_attn.received;
+     pub const exchange = block_attn.exchange;
++    pub const mirrorReads = block_attn.mirrorReads;
++    pub const mirrorRows = block_attn.mirrorRows;
++    pub const mirrorPaging = block_attn.mirrorPaging;
++    pub const mirrorStore = block_attn.mirrorStore;
+     pub const selection = block_index.selection;
+     pub const ticketLen = block_index.ticketLen;
+     pub const attnSplit = block_index.attnSplit;
+diff --git a/zig/src/families/deepseek_v41/block_attn.zig b/zig/src/families/deepseek_v41/block_attn.zig
+index 701031fb6a9d04b063442beae96dec32173e2727..66fd84d91f0c259a55a12fcbd61ff53437a504fa 100644
+--- a/zig/src/families/deepseek_v41/block_attn.zig
++++ b/zig/src/families/deepseek_v41/block_attn.zig
+@@ -41,8 +41,11 @@ pub fn pos(e: *Emitter) !Arg {
+ 
+ /// The KV store (_kv_store): the SWA ring or a compressed family (split KV: only the rows this rank owns).
+ pub fn kvStore(e: *Emitter, lat: Arg, src: u32, ratio: i64) !void {
+-    const rows = try e.pool(src, ratio);
+-    const pg = try e.paging(ratio, true);
++    return storeRows(e, lat, try e.pool(src, ratio), try e.paging(ratio, true), ratio);
++}
++
++/// `_kv_store` of the window's rows into `rows` through `pg`: the pool's store and the mirror's are one variant.
++fn storeRows(e: *Emitter, lat: Arg, rows: [2]Arg, pg: Paging, ratio: i64) !void {
+     try e.triton("_kv_store", .{ e.n, 1, 1 }, &.{
+         .{ .name = "LAT", .arg = lat },                                                          .{ .name = "l_stride", .arg = .{ .i = e.cfg.head_dim } },
+         .{ .name = "CS", .arg = try e.ropeTable() },                                             .{ .name = "cs_stride", .arg = .{ .i = 64 } },
+@@ -56,6 +59,31 @@ pub fn kvStore(e: *Emitter, lat: Arg, src: u32, ratio: i64) !void {
+     });
+ }
+ 
++/// TF_DSV41_KV_MIRROR: the window ends inside the mirror (graph programs at their bucket's end), so no exchange.
++pub fn mirrorReads(e: *const Emitter) bool {
++    const p = e.o.pool orelse return false;
++    return p.split and p.mirror > 0 and e.end() <= p.mirror;
++}
++
++/// TF_DSV41_KV_MIRROR: a source's mirror rows (values, scales), every slot's run of pages and the discard page.
++pub fn mirrorRows(e: *Emitter, L: u32, ratio: i64) ![2]Arg {
++    const rows = e.o.pool.?.mirror_pages * @divExact(Pool.page, ratio);
++    const role: calls.Role = .{ .buf = try e.fmt("s.kv.mc.L{d}", .{L}) };
++    return .{ try e.view(role, .u8, &.{ rows, 576 }, &.{ Pool.row_bytes, 1 }, 0), try e.view(role, .u8, &.{ rows, 8 }, &.{ Pool.row_bytes, 1 }, 576) };
++}
++
++/// The mirror's table ("s.kv.mt", fixed at boot): a slot's logical page to its mirror page, past the mirror discard.
++pub fn mirrorPaging(e: *Emitter, ratio: i64) !Paging {
++    return .{ .pt = try e.buf("s.kv.mt", .{}, .i32, &.{e.o.pool.?.pts}), .psh = Pool.shift(ratio), .vs = Pool.row_bytes, .ss = Pool.row_bytes };
++}
++
++/// TF_DSV41_KV_MIRROR: every window and segment also stores its compressed rows into the mirror (both ranks, all rows).
++pub fn mirrorStore(e: *Emitter, lat: Arg, src: u32, ratio: i64) !void {
++    const p = e.o.pool orelse return;
++    if (!p.split or p.mirror == 0) return;
++    return storeRows(e, lat, try e.mirrorRows(src, ratio), try e.mirrorPaging(ratio), ratio);
++}
++
+ pub fn paging(e: *Emitter, ratio: i64, store: bool) !Paging {
+     const p = e.o.pool orelse return .{ .pt = .none, .psh = 0, .vs = 576, .ss = 8 };
+     if (ratio == 0) return .{ .pt = .none, .psh = 0, .vs = 576, .ss = 8 };
+@@ -254,6 +282,7 @@ pub fn attention(e: *Emitter, L: u32) !void {
+             .{ .name = "c_stride", .arg = .{ .i = if (ratio == 2) cw else 0 } },              .{ .name = "SPLIT", .arg = .{ .b = ratio == 2 } },
+         });
+         try e.kvStore(lat, L, ratio);
++        try e.mirrorStore(lat, L, ratio);
+         const kp = try e.buf("L.ix_k", .{}, .bf16, &.{ n, ID });
+         try e.upstream(try e.fmt("L{d}.attn.ix_wk", .{L}), lat, hd, ID, kp);
+         const kpg = try e.paging(ratio, false);
+@@ -269,7 +298,9 @@ pub fn attention(e: *Emitter, L: u32) !void {
+         });
+     }
+     if (indexer) try e.index(L, if (e.o.r1) qa else qn, iw, qnorm);
+-    const early: ?Received = if (indexer and e.o.pool != null and e.o.pool.?.split and e.o.pool.?.early and (n <= 16 or e.o.rows))
++    // TF_DSV41_KV_MIRROR: inside the mirror split KV reads as replicated KV does (the mirror's table, no exchange)
++    const mirrored = e.mirrorReads();
++    const early: ?Received = if (indexer and !mirrored and e.o.pool != null and e.o.pool.?.split and e.o.pool.?.early and (n <= 16 or e.o.rows))
+         try e.exchange(kv_src.?, e.cfg.compressRatio(kv_src.?), (try e.selection(L))[0])
+     else
+         null;
+@@ -293,19 +324,19 @@ pub fn attention(e: *Emitter, L: u32) !void {
+         const src_ratio = e.cfg.compressRatio(kv_src.?);
+         const sel = try e.selection(e.cfg.indexSource(L).?);
+         cnt = sel[1];
+-        if (e.o.pool != null and e.o.pool.?.split) {
++        if (e.o.pool != null and e.o.pool.?.split and !mirrored) {
+             // split: an index layer's selection brings its rows over the exchange; its reuse layers read them too
+             const got = early orelse if (indexer) try e.exchange(kv_src.?, src_ratio, sel[0]) else try e.received(kv_src.?, src_ratio);
+             cv = got.cv;
+             cs = got.cs;
+             tok = got.tok;
+         } else {
+-            const p = try e.pool(kv_src.?, src_ratio);
++            const p = if (mirrored) try e.mirrorRows(kv_src.?, src_ratio) else try e.pool(kv_src.?, src_ratio);
+             cv = p[0];
+             cs = p[1];
+             tok = sel[0];
+             if (e.o.pool != null) {
+-                const pg = try e.paging(src_ratio, false);
++                const pg = if (mirrored) try e.mirrorPaging(src_ratio) else try e.paging(src_ratio, false);
+                 apg = .{ .pt = pg.pt, .psh = pg.psh, .vs = 0, .ss = 0 };
+             }
+         }
+diff --git a/zig/src/families/deepseek_v41/block_prefill_attn.zig b/zig/src/families/deepseek_v41/block_prefill_attn.zig
+index 49e10c8c65bce03f79a00bc3dfdd6b0a28ebb892..1eccc86b00cb272c4da0b400d6c8f9667474766f 100644
+--- a/zig/src/families/deepseek_v41/block_prefill_attn.zig
++++ b/zig/src/families/deepseek_v41/block_prefill_attn.zig
+@@ -102,6 +102,7 @@ pub fn compress(s: *Seg, L: u32, projection: Arg) !void {
+         .{ .name = "c_stride", .arg = .{ .i = 0 } },                                      .{ .name = "SPLIT", .arg = .{ .b = false } },
+     });
+     try s.kvStore(lat, try pool(e, L), ratio);
++    try e.mirrorStore(lat, L, ratio); // TF_DSV41_KV_MIRROR: the prompt's rows into the mirror too (decode reads them)
+     const kp = try e.buf("L.ix_k", .{}, .bf16, &.{ n, ID });
+     try s.proj(try e.fmt("L{d}.attn.ix_wk", .{L}), .strips, lat, hd, ID, kp);
+     const kpg = try e.paging(ratio, false);
+diff --git a/zig/src/families/deepseek_v41/cuda_kv.zig b/zig/src/families/deepseek_v41/cuda_kv.zig
+index 939bf77126ac0547e4d105d26d66448f60158792..dd1602ce9ce2d6814b20ed2d9dbbf317d32bfd92 100644
+--- a/zig/src/families/deepseek_v41/cuda_kv.zig
++++ b/zig/src/families/deepseek_v41/cuda_kv.zig
+@@ -12,6 +12,7 @@ const run = @import("run.zig");
+ const Config = @import("config.zig").Config;
+ 
+ const sessions = kv.sessions;
++const Mirror = @import("cuda_kv_mirror.zig").Mirror;
+ 
+ pub const Error = error{ PoolTooSmall, BadGlue, NoPool };
+ 
+@@ -30,6 +31,8 @@ pub const Options = struct {
+     resident: u64 = 0,
+     /// TF_DSV41_PF_4K / TF_DSV41_PF_TBO: a long prompt's prefill workspace; worst MemAvailable minus it clears floor
+     workspace: u64 = 0,
++    /// TF_DSV41_KV_MIRROR (split only): positions each slot also keeps whole on every rank (0: off)
++    mirror: u64 = 0,
+ };
+ 
+ /// TF_DSV41_POOL_TOKENS / TF_DSV41_KV_SPLIT / TF_DSV41_KV_SPLIT_UNION_MIB (null: no pool, the contiguous slot).
+@@ -37,10 +40,12 @@ pub fn optionsFromEnv(capacity: u64, world: u32) !?Options {
+     const tokens = (try @import("sys").environment.read(?u64, "TF_DSV41_POOL_TOKENS", null)) orelse return null;
+     const split = try @import("sys").environment.read(bool, "TF_DSV41_KV_SPLIT", false);
+     if (split and world < 2) return error.SplitNeedsTp;
++    const mirror = try kv.mirror.fromEnv(256, world);
++    if (mirror > 0 and !split) return error.MirrorNeedsSplit;
+     const mib = try @import("sys").environment.read(u64, "TF_DSV41_KV_SPLIT_UNION_MIB", 128);
+     // pool settings: rounded up to whole pages of every residue
+     const unit: u64 = 256 * @as(u64, world);
+-    return .{ .tokens = (tokens + unit - 1) / unit * unit, .split = split, .capacity = capacity, .union_cap = mib << 20 };
++    return .{ .tokens = (tokens + unit - 1) / unit * unit, .split = split, .capacity = capacity, .union_cap = mib << 20, .mirror = @min(mirror, (capacity + unit - 1) / unit * unit) };
+ }
+ 
+ /// The boot check's figures for the measured check at the end of boot (`afterBoot`).
+@@ -67,7 +72,7 @@ pub fn bootCheck(ctx: *const cuda.Context, cfg: *const Config, o: Options, rank:
+     var layout = try kv.Layout.fromConfig(cfg, .{ .split = o.split and world > 1 });
+     // Zig's terms, not the reference's: its plan holds from boot what a caching allocator takes while serving
+     var terms = try budget.zigFromEnv();
+-    terms.growth += @as(f64, @floatFromInt(o.resident)) / budget.GiB;
++    terms.growth += @as(f64, @floatFromInt(o.resident + mirrorBytes(&layout, o, world))) / budget.GiB;
+     const r = budget.serveCheck(knobs, .{ .rank = rank, .avail_gib = @as(f64, @floatFromInt(mi.available)) / budget.GiB, .terms = terms }, layout.pool(), world, o.tokens);
+     var buf: [1024]u8 = undefined;
+     if (!r.ok) {
+@@ -78,6 +83,13 @@ pub fn bootCheck(ctx: *const cuda.Context, cfg: *const Config, o: Options, rank:
+     return .{ .rank = rank, .at_check = r.avail_gib, .pool_gib = r.pool_gib, .pool_tokens = o.tokens, .bytes_a_token = r.bytes_a_token, .reserve = try budget.reserveFromEnv(), .dip = terms.dip, .hard = r.hard, .target = target, .workspace = o.workspace };
+ }
+ 
++/// TF_DSV41_KV_MIRROR's device bytes a rank (kv/mirror.zig), allocated with the pool; 0 when off.
++fn mirrorBytes(layout: *kv.Layout, o: Options, world: u32) u64 {
++    if (o.mirror == 0) return 0;
++    const g = kv.mirror.Geometry.of(o.mirror, 256, @max(o.slots, 1), world);
++    return g.bytes(layout.families(), 256, @intCast((o.capacity + 255) / 256));
++}
++
+ /// At boot's end: idle - dip >= the hard floor or the pool is refused; a 4K workspace past it warns (wsAgreed).
+ pub fn afterBoot(b: Boot) !void {
+     const budget = kv.budget;
+@@ -130,6 +142,8 @@ pub const Kv = struct {
+     /// a union's pinned staging: the selection read back, the tokens and rows sent up (reused after the next drain)
+     pin_sel: ?cuda.HostBuffer = null,
+     pin_up: ?cuda.HostBuffer = null,
++    /// TF_DSV41_KV_MIRROR: each slot's first positions of every source whole on this rank (null: off)
++    mirror: ?Mirror = null,
+ 
+     pub const Stats = struct { dense: u64 = 0, unions: u64 = 0, union_rows_max: u64 = 0, bytes: u64 = 0 };
+ 
+@@ -147,6 +161,11 @@ pub const Kv = struct {
+         k.dev = try kv.DevicePool.init(gpa, d, ctx, &k.pool, runner.stream, @intCast(k.slots.len), k.slot.max_pages);
+         errdefer k.dev.deinit();
+         k.ops = .{ .r = runner };
++        if (o.mirror > 0 and k.layout.opts.split) {
++            k.mirror = try Mirror.init(gpa, d, k, o.mirror);
++            if (k.rank == 0) std.log.info("[tensorfold] KV mirror: the first {d} positions of each slot whole on every rank, {d} MiB", .{ o.mirror, k.mirror.?.bytes() >> 20 });
++        }
++        errdefer if (k.mirror) |*m| m.deinit();
+         if (k.layout.opts.split) {
+             k.lens = try cuda.DeviceBuffer.alloc(d, 4 * @as(usize, world));
+             // the compact mode's transport agreement happens here, once, outside any graph
+@@ -197,6 +216,7 @@ pub const Kv = struct {
+         if (k.dedup) |*b| b.free();
+         if (k.pin_sel) |*b| b.free();
+         if (k.pin_up) |*b| b.free();
++        if (k.mirror) |*m| m.deinit();
+         k.dev.deinit();
+         k.pool.deinit();
+         k.gpa.free(k.slots);
+@@ -218,6 +238,8 @@ pub const Kv = struct {
+             .split = k.layout.opts.split,
+             .early = k.layout.opts.split and (try kv.split.earlyOn()),
+             .union_cap = @intCast(k.opts.union_cap),
++            .mirror = if (k.mirror) |m| @intCast(m.positions) else 0,
++            .mirror_pages = if (k.mirror) |m| m.geo.tensorPages() else 0,
+         };
+     }
+ 
+@@ -231,9 +253,15 @@ pub const Kv = struct {
+         }
+         try k.external(r, plan, "s.kv.pt", k.dev.table);
+         try k.external(r, plan, "s.kv.ct", k.dev.local);
++        if (k.mirror) |*m| try m.bind(k, r, plan);
+     }
+ 
+-    fn external(_: *Kv, r: *run.Runner, plan: *const buffers.Plan, role: []const u8, b: cuda.DeviceBuffer) !void {
++    /// After a restore (every rank, the leader's order): the slot's mirror from its owners' pages; nothing when off.
++    pub fn mirrorFill(k: *Kv) !void {
++        if (k.mirror) |*m| try m.fill(k);
++    }
++
++    pub fn external(_: *Kv, r: *run.Runner, plan: *const buffers.Plan, role: []const u8, b: cuda.DeviceBuffer) !void {
+         if (plan.sizes.get(role)) |need| if (need > b.len) return error.PoolTooSmall;
+         try r.external(role, b.ptr);
+     }
+diff --git a/zig/src/families/deepseek_v41/cuda_kv_mirror.zig b/zig/src/families/deepseek_v41/cuda_kv_mirror.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..f949d6c746a5b6cbbbbdc3ab3b0f160e6189fa56
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/cuda_kv_mirror.zig
+@@ -0,0 +1,110 @@
++//! TF_DSV41_KV_MIRROR on the device: a mirror tensor a KV source, the fixed mirror table, a restored slot's fill.
++
++const std = @import("std");
++const cuda = @import("cuda");
++const kv = @import("kv");
++const buffers = @import("buffers.zig");
++const run = @import("run.zig");
++const Kv = @import("cuda_kv.zig").Kv;
++
++/// log2 of a family's rows a page
++fn shift(f: kv.sessions.Family, page: u32) u32 {
++    return std.math.log2_int(u32, f.pageRows(page));
++}
++
++pub const Mirror = struct {
++    gpa: std.mem.Allocator,
++    positions: u64,
++    geo: kv.mirror.Geometry,
++    /// a tensor a KV source (the layout's order), zeroed: every slot's run of pages, then the discard page
++    tensors: []cuda.DeviceBuffer,
++    /// int32 [slots, pts] ("s.kv.mt"), written once at boot
++    table: cuda.DeviceBuffer,
++    /// a fill's row lists (a source's at i x stride u32s) and one source's send rows
++    phys: cuda.DeviceBuffer,
++    send: cuda.DeviceBuffer,
++    stride: u32,
++
++    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, k: *Kv, positions: u64) !Mirror {
++        const page = k.pool.page;
++        const geo = kv.mirror.Geometry.of(positions, page, @intCast(k.slots.len), k.world);
++        const fams = k.layout.families();
++        const ns = k.layout.nsources;
++        const stream = k.runner.stream;
++        const tensors = try gpa.alloc(cuda.DeviceBuffer, ns);
++        errdefer gpa.free(tensors);
++        var made: usize = 0;
++        errdefer for (tensors[0..made]) |*b| b.free();
++        var stride: u32 = 0;
++        var rb: u32 = 0;
++        for (k.layout.sources[0..ns], tensors) |L, *t| {
++            const f = fams[k.layout.compOf(L).?];
++            t.* = try cuda.DeviceBuffer.alloc(d, @intCast(@as(u64, geo.tensorPages()) * f.pageBytes(page)));
++            made += 1;
++            try t.fill8(0, stream.handle);
++            stride = @max(stride, geo.fillRows(shift(f, page)));
++            rb = @max(rb, f.row_bytes);
++        }
++        const host = try gpa.alloc(i32, @as(usize, geo.slots) * k.slot.max_pages);
++        defer gpa.free(host);
++        geo.table(k.slot.max_pages, host);
++        var table = try cuda.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(host));
++        errdefer table.free();
++        var phys = try cuda.DeviceBuffer.alloc(d, @max(256, 4 * @as(usize, ns) * stride));
++        errdefer phys.free();
++        var send = try cuda.DeviceBuffer.alloc(d, @max(256, @as(usize, stride) * rb));
++        errdefer send.free();
++        // the fills ran on the compute stream (as DevicePool.init): done before any window reads the mirror
++        try stream.synchronize();
++        return .{ .gpa = gpa, .positions = positions, .geo = geo, .tensors = tensors, .table = table, .phys = phys, .send = send, .stride = stride };
++    }
++
++    pub fn deinit(m: *Mirror) void {
++        for (m.tensors) |*b| b.free();
++        m.gpa.free(m.tensors);
++        m.table.free();
++        m.phys.free();
++        m.send.free();
++    }
++
++    /// Device bytes on this rank (the boot log's figure).
++    pub fn bytes(m: *const Mirror) u64 {
++        var b: u64 = m.table.len + m.phys.len + m.send.len;
++        for (m.tensors) |t| b += t.len;
++        return b;
++    }
++
++    /// The window roles of the mirror ("s.kv.mc.L<src>", "s.kv.mt") at its buffers, as Kv.bind binds the pool's.
++    pub fn bind(m: *const Mirror, k: *Kv, r: *run.Runner, plan: *const buffers.Plan) !void {
++        var nb: [64]u8 = undefined;
++        for (k.layout.sources[0..k.layout.nsources], m.tensors) |L, t| try k.external(r, plan, try std.fmt.bufPrint(&nb, "s.kv.mc.L{d}", .{L}), t);
++        try k.external(r, plan, "s.kv.mt", m.table);
++    }
++
++    /// The current slot's run from its owners' stored pages (a restore): a gather and all-gather a source, all ranks.
++    pub fn fill(m: *Mirror, k: *Kv) !void {
++        const r = k.runner;
++        const page = k.pool.page;
++        const fams = k.layout.families();
++        const ns = k.layout.nsources;
++        const local = try m.gpa.alloc(u32, m.geo.pages);
++        defer m.gpa.free(local);
++        for (local, 0..) |*x, p| x.* = k.slot.localTableAt(@intCast(p));
++        const host = try m.gpa.alloc(u32, @as(usize, ns) * m.stride);
++        defer m.gpa.free(host);
++        @memset(host, 0);
++        for (k.layout.sources[0..ns], 0..) |L, i| {
++            const sh = shift(fams[k.layout.compOf(L).?], page);
++            m.geo.fillPhys(k.rank, sh, local, host[i * m.stride ..][0..m.geo.fillRows(sh)]);
++        }
++        // a restore is outside any round: drained, so no earlier fill's gather still reads the lists
++        try r.stream.synchronize();
++        try m.phys.upload(0, std.mem.sliceAsBytes(host));
++        for (k.layout.sources[0..ns], m.tensors, 0..) |L, t, i| {
++            const c = k.layout.compOf(L).?;
++            const f = fams[c];
++            const at = @as(u64, k.slot.id) * m.geo.pages * f.pageBytes(page);
++            try k.x.unionBlock(k.dev.tensors[c].ptr, f.row_bytes, m.phys.ptr + 4 * i * m.stride, m.geo.fillRows(shift(f, page)), m.send.ptr, t.ptr + at, r.stream.handle);
++        }
++    }
++};
+diff --git a/zig/src/families/deepseek_v41/device_host_test.zig b/zig/src/families/deepseek_v41/device_host_test.zig
+index 6c02e724b319ca8d8392d1d4bc536773b2e41e18..f5d08fcd1f65b6751034cbc5534c3ac3fbe30a3a 100644
+--- a/zig/src/families/deepseek_v41/device_host_test.zig
++++ b/zig/src/families/deepseek_v41/device_host_test.zig
+@@ -12,6 +12,7 @@ test {
+     _ = @import("branches_test.zig");
+     _ = @import("aot_needs_test.zig");
+     _ = @import("kx_early_test.zig");
++    _ = @import("kv_mirror_test.zig"); // TF_DSV41_KV_MIRROR on the decode and prefill emitters
+ }
+ 
+ test {
+diff --git a/zig/src/families/deepseek_v41/kv/kv.zig b/zig/src/families/deepseek_v41/kv/kv.zig
+index 361c875e5e89014e9517568aeca9438539ff776a..fc94ff527104e1d9286165e87fac4fbf0c7d5b36 100644
+--- a/zig/src/families/deepseek_v41/kv/kv.zig
++++ b/zig/src/families/deepseek_v41/kv/kv.zig
+@@ -4,6 +4,7 @@ pub const sessions = @import("sessions");
+ pub const layout = @import("layout.zig");
+ pub const Layout = layout.Layout;
+ pub const split = @import("split.zig");
++pub const mirror = @import("mirror.zig");
+ pub const budget = @import("budget.zig");
+ pub const device = @import("device.zig");
+ pub const DevicePool = device.DevicePool;
+@@ -15,6 +16,7 @@ test {
+     _ = @import("resume_host_test.zig");
+     _ = layout;
+     _ = split;
++    _ = mirror;
+     _ = budget;
+     _ = device;
+     _ = @import("split_test.zig");
+diff --git a/zig/src/families/deepseek_v41/kv/mirror.zig b/zig/src/families/deepseek_v41/kv/mirror.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..e7e5917787d2914a094a8dbd12ddf001cb49523a
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv/mirror.zig
+@@ -0,0 +1,88 @@
++//! TF_DSV41_KV_MIRROR: each slot's first positions of every split comp family kept whole on each rank (layout).
++
++const std = @import("std");
++const sessions = @import("sessions");
++
++pub const env = "TF_DSV41_KV_MIRROR";
++
++pub const Error = error{BadMirror};
++
++/// The knob's positions, rounded up to whole pages of every residue (page x world); unset, blank or 0: off.
++pub fn parse(text: ?[]const u8, page: u32, world: u32) Error!u64 {
++    const v = std.mem.trim(u8, text orelse return 0, " \t");
++    if (v.len == 0) return 0;
++    const n = std.fmt.parseInt(u64, v, 10) catch return error.BadMirror;
++    if (n > 1 << 40 or world == 0) return error.BadMirror;
++    const unit = @as(u64, page) * world;
++    return (n + unit - 1) / unit * unit;
++}
++
++/// The knob from the environment (positions, 0: off).
++pub fn fromEnv(page: u32, world: u32) Error!u64 {
++    const raw: []const u8 = if (std.c.getenv(env)) |v| std.mem.span(v) else return 0;
++    return parse(raw, page, world) catch |e| {
++        if (!@import("builtin").is_test) std.log.err("[tensorfold] {s}={s}: positions each slot mirrors (0: off)", .{ env, raw });
++        return e;
++    };
++}
++
++/// A family's mirror: each slot's run of `pages` pages (owner-major: an all-gather's order), then one discard page.
++pub const Geometry = struct {
++    slots: u32,
++    /// logical pages a slot mirrors (a multiple of world)
++    pages: u32,
++    world: u32,
++
++    pub fn of(positions: u64, page: u32, slots: u32, world: u32) Geometry {
++        return .{ .slots = slots, .pages = @intCast(positions / page), .world = world };
++    }
++
++    /// Pages a family's mirror tensor holds: every slot's run, then the discard page (rows past the mirror).
++    pub fn tensorPages(g: Geometry) u32 {
++        return g.slots * g.pages + 1;
++    }
++
++    pub fn discard(g: Geometry) u32 {
++        return g.slots * g.pages;
++    }
++
++    /// Slot s's mirror page of logical page p: owner p mod W's part of the run at turn p / W; past it the discard page.
++    pub fn pageOf(g: Geometry, s: u32, p: u32) u32 {
++        if (p >= g.pages) return g.discard();
++        return s * g.pages + (p % g.world) * (g.pages / g.world) + p / g.world;
++    }
++
++    /// The device table int32 [slots, pts] ("s.kv.mt"): the PT `_kv_store` writes and the attention reads through.
++    pub fn table(g: Geometry, pts: u32, out: []i32) void {
++        for (0..g.slots) |s| for (0..pts) |p| {
++            out[s * pts + p] = @intCast(g.pageOf(@intCast(s), @intCast(p)));
++        };
++    }
++
++    /// Rows a rank sends in a fill: its pages of the run, whole; owner o's land at o x this in the slot's run.
++    pub fn fillRows(g: Geometry, psh: u32) u32 {
++        return (g.pages / g.world) << @intCast(psh);
++    }
++
++    /// A fill's row list: logical pages rank, rank + W, ... of the run through the slot's split table `local`.
++    pub fn fillPhys(g: Geometry, rank: u32, psh: u32, local: []const u32, out: []u32) void {
++        const q = @as(u32, 1) << @intCast(psh);
++        for (0..g.pages / g.world) |j| {
++            const lp = local[rank + g.world * @as(u32, @intCast(j))];
++            for (0..q) |i| out[j * q + i] = (lp << @intCast(psh)) | @as(u32, @intCast(i));
++        }
++    }
++
++    /// A rank's device bytes: each split comp family's mirror tensor and the table (pts pages a slot).
++    pub fn bytes(g: Geometry, families: []const sessions.Family, page: u32, pts: u32) u64 {
++        var b: u64 = 4 * @as(u64, g.slots) * pts;
++        for (families) |f| if (f.split) {
++            b += @as(u64, g.tensorPages()) * f.pageBytes(page);
++        };
++        return b;
++    }
++};
++
++test {
++    _ = @import("mirror_test.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/kv/mirror_test.zig b/zig/src/families/deepseek_v41/kv/mirror_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf0625dc5b19b028636daf6dbf2cdaf125815bc6
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv/mirror_test.zig
+@@ -0,0 +1,188 @@
++//! TF_DSV41_KV_MIRROR on a host model of W ranks: mirror rows equal split KV's gathered rows; its fill, the stores.
++
++const std = @import("std");
++const testing = std.testing;
++const mirror = @import("mirror.zig");
++const split = @import("split.zig");
++const layout = @import("layout.zig");
++const Geometry = mirror.Geometry;
++
++test "kv mirror: the knob unset, blank or 0 is off; positions round up to whole pages of every residue" {
++    try testing.expectEqual(@as(u64, 0), try mirror.parse(null, 256, 2));
++    try testing.expectEqual(@as(u64, 0), try mirror.parse(" ", 256, 2));
++    try testing.expectEqual(@as(u64, 0), try mirror.parse("0", 256, 2));
++    try testing.expectEqual(@as(u64, 512), try mirror.parse("1", 256, 2));
++    try testing.expectEqual(@as(u64, 2048), try mirror.parse(" 2048 ", 256, 2));
++    try testing.expectEqual(@as(u64, 2560), try mirror.parse("2049", 256, 2));
++    try testing.expectEqual(@as(u64, 2304), try mirror.parse("2049", 256, 3));
++    for ([_][]const u8{ "-1", "on", "1e3", "2048 rows", "0x800", "99999999999999" }) |v|
++        try testing.expectError(error.BadMirror, mirror.parse(v, 256, 2));
++}
++
++test "kv mirror: each slot's run is owner-major, every page past it the discard page; the release's bytes" {
++    const g = Geometry.of(4096, 256, 3, 2);
++    try testing.expectEqual(@as(u32, 16), g.pages);
++    try testing.expectEqual(@as(u32, 49), g.tensorPages());
++    var seen: [48]bool = @splat(false);
++    for (0..3) |s| for (0..16) |p| {
++        const m = g.pageOf(@intCast(s), @intCast(p));
++        try testing.expect(m >= s * 16 and m < (s + 1) * 16 and !seen[m]);
++        seen[m] = true;
++    };
++    try testing.expectEqual(@as(u32, 16 + 8 + 1), g.pageOf(1, 3)); // owner 1, turn 1
++    try testing.expectEqual(g.discard(), g.pageOf(2, 16));
++    var tab: [3 * 20]i32 = undefined;
++    g.table(20, &tab);
++    try testing.expectEqual(@as(i32, 48), tab[2 * 20 + 19]);
++    try testing.expectEqual(@as(i32, 32), tab[2 * 20]);
++    // the release's comp families (three ratio 2, one ratio 1): 4096 x 1,460 B a slot, plus the discard pages
++    var l = try layout.Layout.fromConfig(layout.Release{}, .{ .split = true });
++    const one = Geometry.of(4096, 256, 1, 2);
++    const want: u64 = 4 * 20 + 17 * (3 * 128 + 256) * 584;
++    try testing.expectEqual(want, one.bytes(l.families(), 256, 20));
++}
++
++/// W ranks of split storage for `slots` slots of `pts` logical pages (page rows 1 << psh), rows of seeded bytes.
++const Model = struct {
++    world: u32,
++    rank_rows: [3][]u8,
++    /// [rank][slots x pts] split tables: a rank's local page, or its discard page for the others' pages
++    tables: [3][]i32,
++    /// every slot's logical rows, [slots, pts << psh, rb]
++    rows: []u8,
++    slots: u32,
++    pts: u32,
++    psh: u5,
++    rb: u32,
++
++    fn init(a: std.mem.Allocator, rnd: std.Random, world: u32, slots: u32, pts: u32, psh: u5, rb: u32) !Model {
++        var m: Model = .{ .world = world, .rank_rows = undefined, .tables = undefined, .rows = undefined, .slots = slots, .pts = pts, .psh = psh, .rb = rb };
++        const q = @as(usize, 1) << psh;
++        m.rows = try a.alloc(u8, @as(usize, slots) * pts * q * rb);
++        rnd.bytes(m.rows);
++        const owned = @as(usize, slots) * ((pts + world - 1) / world);
++        for (0..world) |o| {
++            // local pages in a shuffled order, then the discard page (junk: the others' rows land there)
++            m.rank_rows[o] = try a.alloc(u8, (owned + 1) * q * rb);
++            rnd.bytes(m.rank_rows[o]);
++            m.tables[o] = try a.alloc(i32, @as(usize, slots) * pts);
++            const order = try a.alloc(u32, owned);
++            for (order, 0..) |*x, i| x.* = @intCast(i);
++            rnd.shuffle(u32, order);
++            var next: usize = 0;
++            for (0..slots) |s| for (0..pts) |p| {
++                const at = s * pts + p;
++                if (p % world != o) {
++                    m.tables[o][at] = @intCast(owned);
++                    continue;
++                }
++                const lp = order[next];
++                next += 1;
++                m.tables[o][at] = @intCast(lp);
++                @memcpy(m.rank_rows[o][lp * q * rb ..][0 .. q * rb], m.rows[at * q * rb ..][0 .. q * rb]);
++            };
++        }
++        return m;
++    }
++
++    fn row(m: *const Model, s: usize, t: usize) []const u8 {
++        const q = @as(usize, 1) << m.psh;
++        return m.rows[(s * m.pts * q + t) * m.rb ..][0..m.rb];
++    }
++};
++
++/// The mirror `_kv_store` leaves: every slot's logical row through the mirror table (rows past it on the discard page).
++fn stored(a: std.mem.Allocator, m: *const Model, g: Geometry) ![]u8 {
++    const q = @as(usize, 1) << m.psh;
++    const out = try a.alloc(u8, g.tensorPages() * q * m.rb);
++    @memset(out, 0);
++    for (0..m.slots) |s| for (0..m.pts * q) |t| {
++        const pg = g.pageOf(@intCast(s), @intCast(t >> m.psh));
++        if (pg == g.discard()) continue;
++        @memcpy(out[(pg * q + t % q) * m.rb ..][0..m.rb], m.row(s, t));
++    };
++    return out;
++}
++
++test "kv mirror: a restore's fill (each rank's run gathered, all-gathered) is the stores' mirror, byte for byte" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var prng = std.Random.DefaultPrng.init(0x5151);
++    for ([_][4]u32{ .{ 2, 3, 10, 7 }, .{ 2, 2, 8, 8 }, .{ 3, 2, 7, 7 } }) |c| {
++        const world = c[0];
++        const m = try Model.init(a, prng.random(), world, c[1], c[2], @intCast(c[3]), 40);
++        const g = Geometry.of(@as(u64, 2 * world) * 256, 256, m.slots, world);
++        const want = try stored(a, &m, g);
++        var hk: split.HostKernels = .{};
++        const kern = hk.kernels();
++        const rows = g.fillRows(m.psh);
++        const run_bytes = rows * world * m.rb;
++        for (0..m.slots) |s| {
++            const recv = try a.alloc(u8, run_bytes);
++            for (0..world) |o| {
++                const local = try a.alloc(u32, g.pages);
++                for (local, 0..) |*x, p| x.* = @intCast(m.tables[o][s * m.pts + p]);
++                const phys = try a.alloc(u32, rows);
++                g.fillPhys(@intCast(o), m.psh, local, phys);
++                // the gather into send, then the all-gather: owner o's rows at o x rows
++                const send = recv[o * rows * m.rb ..][0 .. rows * m.rb];
++                try kern.vtable.gather(kern.ptr, @intFromPtr(m.rank_rows[o].ptr), m.rb, @intFromPtr(phys.ptr), rows, @intFromPtr(send.ptr), null);
++            }
++            try testing.expectEqualSlices(u8, want[s * run_bytes ..][0..run_bytes], recv);
++        }
++    }
++}
++
++test "kv mirror: every selected row read through the mirror table equals split KV's gathered row (dense and packed)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var prng = std.Random.DefaultPrng.init(0x7171);
++    const rnd = prng.random();
++    for ([_]u32{ 2, 3 }) |world| for ([_]bool{ false, true }) |stacked| {
++        const m = try Model.init(a, rnd, world, 4, 12, 7, 584);
++        const g = Geometry.of(@as(u64, 4 * world) * 256, 256, m.slots, world);
++        const mir = try stored(a, &m, g);
++        var mt: [4 * 12]i32 = undefined;
++        g.table(m.pts, &mt);
++        const R: u32 = 6;
++        const K: u32 = 64;
++        const n = R * K;
++        // selections inside the mirror: visible rows only (the emitter's condition), -1 padding
++        const visible = g.pages << m.psh;
++        const sel = try a.alloc(i32, n);
++        for (sel) |*x| x.* = if (rnd.uintLessThan(u32, 6) == 0) -1 else @intCast(rnd.uintLessThan(u32, visible));
++        const rslot = try a.alloc(i32, R);
++        for (rslot) |*x| x.* = if (stacked) @intCast(rnd.uintLessThan(u32, m.slots)) else 0;
++        var hk: split.HostKernels = .{};
++        const kern = hk.kernels();
++        for ([_]bool{ false, true }) |packed_| {
++            const recv = try a.alloc(u8, world * n * m.rb);
++            const tok = try a.alloc(i32, n);
++            for (0..world) |o| {
++                const send = try a.alloc(u8, n * m.rb);
++                const lens = try a.alloc(i32, world);
++                const d: split.DenseArgs = .{ .sel = @intFromPtr(sel.ptr), .rows = R, .k = K, .table = @intFromPtr(m.tables[o].ptr), .pts = if (stacked) m.pts else 0, .rslot = if (stacked) @intFromPtr(rslot.ptr) else 0, .psh = m.psh, .base = @intFromPtr(m.rank_rows[o].ptr), .row_bytes = m.rb, .world = world, .send = @intFromPtr(send.ptr), .tok = @intFromPtr(tok.ptr) };
++                if (packed_) try kern.vtable.pack.?(kern.ptr, split.PackArgs.of(d, @intCast(o), @intFromPtr(lens.ptr)), null) else try kern.vtable.dense(kern.ptr, d, null);
++                // the all-gather: rank o's shard at o x R x K rows (a packed shard's own rows first)
++                @memcpy(recv[o * n * m.rb ..][0 .. n * m.rb], send);
++            }
++            var compared: usize = 0;
++            for (0..n) |i| {
++                try testing.expectEqual(sel[i] < 0, tok[i] < 0);
++                if (sel[i] < 0) continue;
++                const t: u32 = @intCast(sel[i]);
++                const s: usize = @intCast(rslot[i / K]);
++                const q = @as(u32, 1) << m.psh;
++                // the attention's address through a page table: (pt[slot x pts + t >> psh] << psh) + (t & mask)
++                const phys = (@as(usize, @intCast(mt[s * m.pts + (t >> m.psh)])) << m.psh) + (t & (q - 1));
++                const got = recv[@as(usize, @intCast(tok[i])) * m.rb ..][0..m.rb];
++                try testing.expectEqualSlices(u8, got, mir[phys * m.rb ..][0..m.rb]);
++                try testing.expectEqualSlices(u8, m.row(s, t), got);
++                compared += 1;
++            }
++            try testing.expect(compared > n / 2);
++        }
++    };
++}
+diff --git a/zig/src/families/deepseek_v41/kv_mirror_test.zig b/zig/src/families/deepseek_v41/kv_mirror_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..484430786c808b8eb2dd65f070685cc632fac403
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/kv_mirror_test.zig
+@@ -0,0 +1,332 @@
++//! TF_DSV41_KV_MIRROR on the emitters: off unchanged; inside the mirror replicated reads, no exchange; stores always.
++
++const std = @import("std");
++const testing = std.testing;
++const block = @import("block.zig");
++const block_prefill = @import("block_prefill.zig");
++const calls = @import("block_calls.zig");
++const check = @import("calls_check.zig");
++const rowmode = @import("rowmode.zig");
++const aot_needs = @import("aot_needs.zig");
++const Config = @import("config.zig").Config;
++const kvs = @import("cuda_kv.zig");
++const env = @import("sys").env;
++
++const attn = "tf_dsv41_attn_cuda_v1.attn";
++const limit: i64 = 8192;
++const pages: i64 = @divExact(limit, block.Pool.page);
++const mirror: i64 = 2048;
++const slots: i64 = 3;
++
++fn splitPool(m: i64) block.Pool {
++    const mp: i64 = if (m > 0) slots * @divExact(m, block.Pool.page) + 1 else 0;
++    return .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages, .split = true, .mirror = m, .mirror_pages = mp };
++}
++
++/// KV_SPLIT=0's pool at the same tensor pages (the replicated path the mirror's reads take)
++fn pagedPool() block.Pool {
++    return .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages };
++}
++
++fn widths(a: std.mem.Allocator, cfg: *const Config) !block.Widths {
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    for (0..cfg.layers) |L| try w.gm.put(a, @intCast(L), .{ (1 << 4) | (1 << 6) | (1 << 8), (1 << 4) | (1 << 10) });
++    try w.dense.put(a, "dspark.main_proj", try w.k2("L40.attn.wkv"));
++    return w;
++}
++
++fn roleOf(x: calls.Arg) []const u8 {
++    return switch (x) {
++        .t, .opaque_table => |t| switch (t.role) {
++            .buf, .weight => |r| r,
++            .empty => "",
++        },
++        else => "",
++    };
++}
++
++fn argKey(a: std.mem.Allocator, out: *std.ArrayList(u8), x: calls.Arg) !void {
++    switch (x) {
++        .t, .opaque_table => |t| {
++            try out.print(a, " {s}:{t}@{d}[", .{ roleOf(x), t.dt, t.offset });
++            for (t.shape, t.stride) |n, s| try out.print(a, "{d}/{d},", .{ n, s });
++            try out.append(a, ']');
++        },
++        .list => |l| {
++            try out.appendSlice(a, " (");
++            for (l) |y| try argKey(a, out, y);
++            try out.append(a, ')');
++        },
++        .i => |v| try out.print(a, " {d}", .{v}),
++        .f => |v| try out.print(a, " {e}", .{v}),
++        .b => |v| try out.print(a, " {any}", .{v}),
++        .none => try out.appendSlice(a, " none"),
++    }
++}
++
++/// A call as compared here: name, grid, scope, streams, marks and every argument but those at `skip`.
++fn key(a: std.mem.Allocator, c: calls.Call, skip: []const usize) ![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    try out.print(a, "{s} {any} {t} side={any} fork={any} join={any} mark={d} wait={d} dside={any} djoin={any}", .{ c.name, c.grid, c.begin, c.side, c.fork, c.join, c.mark, c.wait, c.defer_side, c.defer_join });
++    for (c.args, 0..) |x, i| {
++        if (std.mem.indexOfScalar(usize, skip, i) != null) continue;
++        try out.print(a, " {s}=", .{x.name});
++        try argKey(a, &out, x.arg);
++    }
++    return out.items;
++}
++
++fn at(c: calls.Call, name: []const u8) !usize {
++    for (c.args, 0..) |x, i| if (std.mem.eql(u8, x.name, name)) return i;
++    return error.NoArgument;
++}
++
++fn compStore(c: calls.Call) !bool {
++    if (!std.mem.eql(u8, c.name, "_kv_store")) return false;
++    return c.args[try at(c, "RATIO")].arg.i > 0;
++}
++
++fn isKx(c: calls.Call) bool {
++    return c.glue and std.mem.startsWith(u8, c.name, "glue.kx_");
++}
++
++fn compAttn(c: calls.Call) bool {
++    return std.mem.eql(u8, c.name, attn) and roleOf(c.args[1].arg).len > 0;
++}
++
++/// The mirror's store right after the pool's: the same launch into "s.kv.mc.L<src>" through "s.kv.mt".
++fn checkStore(a: std.mem.Allocator, ps: calls.Call, ms: calls.Call, p: block.Pool) !void {
++    const v = try at(ms, "V");
++    const s = try at(ms, "S");
++    const pt = try at(ms, "PT");
++    try testing.expectEqualStrings(try key(a, ps, &.{ v, s, pt }), try key(a, ms, &.{ v, s, pt }));
++    const comp = roleOf(ps.args[v].arg);
++    try testing.expect(std.mem.startsWith(u8, comp, "s.kv.comp.L"));
++    const mc = roleOf(ms.args[v].arg);
++    try testing.expect(std.mem.startsWith(u8, mc, "s.kv.mc.L"));
++    try testing.expectEqualStrings(comp["s.kv.comp.L".len..], mc["s.kv.mc.L".len..]);
++    try testing.expectEqualStrings(mc, roleOf(ms.args[s].arg));
++    const ratio = ms.args[try at(ms, "RATIO")].arg.i;
++    try testing.expectEqual(p.mirror_pages * @divExact(block.Pool.page, ratio), ms.args[v].arg.t.shape[0]);
++    try testing.expectEqual(@as(i64, 0), ms.args[v].arg.t.offset);
++    try testing.expectEqual(@as(i64, 576), ms.args[s].arg.t.offset);
++    try testing.expectEqualStrings("s.kv.ct", roleOf(ps.args[pt].arg));
++    try testing.expectEqualStrings("s.kv.mt", roleOf(ms.args[pt].arg));
++    try testing.expectEqualSlices(i64, &.{p.pts}, ms.args[pt].arg.t.shape);
++}
++
++/// `cs` without the mirror's stores, each checked against the pool store before it; their count in `stores`.
++fn withoutStores(a: std.mem.Allocator, cs: []const calls.Call, p: block.Pool, stores: *usize) ![]const calls.Call {
++    var out: std.ArrayList(calls.Call) = .empty;
++    var i: usize = 0;
++    while (i < cs.len) : (i += 1) {
++        try out.append(a, cs[i]);
++        if (!try compStore(cs[i])) continue;
++        try testing.expect(i + 1 < cs.len);
++        try checkStore(a, cs[i], cs[i + 1], p);
++        stores.* += 1;
++        i += 1;
++    }
++    return out.items;
++}
++
++/// A compressed layer's attention inside the mirror: KV_SPLIT=0's read (the selection, paged) of the mirror's rows.
++fn checkRead(a: std.mem.Allocator, off: calls.Call, on: calls.Call, paged: calls.Call, p: block.Pool) !void {
++    try testing.expectEqualStrings("w.kx.recv", roleOf(off.args[1].arg));
++    try testing.expectEqualStrings(try key(a, off, &.{ 1, 2, 3, 11, 20 }), try key(a, on, &.{ 1, 2, 3, 11, 20 }));
++    try testing.expectEqualStrings(try key(a, paged, &.{ 1, 2, 11 }), try key(a, on, &.{ 1, 2, 11 }));
++    const comp = roleOf(paged.args[1].arg);
++    const mc = roleOf(on.args[1].arg);
++    try testing.expect(std.mem.startsWith(u8, comp, "s.kv.comp.L") and std.mem.startsWith(u8, mc, "s.kv.mc.L"));
++    try testing.expectEqualStrings(comp["s.kv.comp.L".len..], mc["s.kv.mc.L".len..]);
++    try testing.expectEqualStrings(mc, roleOf(on.args[2].arg));
++    try testing.expectEqual(@as(i64, 0), on.args[1].arg.t.offset);
++    try testing.expectEqual(@as(i64, 576), on.args[2].arg.t.offset);
++    const rows = on.args[1].arg.t.shape[0];
++    try testing.expect(rows == p.mirror_pages * 128 or rows == p.mirror_pages * 256);
++    try testing.expectEqualStrings("s.kv.pt", roleOf(paged.args[11].arg));
++    try testing.expectEqualStrings("s.kv.mt", roleOf(on.args[11].arg));
++    try testing.expect(on.args[20].arg.i > 0);
++}
++
++test "TF_DSV41_KV_MIRROR: inside the mirror no exchange and KV_SPLIT=0's reads; past it today's calls plus the stores" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cfg: Config = .{};
++    const w = try widths(a, &cfg);
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const served: block.Options = .{ .limit = limit, .r1 = true, .index_bound = true, .expert_topp = 0.85, .branches = true, .mhc_defer = true, .kv_norm_store = true };
++    var rows = served;
++    rows.rows = true;
++    var reads: usize = 0;
++    for ([_]block.Options{ .{ .limit = limit }, served, rows }) |base| for ([_]i64{ 1, 6, 16, 24, 64 }) |n| for ([_]i64{ 300, 1025, 2048, 2049, 4096 }) |end| {
++        var o = base;
++        o.pool = splitPool(0);
++        var on = base;
++        on.pool = splitPool(mirror);
++        var pg = base;
++        pg.pool = pagedPool();
++        const off_cs = try block.emit(a, &cfg, &w, o, &backbone, n, end - n, true);
++        const on_cs = try block.emit(a, &cfg, &w, on, &backbone, n, end - n, true);
++        const paged = try block.emit(a, &cfg, &w, pg, &backbone, n, end - n, true);
++        // the knob without split KV changes nothing (replicated KV has no exchange to skip)
++        var pgm = pg;
++        pgm.pool.?.mirror = mirror;
++        pgm.pool.?.mirror_pages = splitPool(mirror).mirror_pages;
++        const paged_m = try block.emit(a, &cfg, &w, pgm, &backbone, n, end - n, true);
++        try testing.expectEqual(paged.len, paged_m.len);
++        for (paged, paged_m) |x, y| try testing.expectEqualStrings(try key(a, x, &.{}), try key(a, y, &.{}));
++        // off: no mirror role anywhere, an exchange a compressed index layer
++        var kx: usize = 0;
++        for (off_cs) |c| {
++            kx += @intFromBool(isKx(c));
++            for (c.args) |x| try testing.expect(!std.mem.startsWith(u8, roleOf(x.arg), "s.kv.m"));
++        }
++        try testing.expect(kx > 0);
++        var stores: usize = 0;
++        const inner = try withoutStores(a, on_cs, on.pool.?, &stores);
++        try testing.expect(stores > 0);
++        if (end > mirror) {
++            try testing.expectEqual(off_cs.len, inner.len);
++            for (off_cs, inner) |x, y| try testing.expectEqualStrings(try key(a, x, &.{}), try key(a, y, &.{}));
++            continue;
++        }
++        reads += 1;
++        // off less its exchanges (each one's join on the call after it) equals on up to the compressed reads
++        var cut: std.ArrayList(calls.Call) = .empty;
++        var carry: ?calls.Call = null;
++        for (off_cs) |c| {
++            if (isKx(c)) {
++                carry = c;
++                continue;
++            }
++            var x = c;
++            if (carry) |k| {
++                x.join = x.join or k.join;
++                x.fork = x.fork or k.fork;
++                carry = null;
++            }
++            try cut.append(a, x);
++        }
++        try testing.expectEqual(off_cs.len - kx, inner.len);
++        try testing.expectEqual(paged.len, inner.len);
++        var attns: usize = 0;
++        for (cut.items, inner, paged) |x, y, z| {
++            try testing.expect(!isKx(y));
++            if (compAttn(y)) {
++                try checkRead(a, x, y, z, on.pool.?);
++                attns += 1;
++                continue;
++            }
++            try testing.expectEqualStrings(try key(a, x, &.{}), try key(a, y, &.{}));
++            // KV_SPLIT=0's calls but for the pool store's split table
++            const pt = [1]usize{if (try compStore(y)) try at(y, "PT") else y.args.len};
++            try testing.expectEqualStrings(try key(a, z, &pt), try key(a, y, &pt));
++        }
++        try testing.expect(attns >= kx);
++    };
++    try testing.expectEqual(@as(usize, 3 * 5 * 3), reads);
++}
++
++test "TF_DSV41_KV_MIRROR: row mode stacks the mirror table as the page tables, in the stores and the reads" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cfg: Config = .{};
++    const w = try widths(a, &cfg);
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    var o: block.Options = .{ .limit = limit, .r1 = true, .branches = true, .mhc_defer = true, .rows = true };
++    o.pool = splitPool(mirror);
++    const cs = try rowmode.transform(a, try block.emit(a, &cfg, &w, o, &backbone, 6, 1994, true), 6, .{ .slots = slots, .rmax = 64, .pts = pages });
++    var stores: usize = 0;
++    var reads: usize = 0;
++    for (cs) |c| {
++        for (c.args) |x| if (std.mem.eql(u8, roleOf(x.arg), "s.kv.mt")) try testing.expectEqualSlices(i64, &.{ slots, pages }, x.arg.t.shape);
++        if (try compStore(c) and std.mem.startsWith(u8, roleOf(c.args[try at(c, "V")].arg), "s.kv.mc.L")) {
++            try testing.expectEqual(pages, c.args[try at(c, "PTS")].arg.i);
++            try testing.expect(c.args[try at(c, "ROWS")].arg.b);
++            stores += 1;
++        }
++        if (compAttn(c)) {
++            try testing.expectEqualStrings("s.kv.mt", roleOf(c.args[11].arg));
++            try testing.expectEqual(pages, c.args[21].arg.i);
++            reads += 1;
++        }
++    }
++    try testing.expect(stores > 0 and reads > 0);
++}
++
++test "TF_DSV41_KV_MIRROR: a prefill segment also stores into the mirror and otherwise emits today's calls" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cfg: Config = .{};
++    const w = try widths(a, &cfg);
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    for ([_][2]i64{ .{ 0, 300 }, .{ 1700, 600 } }) |sn| {
++        var o: block.Options = .{ .limit = limit };
++        o.pool = splitPool(0);
++        var on = o;
++        on.pool = splitPool(mirror);
++        const off_cs = try block_prefill.emitPrefill(a, &cfg, &w, o, &backbone, sn[1], sn[0], true);
++        const on_cs = try block_prefill.emitPrefill(a, &cfg, &w, on, &backbone, sn[1], sn[0], true);
++        var stores: usize = 0;
++        const inner = try withoutStores(a, on_cs, on.pool.?, &stores);
++        try testing.expect(stores > 0);
++        try testing.expectEqual(off_cs.len, inner.len);
++        for (off_cs, inner) |x, y| try testing.expectEqualStrings(try key(a, x, &.{}), try key(a, y, &.{}));
++    }
++}
++
++test "TF_DSV41_KV_MIRROR: the mirror's store reduces to its pool store's Triton variant (no AOT asset added)" {
++    const gpa = testing.allocator;
++    const parsed = try std.json.parseFromSlice(struct { kernels: aot_needs.Sigs }, gpa, @embedFile("fixtures/aot-sigs.json"), .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
++    defer parsed.deinit();
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const n: aot_needs.Needs = .{ .gpa = gpa, .sigs = &parsed.value.kernels };
++    const cfg: Config = .{};
++    const w = try widths(a, &cfg);
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    var o: block.Options = .{ .limit = limit };
++    o.pool = splitPool(mirror);
++    const decode = try block.emit(a, &cfg, &w, o, &backbone, 6, 1000, true);
++    const prefill = try block_prefill.emitPrefill(a, &cfg, &w, o, &backbone, 300, 0, true);
++    var pairs: usize = 0;
++    for ([_][]const calls.Call{ decode, prefill }) |cs| for (cs[0 .. cs.len - 1], cs[1..]) |*x, *y| {
++        if (!try compStore(x.*) or !try compStore(y.*)) continue;
++        if (!std.mem.startsWith(u8, roleOf(y.args[try at(y.*, "V")].arg), "s.kv.mc.L")) continue;
++        try testing.expectEqualStrings(try n.reduce(a, x), try n.reduce(a, y));
++        pairs += 1;
++    };
++    try testing.expect(pairs > 0);
++}
++
++test "TF_DSV41_KV_MIRROR: the pool takes it with split KV only, at most the slot, in whole pages of every residue" {
++    const names = [_][:0]const u8{ "TF_DSV41_POOL_TOKENS", "TF_DSV41_KV_SPLIT", "TF_DSV41_KV_MIRROR" };
++    defer for (names) |k| {
++        _ = env.unsetenv(k);
++    };
++    _ = env.setenv("TF_DSV41_POOL_TOKENS", "3000000", 1);
++    _ = env.setenv("TF_DSV41_KV_SPLIT", "1", 1);
++    _ = env.unsetenv("TF_DSV41_KV_MIRROR");
++    try testing.expectEqual(@as(u64, 0), (try kvs.optionsFromEnv(1 << 20, 2)).?.mirror);
++    _ = env.setenv("TF_DSV41_KV_MIRROR", "0", 1);
++    try testing.expectEqual(@as(u64, 0), (try kvs.optionsFromEnv(1 << 20, 2)).?.mirror);
++    _ = env.setenv("TF_DSV41_KV_MIRROR", "2000", 1);
++    try testing.expectEqual(@as(u64, 2048), (try kvs.optionsFromEnv(1 << 20, 2)).?.mirror);
++    try testing.expectEqual(@as(u64, 1024), (try kvs.optionsFromEnv(1000, 2)).?.mirror);
++    _ = env.setenv("TF_DSV41_KV_MIRROR", "lots", 1);
++    try testing.expectError(error.BadMirror, kvs.optionsFromEnv(1 << 20, 2));
++    _ = env.setenv("TF_DSV41_KV_MIRROR", "2048", 1);
++    _ = env.setenv("TF_DSV41_KV_SPLIT", "0", 1);
++    try testing.expectError(error.MirrorNeedsSplit, kvs.optionsFromEnv(1 << 20, 2));
++}
+diff --git a/zig/src/families/deepseek_v41/rowmode.zig b/zig/src/families/deepseek_v41/rowmode.zig
+index e951c69f6795cc16f483a69b81a2f12f311dc198..ef372803943524b254dfe90700c4c017b1eaddd2 100644
+--- a/zig/src/families/deepseek_v41/rowmode.zig
++++ b/zig/src/families/deepseek_v41/rowmode.zig
+@@ -217,13 +217,14 @@ pub fn isCarry(b: []const u8) bool {
+     return std.mem.startsWith(u8, b, "s.L") and std.mem.endsWith(u8, b, ".carry");
+ }
+ 
+-/// "s.kv.pt" / "s.kv.ct": a slot's page table / split table
++/// "s.kv.pt" / "s.kv.ct" / "s.kv.mt": a slot's page table / split table / mirror table (TF_DSV41_KV_MIRROR)
+ pub fn isTable(b: []const u8) bool {
+-    return eq(b, "s.kv.pt") or eq(b, "s.kv.ct");
++    return eq(b, "s.kv.pt") or eq(b, "s.kv.ct") or eq(b, "s.kv.mt");
+ }
+ 
+ test "rowmode: stacked roles by name" {
+     try std.testing.expect(isRing("s.L7.swa.v") and isRing("s.L7.swa.s") and !isRing("s.L7.comp.v"));
+     try std.testing.expect(isCarry("s.L2.carry") and !isCarry("w.L2.comp"));
+-    try std.testing.expect(isTable("s.kv.pt") and isTable("s.kv.ct") and !isTable("s.kv.comp.L2"));
++    try std.testing.expect(isTable("s.kv.pt") and isTable("s.kv.ct") and isTable("s.kv.mt") and !isTable("s.kv.comp.L2"));
++    try std.testing.expect(!isTable("s.kv.mc.L2"));
+ }
+diff --git a/zig/src/families/deepseek_v41/sessions_gpu.zig b/zig/src/families/deepseek_v41/sessions_gpu.zig
+index ed399c274f595198cdc5ea7a7b04a00f5ad68589..17603394393320148704c5915fe021730f3f2fa5 100644
+--- a/zig/src/families/deepseek_v41/sessions_gpu.zig
++++ b/zig/src/families/deepseek_v41/sessions_gpu.zig
+@@ -498,6 +498,7 @@ pub const Sessions = struct {
+             return false;
+         }
+         try s.kx.dev.syncTables();
++        try s.kx.mirrorFill(); // TF_DSV41_KV_MIRROR: the restored rows were stored, not computed here
+         return true;
+     }
+ 
+diff --git a/zig/src/families/deepseek_v41/slots.zig b/zig/src/families/deepseek_v41/slots.zig
+index aa9ee98f08706aeecb19cb8c66ea5d27726c1dcb..c4a77aa60e3b47366c713b94fbf45cac0a5e68d2 100644
+--- a/zig/src/families/deepseek_v41/slots.zig
++++ b/zig/src/families/deepseek_v41/slots.zig
+@@ -74,6 +74,7 @@ pub const SlotSet = struct {
+         const tb: u64 = 4 * @as(u64, k.dev.pts);
+         try ss.roles.put(ss.gpa, "s.kv.pt", .{ .base = k.dev.table.ptr, .bytes = tb });
+         try ss.roles.put(ss.gpa, "s.kv.ct", .{ .base = k.dev.local.ptr, .bytes = tb });
++        if (k.mirror) |m| try ss.roles.put(ss.gpa, "s.kv.mt", .{ .base = m.table.ptr, .bytes = tb });
+     }
+ 
+     /// After Runner.bind: `roles` (planned ones) become per-slot by swapping, each slot's copy in its own buffer.
+diff --git a/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig b/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..636f5b5ddde0ee2061f4aa7a411d24063d768b70
+--- /dev/null
++++ b/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
+@@ -0,0 +1,282 @@
++//! TF_DSV41_KV_MIRROR: attention over the mirror (paged, the selection) against split KV's exchanged rows, every byte.
++
++const std = @import("std");
++const cuda = @import("cuda");
++const dsv41 = @import("dsv41_kernels");
++const check = @import("../check.zig");
++
++const Gpu = check.Gpu;
++const attn = dsv41.ops.attn;
++const rb: usize = 584;
++const K: usize = 512;
++const H: usize = 32;
++const D: usize = 512;
++const W: u32 = 2;
++const ring: usize = 256;
++const rope_rows: usize = 4096;
++
++/// kv/mirror.zig's Geometry.pageOf (the runner has no kv module): owner-major runs a slot, then the discard page.
++fn pageOf(slots: u32, mp: u32, s: u32, p: u32) u32 {
++    if (p >= mp) return slots * mp;
++    return s * mp + (p % W) * (mp / W) + p / W;
++}
++
++/// rows a window, rows-a-page shift, slots, pages a slot, mirrored pages a slot, row mode, R1's CTAs a chunk
++const Case = struct { rows: u32, psh: u5, slots: u32, pts: u32, mp: u32, stacked: bool, split: u32 };
++
++const cases = [_]Case{
++    .{ .rows = 1, .psh = 7, .slots = 3, .pts = 16, .mp = 8, .stacked = false, .split = 4 },
++    .{ .rows = 2, .psh = 8, .slots = 3, .pts = 16, .mp = 8, .stacked = true, .split = 4 },
++    .{ .rows = 6, .psh = 7, .slots = 3, .pts = 16, .mp = 8, .stacked = true, .split = 1 },
++    .{ .rows = 6, .psh = 8, .slots = 3, .pts = 16, .mp = 8, .stacked = false, .split = 0 },
++    .{ .rows = 16, .psh = 7, .slots = 4, .pts = 24, .mp = 16, .stacked = true, .split = 1 },
++};
++
++/// A served record: 448 e4m3 bytes (exponent <= 7: finite), 64 bf16 rope values, 7 UE8M0 scales and a pad byte.
++fn kvRow(rnd: std.Random, out: []u8) void {
++    for (out[0..448]) |*b| b.* = rnd.int(u8) & 0xBF;
++    for (0..64) |i| std.mem.writeInt(u16, out[448 + 2 * i ..][0..2], bf16(rnd.float(f32) * 2 - 1), .little);
++    for (out[576..583]) |*b| b.* = 120 + rnd.uintLessThan(u8, 8);
++    out[583] = 0;
++}
++
++fn bf16(x: f32) u16 {
++    return @truncate(@as(u32, @bitCast(x)) >> 16);
++}
++
++fn up(gpu: Gpu, bytes: []const u8) !cuda.DeviceBuffer {
++    return cuda.DeviceBuffer.fromHost(gpu.d, bytes);
++}
++
++fn zeroed(gpu: Gpu, n: usize) !cuda.DeviceBuffer {
++    const b = try cuda.DeviceBuffer.alloc(gpu.d, @max(n, 16));
++    try b.fill8(0, null);
++    return b;
++}
++
++pub fn run(gpu: Gpu, k: *const dsv41.Kernels) !void {
++    var stream = try cuda.Stream.init(gpu.d, false); // blocking: ordered after the uploads and memsets
++    defer stream.deinit();
++    const o = k.others(stream);
++    var prng = std.Random.DefaultPrng.init(0x4d31);
++    for (cases) |c| try runCase(gpu, o, stream, prng.random(), c);
++}
++
++fn runCase(gpu: Gpu, o: dsv41.ops.Ops, stream: cuda.Stream, rnd: std.Random, c: Case) !void {
++    var arena = std.heap.ArenaAllocator.init(gpu.gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const q: usize = @as(usize, 1) << c.psh;
++    const R: usize = c.rows;
++    // every slot's logical rows, the ranks' split storage (shuffled local pages, then the discard page)
++    const rows = try a.alloc(u8, @as(usize, c.slots) * c.pts * q * rb);
++    for (0..rows.len / rb) |i| kvRow(rnd, rows[i * rb ..][0..rb]);
++    const owned = @as(usize, c.slots) * (c.pts / W);
++    var local: [W][]u8 = undefined;
++    var ct: [W][]i32 = undefined;
++    for (0..W) |r| {
++        local[r] = try a.alloc(u8, (owned + 1) * q * rb);
++        rnd.bytes(local[r]);
++        ct[r] = try a.alloc(i32, @as(usize, c.slots) * c.pts);
++        const order = try a.alloc(u32, owned);
++        for (order, 0..) |*x, i| x.* = @intCast(i);
++        rnd.shuffle(u32, order);
++        var next: usize = 0;
++        for (0..c.slots * c.pts) |at| {
++            if ((at % c.pts) % W != r) {
++                ct[r][at] = @intCast(owned);
++                continue;
++            }
++            const lp = order[next];
++            next += 1;
++            ct[r][at] = @intCast(lp);
++            @memcpy(local[r][lp * q * rb ..][0 .. q * rb], rows[at * q * rb ..][0 .. q * rb]);
++        }
++    }
++    // the mirror the stores leave, its table (one spare row past the slots: the planted control's shift)
++    const tensor_pages = c.slots * c.mp + 1;
++    const mirror = try a.alloc(u8, tensor_pages * q * rb);
++    @memset(mirror, 0);
++    for (0..c.slots) |s| for (0..c.pts * q) |t| {
++        const pg = pageOf(c.slots, c.mp, @intCast(s), @intCast(t >> c.psh));
++        if (pg == c.slots * c.mp) continue;
++        @memcpy(mirror[(pg * q + t % q) * rb ..][0..rb], rows[((s * c.pts) * q + t) * rb ..][0..rb]);
++    };
++    const mt = try a.alloc(i32, (@as(usize, c.slots) + 1) * c.pts);
++    for (0..c.slots + 1) |s| for (0..c.pts) |p| {
++        mt[s * c.pts + p] = @intCast(pageOf(c.slots, c.mp, @intCast(s % c.slots), @intCast(p)));
++    };
++    // the window: each row's slot, position, and a selection of distinct visible rows inside the mirror
++    const one: u32 = 1;
++    const slot = try a.alloc(i64, R);
++    const rslot = try a.alloc(i32, R);
++    const pos64 = try a.alloc(i64, R);
++    const cnt = try a.alloc(i32, R);
++    const sel = try a.alloc(i32, R * K);
++    const pool = try a.alloc(i32, @as(usize, c.mp) << c.psh);
++    const p0: i32 = 1500;
++    for (0..R) |r| {
++        slot[r] = if (c.stacked) rnd.uintLessThan(u32, c.slots) else one;
++        rslot[r] = @intCast(slot[r]);
++        pos64[r] = if (c.stacked) 200 + @as(i64, rnd.uintLessThan(u32, 1800)) else @as(i64, p0) + @as(i64, @intCast(r));
++        const nvis = 1 + rnd.uintLessThan(usize, pool.len);
++        const n = @min(nvis, K);
++        for (pool[0..nvis], 0..) |*x, i| x.* = @intCast(i);
++        for (0..n) |i| std.mem.swap(i32, &pool[i], &pool[i + rnd.uintLessThan(usize, nvis - i)]);
++        @memcpy(sel[r * K ..][0..n], pool[0..n]);
++        @memset(sel[r * K + n .. (r + 1) * K], -1);
++        cnt[r] = @intCast(n);
++    }
++    const qh = try a.alloc(u16, R * H * D);
++    for (qh) |*x| x.* = bf16(rnd.float(f32) - 0.5);
++    const swa = try a.alloc(u8, ring * rb);
++    for (0..ring) |i| kvRow(rnd, swa[i * rb ..][0..rb]);
++    const sv = try a.alloc(u8, ring * 576);
++    const ssc = try a.alloc(u8, ring * 8);
++    for (0..ring) |i| {
++        @memcpy(sv[i * 576 ..][0..576], swa[i * rb ..][0..576]);
++        @memcpy(ssc[i * 8 ..][0..8], swa[i * rb + 576 ..][0..8]);
++    }
++    const cs = try a.alloc(f32, rope_rows * 64);
++    for (cs) |*x| x.* = rnd.float(f32) * 2 - 1;
++
++    var d_local: [W]cuda.DeviceBuffer = undefined;
++    var d_ct: [W]cuda.DeviceBuffer = undefined;
++    for (0..W) |r| {
++        d_local[r] = try up(gpu, local[r]);
++        d_ct[r] = try up(gpu, std.mem.sliceAsBytes(ct[r]));
++    }
++    defer for (0..W) |r| {
++        d_local[r].free();
++        d_ct[r].free();
++    };
++    var d_mirror = try up(gpu, mirror);
++    defer d_mirror.free();
++    var d_mt = try up(gpu, std.mem.sliceAsBytes(mt));
++    defer d_mt.free();
++    var d_sel = try up(gpu, std.mem.sliceAsBytes(sel));
++    defer d_sel.free();
++    var d_cnt = try up(gpu, std.mem.sliceAsBytes(cnt));
++    defer d_cnt.free();
++    var d_rslot = try up(gpu, std.mem.sliceAsBytes(rslot));
++    defer d_rslot.free();
++    var d_slot = try up(gpu, std.mem.sliceAsBytes(slot));
++    defer d_slot.free();
++    var d_pos = if (c.stacked) try up(gpu, std.mem.sliceAsBytes(pos64)) else try up(gpu, std.mem.asBytes(&p0));
++    defer d_pos.free();
++    var d_q = try up(gpu, std.mem.sliceAsBytes(qh));
++    defer d_q.free();
++    var d_sv = try up(gpu, sv);
++    defer d_sv.free();
++    var d_ssc = try up(gpu, ssc);
++    defer d_ssc.free();
++    var d_cs = try up(gpu, std.mem.sliceAsBytes(cs));
++    defer d_cs.free();
++    var d_recv = try zeroed(gpu, W * R * K * rb);
++    defer d_recv.free();
++    var d_tok = try zeroed(gpu, R * K * 4);
++    defer d_tok.free();
++    var d_lo = try zeroed(gpu, R * 4);
++    defer d_lo.free();
++    var d_sink = try zeroed(gpu, H * 4);
++    defer d_sink.free();
++    var d_po = try zeroed(gpu, 5 * R * H * D * 4);
++    defer d_po.free();
++    var d_pm = try zeroed(gpu, 5 * R * H * 4);
++    defer d_pm.free();
++    var d_pl = try zeroed(gpu, 5 * R * H * 4);
++    defer d_pl.free();
++    var d_ticket = try zeroed(gpu, 1024 * 4);
++    defer d_ticket.free();
++    var outs: [3]cuda.DeviceBuffer = undefined;
++    for (&outs) |*x| x.* = try zeroed(gpu, R * H * D * 2);
++    defer for (&outs) |*x| x.free();
++
++    // split KV: each rank's dense gather into its shard of the all-gather's receive buffer, the remapped tokens
++    for (0..W) |r| {
++        const tab = d_ct[r].ptr + (if (c.stacked) 0 else @as(u64, one) * c.pts * 4);
++        try o.kvDense(.{ .sel = d_sel.ptr, .rows = @intCast(R), .k = K, .table = tab, .pts = if (c.stacked) c.pts else 0, .rslot = if (c.stacked) d_rslot.ptr else 0, .psh = c.psh, .base = d_local[r].ptr, .row_bytes = rb, .world = W, .send = d_recv.ptr + r * R * K * rb, .tok = d_tok.ptr });
++    }
++    const base: attn.Args = .{
++        .q = d_q.ptr,
++        .ts = K,
++        .cnt = d_cnt.ptr,
++        .sv = d_sv.ptr,
++        .ssc = d_ssc.ptr,
++        .svs = 576,
++        .sss = 8,
++        .lo = d_lo.ptr,
++        .pos = d_pos.ptr,
++        .sl = if (c.stacked) d_slot.ptr else 0,
++        .sink = d_sink.ptr,
++        .cs = d_cs.ptr,
++        .csst = 64,
++        .po = d_po.ptr,
++        .pm = d_pm.ptr,
++        .pl = d_pl.ptr,
++        .ticket = d_ticket.ptr,
++        .R = @intCast(R),
++        .H = H,
++        .ring = ring,
++        .has_comp = 1,
++    };
++    var split = base;
++    split.cv = d_recv.ptr;
++    split.csc = d_recv.ptr + 576;
++    split.cvs = rb;
++    split.css = rb;
++    split.tok = d_tok.ptr;
++    split.out = outs[0].ptr;
++    // the mirror: KV_SPLIT=0's read (the selection through a page table) of the mirror's rows
++    var mir = base;
++    mir.cv = d_mirror.ptr;
++    mir.csc = d_mirror.ptr + 576;
++    mir.cvs = rb;
++    mir.css = rb;
++    mir.tok = d_sel.ptr;
++    mir.pt = d_mt.ptr + (if (c.stacked) 0 else @as(u64, one) * c.pts * 4);
++    mir.pts = if (c.stacked) c.pts else 0;
++    mir.psh = c.psh;
++    mir.out = outs[1].ptr;
++    // planted control: the next slot's mirror table (other rows), which must change the output
++    var wrong = mir;
++    wrong.pt = mir.pt + c.pts * 4;
++    wrong.out = outs[2].ptr;
++    for ([_]attn.Args{ split, mir, wrong }) |x| {
++        try d_ticket.fill8(0, stream.handle);
++        try o.attention(x, 4, c.stacked, false, c.split);
++    }
++    try stream.synchronize();
++    const got_split = try check.download(gpu, outs[0]);
++    defer gpu.gpa.free(got_split);
++    const got_mir = try check.download(gpu, outs[1]);
++    defer gpu.gpa.free(got_mir);
++    const got_wrong = try check.download(gpu, outs[2]);
++    defer gpu.gpa.free(got_wrong);
++    try check.expect(std.mem.indexOfNone(u8, got_split, &.{0}) != null, "kv-mirror: an all-zero output", .{});
++    try check.sameBytes("kv-mirror attention: mirror vs split KV's exchanged rows", got_mir, got_split);
++    try check.expect(!std.mem.eql(u8, got_wrong, got_split), "kv-mirror: the planted wrong table gave the same bytes", .{});
++
++    // a restore's fill: each rank's run gathered, landed at its owner's part of the slot's run, equals the stores'
++    const fill_rows: u32 = (c.mp / W) << c.psh;
++    var d_fill = try zeroed(gpu, tensor_pages * q * rb);
++    defer d_fill.free();
++    const phys = try a.alloc(u32, fill_rows);
++    var d_phys = try zeroed(gpu, fill_rows * 4);
++    defer d_phys.free();
++    for (0..c.slots) |s| for (0..W) |r| {
++        for (0..c.mp / W) |j| {
++            const lp: u32 = @intCast(ct[r][s * c.pts + r + W * j]);
++            for (0..q) |i| phys[j * q + i] = (lp << c.psh) | @as(u32, @intCast(i));
++        }
++        try d_phys.upload(0, std.mem.sliceAsBytes(phys));
++        const at = (s * c.mp * q + r * fill_rows) * rb;
++        try o.kvGather(d_local[r].ptr, rb, d_phys.ptr, fill_rows, d_fill.ptr + at);
++        try stream.synchronize();
++    };
++    const got_fill = try check.download(gpu, d_fill);
++    defer gpu.gpa.free(got_fill);
++    const run_bytes = c.slots * c.mp * q * rb;
++    try check.sameBytes("kv-mirror fill: gathered runs vs the stores' mirror", got_fill[0..run_bytes], mirror[0..run_bytes]);
++    check.pass("BITEXACT kv-mirror: attention through the mirror == split KV's exchange, fill == stores: R {d}, psh {d}, {s}, split {d}", .{ c.rows, c.psh, if (c.stacked) "row mode" else "one slot", c.split });
++}
+diff --git a/zig/tests/cuda/dsv41_main.zig b/zig/tests/cuda/dsv41_main.zig
+index 32b3d3f25253da05def99817bd4d1558459691dd..b662f1c1cd3851399f0fddaac25939c6b301fd4f 100644
+--- a/zig/tests/cuda/dsv41_main.zig
++++ b/zig/tests/cuda/dsv41_main.zig
+@@ -8,6 +8,7 @@ const experts = @import("deepseek_v41/experts.zig");
+ const replay_case = @import("deepseek_v41/replay.zig");
+ const kvglue = @import("deepseek_v41/kv_glue.zig");
+ const kvsplit = @import("deepseek_v41/kvsplit.zig");
++const kv_mirror = @import("deepseek_v41/kv_mirror_check.zig");
+ const mhcdec = @import("deepseek_v41/mhcdec.zig");
+ const mhc_probe = @import("deepseek_v41/mhc_probe.zig");
+ const mhc_alloc = @import("deepseek_v41/mhc_alloc_bench.zig");
+@@ -28,6 +29,7 @@ const usage =
+     \\  replay <dir>       one recorded Python extension call (dsv41_capture.py) re-issued and compared, storage by storage
+     \\  kvglue <dir>       fused KV RMS/SWA store against the reference Triton bytes
+     \\  kvsplit            split KV's exchange copies against kv/split.zig's host reference (no fixture)
++    \\  kv-mirror          TF_DSV41_KV_MIRROR: attention through the mirror against split KV's exchanged rows, its fill
+     \\  mhc-probe [windows]  the 16-row mHC boundary under cache states, buffer layouts and a cross-stream dependency
+     \\  x3gm3-bench [rows,..] [reps]  x3gm v3 against v2 at the served prefill shapes: bits and time (synthetic data)
+     \\  x3ld-epi [rows,..] [reps]  TF_DSV41_X3LD_EPI: fused x3ld + epilogues against the four launches (bits, time)
+@@ -86,6 +88,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
+         return;
+     }
+     if (std.mem.eql(u8, cmd, "kvsplit")) return kvsplit.run(gpu, &k);
++    if (std.mem.eql(u8, cmd, "kv-mirror")) return kv_mirror.run(gpu, &k);
+     if (std.mem.eql(u8, cmd, "kvglue")) return kvglue.run(gpu, &k, try arg(rest, 0));
+     if (std.mem.eql(u8, cmd, "mhc-probe")) return mhc_probe.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "mhc-alloc")) return mhc_alloc.run(gpu, &k, if (rest.len > 0) rest[0] else null);

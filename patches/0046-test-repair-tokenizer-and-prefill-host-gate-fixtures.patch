@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 02:26:32 +0700
+Subject: [PATCH 46/72] test: repair tokenizer and prefill host gate fixtures
+
+---
+ zig/src/core/tokenizer/message_memo_test.zig           | 5 ++++-
+ zig/src/families/deepseek_v41/prefill_scratch_test.zig | 2 ++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/core/tokenizer/message_memo_test.zig b/zig/src/core/tokenizer/message_memo_test.zig
+index 997f67ca4e9aa1d5aad487de1966e76ef0047537..67d9c096aeb10f55be050ecae026dbf14b80ebe5 100644
+--- a/zig/src/core/tokenizer/message_memo_test.zig
++++ b/zig/src/core/tokenizer/message_memo_test.zig
+@@ -20,7 +20,10 @@ fn fixture(first: bool, normalize: bool) !tok.Tokenizer {
+ }
+ 
+ fn body() ![]u8 {
+-    return std.mem.concat(a, u8, &([_][]const u8{"ab é漢🙂 "} ** 160));
++    var text: std.ArrayList(u8) = .empty;
++    errdefer text.deinit(a);
++    for (0..160) |_| try text.appendSlice(a, "ab é漢🙂 ");
++    return text.toOwnedSlice(a);
+ }
+ 
+ fn equalEncode(fresh: *const tok.Tokenizer, memo: *const tok.Tokenizer, text: []const u8) !void {
+diff --git a/zig/src/families/deepseek_v41/prefill_scratch_test.zig b/zig/src/families/deepseek_v41/prefill_scratch_test.zig
+index 543472b2212b31d57b8e55dd4bbda26505a81e25..43f167062f012e688a4945ebdb2624cba01962d1 100644
+--- a/zig/src/families/deepseek_v41/prefill_scratch_test.zig
++++ b/zig/src/families/deepseek_v41/prefill_scratch_test.zig
+@@ -23,6 +23,8 @@ fn program(a: std.mem.Allocator, o: block.Options, rows: i64, start: i64, part:
+     try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
+     const layers = try a.alloc(u32, try layerCount(part));
+     for (layers, 0..) |*l, i| l.* = @intCast(i);
++    // The listing supplies expert ranges; legacy and split launches also need the present-width bitsets.
++    for (layers) |layer| try w.gm.put(a, layer, .{ (1 << 4) | (1 << 6) | (1 << 8), (1 << 4) | (1 << 10) });
+     const big = rows > o.prefill_rows;
+     const plan_options = if (big) ws.k4Options(o) else o;
+     const cs = if (part == .encoder)

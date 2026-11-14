@@ -1,0 +1,237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 04:43:22 +0700
+Subject: [PATCH 23/72] runner: close frees the graph bank's prepared templates
+ at engine close
+
+The in-model runner was never freed: every bank template a cell prepared
+lazily, and the runner's load blocks, stayed until exit and were reported
+as leaks at SIGTERM (DSV41 rank 0: 64-372 extra blocks, 0.4-1.2 GB).
+
+runner_open.close frees a runner's backends with their jobs, then the bank
+(with every prepared template) and the circuit it loaded. The CUDA and
+DSV41 engine closes call it after the engine thread stops, S3's runner
+first since it shares the cells runner's circuit and bank. An idle unload
+now drops the server's S3 executor at park and takes the reloaded engine's
+at reload, so it never runs on a closed engine's runner.
+---
+ zig/src/core/compute_circuit_proof_test.zig   |  2 +-
+ zig/src/core/lane_host_tests.zig              |  1 +
+ zig/src/core/runner_close_test.zig            | 41 +++++++++++++++++++
+ zig/src/core/runner_open.zig                  | 25 +++++++++++
+ zig/src/core/runner_trace_named_test.zig      |  2 +-
+ .../families/deepseek_v41/serve_engine.zig    |  3 ++
+ zig/src/native/cuda_host_close.zig            |  4 ++
+ zig/src/server/idle_unload.zig                |  2 +
+ zig/src/server/idle_unload_carry_test.zig     | 13 ++++++
+ 9 files changed, 91 insertions(+), 2 deletions(-)
+ create mode 100644 zig/src/core/runner_close_test.zig
+
+diff --git a/zig/src/core/compute_circuit_proof_test.zig b/zig/src/core/compute_circuit_proof_test.zig
+index f7e7ea5c7557cc968db98bfe53ed48daf0b75492..140ea2e44d14b4d850fdd602c19244dec8d83814 100644
+--- a/zig/src/core/compute_circuit_proof_test.zig
++++ b/zig/src/core/compute_circuit_proof_test.zig
+@@ -105,7 +105,7 @@ fn proof(elf: bool) !void {
+ 
+ test "compute runner proof: S3 beside the cell runner loads the circuit (and graph bank) once and runs on it" {
+     const path = std.c.getenv("TF_RUNNER_CIRCUIT") orelse return error.SkipZigTest;
+-    // a runner lives as long as the engine (no deinit, workers idle on its memory): this test never frees them
++    // a runner lives as long as the engine (freed at its close: runner_close_test): this test never frees them
+     const p = std.heap.page_allocator;
+     var cfg: ropen.Config = .{ .circuit = std.mem.span(path), .workers = 1 };
+     if (std.c.getenv("TF_RUNNER_GRAPH_BANK")) |g| {
+diff --git a/zig/src/core/lane_host_tests.zig b/zig/src/core/lane_host_tests.zig
+index 3ba5f4c2311a3c27dd94852470af71be4e4d5f54..598887def947c6808c11f7f6f26ac26554765c78 100644
+--- a/zig/src/core/lane_host_tests.zig
++++ b/zig/src/core/lane_host_tests.zig
+@@ -35,6 +35,7 @@ test {
+     _ = @import("runner_proof_test.zig");
+     _ = @import("compute_circuit_test.zig");
+     _ = @import("compute_circuit_proof_test.zig");
++    _ = @import("runner_close_test.zig");
+     _ = @import("runner_place_test.zig");
+     _ = @import("runner_graph_route.zig");
+     _ = @import("runner_graph_dispatch.zig");
+diff --git a/zig/src/core/runner_close_test.zig b/zig/src/core/runner_close_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf3119051cf75da325a48f720b79d437db97548f
+--- /dev/null
++++ b/zig/src/core/runner_close_test.zig
+@@ -0,0 +1,41 @@
++//! runner_open.close at an engine's close: its runners free all they loaded, the bank's lazily prepared templates too.
++const std = @import("std");
++const ropen = @import("runner_open.zig");
++const s3 = @import("compute_circuit.zig");
++
++/// div_big-04 (compute_circuit_armd.json): floor division and divmod, a graph sequence over the bank's templates.
++const div_cell = "a=-23777868243178464\nb=-41832496\nprint(a//b, a%b)\nprint(a/b)\nprint(divmod(a,b))\n";
++
++test "runner proof: close frees the lazily prepared bank templates and the load blocks of a cells runner and its S3" {
++    const circuit = std.c.getenv("TF_RUNNER_CIRCUIT") orelse return skip("TF_RUNNER_CIRCUIT");
++    const bank = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return skip("TF_RUNNER_GRAPH_BANK");
++    // its own leak checker: what the runners hold is counted apart from the test's allocations
++    var debug: std.heap.DebugAllocator(.{ .enable_memory_limit = true }) = .init;
++    const gpa = debug.allocator();
++    const cfg: ropen.Config = .{ .circuit = std.mem.span(circuit), .backend = .graph, .graph_bank = std.mem.span(bank), .workers = 1, .compile = false };
++    const cells = try ropen.open(gpa, cfg);
++    const lane = try ropen.openSharing(gpa, cfg, cells); // S3's, as the engines open it
++    const b = ropen.bank(cells).?;
++    try std.testing.expect(ropen.bank(lane).? == b);
++    const prepared = b.preparedCount();
++    const loaded = debug.total_requested_bytes;
++    var e: s3.Exec = .init(.{ .runner = lane, .cfg = .{ .wall_ms = 600_000 } });
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const got = try e.run(arena.allocator(), div_cell, null);
++    try std.testing.expect(got == .owned);
++    // the cell prepared templates on the shared bank, the cells runner's own
++    try std.testing.expect(b.preparedCount() > prepared);
++    try std.testing.expect(debug.total_requested_bytes > loaded);
++    std.debug.print("runner close proof: {d} templates prepared by the cell, {d} bytes held after load, {d} after the cell\n", .{ b.preparedCount() - prepared, loaded, debug.total_requested_bytes });
++    ropen.close(lane);
++    ropen.close(cells);
++    try std.testing.expectEqual(@as(usize, 0), debug.total_requested_bytes);
++    try std.testing.expectEqual(@as(usize, 0), debug.detectLeaks());
++    try std.testing.expectEqual(std.heap.Check.ok, debug.deinit());
++}
++
++fn skip(knob: []const u8) error{SkipZigTest} {
++    std.debug.print("skip runner close proof: {s} unset\n", .{knob});
++    return error.SkipZigTest;
++}
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index a35b675b32fa6b3dbcc9be8ac8922f12414e9750..f5ab0a04fe354b59d7414643c1edf59e266eb231 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -31,6 +31,7 @@ const Opened = struct {
+     quick: route.Quick = undefined, // cfg.sync_graph: routed's engine-thread part
+     dispatch: route.Dispatch = undefined,
+     threaded: std.Io.Threaded = undefined, // a configured frontend's engine-lifetime io
++    has_threaded: bool = false,
+     configured_frontend: frontend_mod.Context = undefined,
+     compiles: bool = true, // the frontend may build an ELF (clang); false under cfg.compile false
+ };
+@@ -43,6 +44,29 @@ pub fn compiles(r: *Runner) bool {
+     return o.compiles;
+ }
+ 
++/// The graph bank `r` runs on (its own or shared); null without the graph backend.
++pub fn bank(r: *Runner) ?*const graph.Bank {
++    const o: *Opened = @alignCast(@fieldParentPtr("runner", r));
++    return if (o.has_bank) o.bank else null;
++}
++
++/// At engine close, after its thread stops: frees backends, jobs, the bank's prepared templates; sharers close first.
++pub fn close(r: *Runner) void {
++    const o: *Opened = @alignCast(@fieldParentPtr("runner", r));
++    const gpa = r.gpa;
++    if (o.has_bank) {
++        o.dispatch.deinit(); // cancels its sequences' graph jobs
++        graph.destroy(o.dispatch.graph);
++        @import("runner_circuit_backend.zig").destroy(o.dispatch.circuit);
++        if (o.bank == &o.own_bank) o.own_bank.deinit();
++    } else {
++        @import("runner_circuit_backend.zig").destroy(r.backend);
++    }
++    if (o.circuit == &o.own_circuit) o.own_circuit.deinit(gpa);
++    if (o.has_threaded) o.threaded.deinit();
++    gpa.destroy(o);
++}
++
+ /// Circuit and graph-bank files this process has loaded (each open that shares nothing adds one or two).
+ pub fn loaded() u32 {
+     return loads.load(.monotonic);
+@@ -81,6 +105,7 @@ pub fn openSharing(gpa: Allocator, cfg: Config, with: ?*Runner) !*Runner {
+     if (!cfg.compile or cfg.compile_steps != 10522) {
+         // Empty scratch root prevents new compiler runs; S3 also refuses cached ELF when disabled.
+         o.threaded = .init(gpa, .{});
++        o.has_threaded = true;
+         o.configured_frontend = .{ .io = o.threaded.io() };
+         o.configured_frontend.compiler.step_budget = cfg.compile_steps;
+         if (!cfg.compile) o.configured_frontend.compiler.scratch_root = "";
+diff --git a/zig/src/core/runner_trace_named_test.zig b/zig/src/core/runner_trace_named_test.zig
+index 2aca398d420fc5d18962eea66df1e89cd9bfa529..ad2c2fb70f49f84e4ba9ee44b2273632bb5ea4a4 100644
+--- a/zig/src/core/runner_trace_named_test.zig
++++ b/zig/src/core/runner_trace_named_test.zig
+@@ -96,7 +96,7 @@ const Engine = struct {
+         const circuit = std.c.getenv("TF_RUNNER_CIRCUIT") orelse return null;
+         const bank = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return null;
+         const clang = std.c.getenv("TF_RUNNER_CLANG") orelse return null;
+-        // a runner lives as long as the engine: never freed, as in compute_circuit_proof_test
++        // a runner lives as long as the engine (freed at its close): never freed here, as in compute_circuit_proof_test
+         const p = std.heap.page_allocator;
+         const e = try p.create(Engine);
+         e.* = .{
+diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
+index a1cacb5bfc9bc4ee6934462a0db2762bf4f57b7b..42501c12ae830f55173a27a8863af75f2728baeb 100644
+--- a/zig/src/families/deepseek_v41/serve_engine.zig
++++ b/zig/src/families/deepseek_v41/serve_engine.zig
+@@ -265,6 +265,9 @@ pub const Served = struct {
+         const s: *Served = @ptrCast(@alignCast(ctx));
+         const gpa = s.gpa;
+         s.host.stop();
++        // the engine thread is joined: S3's runner frees first (it shares the cells runner's circuit and bank)
++        if (s.host.info_.compute_runner) |c| api.runner.close(c.runner);
++        if (s.host.runner) |r| api.runner.close(r);
+         if (s.lookup) |pl| gpa.destroy(pl);
+         if (s.sched) |sh| {
+             s.m.gt.settleReleases();
+diff --git a/zig/src/native/cuda_host_close.zig b/zig/src/native/cuda_host_close.zig
+index 4a515f4c59267d270aeab92c5112409530ace632..2c13c5876e0dea69d44e524b2e131a16b1f9a877 100644
+--- a/zig/src/native/cuda_host_close.zig
++++ b/zig/src/native/cuda_host_close.zig
+@@ -1,9 +1,13 @@
+ //! Release a stopped native CUDA host in ownership order.
+ const failed_load = @import("cuda_load_gpu.zig");
+ const kv_pages = @import("cuda_kv_pool.zig");
++const runner = @import("engine_api").runner;
+ pub fn close(h: anytype) void {
+     h.host.stop();
+     kv_pages.unwatch(&h.kv); // the engine thread is joined: the pool's teardown below reports to no one
++    // its runners next, S3's first (it shares the cells runner's circuit and bank): every prepared template frees
++    if (h.host.info_.compute_runner) |s3| runner.close(s3.runner);
++    if (h.host.runner) |r| runner.close(r);
+     h.core.deinit();
+     h.cfg.deinit(h.gpa);
+     if (h.recording) |r| r.free(h.gpa);
+diff --git a/zig/src/server/idle_unload.zig b/zig/src/server/idle_unload.zig
+index 4200b07144b6b6d3d125d57cf6921253de8b57ac..e1ed103569efb5156b24d6a166ab10232eab4f8c 100644
+--- a/zig/src/server/idle_unload.zig
++++ b/zig/src/server/idle_unload.zig
+@@ -193,6 +193,7 @@ fn park(m: *Manager) void {
+     }
+     srv.load.detach(false); // the resident engine stops writing before it closes; unknown, not parked, until closed
+     srv.engine = m.stub.?.engine();
++    srv.compute_exec = null; // S3 ran on this engine's runner, which its close frees
+     srv.stopKeepalive(); // each resident cycle owns a fresh ticker; it must stop before this engine closes
+     m.mutex.unlock(m.io);
+     m.re.close_held(m.re.ctx); // the weights leave here, outside the lock: the reload opens with them gone
+@@ -273,6 +274,7 @@ pub fn reload(m: *Manager, srv: *server_mod.Server, reply: Allocator, problem_ou
+     m.last_activity_ns = now(m.io);
+     srv.engine = opened.engine;
+     srv.info = info;
++    srv.compute_exec = if (srv.compute == null) null else if (info.compute_runner) |c| .init(c) else null; // the new runner's S3
+     srv.load.attach(opened.engine); // only the engine that serves publishes: a failed candidate never attached
+     srv.keepalive = keepalive;
+     m.re.replace(m.re.ctx, opened, scratch); // shutdown closes this engine, not the long-gone startup one
+diff --git a/zig/src/server/idle_unload_carry_test.zig b/zig/src/server/idle_unload_carry_test.zig
+index d007b76b09fcf3b9ecf1c68d63d1c06a544f279e..143cfe7805542542a74ef1d7baf17e977aab77a9 100644
+--- a/zig/src/server/idle_unload_carry_test.zig
++++ b/zig/src/server/idle_unload_carry_test.zig
+@@ -305,3 +305,16 @@ test "idle carry: the merged wake helper keeps its failure reason in the caller
+     try t.expectEqualStrings("the fake open failed", problem);
+     try t.expectEqual(idle.State.resident, h.state());
+ }
++
++test "idle carry: a park drops S3's executor, whose runner the engine's close frees, and a reload takes the new engine's" {
++    var h: Harness = .{};
++    defer h.deinit();
++    try h.setup(3600);
++    h.srv.?.compute_exec = .{ .frontend = undefined, .backend = undefined, .max_steps = 1, .cfg = .{} };
++    h.expire();
++    try h.waitParked(2000);
++    try t.expect(h.srv.?.compute_exec == null);
++    var problem: []const u8 = "";
++    try h.reload(&problem);
++    try t.expect(h.srv.?.compute_exec == null); // the fake engine opens no S3
++}
