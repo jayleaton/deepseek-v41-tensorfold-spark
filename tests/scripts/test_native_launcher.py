@@ -471,3 +471,32 @@ def test_image_identity_prints_only_the_digest():
 def test_image_identity_control_refuses_anything_else(raw):
     with pytest.raises(ValueError):
         identity(raw)
+
+
+@pytest.mark.parametrize("value", ["0", "1"])
+def test_cuda_compat_override_reaches_the_image_entrypoint(launcher, value):
+    # docker/compat/tf-compat-entry reads TF_CUDA_COMPAT; the engine does not, so the settings filter alone drops it.
+    env, _, _ = launcher
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write(f"TF_CUDA_COMPAT={value}\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "0", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert "TF_CUDA_COMPAT" not in result.stderr
+    argv = shlex.split(result.stdout)
+    assert argv[argv.index(f"TF_CUDA_COMPAT={value}") - 1] == "-e"
+    assert argv.index(f"TF_CUDA_COMPAT={value}") < argv.index("fixture")
+
+
+def test_cuda_compat_override_is_absent_unless_set_and_checked(launcher):
+    env, argv_file, _ = launcher
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert not any(arg.startswith("TF_CUDA_COMPAT") for arg in shlex.split(result.stdout))
+    with Path(env["CONFIG"]).open("a") as stream:
+        stream.write("TF_CUDA_COMPAT=off\n")
+    result = subprocess.run(["bash", "scripts/run-zig.sh", "1", "--dry-run"],
+                            cwd=ROOT, env=env, text=True, capture_output=True, check=False)
+    assert result.returncode == 2 and "TF_CUDA_COMPAT must be 0 or 1" in result.stderr
+    assert not argv_file.exists()

@@ -74,9 +74,11 @@ RANK_LOCAL = frozenset({
     "TF_TP_PEER_MEM_S",  # rank 1's report period; rank 0 polls with no timeout (fate.zig:237)
     "TF_NCCL_LIB",  # this host's library path
 })
-# Recipe settings that become engine flags or host behaviour, never container environment.
+# Recipe settings that become engine flags or host behaviour, never forwarded by name. TF_CUDA_COMPAT is the image's
+# own (docker/compat/tf-compat-entry reads it, the engine does not); scripts/run-zig.sh checks it and passes its value.
 RECIPE_NAMES = frozenset({"TF_DSV41_THINKING", "TF_DSV41_DEFAULT_EFFORT", "TF_DSV41_LAUNCH_T0",
-                          "TF_NATIVE_REQUIRE_FILE", "TENSORFOLD_SOURCE", "TENSORFOLD_REV", "TF_SRC"})
+                          "TF_NATIVE_REQUIRE_FILE", "TENSORFOLD_SOURCE", "TENSORFOLD_REV", "TF_SRC",
+                          "TF_CUDA_COMPAT"})
 RECIPE_PREFIXES = ("TF_SAFE_",)
 # Profile names the pinned engine no longer reads: the replacement, or why the line goes.
 LEGACY = {
