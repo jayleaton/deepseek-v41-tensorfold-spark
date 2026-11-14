@@ -3,6 +3,15 @@
 The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a) -> `da5ae43` (G16) -> `cd4245a`
 (G18) -> **`7bd2d67`** (G19). Each window's write-up is in [`docs/campaign/`](campaign/README.md).
 
+## Serving: eight slots of 192K by default (flash17 profile)
+
+- **`TF_DSV41_SLOTS` 4 -> 8, `TF_DSV41_CONTEXT` 1,048,576 -> 196,608**, same 2.1M-token pool, floors, image and
+  assets (no new AOT variants: C8 launches a subset of the 1M profile's 144). Eight requests now decode together
+  instead of four running and four queued: at 8 concurrent requests, aggregate +13% on distinct prompts (127 vs 113
+  tok/s) and p95 time to first token 1.3 s instead of 9.7 s; 1 and 4 requests are unchanged. A request's prompt +
+  output is capped at 196,608 tokens (HTTP 400 past it); set CONTEXT=1048576 with SLOTS=4 for longer single contexts.
+  Receipts and memory per rank: [results/c8-20261114](../results/c8-20261114/README.md).
+
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
 - **The recipe builds the engine the pair serves.** Upstream `f212eeabd` plus `patches/0001`-`0072` give `6c4eeccda`'s
