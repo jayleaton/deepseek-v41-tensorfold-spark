@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 11:21:24 +0700
+Subject: [PATCH 104/207] In-model runner: T1's direct source binding first in
+ the graph route (tools/runner_graph_bind_route.patch)
+
+---
+ zig/src/core/runner_graph_route.zig | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index 3dff7791fc049fd5f2d90d45cf41978ccd65151e..c621e921285a8f7a190c009b1c71aee1f6419b4f 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -350,6 +350,8 @@ pub const Routed = struct {
+ 
+     fn translate(ctx: ?*anyopaque, a: Allocator, cell: api.Cell) Allocator.Error!api.Translation {
+         const r: *Routed = @ptrCast(@alignCast(ctx.?));
++        if (try graph.bindCell(a, r.bank, cell)) |bytes|
++            return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and !prog.shadowed(cell.prior))
+             if (try prog.program(a, r.bank, cell.code)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         // a whole script the frontend checks runs on the bank before any compile; earlier cells' names stay on its path

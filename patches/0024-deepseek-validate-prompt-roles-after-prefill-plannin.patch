@@ -1,0 +1,110 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 11:34:32 +0700
+Subject: [PATCH 024/207] deepseek: validate prompt roles after prefill
+ planning
+
+The model constructor checked full-prefill image roles against only the
+window plan. Real flash17 TP2 boot consequently refused ImagesUnplanned
+after loading its weights. Complete the enabled prefill plan before that
+admission check, preserving refusal when required roles are still absent.
+
+Cover both TP2 ranks through the production planning seam, including text,
+full prefill and R1 replay with a 4K workspace. The prior ordering reproduces
+ImagesUnplanned in the same host fixture. Decoder code is unchanged.
+
+Credit Jay Leaton's published flash17 engine for the complete-plan validation
+order used as the reference for this correction.
+---
+ zig/src/families/deepseek_v41/boot_plan.zig   |  7 ++++
+ .../families/deepseek_v41/boot_plan_test.zig  | 36 +++++++++++++++++++
+ zig/src/families/deepseek_v41/cuda_model.zig  |  3 +-
+ zig/src/families/deepseek_v41/cuda_test.zig   |  1 +
+ 4 files changed, 45 insertions(+), 2 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/boot_plan.zig
+ create mode 100644 zig/src/families/deepseek_v41/boot_plan_test.zig
+
+diff --git a/zig/src/families/deepseek_v41/boot_plan.zig b/zig/src/families/deepseek_v41/boot_plan.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e120cf366517f5d315fe00690acc71b6873a11
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/boot_plan.zig
+@@ -0,0 +1,7 @@
++//! Complete prompt buffer planning before checking the enabled request paths.
++const Forward = @import("forward.zig").Forward;
++const Plan = @import("buffers.zig").Plan;
++pub fn prefill(f: *Forward, p: *Plan, enabled: bool) !void {
++    if (enabled) try f.planPrefill(p, @intCast(f.opts.prefill_rows));
++    try @import("vision_open.zig").checkPlan(f, p);
++}
+diff --git a/zig/src/families/deepseek_v41/boot_plan_test.zig b/zig/src/families/deepseek_v41/boot_plan_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cea0a5b1a6c661d7ca7c5c3f39d521cb46c6b8ab
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/boot_plan_test.zig
+@@ -0,0 +1,36 @@
++const std = @import("std");
++const t = std.testing;
++const block = @import("block.zig");
++const listing = @import("widths_listing.zig");
++const pf = @import("forward_prefill.zig");
++const hooks = @import("forward_hooks.zig");
++test "rank boot completes prefill roles before admitting image segments" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var widths: block.Widths = .{};
++    try listing.parseDense(a, &widths, @embedFile("fixtures/dense-k2.txt"));
++    try listing.parseExperts(a, &widths, @embedFile("fixtures/expert-k2.txt"));
++    for (0..40) |L| try widths.gm.put(a, @intCast(L), .{ (1 << 3) | (1 << 4), (1 << 3) | (1 << 4) });
++    var cfg: @import("config.zig").Config = .{};
++    const saved_hooks = hooks.set;
++    hooks.install(.{ .prefill = &pf.hooks_table });
++    defer hooks.install(saved_hooks);
++    for ([_]bool{ false, true }) |replay| for (0..2) |rank| {
++        var f = @import("forward.zig").Forward.init(a, &cfg, &widths, .{ .world = 2, .rank = @intCast(rank), .prefill_rows = 232, .limit = 8192, .rope_rows = 10240, .r1 = replay, .gm_v2 = .one }, undefined, undefined);
++        defer f.deinitAfterDrain();
++        try pf.attach(&f);
++        if (replay) {
++            pf.state(&f).mode = .replay;
++            pf.state(&f).k4 = true;
++        }
++        var plan = try f.plan(&.{1});
++        try @import("boot_plan.zig").prefill(&f, &plan, false);
++        f.images = true;
++        f.image_bias = true;
++        try t.expectError(error.ImagesUnplanned, @import("vision_open.zig").checkPlan(&f, &plan));
++        try t.expectError(error.ImagesUnplanned, @import("boot_plan.zig").prefill(&f, &plan, false));
++        try @import("boot_plan.zig").prefill(&f, &plan, true);
++        try @import("vision_open.zig").checkPlan(&f, &plan);
++    };
++}
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index d5fc273a9e207054ff69e57cd9c638ddc7a4c993..89232476d642215d4c5e38579d6844217ed9a505 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -338,11 +338,10 @@ pub const Model = struct {
+         const nb = @max(o.prefill_rows, m.cfg.dspark_block + 1);
+         for (buckets[0..nb], 0..) |*b, i| b.* = @intCast(i + 1);
+         var bp = try m.f.plan(buckets[0..nb]);
+-        try vision.checkPlan(&m.f, &bp);
+         // the pass ingests a prompt's prefilled tail in one call (the drafter's window) with the own prefill
+         const ingest_rows: u32 = if (o.own_prefill) @max(nb, m.cfg.window) else nb;
+         if (o.drafts) try dspark_gpu.GpuPass.plan(m.f.arena.allocator(), &m.f, &bp, ingest_rows);
+-        if (o.own_prefill) try m.f.planPrefill(&bp, @intCast(m.f.opts.prefill_rows));
++        try @import("boot_plan.zig").prefill(&m.f, &bp, o.own_prefill);
+         const rows_cap = try batch.capFromEnv();
+         if (m.slots > 1) try batch.Batch.plan(&m.f, &bp, m.slots, rows_cap);
+         // TF_DSV41_SLOT_DRAFTS=1: DSpark over every live slot (off: drafts are refused with several slots)
+diff --git a/zig/src/families/deepseek_v41/cuda_test.zig b/zig/src/families/deepseek_v41/cuda_test.zig
+index 368c763b711db35026c35fd5b24f0d2e929e02f8..1455a0ac60e36cce3560a923790c6bb75f5bdb21 100644
+--- a/zig/src/families/deepseek_v41/cuda_test.zig
++++ b/zig/src/families/deepseek_v41/cuda_test.zig
+@@ -3,6 +3,7 @@ const dk = @import("dsv41_kernels");
+ test {
+     _ = @import("load_test.zig");
+     _ = @import("load_chunk_test.zig");
++    _ = @import("boot_plan_test.zig");
+     _ = @import("named.zig");
+     inline for (.{ @import("cuda_weights.zig"), @import("cuda_weights.zig").Weights, @import("forms.zig"), @import("forms_inplace.zig"), @import("ex_stacks.zig"), @import("triton_capture.zig"), @import("host_stage.zig").Stage }) |m| std.testing.refAllDecls(m);
+     _ = @import("block_test.zig");

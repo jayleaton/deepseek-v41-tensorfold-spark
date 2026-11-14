@@ -1,0 +1,457 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 00:22:34 +0700
+Subject: [PATCH 019/207] deepseek: admit supported dsq-1 checkpoint metadata
+
+The public EXL3 pack published by jayleaton uses dsq-1 metadata with a producer annotation. Preserve DeepSeek's public configuration and jayleaton's pack metadata as a regression fixture. Admit the supported format independently of producer name while retaining geometry, tensor-layout, scale and marker checks. Host admission and malformed-storage tests do not qualify the real checkpoint or GPU execution.
+---
+ .../deepseek_v41/checkpoint_metadata.zig      |  30 +++
+ zig/src/families/deepseek_v41/config.zig      |  10 +-
+ .../deepseek_v41/dsq_admission_test.zig       |  78 ++++++++
+ .../deepseek_v41/dsq_storage_test.zig         |  82 ++++++++
+ .../fixtures/flash1017-dsq-config.json        | 186 ++++++++++++++++++
+ zig/src/families/deepseek_v41/shared_test.zig |   4 +
+ 6 files changed, 385 insertions(+), 5 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/checkpoint_metadata.zig
+ create mode 100644 zig/src/families/deepseek_v41/dsq_admission_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/dsq_storage_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/fixtures/flash1017-dsq-config.json
+
+diff --git a/zig/src/families/deepseek_v41/checkpoint_metadata.zig b/zig/src/families/deepseek_v41/checkpoint_metadata.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..94f8bed6a563061e633b490b781bd528c09beeb0
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/checkpoint_metadata.zig
+@@ -0,0 +1,30 @@
++//! EXL3 metadata dialect admission; tensor shapes, scale storage and marker bytes remain loader responsibilities.
++const std = @import("std");
++
++/// Legacy 1.x metadata keeps its existing admission; dsq-1 declares its codebook and output scale policy.
++pub fn require(quant: std.json.Value) !void {
++    if (quant != .object) return error.BadConfig;
++    const method = quant.object.get("quant_method") orelse return error.MissingField;
++    const version = quant.object.get("version") orelse return error.MissingField;
++    if (method != .string or !std.mem.eql(u8, method.string, "exl3") or version != .string)
++        return error.UnsupportedCheckpoint;
++    if (std.mem.eql(u8, version.string, "1") or std.mem.startsWith(u8, version.string, "1.")) return;
++    if (!dsq1(version.string)) return error.UnsupportedCheckpoint;
++    const codebook = quant.object.get("codebook") orelse return error.MissingField;
++    const scales = quant.object.get("out_scales") orelse return error.MissingField;
++    if (codebook != .string or scales != .string) return error.UnsupportedCheckpoint;
++    const supported = std.mem.eql(u8, codebook.string, "inst3") or std.mem.eql(u8, codebook.string, "mcg") or
++        std.mem.eql(u8, codebook.string, "mul1");
++    if (!supported or !std.mem.eql(u8, scales.string, "always")) return error.UnsupportedCheckpoint;
++}
++
++/// A format identifier, optionally followed by a parenthesized producer annotation; never a producer allowlist.
++fn dsq1(version: []const u8) bool {
++    if (std.mem.eql(u8, version, "dsq-1")) return true;
++    const prefix = "dsq-1 (";
++    if (!std.mem.startsWith(u8, version, prefix) or !std.mem.endsWith(u8, version, ")")) return false;
++    const annotation = version[prefix.len .. version.len - 1];
++    if (std.mem.trim(u8, annotation, " ").len == 0) return false;
++    for (annotation) |ch| if (ch < 32 or ch > 126 or ch == '(' or ch == ')') return false;
++    return true;
++}
+diff --git a/zig/src/families/deepseek_v41/config.zig b/zig/src/families/deepseek_v41/config.zig
+index da8b28c0c2611f2a6e238ab2650917423e7db70f..27fe3d24bcdf11f0da42ca802b4f63f72ef8583f 100644
+--- a/zig/src/families/deepseek_v41/config.zig
++++ b/zig/src/families/deepseek_v41/config.zig
+@@ -442,11 +442,7 @@ fn requireCheckpoint(top: std.json.ObjectMap, text: std.json.ObjectMap) !void {
+     const model = top.get("model_type") orelse return error.MissingField;
+     if (model != .string or !std.mem.eql(u8, model.string, "deepseek_v41")) return error.UnsupportedCheckpoint;
+     const quant = top.get("quantization_config") orelse return error.MissingField;
+-    if (quant != .object) return error.BadConfig;
+-    const method = quant.object.get("quant_method") orelse return error.MissingField;
+-    const version = quant.object.get("version") orelse return error.MissingField;
+-    if (method != .string or !std.mem.eql(u8, method.string, "exl3") or version != .string or
+-        (!std.mem.eql(u8, version.string, "1") and !std.mem.startsWith(u8, version.string, "1."))) return error.UnsupportedCheckpoint;
++    try @import("checkpoint_metadata.zig").require(quant);
+     try requireMetadata(top, text);
+ }
+ 
+@@ -509,3 +505,7 @@ test "asset metadata preserves release checks without widening checkpoint admiss
+     defer a.free(changed);
+     try std.testing.expectError(error.UnsupportedArchitecture, Config.parseMetadata(a, changed));
+ }
++
++test {
++    _ = @import("dsq_admission_test.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/dsq_admission_test.zig b/zig/src/families/deepseek_v41/dsq_admission_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d3c878fe04e023d948947aad8f35fece772c039
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/dsq_admission_test.zig
+@@ -0,0 +1,78 @@
++//! Public dsq-1 config admission through the serving reader, without weights or devices.
++const std = @import("std");
++const Config = @import("config.zig").Config;
++const t = std.testing;
++const public_config = @embedFile("fixtures/flash1017-dsq-config.json");
++const public_version = "dsq-1 (exllamav3 1.5.4 quantize_exl3)";
++
++fn refusal(comptime expected: anyerror, before: []const u8, after: []const u8) !void {
++    const changed = try std.mem.replaceOwned(u8, t.allocator, public_config, before, after);
++    defer t.allocator.free(changed);
++    try t.expect(!std.mem.eql(u8, public_config, changed));
++    try t.expectError(expected, Config.parse(t.allocator, changed));
++}
++
++test "dsq admission: exact public config passes the serving Config.read path on CPU" {
++    var digest: [32]u8 = undefined;
++    std.crypto.hash.sha2.Sha256.hash(public_config, &digest, .{});
++    const hex = std.fmt.bytesToHex(digest, .lower);
++    try t.expectEqualStrings("8716a12d34f798e991bcc8e6689b25c006dd8a9675de5653e685094503c5d864", &hex);
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    var file = try tmp.dir.createFile(t.io, "config.json", .{});
++    defer file.close(t.io);
++    try file.writePositionalAll(t.io, public_config, 0);
++    const dir = try tmp.dir.realPathFileAlloc(t.io, ".", t.allocator);
++    defer t.allocator.free(dir);
++    const admitted = try Config.read(t.allocator, t.io, dir);
++    const metadata = try Config.parseMetadata(t.allocator, public_config);
++    try t.expectEqual(@as(u32, 5120), admitted.hidden);
++    try t.expectEqual(@as(u32, 384), admitted.experts);
++    try t.expectEqual(metadata.engram_compressed_vocab, admitted.engram_compressed_vocab);
++    try t.expectEqualSlices(u64, metadata.engram_rows.items(), admitted.engram_rows.items());
++    try admitted.validateRelease();
++}
++
++test "dsq admission: format identity is independent of producer version and pack annotations" {
++    for ([_][]const u8{ "dsq-1", "dsq-1 (other-exporter 9.0)", "1", "1.4.2", "1.future" }) |version| {
++        const changed = try std.mem.replaceOwned(u8, t.allocator, public_config, public_version, version);
++        defer t.allocator.free(changed);
++        _ = try Config.parse(t.allocator, changed);
++    }
++    for ([_][]const u8{ "inst3", "mcg", "mul1" }) |codebook| {
++        const field = try std.fmt.allocPrint(t.allocator, "\"codebook\": \"{s}\"", .{codebook});
++        defer t.allocator.free(field);
++        const changed = try std.mem.replaceOwned(u8, t.allocator, public_config, "\"codebook\": \"mul1\"", field);
++        defer t.allocator.free(changed);
++        _ = try Config.parse(t.allocator, changed);
++    }
++}
++
++test "dsq admission: unknown or malformed metadata and release geometry remain refused" {
++    for ([_][]const u8{ "dsq-2", "dsq-10", "dsq-1broken", "dsq-1 ()", "dsq-1 (producer", "2.0" }) |version|
++        try refusal(error.UnsupportedCheckpoint, public_version, version);
++    try refusal(error.UnsupportedCheckpoint, "\"quant_method\": \"exl3\"", "\"quant_method\": \"fp8\"");
++    try refusal(error.UnsupportedCheckpoint, "\"quant_method\": \"exl3\"", "\"quant_method\": false");
++    try refusal(error.MissingField, "\"quant_method\":", "\"missing_quant_method\":");
++    try refusal(error.UnsupportedCheckpoint, "\"version\": \"" ++ public_version ++ "\"", "\"version\": 1");
++    try refusal(error.BadConfig, "\"quantization_config\": {", "\"quantization_config\": null, \"ignored_quant\": {");
++    try refusal(error.MissingField, "\"version\":", "\"missing_version\":");
++    try refusal(error.MissingField, "\"codebook\":", "\"missing_codebook\":");
++    try refusal(error.UnsupportedCheckpoint, "\"codebook\": \"mul1\"", "\"codebook\": \"unknown\"");
++    try refusal(error.UnsupportedCheckpoint, "\"out_scales\": \"always\"", "\"out_scales\": \"unknown\"");
++    try refusal(error.MissingField, "\"out_scales\":", "\"missing_out_scales\":");
++    try refusal(error.MissingField, "\"index_topk\":", "\"missing_index_topk\":");
++    try refusal(error.UnsupportedArchitecture, "\"hidden_size\": 5120", "\"hidden_size\": 5248");
++    try refusal(error.UnsupportedArchitecture, "\"num_key_value_heads\": 1", "\"num_key_value_heads\": 2");
++    try refusal(error.UnsupportedCheckpoint, "\"model_type\": \"deepseek_v41\"", "\"model_type\": \"other\"");
++}
++
++test "dsq admission: legacy 1.x optional metadata remains backward compatible" {
++    const legacy = try std.mem.replaceOwned(u8, t.allocator, public_config, public_version, "1.4.2");
++    defer t.allocator.free(legacy);
++    const without_codebook = try std.mem.replaceOwned(u8, t.allocator, legacy, "\"codebook\":", "\"unused_codebook\":");
++    defer t.allocator.free(without_codebook);
++    const without_scales = try std.mem.replaceOwned(u8, t.allocator, without_codebook, "\"out_scales\":", "\"unused_out_scales\":");
++    defer t.allocator.free(without_scales);
++    _ = try Config.parse(t.allocator, without_scales);
++}
+diff --git a/zig/src/families/deepseek_v41/dsq_storage_test.zig b/zig/src/families/deepseek_v41/dsq_storage_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c4d4d3d9f0e1e8b4947bbfa3524ce36fca6c354
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/dsq_storage_test.zig
+@@ -0,0 +1,82 @@
++//! dsq-1 metadata cannot bypass the native storage owners; synthetic groups exercise their original checks.
++const std = @import("std");
++const Config = @import("config.zig").Config;
++const pk = @import("pack.zig");
++const Plan = @import("plan.zig").CheckpointPlan;
++const exl3 = @import("core").exl3_layout;
++const t = std.testing;
++const public_config = @embedFile("fixtures/flash1017-dsq-config.json");
++
++fn groupImage(words: usize, output_scale: usize, marker: bool) ![]u8 {
++    const specs = [_]pk.Spec{
++        .{ .name = "p.trellis", .dtype = "I16", .shape = &.{ 8, 8, words }, .fill = 7 },
++        .{ .name = "p.suh", .dtype = "F16", .shape = &.{128} },
++        .{ .name = "p.svh", .dtype = "F16", .shape = &.{output_scale} },
++        .{ .name = "p.mul1", .dtype = "I32", .shape = &.{} },
++    };
++    return pk.image(t.allocator, specs[0..if (marker) 4 else 3]);
++}
++
++test "dsq admission: config does not waive native trellis, scale, header or marker checks" {
++    _ = try Config.parse(t.allocator, public_config);
++    const bad_shape = try groupImage(8, 128, true);
++    defer t.allocator.free(bad_shape);
++    var shapes = pk.Pack.init(t.allocator);
++    defer shapes.deinit();
++    try shapes.addHeaderDump("shape", bad_shape);
++    try t.expectError(error.BadTrellis, Plan.init(t.allocator, &shapes, &.{"p"}));
++    const bad_scale = try groupImage(32, 64, true);
++    defer t.allocator.free(bad_scale);
++    var scales = pk.Pack.init(t.allocator);
++    defer scales.deinit();
++    try scales.addHeaderDump("scale", bad_scale);
++    try t.expectError(error.BadScales, Plan.init(t.allocator, &scales, &.{"p"}));
++    const odd = try groupImage(24, 128, false);
++    defer t.allocator.free(odd);
++    var missing_marker = pk.Pack.init(t.allocator);
++    defer missing_marker.deinit();
++    try missing_marker.addHeaderDump("odd", odd);
++    try t.expectError(error.BadMarker, Plan.init(t.allocator, &missing_marker, &.{"p"}));
++    const malformed_marker = try pk.image(t.allocator, &.{
++        .{ .name = "p.trellis", .dtype = "I16", .shape = &.{ 8, 8, 32 } },
++        .{ .name = "p.suh", .dtype = "F16", .shape = &.{128} },
++        .{ .name = "p.svh", .dtype = "F16", .shape = &.{128} },
++        .{ .name = "p.mul1", .dtype = "I32", .shape = &.{1} },
++    });
++    defer t.allocator.free(malformed_marker);
++    var markers = pk.Pack.init(t.allocator);
++    defer markers.deinit();
++    try markers.addHeaderDump("marker", malformed_marker);
++    try t.expectError(error.BadMarker, Plan.init(t.allocator, &markers, &.{"p"}));
++    try t.expectError(error.UnknownCodebookMarker, exl3.fromMarker(0));
++    var truncated = pk.Pack.init(t.allocator);
++    defer truncated.deinit();
++    try t.expectError(error.BadSafetensors, truncated.addHeaderDump("truncated", &.{ 1, 2, 3 }));
++}
++
++test "dsq admission: native file bytes select mul1 and invalid magic is refused without changing storage" {
++    _ = try Config.parse(t.allocator, public_config);
++    const image = try groupImage(32, 128, true);
++    defer t.allocator.free(image);
++    std.mem.writeInt(u32, image[image.len - 4 ..][0..4], exl3.marker_mul1, .little);
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    var file = try tmp.dir.createFile(t.io, "model.safetensors", .{ .read = true });
++    defer file.close(t.io);
++    try file.writePositionalAll(t.io, image, 0);
++    const dir = try tmp.dir.realPathFileAlloc(t.io, ".", t.allocator);
++    defer t.allocator.free(dir);
++    var pack = try pk.Pack.open(t.allocator, t.io, dir);
++    defer pack.deinit();
++    var pl = try Plan.init(t.allocator, &pack, &.{"p"});
++    defer pl.deinit();
++    try t.expectEqual(exl3.Codebook.mul1, try pack.codebook(t.io, "p"));
++    try t.expectEqual(@as(u32, 4), (try pl.projections[0].storage.cudaGroup()).k2());
++    const info = pack.get("p.trellis").?;
++    const bytes = try t.allocator.alloc(u8, @intCast(info.nbytes));
++    defer t.allocator.free(bytes);
++    try pack.read(t.io, info, .{ .offset = 0, .len = info.nbytes }, bytes);
++    for (bytes) |byte| try t.expectEqual(@as(u8, 7), byte);
++    try file.writePositionalAll(t.io, &.{ 0, 0, 0, 0 }, image.len - 4);
++    try t.expectError(error.UnknownCodebookMarker, pack.codebook(t.io, "p"));
++}
+diff --git a/zig/src/families/deepseek_v41/fixtures/flash1017-dsq-config.json b/zig/src/families/deepseek_v41/fixtures/flash1017-dsq-config.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..323d70b48555178d98160cc7c662b56272b2b76c
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/fixtures/flash1017-dsq-config.json
+@@ -0,0 +1,186 @@
++{
++ "architectures": [
++  "DeepseekV41ForCausalLM"
++ ],
++ "model_type": "deepseek_v41",
++ "dtype": "bfloat16",
++ "transformers_version": "5.6.0",
++ "bos_token_id": 0,
++ "eos_token_id": 1,
++ "pad_token_id": 2,
++ "image_token_id": 129264,
++ "quantization_config": {
++  "quant_method": "exl3",
++  "version": "dsq-1 (exllamav3 1.5.4 quantize_exl3)",
++  "avg_bits": 2.8003,
++  "head_bits": 6.0,
++  "mtp_bits": 4.0,
++  "codebook": "mul1",
++  "out_scales": "always",
++  "calibration": {
++   "name": "calib-v4",
++   "sequences": 1239,
++   "tokens": 1215188,
++   "sha256": "88d99cb882d1627f992ae2d18ec43b23279aa8310d95689127c64ab6f67719e9"
++  },
++  "original_quantization_config": {
++   "quant_method": "fp8",
++   "activation_scheme": "dynamic",
++   "weight_block_size": [
++    32,
++    32
++   ],
++   "scale_fmt": "ue8m0",
++   "expert_dtype": "fp4"
++  },
++  "plan": "flash17"
++ },
++ "text_config": {
++  "model_type": "deepseek_v41_text",
++  "vocab_size": 129280,
++  "hidden_size": 5120,
++  "moe_intermediate_size": 2304,
++  "num_hidden_layers": 40,
++  "num_attention_heads": 64,
++  "num_key_value_heads": 1,
++  "head_dim": 512,
++  "qk_rope_head_dim": 64,
++  "q_lora_rank": 1280,
++  "o_lora_rank": 1024,
++  "o_groups": 8,
++  "hidden_act": "silu",
++  "swiglu_limit": 10.0,
++  "rms_norm_eps": 1e-20,
++  "attention_bias": false,
++  "attention_dropout": 0.0,
++  "initializer_range": 0.02,
++  "use_cache": true,
++  "tie_word_embeddings": false,
++  "max_position_embeddings": 1048576,
++  "rope_theta": 10000,
++  "rope_scaling": {
++   "rope_type": "yarn",
++   "factor": 16,
++   "beta_fast": 32,
++   "beta_slow": 1,
++   "original_max_position_embeddings": 65536
++  },
++  "n_routed_experts": 384,
++  "n_shared_experts": 1,
++  "num_experts_per_tok": 6,
++  "scoring_func": "sqrtsoftplus",
++  "topk_method": "noaux_tc",
++  "norm_topk_prob": true,
++  "routed_scaling_factor": 1.5,
++  "sliding_window": 128,
++  "compress_ratios": [
++   0,
++   0,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   2,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   1,
++   0,
++   0,
++   0
++  ],
++  "compress_rope_theta": 160000,
++  "kv_source_layer_ids": [
++   2,
++   8,
++   14,
++   20
++  ],
++  "index_source_layer_ids": [
++   2,
++   8,
++   14,
++   20,
++   24,
++   28,
++   32,
++   36
++  ],
++  "index_n_heads": 32,
++  "index_head_dim": 128,
++  "index_topk": 512,
++  "candidate_source_layer_id": 20,
++  "candidate_topk_blocks": 2048,
++  "candidate_block_size": 8,
++  "hc_mult": 4,
++  "hc_sinkhorn_iters": 20,
++  "hc_eps": 1e-06,
++  "engram_layer_ids": [
++   1,
++   14
++  ],
++  "engram_num_embeddings": [
++   384006168,
++   384016682
++  ],
++  "engram_max_ngram_size": 4,
++  "engram_vocab_size": 16000000,
++  "engram_n_heads": 8,
++  "engram_head_dim": 256,
++  "engram_pad_token_id": 2,
++  "engram_compressed_vocab_size": 99092,
++  "num_nextn_predict_layers": 3,
++  "dspark_block_size": 5,
++  "dspark_noise_token_id": 128799,
++  "dspark_target_layer_ids": [
++   37,
++   38,
++   39
++  ],
++  "dspark_markov_rank": 256,
++  "dspark_n_routed_experts": 128,
++  "dspark_num_experts_per_tok": 3
++ },
++ "vision_config": {
++  "model_type": "deepseek_v41_vision",
++  "num_hidden_layers": 32,
++  "hidden_size": 1024,
++  "num_attention_heads": 16,
++  "intermediate_size": 2816,
++  "patch_size": 14,
++  "rope_theta": 10000,
++  "downsample_ratio": 3,
++  "max_image_tokens": 1024,
++  "min_pixels": 295936,
++  "max_wh_ratio": null
++ }
++}
+\ No newline at end of file
+diff --git a/zig/src/families/deepseek_v41/shared_test.zig b/zig/src/families/deepseek_v41/shared_test.zig
+index 16969a3d7bf3a41e52f9f59f746da96013177e4c..a71be912ee7d3bbc1a8264604b553eb001b9dee9 100644
+--- a/zig/src/families/deepseek_v41/shared_test.zig
++++ b/zig/src/families/deepseek_v41/shared_test.zig
+@@ -13,3 +13,7 @@ test {
+     _ = @import("core").exl3_layout;
+     _ = @import("core").exl3_load;
+ }
++
++test {
++    _ = @import("dsq_storage_test.zig");
++}

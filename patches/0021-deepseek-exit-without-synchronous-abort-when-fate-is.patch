@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 00:32:43 +0700
+Subject: [PATCH 021/207] deepseek: exit without synchronous abort when fate is
+ disabled
+
+Complete the sticky-error fail-fast contract from justonehe and ilonalumina's issue #31. Notify an existing Fate directly, or exit without waiting on communicator teardown when TF_TP_FAILFAST is off. The actual model callback child test records the old synchronous abort path as status 71 and requires direct status 70 after correction; generic TP behavior is unchanged.
+---
+ .../families/deepseek_v41/model_health.zig    |  2 +-
+ .../deepseek_v41/model_supervisor_test.zig    | 32 +++++++++++++++++++
+ 2 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/families/deepseek_v41/model_health.zig b/zig/src/families/deepseek_v41/model_health.zig
+index fc50cb12cd45aac40e42cacdaa9aa266ff3fb349..fdf4f6ebfc78b62bd5ccec479d4e4bea9376f93c 100644
+--- a/zig/src/families/deepseek_v41/model_health.zig
++++ b/zig/src/families/deepseek_v41/model_health.zig
+@@ -12,6 +12,6 @@ pub fn context(ctx: *anyopaque) bool {
+ }
+ pub fn failed(ctx: *anyopaque, err: anyerror) void {
+     const m: *Model = @ptrCast(@alignCast(ctx));
+-    m.session.fatal(if (err == error.CudaContextLost) "CUDA context" else if (err == error.StalledRound) "round progress" else "execution", err);
++    if (m.session.fate) |*f| f.fatal(if (err == error.CudaContextLost) "CUDA context" else if (err == error.StalledRound) "round progress" else "execution", err);
+     std.c._exit(70);
+ }
+diff --git a/zig/src/families/deepseek_v41/model_supervisor_test.zig b/zig/src/families/deepseek_v41/model_supervisor_test.zig
+index e4faf8d44df9db7ac2da69bb1d534d49f5a68c70..26fe04ff5ab17daf3c1819fd7f91a43f060454a8 100644
+--- a/zig/src/families/deepseek_v41/model_supervisor_test.zig
++++ b/zig/src/families/deepseek_v41/model_supervisor_test.zig
+@@ -170,3 +170,35 @@ test "model supervisor: fatal transport reports preserve the first error and wit
+     try t.expectEqual(error.BackendFailed, c.failure.?);
+     try t.expectEqual(@as(u32, 1), c.calls.load(.acquire));
+ }
++
++test "model supervisor: the real model fatal callback exits without synchronous NCCL abort when fate is absent" {
++    if (comptime @import("builtin").os.tag != .linux) return error.SkipZigTest;
++    const platform = @import("sys");
++    const nccl = @import("cuda").nccl;
++    const pid = platform.c.fork();
++    if (pid < 0) return error.ForkFailed;
++    if (pid == 0) {
++        const Abort = struct {
++            fn entered(_: nccl.Comm) callconv(.c) nccl.Result {
++                std.c._exit(71);
++            }
++        };
++        var lib: nccl.Library = undefined;
++        lib.api.ncclCommAbort = Abort.entered;
++        var m: @import("cuda_model.zig").Model = undefined;
++        m.session.fate = null;
++        m.session.mail = null;
++        m.session.roce = null;
++        m.session.roce_multi = null;
++        m.session.nccl.lib = &lib;
++        m.session.nccl.borrowed = null;
++        m.session.nccl.aborted = .init(false);
++        m.session.nccl.comm = null;
++        @import("model_health.zig").failed(&m, error.CudaContextLost);
++        std.c._exit(72);
++    }
++    var status: c_int = 0;
++    try t.expectEqual(pid, platform.c.waitpid(pid, &status, 0));
++    try t.expectEqual(@as(c_int, 0), status & 127);
++    try t.expectEqual(@as(c_int, 70), (status >> 8) & 255);
++}

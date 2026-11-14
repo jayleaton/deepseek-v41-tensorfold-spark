@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 17:42:18 +0700
+Subject: [PATCH 066/207] In-model runner: a bare output fence after a cell is
+ no result handoff
+
+The T6 census of stock replies shows result headers before results; a bare
+```output or ```text block without one is not taken as the place to own.
+---
+ zig/src/core/runner_scan.zig | 13 +++----------
+ zig/src/core/runner_test.zig |  4 ++--
+ 2 files changed, 5 insertions(+), 12 deletions(-)
+
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 9e4fe89543b2382c731d807c2e4f0ca69f9586e2..3c2646f8b9ec9b249cfc79620d438dda49d43ccf 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -88,8 +88,8 @@ pub const Scanner = struct {
+             },
+             .prose, .after => {
+                 if (s.state == .after and allowed) {
++                    // a header line only: a bare output fence is no handoff (T6 census)
+                     if (header(raw)) return s.fire(false);
+-                    if (resultFence(raw)) return s.fire(true);
+                 }
+                 if (s.cfg.fence) if (fenceOpen(raw)) |lang| {
+                     s.lang.clearRetainingCapacity();
+@@ -153,13 +153,6 @@ fn isResultTag(tag: []const u8) bool {
+     return false;
+ }
+ 
+-/// "```output" / "```text" / …: the model opening a block for the output.
+-fn resultFence(line: []const u8) bool {
+-    const t = indentOk(line) orelse return false;
+-    if (!std.mem.startsWith(u8, t, "```")) return false;
+-    return isResultTag(std.mem.trim(u8, t[3..], " \t"));
+-}
+-
+ const header_words = [_][]const u8{
+     "result",      "results",      "output",           "outputs",            "it prints",
+     "this prints", "prints",       "running it gives", "running this gives", "expected output",
+@@ -294,13 +287,13 @@ test "runner scan: cell code and lang are kept exactly" {
+     try std.testing.expectEqualStrings("x = 3\nprint(x*x)\n", e.closed.?.code);
+ }
+ 
+-test "runner scan: a result fence after a cell triggers fenced; a header inside prose without a cell does not" {
++test "runner scan: a bare result fence after a cell is no trigger; nor is a header in prose without a cell" {
+     const a = std.testing.allocator;
+     var s: Scanner = .{ .cfg = .{} };
+     defer s.deinit(a);
+     try std.testing.expectEqual(@as(?Trigger, null), (try s.feed(a, "Result:\n", true)).trigger);
+     _ = try s.feed(a, "```python\nprint(1)\n```\n", true);
+-    try std.testing.expectEqual(Trigger{ .index = 0, .fenced = true }, (try s.feed(a, "```text\n", true)).trigger.?);
++    try std.testing.expectEqual(@as(?Trigger, null), (try s.feed(a, "```text\n", true)).trigger);
+ }
+ 
+ test "runner scan: a REPL line is a cell and its own trigger; a block opener is not" {
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 4cfe3d4d180152d220e1831902fe7fcdee6f7bd1..570776517f4091f8123f8c480945cada77719838 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -228,11 +228,11 @@ test "runner: a loop cell's result is 285; a REPL line's next line is its value"
+     try std.testing.expectEqualStrings(repl ++ "1267650600228229401496703205376\nDone.", r);
+ }
+ 
+-test "runner: a fenced result block is filled and closed" {
++test "runner: a bare result fence with no header keeps the model's own text" {
+     const lead = "```python\nprint(2**100)\n```\n```text\n";
+     const got = try one(lead, .{});
+     defer gpa.free(got);
+-    try std.testing.expectEqualStrings(lead ++ "1267650600228229401496703205376\n```\nDone.", got);
++    try std.testing.expectEqualStrings(lead ++ "42\nDone.", got);
+ }
+ 
+ test "runner: a run that ends late gives the same reply as one that ends early" {

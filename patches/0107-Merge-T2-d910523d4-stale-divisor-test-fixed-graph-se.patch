@@ -1,0 +1,674 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 13:24:15 +0700
+Subject: [PATCH 107/207] Merge T2 d910523d4 (stale divisor test fixed, graph
+ sequences v2, ELF build deadline)
+
+Squashed merge of 3 commits:
+- runner: graph sequences v2 let a print read an earlier piece's value (d_mirror reuses q and r) (Jay Leaton)
+- runner: an ELF build may use the whole translate deadline (bignum-10 no longer flips to unsupported) (Jay Leaton)
+- runner: graph table test expects T1's binding to own the computed divisor (25); a string stays the refusal (Jay Leaton)
+---
+ zig/src/core/compute_circuit_proof_test.zig   |  6 +-
+ .../runner_frontend_compile_time_test.zig     | 32 ++++++
+ .../core/runner_frontend_elf_cache_test.zig   |  1 +
+ .../core/runner_frontend_program_compile.zig  | 13 ++-
+ zig/src/core/runner_graph_dispatch.zig        | 98 +++++++++++++++++--
+ zig/src/core/runner_graph_program.zig         | 96 ++++++++++++++++--
+ zig/src/core/runner_graph_table_test.zig      | 18 +++-
+ zig/src/core/runner_open.zig                  |  2 +-
+ zig/src/core/runner_proof_test.zig            | 47 ++++++++-
+ zig/src/core/runner_s3_bench.zig              |  4 +-
+ zig/src/core/runner_trace_test.zig            |  2 +-
+ 11 files changed, 290 insertions(+), 29 deletions(-)
+ create mode 100644 zig/src/core/runner_frontend_compile_time_test.zig
+
+diff --git a/zig/src/core/compute_circuit_proof_test.zig b/zig/src/core/compute_circuit_proof_test.zig
+index a09a26eb8d7a90957a75838d3fd311f40338bcfe..f21704b8c754c8c5a8fe7fc61fade520cd70330f 100644
+--- a/zig/src/core/compute_circuit_proof_test.zig
++++ b/zig/src/core/compute_circuit_proof_test.zig
+@@ -14,7 +14,7 @@ const File = struct { source: []const u8, calls: []const Recorded };
+ 
+ /// Calls each route must own, so the proof is never empty: calc lowers these on any backend.
+ const calc_owned = [_][]const u8{ "add30-06", "add30-11", "add30-22", "add30-23", "add30-25", "add30-30", "add30-33", "add30-40", "mul30-14", "mul30-16", "mul_big-05", "mul_big-30", "mul_big-40", "bignum-18" };
+-/// Two prints: one graph sequence on the bank; the circuit route declines it, ELF or not.
++/// Two prints: one graph sequence on the bank, or an ELF when compiling (the build has the whole translate deadline).
+ const bank_owned = [_][]const u8{"bignum-10"};
+ /// Floor division with divmod and Fraction, Decimal: the graph bank's, or an ELF's when compiling.
+ const graph_owned = [_][]const u8{ "div_big-04", "div_big-08", "div_big-20", "div_big-23", "div_big-32", "div_big-36", "mul_big-08", "mul_big-17", "mul_big-18" };
+@@ -58,7 +58,7 @@ fn proof(elf: bool) !void {
+     if (with_bank) |g| {
+         bank = try graph.Bank.load(gpa, std.mem.span(g));
+         routed = .{ .inner = e.frontend, .bank = &bank };
+-        dispatch = .{ .gpa = gpa, .circuit = b, .graph = try graph.backend(gpa, &bank, 2) };
++        dispatch = .{ .gpa = gpa, .circuit = b, .graph = try graph.backend(gpa, &bank, 2), .bank = &bank };
+         e.frontend = routed.frontend();
+         e.backend = dispatch.backend();
+     }
+@@ -90,7 +90,7 @@ fn proof(elf: bool) !void {
+             },
+             .declined => |why| std.debug.print("{s}#{d}: code tool ({t})\n", .{ r.task, r.call, why }),
+         }
+-        const must = listed(&calc_owned, r.task) or (listed(&bank_owned, r.task) and with_bank != null) or
++        const must = listed(&calc_owned, r.task) or (listed(&bank_owned, r.task) and (with_bank != null or elf)) or
+             (listed(&graph_owned, r.task) and (with_bank != null or elf)) or (listed(&elf_owned, r.task) and elf);
+         if (must and got != .owned) {
+             std.debug.print("  MUST OWN: {s} went to the code tool\n", .{r.task});
+diff --git a/zig/src/core/runner_frontend_compile_time_test.zig b/zig/src/core/runner_frontend_compile_time_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..f1f5fd2b457f622a9524a4e8a1f4cfecddc0ab60
+--- /dev/null
++++ b/zig/src/core/runner_frontend_compile_time_test.zig
+@@ -0,0 +1,32 @@
++//! The build's time limit: a slow compiler keeps what is left of the translate deadline, not a shorter cap of its own.
++const std = @import("std");
++const compiler = @import("runner_frontend_program_compile.zig");
++const elf_cache = @import("runner_frontend_elf_cache.zig");
++const t = std.testing;
++
++const body = "int main(void) {\n return 0;\n}\n";
++
++/// Milliseconds compile() took to decline `body` with `clang`, the deadline `deadline_ms` away (or none).
++fn timed(clang: []const u8, deadline_ms: ?i64) !i64 {
++    const start = std.Io.Clock.awake.now(t.io);
++    var config: compiler.Config = .{ .clang = clang, .opaque_inputs = true, .estimated_steps = 40 };
++    if (deadline_ms) |ms| config.deadline = start.addDuration(.fromMilliseconds(ms));
++    try t.expectEqual(@as(?[]u8, null), try compiler.compile(t.allocator, t.io, body, config));
++    return @intCast(@divTrunc(start.durationTo(std.Io.Clock.awake.now(t.io)).toNanoseconds(), std.time.ns_per_ms));
++}
++
++test "a compiler slower than 1 s still ends on its own inside the translate deadline; a nearer deadline stops it" {
++    elf_cache.reset(t.io);
++    defer elf_cache.reset(t.io);
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    const file = try tmp.dir.createFile(t.io, "slow-clang", .{ .permissions = .fromMode(0o700) });
++    try file.writeStreamingAll(t.io, "#!/bin/sh\nsleep 1.3\nexit 1\n");
++    file.close(t.io);
++    const clang = try tmp.dir.realPathFileAlloc(t.io, "slow-clang", t.allocator);
++    defer t.allocator.free(clang);
++    // the first ELF compile of a process on a cold page cache took 1.0 s on the host and was cut at the old 1000 ms cap
++    try t.expect(try timed(clang, 1900) >= 1300);
++    try t.expect(try timed(clang, null) >= 1300);
++    try t.expect(try timed(clang, 300) < 1000);
++}
+diff --git a/zig/src/core/runner_frontend_elf_cache_test.zig b/zig/src/core/runner_frontend_elf_cache_test.zig
+index 980c5b9140e4facca3f8a03c769238160a621164..449f935d155b01dffb2c6fbde6a07a885ff039b1 100644
+--- a/zig/src/core/runner_frontend_elf_cache_test.zig
++++ b/zig/src/core/runner_frontend_elf_cache_test.zig
+@@ -7,6 +7,7 @@ const t = std.testing;
+ 
+ test {
+     _ = @import("runner_frontend_spawn.zig");
++    _ = @import("runner_frontend_compile_time_test.zig");
+     _ = elf_cache;
+ }
+ 
+diff --git a/zig/src/core/runner_frontend_program_compile.zig b/zig/src/core/runner_frontend_program_compile.zig
+index 1da6fd270d97679aec1ffd40a06948b4e8715dc0..e45d2ed1791f01c64a9d19a10b4ace32a1ce4eeb 100644
+--- a/zig/src/core/runner_frontend_program_compile.zig
++++ b/zig/src/core/runner_frontend_program_compile.zig
+@@ -5,6 +5,10 @@ const inputs = @import("runner_frontend_c_inputs.zig");
+ const cost = @import("runner_frontend_c_cost.zig");
+ const spawn = @import("runner_frontend_spawn.zig");
+ const elf_cache = @import("runner_frontend_elf_cache.zig");
++const log = std.log.scoped(.runner_frontend);
++
++/// The build's own cap, a hang guard: under a translate deadline the build may use all that is left of it.
++pub const build_cap_ms = 1900;
+ 
+ pub const Config = struct {
+     clang: []const u8 = "/usr/bin/clang",
+@@ -206,6 +210,8 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+             file.writeStreamingAll(io, rewritten) catch return null;
+         }
+     }
++    const build_timeout = remaining(io, config, build_cap_ms) orelse return null;
++    const build_start = std.Io.Clock.awake.now(io);
+     const result = try spawn.run(a, io, &.{
+         config.clang,           "--target=riscv32-unknown-elf", "-march=rv32im_zba",   "-mabi=ilp32",
+         switch (config.optimize) {
+@@ -219,7 +225,12 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+         linker_arg,             "-Wl,--no-relax",               "-Wl,--build-id=none", "-Wl,-T",
+         link_path,              "-x",                           "c",                   src,
+         "-o",                   elf,
+-    }, .{ .stdout = 4096, .stderr = 16384, .timeout = remaining(io, config, 1000) orelse return null }) orelse return null;
++    }, .{ .stdout = 4096, .stderr = 16384, .timeout = build_timeout }) orelse {
++        const spent = build_start.durationTo(std.Io.Clock.awake.now(io));
++        if (spent.toNanoseconds() >= build_timeout.toNanoseconds())
++            log.warn("clang stopped after {d} ms by the compile time limit; the call declines", .{@divTrunc(spent.toNanoseconds(), std.time.ns_per_ms)});
++        return null;
++    };
+     defer result.deinit(a);
+     if (!result.ok) return null;
+     if (config.stack_limit != 0) {
+diff --git a/zig/src/core/runner_graph_dispatch.zig b/zig/src/core/runner_graph_dispatch.zig
+index 9028f82f954f7480a207edff5b8312528474f2de..ca7335141b5002e0f0e47209dcfe6e9dcbc26fd7 100644
+--- a/zig/src/core/runner_graph_dispatch.zig
++++ b/zig/src/core/runner_graph_dispatch.zig
+@@ -2,23 +2,30 @@
+ const std = @import("std");
+ const api = @import("runner_api.zig");
+ const prog = @import("runner_graph_program.zig");
++const graph = @import("runner_graph.zig");
+ const Allocator = std.mem.Allocator;
++const log = std.log.scoped(.runner_graph);
+ 
+ pub const Dispatch = struct {
+     gpa: Allocator,
+     circuit: api.Backend,
+     graph: api.Backend,
++    /// The bank TFGS2 templates lower on; without one a template piece faults.
++    bank: ?*const graph.Bank = null,
+     seqs: std.ArrayList(*Seq) = .empty,
+     next_seq: api.JobId = 1,
+ 
+     const tag: api.JobId = 1 << 63;
+     const seq_tag: api.JobId = 1 << 62;
+ 
+-    /// One line of a sequence: a bank packet, or text ('L') printed as written; kind 0 is a malformed line.
++    /// One line of a sequence: a bank packet, a TFGS2 template, or text ('L') printed as written; kind 0 is malformed.
+     const Piece = struct {
+         kind: u8,
+         sep: u8,
+         body: []const u8,
++        template: bool = false,
++        value: [160]u8 = undefined,
++        value_len: ?usize = null, // the run's integer output, for later templates
+         job: ?api.JobId = null,
+         done: ?api.Result = null, // its run's status and counts; the printed value is in `text`
+         text: [160]u8 = undefined,
+@@ -89,28 +96,34 @@ pub const Dispatch = struct {
+     fn start(ctx: *anyopaque, stream: u64, p: api.Program, budget: u64) error{ OutOfMemory, Busy }!api.JobId {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
+         if (p.kind != .graph) return d.circuit.start(stream, p, budget);
+-        if (!std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return tag | try d.graph.start(stream, p, budget);
++        if (!std.mem.startsWith(u8, p.bytes, "TFGS")) return tag | try d.graph.start(stream, p, budget);
++        const v2 = std.mem.startsWith(u8, p.bytes, prog.seq_magic_v2);
++        const known = v2 or std.mem.startsWith(u8, p.bytes, prog.seq_magic);
++        // a sequence version this runner does not know faults where it would otherwise be read wrong
++        if (!known) log.warn("graph sequence {s}: unknown version, refused", .{p.bytes[0..@min(p.bytes.len, 6)]});
+         d.forget(stream, false);
+         const q = try d.gpa.create(Seq);
+         errdefer d.gpa.destroy(q);
+         const bytes = try d.gpa.dupe(u8, p.bytes);
+         errdefer d.gpa.free(bytes);
+-        const pieces = try split(d.gpa, bytes[prog.seq_magic.len..]);
++        const pieces = try split(d.gpa, if (known) bytes[prog.seq_magic.len..] else "", v2);
+         errdefer d.gpa.free(pieces);
+         q.* = .{ .id = d.next_seq, .stream = stream, .budget = budget, .pieces = pieces, .bytes = bytes };
++        if (!known) q.end = .{ .status = .fault };
+         try d.seqs.append(d.gpa, q);
+         d.next_seq += 1;
+         d.step(q);
+         return seq_tag | q.id;
+     }
+     /// A sequence's lines (`<kind><sep> <body>\n`); text after the last newline is not a piece.
+-    fn split(gpa: Allocator, lines: []const u8) Allocator.Error![]Piece {
++    fn split(gpa: Allocator, lines: []const u8, v2: bool) Allocator.Error![]Piece {
+         const n = std.mem.count(u8, lines, "\n");
+         const pieces = try gpa.alloc(Piece, n);
+         var it = std.mem.splitScalar(u8, lines, '\n');
+         for (pieces) |*p| {
+             const line = it.next().?;
+             p.* = if (line.len < 4 or line[2] != ' ') .{ .kind = 0, .sep = 0, .body = "" } else .{ .kind = line[0], .sep = line[1], .body = line[3..] };
++            p.template = v2 and p.kind != 'L' and p.body[0] == '@';
+         }
+         return pieces;
+     }
+@@ -162,9 +175,14 @@ pub const Dispatch = struct {
+                 p.job = null;
+                 p.done = r;
+                 p.done.?.out = "";
+-                if (r.status == .ok) if (format(p.kind, std.mem.trimEnd(u8, r.out, "\n"), &p.text)) |text| {
++                const v = std.mem.trimEnd(u8, r.out, "\n");
++                if (r.status == .ok) if (format(p.kind, v, &p.text)) |text| {
+                     p.len = text.len;
+                 };
++                if (r.status == .ok and p.kind == 'I' and p.len != null and v.len <= p.value.len) {
++                    @memcpy(p.value[0..v.len], v);
++                    p.value_len = v.len;
++                }
+             },
+         };
+     }
+@@ -173,14 +191,51 @@ pub const Dispatch = struct {
+         if (q.end != null) return;
+         while (true) {
+             var best: ?*Piece = null;
+-            for (q.pieces[q.next..]) |*p| {
++            for (q.pieces[q.next..], q.next..) |*p, i| {
+                 if (p.kind == 0 or p.kind == 'L' or p.job != null or p.done != null) continue;
++                if (p.template and !d.ready(q, i)) continue;
+                 if (best == null or p.body.len > best.?.body.len) best = p;
+             }
+             const p = best orelse return;
+-            p.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = p.body }, q.budget) catch return;
++            if (p.template) switch (d.bind(q, p)) {
++                .started, .ended => {},
++                .busy => return,
++            } else p.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = p.body }, q.budget) catch return;
+         }
+     }
++    /// Whether every piece template `i` reads has its value (a missing one ends the run before `i` prints).
++    fn ready(_: *Dispatch, q: *Seq, i: usize) bool {
++        var it = std.mem.splitScalar(u8, q.pieces[i].body, '$');
++        _ = it.next();
++        while (it.next()) |rest| {
++            var n: usize = 0;
++            while (n < rest.len and std.ascii.isDigit(rest[n])) n += 1;
++            const k = std.fmt.parseInt(usize, rest[0..n], 10) catch return true;
++            // a reference to itself or a later piece is malformed: bind reports it
++            if (k >= i) return true;
++            if (q.pieces[k].value_len == null) return false;
++        }
++        return true;
++    }
++    /// Lowers a ready template on the bank and starts it; ended: it is done without a job (no bank, or no packet).
++    fn bind(d: *Dispatch, q: *Seq, p: *Piece) enum { started, ended, busy } {
++        const bank = d.bank orelse {
++            log.warn("graph sequence template without a bank", .{});
++            p.done = .{ .status = .fault };
++            return .ended;
++        };
++        var arena_state = std.heap.ArenaAllocator.init(d.gpa);
++        defer arena_state.deinit();
++        const arena = arena_state.allocator();
++        const values = arena.alloc(?[]const u8, q.pieces.len) catch return .busy;
++        for (q.pieces, values) |*o, *v| v.* = if (o != p and o.value_len != null) o.value[0..o.value_len.?] else null;
++        const bytes = (prog.bind(arena, bank, p.body, values) catch return .busy) orelse {
++            p.done = .{ .status = .abstain, .abstain = .unsupported };
++            return .ended;
++        };
++        p.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = bytes }, q.budget) catch return .busy;
++        return .started;
++    }
+     /// A piece's printed value: I as is, B as Python's bool, F with `.0`, `1`..`6` at that fixed Decimal scale.
+     fn format(kind: u8, v: []const u8, buf: []u8) ?[]const u8 {
+         const digits = v[@intFromBool(v.len > 0 and v[0] == '-')..];
+@@ -252,7 +307,7 @@ pub const Dispatch = struct {
+     fn now(ctx: *anyopaque, p: api.Program, budget: u64, quick: u64) ?api.Result {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
+         // one packet only: a sequence's pieces run as jobs
+-        return if (p.kind == .graph and !std.mem.startsWith(u8, p.bytes, prog.seq_magic)) d.graph.now(p, budget, quick) else null;
++        return if (p.kind == .graph and !std.mem.startsWith(u8, p.bytes, "TFGS")) d.graph.now(p, budget, quick) else null;
+     }
+ };
+ 
+@@ -394,3 +449,30 @@ test "runner graph dispatch: the first piece in print order that is not ok ends
+     b.release(1);
+     b.release(2);
+ }
++
++test "runner graph dispatch: a TFGS2 template waits for the piece it reads; no bank or an unknown version faults" {
++    var c: Slots = .{ .workers = 1 };
++    var g: Slots = .{ .workers = 2 };
++    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
++    defer d.deinit();
++    const b = d.backend();
++    const id = try b.start(1, .{ .kind = .graph, .bytes = "TFGS2\nIS 7:2\nBN @=$0;7\n" }, 100);
++    // two workers, yet only the read piece runs: the template has no value to bind until it ends
++    try std.testing.expect(b.poll(id) == .running);
++    try std.testing.expectEqual(@as(u32, 1), g.n);
++    const r = finish(b, id);
++    try std.testing.expectEqual(api.Status.fault, r.status);
++    try std.testing.expectEqualStrings("7 ", r.out);
++    try std.testing.expectEqual(@as(u32, 1), g.n);
++    // a version this runner does not know is refused, never read as TFGS1 or as one packet
++    const later = finish(b, try b.start(2, .{ .kind = .graph, .bytes = "TFGS3\nIS 7:0\n" }, 100));
++    try std.testing.expectEqual(api.Status.fault, later.status);
++    try std.testing.expectEqualStrings("", later.out);
++    try std.testing.expectEqual(@as(u32, 1), g.n);
++    // in TFGS1 a body starting `@` is a packet like any other: it runs
++    _ = finish(b, try b.start(3, .{ .kind = .graph, .bytes = "TFGS1\nIN @:0\n" }, 100));
++    try std.testing.expectEqualStrings("@:0", g.started[1]);
++    b.release(1);
++    b.release(2);
++    b.release(3);
++}
+diff --git a/zig/src/core/runner_graph_program.zig b/zig/src/core/runner_graph_program.zig
+index 9a6442021f659b1936f7c34ec111efe001b4b3b1..f7087156c7134cef7d8eac3482e25a6885d0a8c9 100644
+--- a/zig/src/core/runner_graph_program.zig
++++ b/zig/src/core/runner_graph_program.zig
+@@ -6,8 +6,10 @@ const packet = @import("runner_graph_packet.zig");
+ const api = @import("runner_api.zig");
+ const Allocator = std.mem.Allocator;
+ 
+-/// A straight-line cell's prints run as packets in turn; each piece is `<I|B><N|S> <packet>` on its own line.
++/// A straight-line cell's prints run as packets; each piece is `<I|B><N|S> <packet>` on its own line.
+ pub const seq_magic = "TFGS1\n";
++/// As TFGS1, and a piece may be a template (`@` body) over earlier pieces' printed values, lowered when they finish.
++pub const seq_magic_v2 = "TFGS2\n";
+ 
+ /// Straight-line integer Python (assignments, divmod, `;`, prints) as graph bytes over literals; null: other shapes.
+ pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocator.Error!?[]u8 {
+@@ -21,6 +23,9 @@ pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocato
+     _ = std.mem.replace(u8, code, "math.", "math_", text);
+     if (std.mem.indexOfAny(u8, text, "'\"\\[]{}.:") != null) return null;
+     var defs: std.StringHashMapUnmanaged([]const u8) = .empty;
++    // names whose value an earlier 'I' piece printed: later pieces read it there instead of recomputing it
++    var printed: std.StringHashMapUnmanaged(usize) = .empty;
++    var templated = false;
+     var pieces: std.ArrayList(u8) = .empty;
+     var n_pieces: usize = 0;
+     var lone: ?[]const u8 = null;
+@@ -46,9 +51,14 @@ pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocato
+                 if (args.len == 0) return null;
+                 for (args, 0..) |arg, i| {
+                     const last = i + 1 == args.len;
+-                    const one = try call(arena, &defs, math_names, arg) orelse try piece(arena, bank, &defs, arg) orelse return null;
++                    var one = try call(arena, &defs, math_names, arg) orelse try piece(arena, bank, &defs, arg) orelse return null;
++                    if (one.from_piece) if (try template(arena, &defs, &printed, arg)) |tmpl| {
++                        one.packet = tmpl;
++                        templated = true;
++                    };
+                     if (n_pieces >= 16) return null;
+                     try pieces.print(arena, "{c}{c} {s}\n", .{ one.kind, @as(u8, if (last) 'N' else 'S'), one.packet });
++                    if (one.kind == 'I' and name(arg)) if (defs.get(arg)) |def| if (costly(def)) try printed.put(arena, arg, n_pieces);
+                     lone = if (n_pieces == 0 and one.kind == 'I' and last) one.packet else null;
+                     n_pieces += 1;
+                 }
+@@ -69,6 +79,8 @@ pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocato
+                 const y = try expand(arena, &defs, args[1]) orelse return null;
+                 try defs.put(arena, q, try std.mem.concat(arena, u8, &.{ "(", x, "//", y, ")" }));
+                 try defs.put(arena, rem, try std.mem.concat(arena, u8, &.{ "(", x, "%", y, ")" }));
++                _ = printed.remove(q);
++                _ = printed.remove(rem);
+                 continue;
+             }
+             if (!name(lhs)) return null;
+@@ -78,14 +90,15 @@ pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocato
+                 if (!std.ascii.isDigit(c)) break false;
+             } else true;
+             try defs.put(arena, lhs, if (bare) v else try std.mem.concat(arena, u8, &.{ "(", v, ")" }));
++            _ = printed.remove(lhs);
+         }
+     }
+     if (n_pieces == 0) return null;
+     if (n_pieces == 1) if (lone) |p| return try a.dupe(u8, p);
+-    return try std.mem.concat(a, u8, &.{ seq_magic, pieces.items });
++    return try std.mem.concat(a, u8, &.{ if (templated) seq_magic_v2 else seq_magic, pieces.items });
+ }
+ 
+-const Piece = struct { kind: u8, packet: []const u8 };
++const Piece = struct { kind: u8, packet: []const u8, from_piece: bool = false };
+ 
+ /// The math functions a cell may call: `math.f` after `import math`, a bare `f` after `from math import f`.
+ const Calls = struct {
+@@ -143,11 +156,16 @@ fn piece(arena: Allocator, bank: *const graph.Bank, defs: anytype, arg: []const
+     const cmp = std.mem.indexOf(u8, arg, "==") orelse std.mem.indexOf(u8, arg, "!=");
+     if (cmp == null) {
+         const e = try expand(arena, defs, arg) orelse return null;
+-        return .{ .kind = 'I', .packet = try route.lower(arena, bank, e) orelse return null };
++        return .{ .kind = 'I', .packet = try route.lower(arena, bank, e) orelse return null, .from_piece = true };
+     }
+     const at = cmp.?;
+     const l = try expand(arena, defs, arg[0..at]) orelse return null;
+     const r = try expand(arena, defs, arg[at + 2 ..]) orelse return null;
++    return .{ .kind = 'B', .packet = try compare(arena, bank, l, r, arg[at] == '=') orelse return null, .from_piece = true };
++}
++
++/// `l == r` (or `l != r`) over calc input as one packet printing 1 or 0; null when the bank cannot say it.
++pub fn compare(arena: Allocator, bank: *const graph.Bank, l: []const u8, r: []const u8, eq: bool) Allocator.Error!?[]u8 {
+     if (std.mem.indexOfAny(u8, l, "=!<>") != null or std.mem.indexOfAny(u8, r, "=!<>") != null) return null;
+     // d = l - r; with M = 10^D above |d|, (d+M)%M is 0 only at d = 0, so ((d+M)%M+M-1)//M is d != 0 (d read once)
+     const d = try std.mem.concat(arena, u8, &.{ "(", l, ")-(", r, ")" });
+@@ -158,8 +176,67 @@ fn piece(arena: Allocator, bank: *const graph.Bank, defs: anytype, arg: []const
+     m[0] = '1';
+     @memset(m[1..], '0');
+     const nz = try std.mem.concat(arena, u8, &.{ "((", d, "+", m, ")%", m, "+", m, "-1)//", m });
+-    const e = if (arg[at] == '=') try std.mem.concat(arena, u8, &.{ "1-(", nz, ")" }) else nz;
+-    return .{ .kind = 'B', .packet = try route.lower(arena, bank, e) orelse return null };
++    const e = if (eq) try std.mem.concat(arena, u8, &.{ "1-(", nz, ")" }) else nz;
++    return route.lower(arena, bank, e);
++}
++
++/// `@I<expr>`, `@=<l>;<r>` or `@!<l>;<r>` with `$k` for piece k's printed value; null when `arg` reads none.
++fn template(arena: Allocator, defs: anytype, printed: anytype, arg: []const u8) Allocator.Error!?[]const u8 {
++    var any = false;
++    const cmp = std.mem.indexOf(u8, arg, "==") orelse std.mem.indexOf(u8, arg, "!=");
++    const parts: [2][]const u8 = if (cmp) |at| .{ arg[0..at], arg[at + 2 ..] } else .{ arg, "" };
++    var out: std.ArrayList(u8) = .empty;
++    try out.appendSlice(arena, if (cmp) |at| if (arg[at] == '=') "@=" else "@!" else "@I");
++    for (parts, 0..) |part, side| {
++        if (side == 1 and cmp == null) break;
++        if (side == 1) try out.append(arena, ';');
++        var i: usize = 0;
++        while (i < part.len) {
++            const c = part[i];
++            if (std.ascii.isAlphabetic(c) or c == '_') {
++                const start = i;
++                while (i < part.len and (std.ascii.isAlphanumeric(part[i]) or part[i] == '_')) i += 1;
++                if (printed.get(part[start..i])) |k| {
++                    try out.print(arena, "${d}", .{k});
++                    any = true;
++                } else try out.appendSlice(arena, defs.get(part[start..i]) orelse return null);
++                continue;
++            }
++            if (c != ' ' and c != '\t') try out.append(arena, c);
++            i += 1;
++        }
++    }
++    return if (any) out.items else null;
++}
++
++/// A template piece's packet with each `$k` bound to `values[k]` (decimal text); null for a bad template or index.
++pub fn bind(arena: Allocator, bank: *const graph.Bank, body: []const u8, values: []const ?[]const u8) Allocator.Error!?[]u8 {
++    if (body.len < 2 or body[0] != '@') return null;
++    var out: std.ArrayList(u8) = .empty;
++    var i: usize = 2;
++    while (i < body.len) {
++        if (body[i] != '$') {
++            try out.append(arena, body[i]);
++            i += 1;
++            continue;
++        }
++        const start = i + 1;
++        i = start;
++        while (i < body.len and std.ascii.isDigit(body[i])) i += 1;
++        const k = std.fmt.parseInt(usize, body[start..i], 10) catch return null;
++        if (k >= values.len) return null;
++        const v = values[k] orelse return null;
++        try out.print(arena, "({s})", .{v});
++    }
++    const text = out.items;
++    return switch (body[1]) {
++        'I' => route.lower(arena, bank, text),
++        '=', '!' => {
++            const semi = std.mem.indexOfScalar(u8, text, ';') orelse return null;
++            return compare(arena, bank, text[0..semi], text[semi + 1 ..], body[1] == '=');
++        },
++        else => null,
++    };
+ }
+ 
+ /// `src` with every name replaced by its definition and blanks dropped (calc input); null for an undefined name.
+@@ -200,6 +277,11 @@ fn splitArgs(arena: Allocator, src: []const u8) Allocator.Error!?[]const []const
+     return out.items;
+ }
+ 
++/// A definition worth reading from an earlier piece rather than recomputing: it divides or raises to a power.
++fn costly(def: []const u8) bool {
++    return std.mem.indexOf(u8, def, "//") != null or std.mem.indexOfScalar(u8, def, '%') != null or std.mem.indexOf(u8, def, "**") != null;
++}
++
+ fn name(s: []const u8) bool {
+     if (s.len == 0 or !(std.ascii.isAlphabetic(s[0]) or s[0] == '_')) return false;
+     for (s) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+diff --git a/zig/src/core/runner_graph_table_test.zig b/zig/src/core/runner_graph_table_test.zig
+index 927d8da204e99cc92807944e6a9d090f67f31c42..3c35a8d69af741ef755c4f582d4fc8353b515ed2 100644
+--- a/zig/src/core/runner_graph_table_test.zig
++++ b/zig/src/core/runner_graph_table_test.zig
+@@ -106,7 +106,7 @@ const cases = [_][2][]const u8{
+     .{ "import math\nprint(math.gcd(-12, 18), math.gcd(12, -18))\n", "6 6\n" },
+ };
+ 
+-/// Scripts the bank must leave to the frontend's own route: a fraction, a computed divisor, a string.
++/// Scripts the table leaves to the route behind it: a fraction, a computed divisor (T1's binding owns it), a string.
+ const refused = [_][]const u8{ "print(7/2)\n", "a=3\nprint(100//(a+1))\n", "print(len(str(2**100)))\n" };
+ 
+ fn openBank() !graph.Bank {
+@@ -197,7 +197,21 @@ test "runner graph table: Routed takes a checked fence script before the compile
+     const t = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = cases[0][0] });
+     try std.testing.expect(t == .program and t.program.kind == .graph);
+     try std.testing.expectEqual(@as(u32, 0), inner.calls);
+-    _ = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = refused[1] });
++    // a computed divisor: T1's direct binding owns it before the compile and prints CPython's 25
++    const owned = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = refused[1] });
++    try std.testing.expect(owned == .program and owned.program.kind == .graph);
++    try std.testing.expectEqual(@as(u32, 0), inner.calls);
++    const g = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(g);
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = g };
++    defer d.deinit();
++    const r = try run(&d, owned.program.bytes);
++    defer gpa.free(r.out);
++    try std.testing.expectEqual(api.Status.ok, r.status);
++    try std.testing.expectEqualStrings("25\n", r.out);
++    // a string the bank cannot hold: no route takes it, so the frontend is asked
++    const declined = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = refused[2] });
++    try std.testing.expect(declined == .abstain);
+     try std.testing.expectEqual(@as(u32, 1), inner.calls);
+     // a later cell could have rebound a name the script uses: the frontend's own checks decide
+     _ = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = cases[0][0], .prior = &.{"divmod = max\n"} });
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index e49224536613bb5994aa41128805e45bcb00ab6e..2332c6e7c03703f951bc0e9c3648357945a8cc41 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -99,7 +99,7 @@ pub fn openSharing(gpa: Allocator, cfg: Config, with: ?*Runner) !*Runner {
+         o.routed = .{ .inner = frontend, .bank = o.bank };
+         // settling holds: graph jobs leave the engine thread's CPU as the circuit's do (unplaced, they share its pin)
+         const placer: ?*runner.place.Placer = if (cfg.settle_us > 0) &o.placer else null;
+-        o.dispatch = .{ .gpa = gpa, .circuit = back, .graph = try graph.placed(gpa, o.bank, cfg.workers, placer) };
++        o.dispatch = .{ .gpa = gpa, .circuit = back, .graph = try graph.placed(gpa, o.bank, cfg.workers, placer), .bank = o.bank };
+         frontend = o.routed.frontend();
+         backend = o.dispatch.backend();
+         log.info("in-model runner: graph bank {s} {s} in {d} ms", .{ cfg.graph_bank, if (o.bank == &o.own_bank) "loaded" else "shared", (nowNs() - t0) / std.time.ns_per_ms });
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 05fa78b3a9c88368f714df5f738d3cea82a24734..58a9710ce230afcf6a635311fd9ccf39e45b91c3 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -48,6 +48,7 @@ test "runner proof: loop cells (a generator sum and an accumulator) print 285 th
+ const rapi = @import("runner_api.zig");
+ const graph = @import("runner_graph.zig");
+ const route = @import("runner_graph_route.zig");
++const program = @import("runner_graph_program.zig");
+ 
+ /// A backend that counts the jobs it starts.
+ const Count = struct {
+@@ -127,7 +128,7 @@ test "runner proof: a REPL bignum cell takes the graph route and gives the calc
+     var calc_fallback: Count = .{ .inner = both.calc };
+     var on_graph: Count = .{ .inner = both.graph };
+     var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
+-    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend() };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend(), .bank = &both.bank };
+     defer dispatch.deinit();
+     const graph_texts = try rt.replies(&models, .{ .frontend = routed.frontend(), .backend = dispatch.backend(), .wait_s = 600 }, &fake);
+     defer rt.freeAll(graph_texts);
+@@ -206,7 +207,7 @@ test "runner proof: a whole-problem divmod cell with a bool print is owned on th
+     var calc_fallback: Count = .{ .inner = both.calc };
+     var on_graph: Count = .{ .inner = both.graph };
+     var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
+-    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend() };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend(), .bank = &both.bank };
+     defer dispatch.deinit();
+     const texts = try rt.replies(&models, .{ .frontend = routed.frontend(), .backend = dispatch.backend(), .wait_s = 600 }, &fake);
+     defer rt.freeAll(texts);
+@@ -219,7 +220,7 @@ test "runner proof: straight-line integer cells print Python's lines on the grap
+     var both: Both = undefined;
+     try both.open();
+     defer both.close();
+-    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph, .bank = &both.bank };
+     defer dispatch.deinit();
+     const b = dispatch.backend();
+     for ([_][2][]const u8{
+@@ -295,6 +296,44 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+     both.graph.release(1);
+ }
+ 
++test "runner proof: a print reads an earlier piece's value (TFGS2), so d_mirror's check reuses q and r; cheap names do not" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    const cell = divmod_cell[10 .. divmod_cell.len - 14];
++    const bytes = (try route.program(gpa, &both.bank, cell)).?;
++    defer gpa.free(bytes);
++    try std.testing.expectStringStartsWith(bytes, "TFGS2\n");
++    const want = "BN @=$0*271828182845904523536+$1;314159265358979323846264338327950288419716939937510\n";
++    try std.testing.expect(std.mem.endsWith(u8, bytes, want));
++    // a value with no division or power is recomputed beside the rest, as before
++    const cheap = (try route.program(gpa, &both.bank, "a = 7 + 3\nprint(a)\nprint(a * 2)")).?;
++    defer gpa.free(cheap);
++    try std.testing.expectStringStartsWith(cheap, "TFGS1\n");
++    // a template bound to the bank's values: the comparison reads them, so a wrong value moves the answer
++    var arena_state = std.heap.ArenaAllocator.init(gpa);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph, .bank = &both.bank };
++    defer dispatch.deinit();
++    const b = dispatch.backend();
++    for ([_]struct { []const u8, [2]?[]const u8, []const u8 }{
++        .{ "@=$0*3+$1;14", .{ "4", "2" }, "1" },
++        .{ "@=$0*3+$1;14", .{ "4", "3" }, "0" },
++        .{ "@!$0;-5", .{ "-5", null }, "0" },
++        .{ "@I$0*$1-1", .{ "-12", "12" }, "-145" },
++    }) |c| {
++        const p = (try program.bind(arena, &both.bank, c[0], &c[1])).?;
++        const r = finish(b, try b.start(1, .{ .kind = .graph, .bytes = p }, 4_000_000));
++        try std.testing.expectEqualStrings(c[2], std.mem.trimEnd(u8, r.out, "\n"));
++    }
++    b.release(1);
++    // a reference past the values or to a missing one, and an unknown template op, bind nothing
++    try std.testing.expectEqual(null, try program.bind(arena, &both.bank, "@I$2+1", &.{ "1", "2" }));
++    try std.testing.expectEqual(null, try program.bind(arena, &both.bank, "@I$1+1", &.{ "1", null }));
++    try std.testing.expectEqual(null, try program.bind(arena, &both.bank, "@<$0;1", &.{"1"}));
++}
++
+ test "runner proof: S1's and S2's six saved cells take the graph route and print CPython's stdout (T1 direct binding)" {
+     var both: Both = undefined;
+     try both.open();
+@@ -303,7 +342,7 @@ test "runner proof: S1's and S2's six saved cells take the graph route and print
+     if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
+     var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
+     const front = routed.frontend();
+-    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph, .bank = &both.bank };
+     defer dispatch.deinit();
+     const b = dispatch.backend();
+     // S1 d_mirror-c1-g2 cells (S1-UNOWNED-CELLS.md) verbatim; S2's saved 008/011/015 as printed cells
+diff --git a/zig/src/core/runner_s3_bench.zig b/zig/src/core/runner_s3_bench.zig
+index 6afa48585fed58b156515f6a3043fc40b13e259d..4a603b1a8ea37d7fee5cc712d5f345652b6452a5 100644
+--- a/zig/src/core/runner_s3_bench.zig
++++ b/zig/src/core/runner_s3_bench.zig
+@@ -35,7 +35,7 @@ const Cell = struct { id: []const u8, code: []const u8, want: []const u8 };
+ /// The route a program takes on the served backend: one bank packet, a sequence of them, calc or ELF on the circuit.
+ fn route(p: api.Program) []const u8 {
+     return switch (p.kind) {
+-        .graph => if (std.mem.startsWith(u8, p.bytes, prog.seq_magic)) "graph-seq" else "graph",
++        .graph => if (std.mem.startsWith(u8, p.bytes, prog.seq_magic_v2)) "graph-seq2" else if (std.mem.startsWith(u8, p.bytes, prog.seq_magic)) "graph-seq" else "graph",
+         .calc => "calc",
+         .elf => "elf",
+     };
+@@ -43,7 +43,7 @@ fn route(p: api.Program) []const u8 {
+ 
+ /// Pieces in a graph sequence (1 for anything else).
+ fn pieces(p: api.Program) usize {
+-    if (p.kind != .graph or !std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return 1;
++    if (p.kind != .graph or !std.mem.startsWith(u8, p.bytes, "TFGS")) return 1;
+     return std.mem.count(u8, p.bytes[prog.seq_magic.len..], "\n");
+ }
+ 
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+index f6ec22bdcf048c40deff2d1bf572009e1ce82468..609a06752649e559c17c8b7c9e7dab5113d6b730 100644
+--- a/zig/src/core/runner_trace_test.zig
++++ b/zig/src/core/runner_trace_test.zig
+@@ -171,7 +171,7 @@ test "runner trace: census pow and hex statements run exactly on the real fronte
+     defer bank.deinit();
+     const g = try graph.backend(gpa, &bank, 2);
+     defer graph.destroy(g);
+-    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = g, .graph = g };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = g, .graph = g, .bank = &bank };
+     defer dispatch.deinit();
+     var routed: route.Routed = .{ .inner = @import("runner_frontend.zig").frontend(), .bank = &bank };
+     const front = routed.frontend();

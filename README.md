@@ -15,30 +15,31 @@ the previously deployed engine and profile.
 | Model | [`deepseek-ai/DeepSeek-V4.1-Flash-1017`](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017) |
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
-| Engine | upstream TensorFold, pinned in [`config/tensorfold.rev`](config/tensorfold.rev) |
+| Engine | upstream [TensorFold](https://github.com/ashhart/TensorFold) at [`config/tensorfold.rev`](config/tensorfold.rev), plus this recipe's [`patches/`](patches/) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The pin is TensorFold `12257eb51` on
-`dsv41/undeclared-tool-passthrough`: `1ea71240a` plus two server commits, so a whole tool call to a tool the request did
+This branch migrates the recipe to upstream native serving. The engine is upstream TensorFold `0d51120a8` with
+patches `0001`-`0207` applied ([ENGINE](docs/ENGINE.md#the-patch-series)), the content of engine commit `12257eb51`:
+`1ea71240a` plus two server commits, so a whole tool call to a tool the request did
 not declare comes back as a tool call, as on vLLM, and the client can refuse it
-([ENGINE](docs/ENGINE.md#undeclared-tool-calls-at-this-pin)). `1ea71240a` (`dsv41/session-lcp-resume`) is
+([ENGINE](docs/ENGINE.md#undeclared-tool-calls-at-this-pin)). `1ea71240a` (patch `0205`) is
 `7b79ef92d` plus opt-in prompt checkpoints for rewritten histories
 (`TF_DSV41_SESSION_LCP_RESUME`, off by default) and a log line on each costly session miss
-([#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). `7b79ef92d` (`dsv41/compute-lane-release-s86`) is
+([#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). `7b79ef92d` (patch `0203`) is
 `01a62132c` plus the NVMe session-restore fix of upstream #2182 (sessions parked on
 the NVMe tier come back instead of failing with `BadBlob`; [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
 `01a62132c` is the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
 byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client's own `python` function keeps the name;
 `compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
 for half an expression). That is release
-candidate G (`58bece1d3`, fallback; F `56200688d` before it) plus `deadline_s`, the engine-held compute lane and the
+candidate G (`58bece1d3`, patch `0050`, fallback; F `56200688d`, patch `0047`, before it) plus `deadline_s`, the engine-held compute lane and the
 experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, whose runner and
 trust guide run for every thinking chat whatever the client sends (the built-in tool only when its reply has room for a
 call); it needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block. The
-pin's history holds the stable DeepSeek head H (`20ad77878`, re-recorded there as
-`b073317ab`) and includes flash17’s `dsq-1` admission support. The pin is not on upstream main yet, so the build fetches
-it from JJ's TensorFold fork ([`config/tensorfold.repo`](config/tensorfold.repo)) until the upstream PRs merge; a local
-checkout or bundle also works. See [ENGINE](docs/ENGINE.md).
+series holds the stable DeepSeek head H (`20ad77878`, patch `0039`) and includes flash17’s `dsq-1` admission support.
+The build fetches the upstream commit from [`config/tensorfold.repo`](config/tensorfold.repo) and applies the series;
+a local checkout or bundle of upstream also works. Rolling back to an earlier engine means applying a shorter prefix
+of the series. See [ENGINE](docs/ENGINE.md).
 
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode

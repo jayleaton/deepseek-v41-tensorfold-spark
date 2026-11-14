@@ -1,0 +1,237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 8 Nov 2026 11:50:34 +0700
+Subject: [PATCH 200/207] dsv41 server: the compute default offers its tool to
+ thinking chats only
+
+Under TF_DSV41_COMPUTE_LANE_DEFAULT=1 a chat with thinking off now gets no
+built-in tool unless it lists code_interpreter itself. Unthinking, the prose
+the model writes before a call is the visible answer, and the answer after
+the result runs straight on into it ("Let me compute.232792560" on a TP2
+dashboard check). The request's enable_thinking (or the server's default)
+joins max_tokens, stop, logprobs and structured output in deciding whether
+the default offers the tool. Thinking-off chats already got no runner guide.
+---
+ zig/src/server/compute_default_fit_test.zig | 37 ++++++++++++---------
+ zig/src/server/compute_default_test.zig     | 31 +++++++++++++----
+ zig/src/server/compute_turns.zig            | 14 ++++----
+ 3 files changed, 55 insertions(+), 27 deletions(-)
+
+diff --git a/zig/src/server/compute_default_fit_test.zig b/zig/src/server/compute_default_fit_test.zig
+index eec6464cc42c05c26fb86cf6c19520a7fb4cb50b..880d59532d7de38754538de8fbe524346c75e6a5 100644
+--- a/zig/src/server/compute_default_fit_test.zig
++++ b/zig/src/server/compute_default_fit_test.zig
+@@ -95,7 +95,7 @@ const Seen = struct {
+     }
+ };
+ 
+-const Ask = struct { default: bool = true, call: bool = true, max_tokens: i64, stream: bool, fields: []const u8 = "{}", runner: bool = false };
++const Ask = struct { default: bool = true, call: bool = true, max_tokens: i64, stream: bool, fields: []const u8 = "{}", runner: bool = false, think: bool = false };
+ const Run = struct { seen: Seen, prompt: []const u32, held: bool, call_len: usize };
+ 
+ /// One chat whose model calls python with `pad` bytes of comment (or answers), against the budget-keeping engine.
+@@ -108,14 +108,17 @@ fn chat(a: Allocator, pad: usize, ask: Ask) !Run {
+     defer hf.deinit();
+     const text = hf.text();
+     const history = try tf.messages(a, "What is 6*7?");
+-    const asked = try text.renderIds(a, history, .{ .add_generation_prompt = true }, &problem);
++    const asked = try text.renderIds(a, history, .{ .add_generation_prompt = true, .enable_thinking = ask.think }, &problem);
+     const comment = try a.alloc(u8, pad);
+     @memset(comment, 'x');
+     const call_turn = try h.obj(a, try std.fmt.allocPrint(a,
+         \\{{"role":"assistant","content":"","tool_calls":[{{"id":"c1","type":"function","function":{{"name":"python","arguments":"{{\"code\":\"print(6*7) # {s}\"}}"}}}}]}}
+     , .{comment}));
+-    const called = try text.renderIds(a, try h.appendTo(a, history, &.{call_turn}), .{ .add_generation_prompt = false }, &problem);
+-    const answer = try std.mem.concat(a, u32, &.{ try text.encodePlain(a, "It is 42."), &.{called[called.len - 1]} });
++    const called = try text.renderIds(a, try h.appendTo(a, history, &.{call_turn}), .{ .add_generation_prompt = false, .enable_thinking = ask.think }, &problem);
++    // thinking, the answer closes <think> (the tool-result turn reopens it)
++    const close_id = [_]u32{text.tokenId("</think>").?};
++    const close: []const u32 = if (ask.think) &close_id else &.{};
++    const answer = try std.mem.concat(a, u32, &.{ close, try text.encodePlain(a, "It is 42."), &.{called[called.len - 1]} });
+     const script = try a.create(Script);
+     script.* = .{ .a = a, .first = if (ask.call) called[asked.len..] else answer, .answer = answer };
+     const srv = try @import("server.zig").Server.init(a, t.io, script.engine(), text, .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .use_drafts = false }, null);
+@@ -138,30 +141,34 @@ fn chat(a: Allocator, pad: usize, ask: Ask) !Run {
+     try body.put(a, "max_tokens", try json.intValue(a, ask.max_tokens));
+     try body.put(a, "messages", history);
+     try body.put(a, "stream", .{ .bool = ask.stream });
++    if (ask.think) try body.put(a, "chat_template_kwargs", try h.obj(a, "{\"enable_thinking\":true}"));
+     @import("openai.zig").run(srv, a, seen.out(), .{ .conn = &conn }, true, .{ .object = body });
+     return .{ .seen = seen, .prompt = script.prompt, .held = script.hold, .call_len = called.len - asked.len };
+ }
+ 
+-test "compute lane: the default offers no built-in tool to a 64-token reply or one with stop strings, no guide unthinking" {
++test "compute lane: the default offers no built-in tool unthinking, to a 64-token reply or with stop strings" {
+     var arena = std.heap.ArenaAllocator.init(t.allocator);
+     defer arena.deinit();
+     const a = arena.allocator();
+     for ([_]bool{ false, true }) |stream| {
+         const off = try chat(a, 0, .{ .default = false, .call = false, .max_tokens = 64, .stream = stream, .runner = true });
+         const qa = try chat(a, 0, .{ .call = false, .max_tokens = 64, .stream = stream, .runner = true });
+-        try t.expectEqualSlices(u32, off.prompt, qa.prompt); // the default off's prompt: no tool, no guide (thinking off)
++        try t.expectEqualSlices(u32, off.prompt, qa.prompt); // the default off's prompt: no tool, no guide
+         try t.expect(!qa.held);
+         try t.expectEqualStrings("It is 42.", qa.seen.content.items);
+-        const stop = try chat(a, 0, .{ .call = false, .max_tokens = 2048, .stream = stream, .fields = "{\"stop\":[\"###\"]}" });
+-        try t.expectEqualSlices(u32, off.prompt, stop.prompt);
++        // thinking off, room or not: the prose before a call would be the visible answer
++        const plain = try chat(a, 0, .{ .call = false, .max_tokens = 4096, .stream = stream, .runner = true });
++        try t.expectEqualSlices(u32, off.prompt, plain.prompt);
++        try t.expect(!plain.held);
++        const t_off = try chat(a, 0, .{ .default = false, .call = false, .max_tokens = 64, .stream = stream, .runner = true, .think = true });
++        const stop = try chat(a, 0, .{ .call = false, .max_tokens = 2048, .stream = stream, .runner = true, .think = true, .fields = "{\"stop\":[\"###\"]}" });
+         try t.expect(!stop.held);
+         // a thinking chat still gets the boot's guide
+-        const think = "{\"chat_template_kwargs\":{\"enable_thinking\":true}}";
+-        const t_off = try chat(a, 0, .{ .default = false, .call = false, .max_tokens = 64, .stream = stream, .runner = true, .fields = think });
+-        const t_on = try chat(a, 0, .{ .call = false, .max_tokens = 64, .stream = stream, .runner = true, .fields = think });
++        const t_on = try chat(a, 0, .{ .call = false, .max_tokens = 64, .stream = stream, .runner = true, .think = true });
+         try t.expect(t_on.prompt.len > t_off.prompt.len);
+-        // at the floor the built-in is offered and its call runs
+-        const ran = try chat(a, 0, .{ .max_tokens = turns.default_min_tokens, .stream = stream });
++        try t.expectEqualSlices(u32, t_on.prompt, stop.prompt); // the guide, no tool
++        // at the floor, thinking, the built-in is offered and its call runs
++        const ran = try chat(a, 0, .{ .max_tokens = turns.default_min_tokens, .stream = stream, .think = true });
+         try t.expect(ran.held);
+         try t.expectEqualStrings("It is 42.", ran.seen.content.items);
+     }
+@@ -172,11 +179,11 @@ test "compute lane: a built-in call the default could not run never reaches the
+     defer arena.deinit();
+     const a = arena.allocator();
+     const pad = 1100; // the call alone nears the floor, so a budget past the floor still cannot hold its answer
+-    const len: i64 = @intCast((try chat(a, pad, .{ .max_tokens = 4096, .stream = false })).call_len);
++    const len: i64 = @intCast((try chat(a, pad, .{ .max_tokens = 4096, .stream = false, .think = true })).call_len);
+     // no room for an answer, no room for the result, and max_tokens inside the call itself
+     for ([_]i64{ len + 8, len + 20, len - 20 }) |max| for ([_]bool{ false, true }) |stream| {
+         try t.expect(max >= turns.default_min_tokens);
+-        const r = try chat(a, pad, .{ .max_tokens = max, .stream = stream });
++        const r = try chat(a, pad, .{ .max_tokens = max, .stream = stream, .think = true });
+         errdefer std.debug.print("max_tokens {d} stream {}: code {d} finish {s} calls {d} content [{s}]\n", .{ max, stream, r.seen.code, r.seen.finish, r.seen.calls, r.seen.content.items });
+         try t.expectEqual(@as(u16, 200), r.seen.code);
+         try t.expect(r.held);
+diff --git a/zig/src/server/compute_default_test.zig b/zig/src/server/compute_default_test.zig
+index 84e10c2056fcb7856696b936b72a67f576ca5b4c..0a64ffebc9c32feb67c47dcd0bf30cb5a87999e2 100644
+--- a/zig/src/server/compute_default_test.zig
++++ b/zig/src/server/compute_default_test.zig
+@@ -1,4 +1,4 @@
+-//! The compute default (TF_DSV41_COMPUTE_LANE_DEFAULT=1) through the chat route: every chat gets the built-in tool.
++//! The compute default (TF_DSV41_COMPUTE_LANE_DEFAULT=1) through the chat route: thinking chats get the built-in tool.
+ const std = @import("std");
+ const json = @import("json");
+ const api = @import("engine_api");
+@@ -21,7 +21,7 @@ const Run = struct { code: u16, body: json.Value, prompt: []const u32, held: boo
+ /// The model's first segment: a python call, one with no code, a bash call, or a plain answer; then "It is 42.".
+ const Model = enum { python_call, no_code, bash_call, answer };
+ 
+-const Ask = struct { default: bool, tools: ?[]const u8 = null, choice: ?[]const u8 = null, model: Model = .answer, max_calls: u32 = 8, runner: bool = false };
++const Ask = struct { default: bool, tools: ?[]const u8 = null, choice: ?[]const u8 = null, model: Model = .answer, max_calls: u32 = 8, runner: bool = false, think: bool = true };
+ 
+ fn chat(a: Allocator, ask: Ask) !Run {
+     std.Io.Dir.accessAbsolute(t.io, python, .{}) catch return error.SkipZigTest;
+@@ -32,7 +32,7 @@ fn chat(a: Allocator, ask: Ask) !Run {
+     defer hf.deinit();
+     const text = hf.text();
+     const history = try tf.messages(a, "What is 6*7?");
+-    const asked = try text.renderIds(a, history, .{ .add_generation_prompt = true }, &problem);
++    const asked = try text.renderIds(a, history, .{ .add_generation_prompt = true, .enable_thinking = ask.think }, &problem);
+     const call_turn = try h.obj(a, switch (ask.model) {
+         .python_call =>
+         \\{"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"python","arguments":"{\"code\":\"print(6*7)\"}"}}]}
+@@ -47,9 +47,12 @@ fn chat(a: Allocator, ask: Ask) !Run {
+         \\{"role":"assistant","content":"It is 42."}
+         ,
+     });
+-    const called = try text.renderIds(a, try h.appendTo(a, history, &.{call_turn}), .{ .add_generation_prompt = false }, &problem);
++    const called = try text.renderIds(a, try h.appendTo(a, history, &.{call_turn}), .{ .add_generation_prompt = false, .enable_thinking = ask.think }, &problem);
+     const eos = called[called.len - 1];
+-    const answer = try std.mem.concat(a, u32, &.{ try text.encodePlain(a, "It is 42."), &.{eos} });
++    // thinking, the tool-result turn reopens <think>: the answer closes it first, as the call turn did
++    const close_id = [_]u32{text.tokenId("</think>").?};
++    const close: []const u32 = if (ask.think) &close_id else &.{};
++    const answer = try std.mem.concat(a, u32, &.{ close, try text.encodePlain(a, "It is 42."), &.{eos} });
+     const script = try a.create(h.Script);
+     script.* = .{ .a = a, .call = called[asked.len..], .answer = answer };
+     const srv = try @import("server.zig").Server.init(a, t.io, script.engine(), text, .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .use_drafts = false }, null);
+@@ -72,6 +75,7 @@ fn chat(a: Allocator, ask: Ask) !Run {
+     try body.put(a, "messages", history);
+     if (ask.tools) |tools| try body.put(a, "tools", try h.obj(a, tools));
+     if (ask.choice) |c| try body.put(a, "tool_choice", try h.obj(a, c));
++    if (ask.think) try body.put(a, "chat_template_kwargs", try h.obj(a, "{\"enable_thinking\":true}"));
+     @import("openai.zig").run(srv, a, reply.out(), .{ .conn = &conn }, true, .{ .object = body });
+     errdefer std.debug.print("COMPUTE_DEFAULT_REPLY {s}\n", .{json.stringify(a, reply.body, .{}) catch ""});
+     return .{ .code = reply.code, .body = reply.body, .prompt = script.prompt, .held = script.held_asked, .resumes = script.resumes.items.len, .run_cells = script.run_cells };
+@@ -102,6 +106,21 @@ test "compute lane: the default gives a chat with no tools the built-in tool, ru
+     try t.expectEqualSlices(u32, opted.prompt, r.prompt);
+ }
+ 
++test "compute lane: the default offers no built-in tool to a chat with thinking off: its prompt is the default off's" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const r = try chat(a, .{ .default = true, .think = false });
++    const off = try chat(a, .{ .default = false, .think = false });
++    try t.expectEqual(@as(u16, 200), r.code);
++    try t.expectEqualSlices(u32, off.prompt, r.prompt);
++    try t.expect(!r.held);
++    try t.expectEqualStrings("It is 42.", r.body.get("choices").?.array[0].get("message").?.strField("content").?);
++    // a client's own tools stay as they are
++    const tools = "[" ++ bash_tool ++ "]";
++    try t.expectEqualSlices(u32, (try chat(a, .{ .default = false, .tools = tools, .think = false })).prompt, (try chat(a, .{ .default = true, .tools = tools, .think = false })).prompt);
++}
++
+ test "compute lane: under the default a chat that runs nothing counts 0" {
+     var arena = std.heap.ArenaAllocator.init(t.allocator);
+     defer arena.deinit();
+@@ -213,7 +232,7 @@ test "compute lane: with the default off a chat is as before: no built-in tool,
+     const hf = try HfText.load(a, t.io, tmp.path, null, a, &problem);
+     defer hf.deinit();
+     const plain = try hf.text().renderIds(a, try tf.messages(a, "What is 6*7?"), .{ .add_generation_prompt = true }, &problem);
+-    const r = try chat(a, .{ .default = false });
++    const r = try chat(a, .{ .default = false, .think = false });
+     try t.expectEqual(@as(u16, 200), r.code);
+     try t.expectEqualSlices(u32, plain, r.prompt);
+     try t.expect(!r.held);
+diff --git a/zig/src/server/compute_turns.zig b/zig/src/server/compute_turns.zig
+index ac06aaec201ebaeb02d6baacb2371e291f314e50..797f6a9754ededdc6edfbce7f4ff88d6342ae8c1 100644
+--- a/zig/src/server/compute_turns.zig
++++ b/zig/src/server/compute_turns.zig
+@@ -36,11 +36,11 @@ pub fn open(srv: *Server, cfg: lane.Config) !lane.Pool {
+         return error.ComputeLaneUnavailable;
+     };
+     std.log.info("compute lane: {s} in a sandbox, {d} at a time, {d} ms, {d} MiB, results up to {d} tokens, {d} calls a reply", .{ cfg.python, cfg.workers, cfg.max_ms, cfg.mem_mb, cfg.max_result_tokens, cfg.max_calls });
+-    if (cfg.default) std.log.info("compute default: every chat gets the built-in tool and the runner's guide, whatever it sends", .{});
++    if (cfg.default) std.log.info("compute default: every thinking chat gets the built-in tool and the runner's guide, whatever it sends", .{});
+     return pool;
+ }
+ 
+-/// Whether the server gives every chat the built-in tool and the runner's guide (TF_DSV41_COMPUTE_LANE_DEFAULT=1).
++/// Whether thinking chats get the built-in tool and the boot's guide, whatever they send (the compute default).
+ pub fn forced(srv: *const Server) bool {
+     return srv.compute != null and srv.info.compute.?.default;
+ }
+@@ -55,11 +55,12 @@ pub fn guideAsked(srv: *const Server, fields: Value, thinking: bool) ?Value {
+ pub const default_min_tokens = 1024;
+ 
+ /// What a request asks, known before it renders, that decides whether its reply can hold for the lane (`arms`).
+-pub const Fit = struct { max_tokens: i64, stop: bool = false, logprobs: bool = false, structured: bool = false };
++pub const Fit = struct { max_tokens: i64, thinking: bool = true, stop: bool = false, logprobs: bool = false, structured: bool = false };
+ 
+-/// Whether a reply that asked `f` holds at its EOS and has room for a call, its result and an answer.
++/// Whether a reply that asked `f` thinks, holds at its EOS and has room for a call, its result and an answer.
+ fn fits(f: Fit) bool {
+-    return !f.stop and !f.logprobs and !f.structured and f.max_tokens >= default_min_tokens;
++    // unthinking, the prose before a call is the visible answer and the result's answer runs on into it
++    return f.thinking and !f.stop and !f.logprobs and !f.structured and f.max_tokens >= default_min_tokens;
+ }
+ 
+ /// A chat body's tools (`tools`) and `lane_own` into `input`, whose max_tokens is read; `logprobs`: rows asked.
+@@ -68,7 +69,8 @@ pub fn requestTools(srv: *Server, cx: *Cx, body: Value, input: *chat.Input, logp
+     for (@import("grammar.zig").fields) |k| structured = structured or json.truthyField(body, k);
+     // chat.zig's limit: max_tokens, or the server's default for 0 and unset
+     const budget = if (input.max_tokens) |m| (if (m != 0) m else srv.config.default_max_tokens) else srv.config.default_max_tokens;
+-    const fit: Fit = .{ .max_tokens = budget, .stop = json.truthyField(body, "stop"), .logprobs = logprobs or json.truthyField(body, "prompt_logprobs"), .structured = structured };
++    const thinking = (try @import("fields.zig").thinkingFields(cx, body, srv.effort_levels)).enable orelse srv.config.enable_thinking;
++    const fit: Fit = .{ .max_tokens = budget, .thinking = thinking, .stop = json.truthyField(body, "stop"), .logprobs = logprobs or json.truthyField(body, "prompt_logprobs"), .structured = structured };
+     input.tools = try tools(srv, cx, body.get("tools"), body.get("tool_choice"), fit);
+     input.lane_own = ownedByServer(srv, body.get("tools"), input.tools);
+ }

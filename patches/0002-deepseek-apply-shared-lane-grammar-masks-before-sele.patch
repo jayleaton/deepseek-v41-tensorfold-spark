@@ -1,0 +1,1037 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 20:45:47 +0700
+Subject: [PATCH 002/207] deepseek: apply shared lane grammar masks before
+ selection
+
+Carry prompt and verification masks through the native lane backend to each rank before greedy or keyed selection. Keep matching, draft cuts and scheduling in shared lanes, and release mask ownership after a successful drain.
+
+Register the PTX launch with the kernel contract and derive contract image names from the build definitions. Host tests exercise masked first tokens, accepted draft prefixes, nonfinite logits, guards and corruption controls. Full CPU gates pass with zero new lean identities against 0d51120a8; device execution remains unqualified.
+---
+ zig/build/cuda_contract_deepseek.zig          |  14 ++
+ zig/build/dsv41_draft.zig                     |   1 +
+ zig/build/dsv41_grammar.zig                   |  30 ++++
+ zig/build/kernel_contract.zig                 |   1 +
+ .../core/contract/dsv41_grammar_record.zig    |  13 ++
+ zig/src/core/contract/registry.zig            |   3 +-
+ .../families/deepseek_v41/batch_target.zig    |   1 +
+ zig/src/families/deepseek_v41/cuda_model.zig  |   6 +
+ .../deepseek_v41/device_host_test.zig         |   4 +
+ zig/src/families/deepseek_v41/draft/iface.zig |   7 +
+ zig/src/families/deepseek_v41/draft/lanes.zig |   7 +-
+ .../families/deepseek_v41/draft_host_test.zig |   4 +
+ .../deepseek_v41/grammar_contract.zig         | 107 ++++++++++++
+ zig/src/families/deepseek_v41/grammar_gpu.zig | 154 ++++++++++++++++++
+ .../deepseek_v41/grammar_host_test.zig        | 137 ++++++++++++++++
+ .../families/deepseek_v41/grammar_lane.zig    |  35 ++++
+ .../deepseek_v41/grammar_mask_kernel.zig      |  11 ++
+ .../families/deepseek_v41/grammar_rows.zig    |  30 ++++
+ .../families/deepseek_v41/phases_timed.zig    |   6 +-
+ .../families/deepseek_v41/serve_engine.zig    |   2 +-
+ zig/src/families/deepseek_v41/target.zig      |  52 +++++-
+ zig/tests/cuda/contract_deepseek_images.zig   |   2 +-
+ zig/tests/cuda/contract_images_test.zig       |   2 +-
+ 23 files changed, 615 insertions(+), 14 deletions(-)
+ create mode 100644 zig/build/dsv41_grammar.zig
+ create mode 100644 zig/src/core/contract/dsv41_grammar_record.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_contract.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_gpu.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_host_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_lane.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_mask_kernel.zig
+ create mode 100644 zig/src/families/deepseek_v41/grammar_rows.zig
+
+diff --git a/zig/build/cuda_contract_deepseek.zig b/zig/build/cuda_contract_deepseek.zig
+index 612f29bb0daafa616e06a48f3d064036d76c6989..01f0e937163acd949d149b2f9da69de0514a87ea 100644
+--- a/zig/build/cuda_contract_deepseek.zig
++++ b/zig/build/cuda_contract_deepseek.zig
+@@ -1,7 +1,10 @@
+ //! DeepSeek contract images use the same built artifacts as their named installs.
+ const std = @import("std");
+ const list = @import("dsv41_units.zig");
++const grammar = @import("dsv41_grammar.zig");
+ pub fn images(b: *std.Build, runner: *std.Build.Step.Compile, install: *std.Build.Step, kernels: anytype, files: []const ?std.Build.LazyPath, prebuilt: ?[]const u8, nvcc: ?[]const u8, version: ?std.Build.LazyPath, sms: []const u8, cuobjdump: ?[]const u8) void {
++    addNames(b, runner.root_module);
++    runner.root_module.addAnonymousImport("contract_fatbin_" ++ grammar.image_name, .{ .root_source_file = grammar.image(b) });
+     const empty = b.addWriteFiles().add("empty-contract-deepseek.fatbin", "");
+     for (list.units ++ list.optional) |k| {
+         const common = for (kernels, 0..) |known, i| {
+@@ -22,8 +25,19 @@ pub fn images(b: *std.Build, runner: *std.Build.Step.Compile, install: *std.Buil
+     }
+ }
+ pub fn inert(b: *std.Build, m: *std.Build.Module) void {
++    addNames(b, m);
+     const files = b.addWriteFiles();
++    m.addAnonymousImport("contract_fatbin_" ++ grammar.image_name, .{ .root_source_file = files.add(grammar.image_name, grammar.image_name) });
+     for (list.units ++ list.optional) |k| m.addAnonymousImport(b.fmt("contract_fatbin_{s}", .{k.name}), .{
+         .root_source_file = files.add(b.fmt("{s}.fatbin", .{k.name}), k.name),
+     });
+ }
++
++fn addNames(b: *std.Build, m: *std.Build.Module) void {
++    var names: [list.units.len + list.optional.len + 1][]const u8 = undefined;
++    for (list.units ++ list.optional, 0..) |unit, i| names[i] = unit.name;
++    names[names.len - 1] = grammar.image_name;
++    const options = b.addOptions();
++    options.addOption([]const []const u8, "names", &names);
++    m.addOptions("contract_deepseek_names", options);
++}
+diff --git a/zig/build/dsv41_draft.zig b/zig/build/dsv41_draft.zig
+index 787fe12b9086fa0242365327ecc93b07b8755e58..2a852b2cd593d0189e8a7afe8af49fa0c471d3c7 100644
+--- a/zig/build/dsv41_draft.zig
++++ b/zig/build/dsv41_draft.zig
+@@ -3,6 +3,7 @@ pub fn addImports(b: *std.Build, m: *std.Build.Module, target: std.Build.Resolve
+     addImportsAt(b, m, target, .Debug);
+ }
+ pub fn addImportsAt(b: *std.Build, m: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
++    @import("dsv41_grammar.zig").addTo(b, m);
+     const core = m.import_table.get("core").?;
+     const tokenizer = core.import_table.get("tokenizer").?;
+     const lanes = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true });
+diff --git a/zig/build/dsv41_grammar.zig b/zig/build/dsv41_grammar.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..5eefe8d47ec78c2592afc907dd93b82317859c7e
+--- /dev/null
++++ b/zig/build/dsv41_grammar.zig
+@@ -0,0 +1,30 @@
++//! The family mask kernel's PTX; the driver compiles it for the actual GPU.
++const std = @import("std");
++
++pub const image_name = "dsv41_grammar_mask.ptx";
++
++pub fn image(b: *std.Build) std.Build.LazyPath {
++    const target = b.resolveTargetQuery(.{ .cpu_arch = .nvptx64, .os_tag = .cuda, .cpu_model = .{ .explicit = &std.Target.nvptx.cpu.sm_80 } });
++    const obj = b.addObject(.{ .name = "dsv41_grammar_mask", .root_module = b.createModule(.{
++        .root_source_file = b.path("zig/src/families/deepseek_v41/grammar_mask_kernel.zig"),
++        .target = target,
++        .optimize = .ReleaseFast,
++    }) });
++    return obj.getEmittedAsm();
++}
++
++pub fn addTo(b: *std.Build, m: *std.Build.Module) void {
++    m.addAnonymousImport("grammar_mask_ptx", .{ .root_source_file = image(b) });
++}
++
++pub fn hostTests(b: *std.Build, all: *std.Build.Step) void {
++    const root = b.createModule(.{
++        .root_source_file = b.path("zig/src/families/deepseek_v41/grammar_contract.zig"),
++        .target = b.graph.host,
++        .optimize = .Debug,
++        .imports = &.{.{ .name = "contract", .module = @import("kernel_contract.zig").module(b, b.graph.host, .Debug) }},
++    });
++    const run = b.addRunArtifact(b.addTest(.{ .root_module = root }));
++    b.step("test-dsv41-grammar-contract-host", "Shared grammar mask contract and planted corruption on host; device unrun").dependOn(&run.step);
++    all.dependOn(&run.step);
++}
+diff --git a/zig/build/kernel_contract.zig b/zig/build/kernel_contract.zig
+index afd20c5961208abc982cf2f122d0a72296d456fd..dd19ab12691b6dc58a804df1f9617155c0813aa6 100644
+--- a/zig/build/kernel_contract.zig
++++ b/zig/build/kernel_contract.zig
+@@ -14,6 +14,7 @@ pub fn hostTests(b: *std.Build, family: *std.Build.Step) void {
+     run.has_side_effects = true;
+     b.step("test-kernel-seed-host", "Named contract fixtures keep their seed when entries are inserted").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = module(b, b.graph.host, .debug), .filters = &.{"contract seed:"} })).step);
+     const step = b.step("test-kernel-contract", "The kernel contract's host tests: gate logic, controls, every launch against every chip");
++    @import("dsv41_grammar.zig").hostTests(b, step);
+     step.dependOn(&run.step);
+     step.dependOn(family);
+     const rotary = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{
+diff --git a/zig/src/core/contract/dsv41_grammar_record.zig b/zig/src/core/contract/dsv41_grammar_record.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..053f747e3105fd8e1a6f25797de5ff29381726ba
+--- /dev/null
++++ b/zig/src/core/contract/dsv41_grammar_record.zig
+@@ -0,0 +1,13 @@
++//! The shared-lane grammar mask launch; compiled resource and device qualification remain pending.
++const limits = @import("limits.zig");
++const registry = @import("registry.zig");
++
++pub const launch: limits.CudaLaunch = .{
++    .name = "DeepSeek shared-lane grammar mask",
++    .symbol = "tf_grammar_mask",
++    .image = "dsv41_grammar_mask.ptx",
++    .threads = 128,
++    .min_sm = 80,
++};
++
++pub const records = [_]registry.CudaRecord{.{ .launch = launch, .usage = registry.none }};
+diff --git a/zig/src/core/contract/registry.zig b/zig/src/core/contract/registry.zig
+index a88d2885df0f467fbf36cf3a65121959ecc0494c..a9fc72256cee324af5e274ccf32537005bf0da33 100644
+--- a/zig/src/core/contract/registry.zig
++++ b/zig/src/core/contract/registry.zig
+@@ -1,6 +1,7 @@
+ //! The registered launches gate 5 checks: each one's threads and memory, and the limits its compiles recorded.
+ const std = @import("std");
+ const limits = @import("limits.zig");
++pub const dsv41_grammar = @import("dsv41_grammar_record.zig");
+ const M = limits.MetalLaunch;
+ const C = limits.CudaLaunch;
+ const U = limits.Usage;
+@@ -581,7 +582,7 @@ test {
+     _ = learning;
+ }
+ pub const all_cuda = @import("nvfp4_tile_pending.zig").records ++ landed_cuda ++ dsv41_pending ++ @import("inc4_pending.zig").trees ++ @import("inc4_pending.zig").rows ++ @import("affine_verify_records.zig").records;
+-pub const dsv41_pending = @import("registry_union.zig").extra(landed_cuda, @import("dsv41_pending_1.zig").records ++ @import("dsv41_pending_2.zig").records);
++pub const dsv41_pending = @import("registry_union.zig").extra(landed_cuda, @import("dsv41_pending_1.zig").records ++ @import("dsv41_pending_2.zig").records ++ dsv41_grammar.records);
+ test {
+     _ = @import("qwen4_cuda_receipts_test.zig");
+     _ = @import("glm_kv_pending.zig");
+diff --git a/zig/src/families/deepseek_v41/batch_target.zig b/zig/src/families/deepseek_v41/batch_target.zig
+index 0f1b5f0072bc0f7f6211e150b0c487f149cfcb59..ecd72fbebf9965e4c985e77ab2920c4b1a533ccb 100644
+--- a/zig/src/families/deepseek_v41/batch_target.zig
++++ b/zig/src/families/deepseek_v41/batch_target.zig
+@@ -28,6 +28,7 @@ pub fn targetWindow(b: *Batch, segments: []const iface.Segment, choices: [][]u32
+             @memcpy(ids[n..][0..sg.tokens.len], sg.tokens);
+             n += sg.tokens.len;
+         }
++        try @import("grammar_gpu.zig").segments(b.f, segments[rg[0]..rg[1]]);
+         try b.window(mix[rg[0]..rg[1]], ids[0..n], j > 0);
+         var greedy_rows = false;
+         for (segments[rg[0]..rg[1]]) |sg| greedy_rows = greedy_rows or !samp.sampled(sg.sampling);
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index 6526fd91fdb1fa8a6b0e8358fe65c2ac440ef4b5..cf837db8dcb2ef48e7fa2947b8a608e311517817 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -34,6 +34,7 @@ const dspark_rows = @import("dspark_rows.zig");
+ const dspark_slots = @import("dspark_slots.zig");
+ const l2pf_mod = @import("l2pf.zig");
+ const iface = @import("draft/iface.zig");
++const grammar = @import("grammar_gpu.zig");
+ 
+ /// The files `boot` opens under TF_DSV41_ASSETS, and the refusal that names them when it is unset (serve_engine.zig).
+ pub const asset_names = struct {
+@@ -119,6 +120,7 @@ pub const Model = struct {
+     slot_pass: ?*dspark_slots.SlotPass = null,
+     /// the keyed sampler, every rank with TF_DSV41_SAMPLING=1 (requests with T > 0; followers run its gathers)
+     sampler: ?*samp.GpuSampler = null,
++    grammar_masks: ?*grammar.Masks = null,
+     /// TF_DSV41_L2PF (l2pf.zig): the filled prefetch tables and the runner's side stream
+     l2pf: ?*l2pf_mod.L2pf = null,
+ 
+@@ -155,6 +157,7 @@ pub const Model = struct {
+         m.rows = null;
+         m.slot_pass = null;
+         m.sampler = null;
++        m.grammar_masks = null;
+         m.dev_arena = null;
+         m.arena = std.heap.ArenaAllocator.init(gpa);
+         errdefer if (!keep_owner) m.arena.deinit();
+@@ -397,6 +400,7 @@ pub const Model = struct {
+         // TF_DSV41_SAMPLING=1: keyed sampling (T > 0) on every rank; off: such requests are refused (error.Sampling)
+         m.sampler = if (samp.enabled()) try samp.GpuSampler.init(gpa, &m.f) else null;
+         m.gt.sampler = m.sampler;
++        m.grammar_masks = try grammar.Masks.init(gpa, &m.f, @max(64, rows_cap));
+         try m.driver.synchronize();
+         tr.step("end", cuda.usage(false));
+         tr.trim();
+@@ -470,6 +474,8 @@ pub const Model = struct {
+         if (m.rows) |b| b.deinit();
+         if (m.slot_set) |ss| ss.deinit();
+         if (m.pass) |p| p.deinit();
++        m.gt.deinitGrammar();
++        if (m.grammar_masks) |x| x.deinit();
+         if (m.sampler) |x| x.deinit();
+         if (m.sessions) |x| x.deinitAfterDrain();
+         if (m.f.kv) |k| k.deinitAfterDrain();
+diff --git a/zig/src/families/deepseek_v41/device_host_test.zig b/zig/src/families/deepseek_v41/device_host_test.zig
+index 994b3cb4cb53cb468592a2dfebf8ec990f20f3a9..639f25c194f1788be241ceb3b5fa5b95e4c147ac 100644
+--- a/zig/src/families/deepseek_v41/device_host_test.zig
++++ b/zig/src/families/deepseek_v41/device_host_test.zig
+@@ -21,3 +21,7 @@ test {
+ test {
+     _ = @import("review_handoff_test.zig");
+ }
++
++test {
++    std.testing.refAllDecls(@import("grammar_gpu.zig").Masks);
++}
+diff --git a/zig/src/families/deepseek_v41/draft/iface.zig b/zig/src/families/deepseek_v41/draft/iface.zig
+index 39aa01f4717070e4652cacc66f5cdadce10565f1..aa7a0feceeb691fdb664de05a191688611b3679b 100644
+--- a/zig/src/families/deepseek_v41/draft/iface.zig
++++ b/zig/src/families/deepseek_v41/draft/iface.zig
+@@ -11,6 +11,7 @@ pub const Segment = struct {
+     parents: ?[]const i32, // each row's parent row (row 0: -1); null: a chain
+     draws: []const u64,
+     sampling: ?lanes.Sampling,
++    masks: []const u32 = &.{},
+ };
+ 
+ /// A slot's last rows' taps (bf16 [rows, 3 x hidden] at `address`); `map`: tree window row -> taps row (branches.zig).
+@@ -21,6 +22,7 @@ pub const Target = struct {
+     vtable: *const VTable,
+ 
+     pub const VTable = struct {
++        prompt_mask: ?*const fn (*anyopaque, u32, []const u32) anyerror!void = null,
+         /// Run the prompt into the slot's state; the keyed choice after its last row (drawn at `draw`).
+         prefill: *const fn (ptr: *anyopaque, slot: u32, ids: []const u32, sampling: ?lanes.Sampling, draw: u64) anyerror!u32,
+         /// One forward over every segment into `choices[i][r]`; rows stay until `keep` (never kept: all rows stay).
+@@ -88,6 +90,11 @@ pub const Target = struct {
+         return f(t.ptr, slot, ids, sampling, draw);
+     }
+ 
++    pub fn promptMask(t: Target, slot: u32, mask: []const u32) !void {
++        if (t.vtable.prompt_mask) |f| return f(t.ptr, slot, mask);
++        if (mask.len != 0) return error.StructuresUnsupported;
++    }
++
+     pub fn prefill(t: Target, slot: u32, ids: []const u32, sampling: ?lanes.Sampling, draw: u64) !u32 {
+         return t.vtable.prefill(t.ptr, slot, ids, sampling, draw);
+     }
+diff --git a/zig/src/families/deepseek_v41/draft/lanes.zig b/zig/src/families/deepseek_v41/draft/lanes.zig
+index 35dc43ebbb2b79e3ecc2882b80bf6e9cd20d67e6..5696be8003a27f888333754464b14efcab623294 100644
+--- a/zig/src/families/deepseek_v41/draft/lanes.zig
++++ b/zig/src/families/deepseek_v41/draft/lanes.zig
+@@ -86,7 +86,7 @@ pub const Lanes = struct {
+         return .{ .ptr = x, .vtable = if (pieces) &vtable_pieces else &vtable };
+     }
+ 
+-    const vtable: be.Backend.VTable = .{ .prefill = prefill, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .probabilities = probabilities, .tree = heldTree, .release = release };
++    const vtable: be.Backend.VTable = .{ .prefill = prefill, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .probabilities = probabilities, .tree = heldTree, .held = @import("../grammar_lane.zig").held, .first_masked = @import("../grammar_lane.zig").firstMasked, .release = release };
+     /// a target that runs prompts in pieces (iface.Target begin / piece / finish): the round planner may use them
+     const vtable_pieces: be.Backend.VTable = blk: {
+         var v = vtable;
+@@ -188,6 +188,7 @@ pub const Lanes = struct {
+         x.policy.depth.reset(slot);
+         const ids = s.prompt();
+         x.target.admit(slot, s.max_new);
++        try @import("../grammar_lane.zig").prompt(x, s, slot);
+         st.first = try x.target.prefill(slot, ids, s.sampling, ids.len);
+         st.len = ids.len;
+         _ = x.scratch.reset(.retain_capacity);
+@@ -263,6 +264,7 @@ pub const Lanes = struct {
+         const st = try x.get(s);
+         try x.settle();
+         const ids = s.prompt();
++        try @import("../grammar_lane.zig").prompt(x, s, st.slot);
+         return x.finished(st, ids, try x.target.finish(st.slot, ids, s.sampling, ids.len));
+     }
+ 
+@@ -272,6 +274,7 @@ pub const Lanes = struct {
+         const st = try x.get(s);
+         try x.settle();
+         const ids = s.prompt();
++        try @import("../grammar_lane.zig").prompt(x, s, st.slot);
+         if (try x.target.tail(st.slot, ids, s.sampling, ids.len)) |first_| {
+             try x.finished(st, ids, first_);
+             return false;
+@@ -336,7 +339,7 @@ pub const Lanes = struct {
+             @memcpy(tokens[1 .. 1 + w.held], st.held[0..w.held]);
+             @memcpy(tokens[1 + w.held ..], w.tokens);
+             const parents = w.parents; // each row's parent row (row 0: -1)
+-            g.* = .{ .slot = st.slot, .start = st.len, .tokens = tokens, .parents = parents, .draws = w.positions, .sampling = w.stream.sampling };
++            g.* = .{ .slot = st.slot, .start = st.len, .tokens = tokens, .parents = parents, .draws = w.positions, .sampling = w.stream.sampling, .masks = w.masks };
+             c.* = o.sampled;
+             @memcpy(o.drafts, tokens[1..]);
+         }
+diff --git a/zig/src/families/deepseek_v41/draft_host_test.zig b/zig/src/families/deepseek_v41/draft_host_test.zig
+index 6bb9005d7ba0154be9d68402c285071266287a3f..ad1404ceaeea27c82be9d9149eae22198071f728 100644
+--- a/zig/src/families/deepseek_v41/draft_host_test.zig
++++ b/zig/src/families/deepseek_v41/draft_host_test.zig
+@@ -8,3 +8,7 @@ test {
+ test {
+     _ = @import("draft/review_release_test.zig");
+ }
++
++test {
++    _ = @import("grammar_host_test.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_contract.zig b/zig/src/families/deepseek_v41/grammar_contract.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..16b45e2bbc41eab1e063aa4bbdb4741dfdb96212
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_contract.zig
+@@ -0,0 +1,107 @@
++//! Host registration for the JIT mask operator; device execution and compiled resource receipts remain unrun.
++const std = @import("std");
++const contract = @import("contract");
++const c = contract.spec;
++const masks = @import("grammar_rows.zig");
++
++pub const launch = contract.registry.dsv41_grammar.launch;
++
++pub const spec: c.Spec = .{
++    .name = launch.name,
++    .accum = .none,
++    .depth = depth,
++    .out = .f32,
++    .in_place = true,
++    .nan = .{ .stated = "allowed logits retain their bits including NaN; disallowed logits become negative infinity" },
++    .tiles = .{ .{ .size = 16 }, .{ .size = 32, .step = 32, .min = 32 }, .{} },
++    .served = &.{
++        .{ .rows = 1, .n = 129280, .k = 0 },
++        .{ .rows = 16, .n = 64640, .k = 0 },
++        .{ .rows = 64, .n = 32384, .k = 0 },
++    },
++    .sums = .{ .f16 = 0, .bf16 = 0, .why = "bitmask stores only; no accumulation" },
++};
++
++pub const DeviceGate = enum { unrun };
++pub const device_gate: DeviceGate = .unrun;
++pub const resource_receipt: ?contract.limits.Usage = null;
++
++fn depth(_: c.Shape) usize {
++    return 0;
++}
++
++fn reference(input: []const f32, output: []f32, idx: []const u32, bits: []const u32, width: usize, words: usize, lo: usize) void {
++    @memcpy(output, input);
++    for (idx, 0..) |row, r| for (0..width) |col| {
++        const token = lo + col;
++        if ((bits[r * words + token / 32] >> @intCast(token % 32)) & 1 == 0)
++            output[row * width + col] = -std.math.inf(f32);
++    };
++}
++
++test "grammar contract: registered launch and arithmetic contract name the production kernel" {
++    try std.testing.expectEqualStrings(masks.symbol, launch.symbol);
++    try std.testing.expectEqual(masks.threads, launch.threads);
++    var found = false;
++    for (contract.registry.all_cuda) |entry| {
++        if (std.mem.eql(u8, entry.launch.symbol, launch.symbol)) found = true;
++    }
++    try std.testing.expect(found);
++    try std.testing.expectEqual(@as(u32, 128), launch.threads);
++    try std.testing.expect(spec.in_place);
++    try std.testing.expectEqual(c.Accum.none, spec.accum);
++    try std.testing.expectEqual(@as(?contract.limits.Usage, null), resource_receipt);
++    try std.testing.expectEqual(.unrun, device_gate);
++}
++
++test "grammar contract: nonfinite, repeat, shape edges, guards and corruption control on host" {
++    const a = std.testing.allocator;
++    const shapes = try c.shapes(a, spec);
++    defer a.free(shapes);
++    for (shapes) |shape| {
++        const width: u32 = @intCast(shape.n);
++        const lo: u32 = 128;
++        const words = (lo + width + 31) / 32;
++        const count: usize = @min(shape.rows, 3);
++        const len = (count + 2) * width;
++        const input = try a.alloc(f32, len);
++        defer a.free(input);
++        const got = try a.alloc(f32, len + 2);
++        defer a.free(got);
++        const want = try a.alloc(f32, len);
++        defer a.free(want);
++        const bits = try a.alloc(u32, count * words);
++        defer a.free(bits);
++        const saved = try a.alloc(u32, bits.len);
++        defer a.free(saved);
++        for (input, 0..) |*v, i| v.* = switch (i % 5) {
++            0 => @bitCast(@as(u32, 0x7fc01234)),
++            1 => std.math.inf(f32),
++            2 => -std.math.inf(f32),
++            3 => -0.0,
++            else => @floatFromInt(i % 97),
++        };
++        for (bits, 0..) |*v, i| v.* = switch (i % 4) {
++            0 => 0,
++            1 => std.math.maxInt(u32),
++            2 => 0x55555555,
++            else => 0xaaaaaaaa,
++        };
++        @memcpy(saved, bits);
++        const indices = [_]u32{ 1, 2, 3 };
++        reference(input, want, indices[0..count], bits, width, words, lo);
++        for (0..5) |_| {
++            got[0] = 12345;
++            got[len + 1] = 54321;
++            @memcpy(got[1 .. len + 1], input);
++            masks.maskRows(got[1 .. len + 1], width, indices[0..count], bits, words, lo);
++            try std.testing.expectEqualSlices(u8, std.mem.sliceAsBytes(want), std.mem.sliceAsBytes(got[1 .. len + 1]));
++            try std.testing.expectEqualSlices(u32, saved, bits);
++            try std.testing.expectEqual(@as(f32, 12345), got[0]);
++            try std.testing.expectEqual(@as(f32, 54321), got[len + 1]);
++        }
++        const damaged = 1 + @as(usize, indices[0]) * width;
++        got[damaged] = 9;
++        try std.testing.expect(!std.mem.eql(u8, std.mem.sliceAsBytes(want), std.mem.sliceAsBytes(got[1 .. len + 1])));
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_gpu.zig b/zig/src/families/deepseek_v41/grammar_gpu.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..6401188612e2bbbe2aacd7166ab64daf50b2e317
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_gpu.zig
+@@ -0,0 +1,154 @@
++//! Apply shared lanes' masks to each rank's fp32 logits, with no second matcher or scheduler.
++const std = @import("std");
++const cuda = @import("cuda");
++const Forward = @import("forward.zig").Forward;
++const rows = @import("grammar_rows.zig");
++const iface = @import("draft/iface.zig");
++const Allocator = std.mem.Allocator;
++pub const Row = rows.Row;
++
++pub const Masks = struct {
++    gpa: Allocator,
++    f: *Forward,
++    words: u32,
++    max_rows: u32,
++    lo: u32,
++    width: u32,
++    module: cuda.Module,
++    kernel: cuda.Function,
++    host: cuda.HostBuffer,
++    dev: cuda.DeviceBuffer,
++    count: u32 = 0,
++    message: std.ArrayList(i64) = .empty,
++
++    pub fn init(gpa: Allocator, f: *Forward, max_rows: u32) !*Masks {
++        if (f.grammar != null or max_rows == 0) return error.GrammarSetup;
++        const part = try @import("partition.zig").share(f.cfg.vocab, f.comm.rank(), f.comm.world());
++        const words = (f.cfg.vocab + 31) / 32;
++        const bytes = 4 * @as(usize, max_rows) * (words + 1);
++        var host = try cuda.HostBuffer.alloc(f.runner.d, bytes);
++        errdefer host.free();
++        var dev = try cuda.DeviceBuffer.alloc(f.runner.d, bytes);
++        errdefer dev.free();
++        var log: [4096]u8 = @splat(0);
++        var module = try cuda.Module.loadPtx(f.runner.d, @embedFile("grammar_mask_ptx"), &log);
++        errdefer module.unload();
++        const kernel = try module.function(rows.symbol);
++        const x = try gpa.create(Masks);
++        x.* = .{ .gpa = gpa, .f = f, .words = words, .max_rows = max_rows, .lo = part.lo, .width = part.len, .module = module, .kernel = kernel, .host = host, .dev = dev };
++        f.grammar = .{ .ptr = x, .follow = follow, .apply = applyFn };
++        return x;
++    }
++
++    pub fn deinit(x: *Masks) void {
++        x.f.runner.stream.synchronize() catch {};
++        x.f.grammar = null;
++        x.message.deinit(x.gpa);
++        x.module.unload();
++        x.dev.free();
++        x.host.free();
++        x.gpa.destroy(x);
++    }
++
++    fn bits(x: *Masks) []u32 {
++        return @alignCast(std.mem.bytesAsSlice(u32, x.host.bytes[0 .. 4 * @as(usize, x.max_rows) * x.words]));
++    }
++
++    fn indices(x: *Masks) []u32 {
++        const off = 4 * @as(usize, x.max_rows) * x.words;
++        return @alignCast(std.mem.bytesAsSlice(u32, x.host.bytes[off..]));
++    }
++
++    pub fn stage(x: *Masks, list: []const Row) !void {
++        try rows.validate(list, x.words, x.max_rows);
++        // The previous async upload must finish before its pinned source is reused.
++        if (x.count != 0) try x.f.runner.stream.synchronize();
++        x.count = @intCast(list.len);
++        for (list, 0..) |r, i| {
++            x.indices()[i] = r.index orelse std.math.maxInt(u32);
++            @memcpy(x.bits()[i * x.words ..][0..x.words], r.bits);
++        }
++        if (x.f.leads()) {
++            try x.message.resize(x.gpa, 3 + list.len * (x.words + 1));
++            const msg = x.message.items;
++            msg[0] = Forward.op_grammar;
++            msg[1] = x.words;
++            msg[2] = x.count;
++            for (list, 0..) |_, i| {
++                const at = 3 + i * (x.words + 1);
++                msg[at] = x.indices()[i];
++                for (x.bits()[i * x.words ..][0..x.words], msg[at + 1 ..][0..x.words]) |b, *v| v.* = b;
++            }
++            try x.f.link.?.send(msg);
++        }
++    }
++
++    fn follow(ptr: *anyopaque, msg: []const i64) anyerror!void {
++        const x: *Masks = @ptrCast(@alignCast(ptr));
++        if (msg.len < 3 or msg[1] != x.words or msg[2] < 0 or msg[2] > x.max_rows) return error.BadPlan;
++        const count: usize = @intCast(msg[2]);
++        if (msg.len != 3 + count * (x.words + 1)) return error.BadPlan;
++        var list: std.ArrayList(Row) = .empty;
++        defer list.deinit(x.gpa);
++        var arena = std.heap.ArenaAllocator.init(x.gpa);
++        defer arena.deinit();
++        for (0..count) |i| {
++            const at = 3 + i * (x.words + 1);
++            const index = std.math.cast(u32, msg[at]) orelse return error.BadPlan;
++            const b = try arena.allocator().alloc(u32, x.words);
++            for (b, msg[at + 1 ..][0..x.words]) |*v, w| v.* = std.math.cast(u32, w) orelse return error.BadPlan;
++            try list.append(x.gpa, .{ .index = if (index == std.math.maxInt(u32)) null else index, .bits = b });
++        }
++        try x.stage(list.items);
++    }
++
++    fn applyFn(ptr: *anyopaque, row0: u32, n: u32) anyerror!void {
++        const x: *Masks = @ptrCast(@alignCast(ptr));
++        if (x.count == 0) return;
++        const idx = x.indices();
++        for (idx[0..x.count]) |*i| if (i.* == std.math.maxInt(u32)) {
++            if (n == 0) return error.GrammarRows;
++            i.* = row0 + n - 1;
++        };
++        const r = x.f.runner;
++        const off = 4 * @as(usize, x.max_rows) * x.words;
++        try x.dev.uploadAsync(0, x.host.bytes[0 .. 4 * @as(usize, x.count) * x.words], r.stream.handle);
++        try x.dev.uploadAsync(off, x.host.bytes[off..][0 .. 4 * @as(usize, x.count)], r.stream.handle);
++        var args: cuda.launch.Args = .{};
++        args.add(r.addressOf("w.logits") orelse return error.Unbound);
++        args.add(@as(u64, x.width));
++        args.add(x.dev.ptr + off);
++        args.add(x.dev.ptr);
++        args.add(x.words);
++        args.add(x.lo / 32);
++        args.add(x.width / 32);
++        args.add(x.width);
++        try cuda.launch.launch(x.kernel, .{ .grid = .{ .x = (x.width / 32 + rows.threads - 1) / rows.threads, .y = x.count }, .block = .{ .x = rows.threads } }, r.stream, &args);
++        // Keep masks across the forward's greedy and separate keyed segments; they are idempotent.
++    }
++};
++
++pub fn stage(f: *Forward, list: []const Row) !void {
++    const hook = f.grammar orelse {
++        if (list.len != 0) return error.StructuresUnsupported;
++        return;
++    };
++    const x: *Masks = @ptrCast(@alignCast(hook.ptr));
++    return x.stage(list);
++}
++
++pub fn segments(f: *Forward, segs: []const iface.Segment) !void {
++    var arena = std.heap.ArenaAllocator.init(f.gpa);
++    defer arena.deinit();
++    var list: std.ArrayList(Row) = .empty;
++    var at: u32 = 0;
++    const words = (f.cfg.vocab + 31) / 32;
++    for (segs) |s| {
++        if (s.masks.len != 0) {
++            if (s.masks.len != s.tokens.len * words) return error.GrammarWords;
++            for (0..s.tokens.len) |i| try list.append(arena.allocator(), .{ .index = at + @as(u32, @intCast(i)), .bits = s.masks[i * words ..][0..words] });
++        }
++        at += @intCast(s.tokens.len);
++    }
++    return stage(f, list.items);
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_host_test.zig b/zig/src/families/deepseek_v41/grammar_host_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ede68bdc4f7465e4b22f553e32f90a2041e0a09
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_host_test.zig
+@@ -0,0 +1,137 @@
++//! Shared grammar cuts and masks through the actual family lane backend, without a CUDA driver.
++const std = @import("std");
++const lanes = @import("lanes");
++const ln = @import("draft/lanes.zig");
++const iface = @import("draft/iface.zig");
++const mask_rows = @import("grammar_rows.zig");
++const a = std.testing.allocator;
++
++const Target = struct {
++    prompt: [2]u32 = @splat(0),
++    masked_rows: usize = 0,
++    seen_drafts: usize = 0,
++
++    fn self(p: *anyopaque) *Target {
++        return @ptrCast(@alignCast(p));
++    }
++    fn promptMask(p: *anyopaque, _: u32, mask: []const u32) anyerror!void {
++        if (mask.len != 2) return error.MissingPromptMask;
++        @memcpy(&self(p).prompt, mask);
++    }
++    fn choose(bits: []const u32) !u32 {
++        var logits: [64]f32 = @splat(1);
++        logits[0] = 100;
++        mask_rows.maskRows(&logits, 64, &.{0}, bits, 2, 0);
++        const id = @import("greedy.zig").argmax(&logits);
++        if (!std.math.isFinite(logits[id])) return error.GrammarDeadEnd;
++        return @intCast(id);
++    }
++    fn prefill(p: *anyopaque, _: u32, _: []const u32, _: ?lanes.Sampling, _: u64) anyerror!u32 {
++        return choose(&self(p).prompt);
++    }
++    fn window(p: *anyopaque, segs: []const iface.Segment, out: [][]u32) anyerror!void {
++        for (segs, out) |s, choices| {
++            if (s.masks.len != s.tokens.len * 2) return error.MissingWindowMasks;
++            self(p).seen_drafts += s.tokens.len - 1;
++            for (choices, 0..) |*choice, i| {
++                choice.* = try choose(s.masks[i * 2 ..][0..2]);
++                self(p).masked_rows += 1;
++            }
++        }
++    }
++    fn keep(_: *anyopaque, _: u32, _: []const u32) anyerror!void {}
++    fn taps(_: *anyopaque, _: u32) iface.Taps {
++        return .{ .address = 0, .rows = 1, .stride = 1 };
++    }
++    fn release(_: *anyopaque, _: u32) void {}
++    fn target(t: *Target) iface.Target {
++        return .{ .ptr = t, .vtable = &.{ .prompt_mask = promptMask, .prefill = prefill, .window = window, .keep = keep, .taps = taps, .release = release } };
++    }
++};
++
++test "grammar family: first token and drafted prefix masks reach the target" {
++    for ([_]bool{ false, true }) |drafts| {
++        var target: Target = .{};
++        var pass: @import("draft/drive.zig").Oracle = .{ .serial = &.{ 5, 6, 7, 31 }, .prompt_len = 2, .vocab = 64 };
++        var prices = try @import("draft/costs.zig").defaults(a, 64);
++        defer prices.deinit(a);
++        const x = try ln.Lanes.init(a, target.target(), pass.pass(), prices, .{
++            .shape = .{ .hidden = 1, .block = 3, .candidates = 1, .window = 1 },
++            .slots = 1,
++            .depth = .{ .mode = .static, .cap = 3, .skip = false },
++        });
++        defer x.deinit();
++        var arena = std.heap.ArenaAllocator.init(a);
++        defer arena.deinit();
++        var cfg = try lanes.Config.init(a, try x.model(arena.allocator(), 64), 16, 15);
++        defer cfg.deinit(a);
++        var clock: lanes.fake.FixedClock = .{};
++        var e = lanes.Engine.init(a, &cfg, x.backend(), clock.clock());
++        defer e.deinit();
++        x.attach(&e);
++        var sequence: lanes.grammar.Sequence = .{ .want = &.{ 5, 6, 7 }, .stop = 31, .gpa = a };
++        var grammar = lanes.grammar.Constraint.init(sequence.rules(), 2, null);
++        defer grammar.rules.vtable.free(grammar.rules.ptr);
++        var stream = try lanes.Stream.init(a, .{ .id = "grammar", .prompt = &.{ 1, 2 }, .max_new = 8, .drafts = drafts, .sampling = if (drafts) .{ .seed = 11, .temperature = 0.8, .top_k = 8, .top_p = 0.9 } else null, .eos = &.{31}, .grammar = &grammar });
++        defer stream.deinit(a);
++        try e.addStream(&stream);
++        while (e.activeCount() > 0) try e.step();
++        try std.testing.expectEqualStrings("", stream.problem);
++        try std.testing.expectEqualSlices(u32, &.{ 5, 6, 7, 31 }, stream.emitted());
++        try std.testing.expect(target.masked_rows > 0);
++        try std.testing.expect(lanes.grammar.allows(&target.prompt, 5));
++    }
++}
++
++test "grammar family: rejected draft prefix rolls back and rejects empty or malformed masks" {
++    var arena = std.heap.ArenaAllocator.init(a);
++    defer arena.deinit();
++    var sequence: lanes.grammar.Sequence = .{ .want = &.{ 5, 6, 7 }, .stop = 31, .gpa = a };
++    var grammar = lanes.grammar.Constraint.init(sequence.rules(), 2, null);
++    defer grammar.rules.vtable.free(grammar.rules.ptr);
++    try std.testing.expect(try grammar.follow(5));
++    const cut = try grammar.window(arena.allocator(), &.{ 5, 6, 42, 7 }, &.{ -1, 0, 1, 2 }, false, 2);
++    try std.testing.expectEqualSlices(u32, &.{ 0, 1 }, cut.rows);
++    try std.testing.expectEqual(@as(usize, 1), sequence.at);
++    try std.testing.expect(lanes.grammar.allows(cut.masks[0..2], 6));
++    try std.testing.expect(lanes.grammar.allows(cut.masks[2..4], 7));
++    try mask_rows.validate(&.{.{ .index = 0, .bits = cut.masks[0..2] }}, 2, 64);
++    try std.testing.expectError(error.GrammarDeadEnd, mask_rows.validate(&.{.{ .index = 0, .bits = &.{ 0, 0 } }}, 2, 64));
++    try std.testing.expectError(error.GrammarWords, mask_rows.validate(&.{.{ .index = 0, .bits = &.{1} }}, 2, 64));
++}
++
++test "grammar family: masks use global tokens across uneven rank spans and retain allowed NaN" {
++    const words = 40;
++    var bits: [words]u32 = @splat(0);
++    bits[12] = 1;
++    for (0..4) |rank| {
++        const part = try @import("partition.zig").share(1280, rank, 4);
++        const logits = try a.alloc(f32, part.len * 2);
++        defer a.free(logits);
++        @memset(logits, std.math.nan(f32));
++        mask_rows.maskRows(logits, part.len, &.{1}, &bits, words, part.lo);
++        for (logits[0..part.len]) |v| try std.testing.expect(std.math.isNan(v));
++        for (logits[part.len..], 0..) |v, col| {
++            if (part.lo + col == 384) try std.testing.expect(std.math.isNan(v)) else try std.testing.expectEqual(-std.math.inf(f32), v);
++        }
++    }
++}
++
++test "grammar family: thinking prefix stays free until the close token, then draft masks start" {
++    var arena = std.heap.ArenaAllocator.init(a);
++    defer arena.deinit();
++    var sequence: lanes.grammar.Sequence = .{ .want = &.{ 5, 6 }, .stop = 31, .gpa = a };
++    var grammar = lanes.grammar.Constraint.init(sequence.rules(), 2, 30);
++    defer grammar.rules.vtable.free(grammar.rules.ptr);
++    try std.testing.expect(try grammar.next(arena.allocator()) == null);
++    const window = try grammar.window(arena.allocator(), &.{ 9, 10, 30, 5, 42 }, &.{ -1, 0, 1, 2, 3 }, false, 4);
++    try std.testing.expectEqualSlices(u32, &.{ 0, 1, 2, 3 }, window.rows);
++    try std.testing.expect(std.mem.allEqual(u32, window.masks[0..4], std.math.maxInt(u32)));
++    try std.testing.expect(lanes.grammar.allows(window.masks[4..6], 5));
++    try std.testing.expect(lanes.grammar.allows(window.masks[6..8], 6));
++    try std.testing.expectEqual(@as(usize, 0), sequence.at);
++    try std.testing.expect(!grammar.active);
++    try std.testing.expect(try grammar.follow(30));
++    const next = (try grammar.next(arena.allocator())).?;
++    try std.testing.expect(lanes.grammar.allows(next, 5));
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_lane.zig b/zig/src/families/deepseek_v41/grammar_lane.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..85715e400d0143dcd7ef4af11272009db748fe76
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_lane.zig
+@@ -0,0 +1,35 @@
++//! Shared lane grammar handoff: the matcher and draft cuts stay in core.lanes.
++const std = @import("std");
++const lanes = @import("lanes");
++const Lanes = @import("draft/lanes.zig").Lanes;
++
++pub fn prompt(x: *Lanes, s: *lanes.Stream, slot: u32) !void {
++    var arena = std.heap.ArenaAllocator.init(x.gpa);
++    defer arena.deinit();
++    const mask = if (s.grammar) |g| try g.next(arena.allocator()) else null;
++    try x.target.promptMask(slot, mask orelse &.{});
++}
++
++pub fn firstMasked(ptr: *anyopaque, s: *lanes.Stream, position: u64, mask: []const u32) anyerror!u64 {
++    const x: *Lanes = @ptrCast(@alignCast(ptr));
++    const st = x.state(s) orelse return error.UnknownStream;
++    if (position != st.len) return error.PositionMismatch;
++    if (!lanes.grammar.allows(mask, st.first)) return error.GrammarRejected;
++    try x.drawn.append(x.gpa, st.first);
++    return x.drawn.items.len - 1;
++}
++
++pub fn held(ptr: *anyopaque, s: *lanes.Stream, out: []u32) anyerror!void {
++    const x: *Lanes = @ptrCast(@alignCast(ptr));
++    const st = x.state(s) orelse return error.UnknownStream;
++    if (out.len > st.nodes()) return error.HeldMismatch;
++    const main = @min(out.len, st.n);
++    @memcpy(out[0..main], st.held[0..main]);
++    var at: usize = main;
++    for (st.sib_tokens[0..st.n_sib], st.sib_len[0..st.n_sib]) |tokens, n| {
++        const take = @min(n, out.len - at);
++        @memcpy(out[at..][0..take], tokens[0..take]);
++        at += take;
++        if (at == out.len) break;
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_mask_kernel.zig b/zig/src/families/deepseek_v41/grammar_mask_kernel.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0cc787f7cd00980c7e0ff4a41f7c6f0fe589bb1
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_mask_kernel.zig
+@@ -0,0 +1,11 @@
++//! Apply shared lane mask words to the selected rank-local logit rows.
++const rows = @import("grammar_rows.zig");
++
++export fn tf_grammar_mask(logits: [*]addrspace(.global) f32, ld: u64, idx: [*]addrspace(.global) const u32, bits: [*]addrspace(.global) const u32, words: u32, w0: u32, n: u32, width: u32) callconv(.kernel) void {
++    const r = @workGroupId(1);
++    const k = @workGroupId(0) * @workGroupSize(0) + @workItemId(0);
++    if (k >= n) return;
++    const word = bits[@as(u64, r) * words + w0 + k];
++    const base: [*]f32 = @addrSpaceCast(logits + @as(u64, idx[r]) * ld);
++    rows.maskWord(base, word, 32 * k, width);
++}
+diff --git a/zig/src/families/deepseek_v41/grammar_rows.zig b/zig/src/families/deepseek_v41/grammar_rows.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea1c758f1e566770499e1f6941d9457758519f4d
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/grammar_rows.zig
+@@ -0,0 +1,30 @@
++//! Per-row vocabulary masks supplied by shared lanes, before either greedy or keyed selection.
++const std = @import("std");
++
++pub const threads: u32 = 128;
++pub const symbol = "tf_grammar_mask";
++
++pub inline fn maskWord(row: [*]f32, word: u32, col0: u32, width: u32) void {
++    if (word == std.math.maxInt(u32)) return;
++    for (0..32) |b| {
++        const col = col0 + @as(u32, @intCast(b));
++        if (col < width and (word >> @intCast(b)) & 1 == 0) row[col] = -std.math.inf(f32);
++    }
++}
++
++pub fn maskRows(logits: []f32, width: u32, indices: []const u32, bits: []const u32, words: u32, lo: u32) void {
++    for (indices, 0..) |row, r| {
++        for (0..width / 32) |k| maskWord(logits[@as(usize, row) * width ..].ptr, bits[r * words + lo / 32 + k], @intCast(k * 32), width);
++    }
++}
++
++pub const Row = struct { index: ?u32, bits: []const u32 };
++
++pub fn validate(rows: []const Row, words: u32, max_rows: u32) !void {
++    if (words == 0 or rows.len > max_rows) return error.GrammarRows;
++    for (rows) |r| {
++        if (r.bits.len != words) return error.GrammarWords;
++        if (r.index) |i| if (i >= max_rows) return error.GrammarRows;
++        if (std.mem.allEqual(u32, r.bits, 0)) return error.GrammarDeadEnd;
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/phases_timed.zig b/zig/src/families/deepseek_v41/phases_timed.zig
+index 5c195fbdbd2d57438934f9eab85e7d16062e2ca2..05a0e4a1844faf04e4f1310a106102249abb8b4e 100644
+--- a/zig/src/families/deepseek_v41/phases_timed.zig
++++ b/zig/src/families/deepseek_v41/phases_timed.zig
+@@ -17,7 +17,11 @@ pub const TimedTarget = struct {
+         return .{ .ptr = t, .vtable = &vtable };
+     }
+ 
+-    const vtable: iface.Target.VTable = .{ .prefill = prefill, .window = window, .keep = keep, .taps = taps, .release = release, .admit = admit, .begin = begin, .piece = piece, .finish = finish, .tail = tail, .pieces = pieces, .replays = replays, .warm = warm };
++    const vtable: iface.Target.VTable = .{ .prompt_mask = promptMask, .prefill = prefill, .window = window, .keep = keep, .taps = taps, .release = release, .admit = admit, .begin = begin, .piece = piece, .finish = finish, .tail = tail, .pieces = pieces, .replays = replays, .warm = warm };
++
++    fn promptMask(p: *anyopaque, slot: u32, mask: []const u32) anyerror!void {
++        return self(p).inner.promptMask(slot, mask);
++    }
+ 
+     fn admit(p: *anyopaque, slot: u32, max_new: u64) void {
+         self(p).inner.admit(slot, max_new);
+diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
+index e27bdc876327db08d0c0c555a799f03d6473a1dc..7d95ce87ab44840e4c06c5d3ebbbee11a5b554fc 100644
+--- a/zig/src/families/deepseek_v41/serve_engine.zig
++++ b/zig/src/families/deepseek_v41/serve_engine.zig
+@@ -123,7 +123,7 @@ pub const Served = struct {
+         s.core = lanes.Engine.init(gpa, &s.cfg, s.x.backend(), s.clock.clock());
+         s.x.attach(&s.core);
+         const window: u32 = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit));
+-        s.host = api.LaneHost.init(gpa, io, &s.core, .{ .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows });
++        s.host = api.LaneHost.init(gpa, io, &s.core, .{ .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows, .structures = m.grammar_masks != null });
+         // the lanes run on LaneHost's thread: the model's CUDA context must be current there
+         s.host.on_thread = .{ .ctx = m, .run = bindContext };
+         // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
+diff --git a/zig/src/families/deepseek_v41/target.zig b/zig/src/families/deepseek_v41/target.zig
+index ed62f884d1d044076bdd806691d3ad63106d886d..3471de9f19c6788007833e88ac7f52ea7af6dbf9 100644
+--- a/zig/src/families/deepseek_v41/target.zig
++++ b/zig/src/families/deepseek_v41/target.zig
+@@ -17,6 +17,8 @@ pub const Error = error{ TreeWindow, Sampling, Slots, NotAChain, WindowRows };
+ 
+ pub const GpuTarget = struct {
+     f: *fwd.Forward,
++    tree_masks: []const u32 = &.{},
++    prompt_masks: [16]std.ArrayList(u32) = @splat(.empty),
+     /// rows a prefill window takes (the decode path's buckets; the forward plans buffers for them)
+     prefill_rows: u32 = 16,
+     /// a slot that already holds the prompt: prefill returns this choice without running the prompt again
+@@ -61,7 +63,25 @@ pub const GpuTarget = struct {
+         return .{ .ptr = t, .vtable = &vtable };
+     }
+ 
+-    const vtable: iface.Target.VTable = .{ .prefill = prefill, .window = window, .keep = keep, .taps = taps, .release = release, .release_checked = releaseChecked, .available = available, .admit = admit, .begin = begin, .piece = piece, .finish = finish, .tail = tail, .pieces = pieces, .replays = replays, .warm = warm };
++    const vtable: iface.Target.VTable = .{ .prompt_mask = promptMask, .prefill = prefill, .window = window, .keep = keep, .taps = taps, .release = release, .release_checked = releaseChecked, .available = available, .admit = admit, .begin = begin, .piece = piece, .finish = finish, .tail = tail, .pieces = pieces, .replays = replays, .warm = warm };
++
++    fn promptMask(p: *anyopaque, slot: u32, mask: []const u32) anyerror!void {
++        const t = self_(p);
++        if (slot >= t.prompt_masks.len) return error.Slots;
++        if (mask.len != 0 and (t.f.grammar == null or mask.len != (t.f.cfg.vocab + 31) / 32)) return error.StructuresUnsupported;
++        const dst = &t.prompt_masks[slot];
++        dst.clearRetainingCapacity();
++        try dst.appendSlice(t.f.gpa, mask);
++    }
++
++    pub fn deinitGrammar(t: *GpuTarget) void {
++        for (&t.prompt_masks) |*mask| mask.deinit(t.f.gpa);
++    }
++
++    fn stagePrompt(t: *GpuTarget, slot: u32) !void {
++        const mask = t.prompt_masks[slot].items;
++        return @import("grammar_gpu.zig").stage(t.f, if (mask.len == 0) &.{} else &.{.{ .index = null, .bits = mask }});
++    }
+ 
+     fn admit(p: *anyopaque, slot: u32, max_new: u64) void {
+         const t = self_(p);
+@@ -79,7 +99,10 @@ pub const GpuTarget = struct {
+         _ = t.takeReplayed(slot);
+         const keyed = try t.keyedOf(sampling);
+         t.tree.clear();
+-        if (t.resume_first) |first| if (t.f.slot.pos == ids.len and t.f.slot.pending == null) return first;
++        if (t.resume_first) |first| if (t.f.slot.pos == ids.len and t.f.slot.pending == null) {
++            if (t.prompt_masks[slot].items.len != 0) return error.StructuresResumeUnsupported;
++            return first;
++        };
+         // the request's pool pages, then a saved entry that prefixes the prompt: the slot continues, the rest prefills
+         const max_new: ?u64 = if (slot < t.max_new.len) t.max_new[slot] else null;
+         if (slot < t.max_new.len) t.max_new[slot] = null;
+@@ -106,7 +129,7 @@ pub const GpuTarget = struct {
+             try t.handTaps(slot);
+             var one: [1]u32 = undefined;
+             var out = [_][]u32{&one};
+-            try window(p, &.{.{ .slot = slot, .start = ids.len - sp.window, .tokens = ids[ids.len - sp.window ..], .parents = null, .draws = &.{draw}, .sampling = sampling }}, &out);
++            try window(p, &.{.{ .slot = slot, .start = ids.len - sp.window, .tokens = ids[ids.len - sp.window ..], .parents = null, .draws = &.{draw}, .sampling = sampling, .masks = t.prompt_masks[slot].items }}, &out);
+             return one[0];
+         }
+         if (t.own_prefill) {
+@@ -114,6 +137,7 @@ pub const GpuTarget = struct {
+             try t.f.prefill(rest);
+             const seg: usize = @import("forward_prefill.zig").segmentRows(t.f);
+             const last = if (rest.len % seg == 0) seg else rest.len % seg;
++            try t.stagePrompt(slot);
+             if (keyed) |s| return t.pickOne(@intCast(last - 1), s, draw);
+             const picks = try t.f.gpa.alloc(u32, last);
+             defer t.f.gpa.free(picks);
+@@ -127,6 +151,7 @@ pub const GpuTarget = struct {
+             try t.f.window(ids[at_ .. at_ + n]);
+             if (at_ + n == ids.len) {
+                 // the keyed choice after the prompt's last row: the last row's greedy pick, or its sampled one
++                try t.stagePrompt(slot);
+                 if (keyed) |s| choice[0] = try t.pickOne(@intCast(n - 1), s, draw) else {
+                     var rows: [64]u32 = undefined;
+                     try t.f.greedy(rows[0..n]);
+@@ -206,7 +231,7 @@ pub const GpuTarget = struct {
+         }
+         var one: [1]u32 = undefined;
+         var out = [_][]u32{&one};
+-        try window(p, &.{.{ .slot = slot, .start = ids.len - 1, .tokens = ids[ids.len - 1 ..], .parents = null, .draws = &.{draw}, .sampling = sampling }}, &out);
++        try window(p, &.{.{ .slot = slot, .start = ids.len - 1, .tokens = ids[ids.len - 1 ..], .parents = null, .draws = &.{draw}, .sampling = sampling, .masks = t.prompt_masks[slot].items }}, &out);
+         return one[0];
+     }
+ 
+@@ -256,8 +281,8 @@ pub const GpuTarget = struct {
+ 
+     /// `finish` up to the last token (TF_DSV41_TAIL_JOIN): the decoder replay and its taps, no window pending.
+     fn tail(p: *anyopaque, slot: u32, ids: []const u32, sampling: ?lanes.Sampling, draw: u64) anyerror!?u32 {
+-        _ = draw;
+         const t = self_(p);
++        if (slot < t.prompt_masks.len and t.prompt_masks[slot].items.len != 0) return try finish(p, slot, ids, sampling, draw);
+         try t.onSlot(slot);
+         if (ids.len == 0 or t.f.slot.pos != ids.len - 1) return error.NotAChain;
+         _ = try t.keyedOf(sampling); // refused here as `finish` would, not in the round
+@@ -284,7 +309,11 @@ pub const GpuTarget = struct {
+         if (segments.len != 1) return error.Slots;
+         const s = segments[0];
+         if (s.slot != 0) return error.Slots;
+-        if (s.parents != null) return t.tree.window(.{ .ptr = t, .vtable = &chains }, s, choices[0]);
++        if (s.parents != null) {
++            t.tree_masks = s.masks;
++            defer t.tree_masks = &.{};
++            return t.tree.window(.{ .ptr = t, .vtable = &chains }, s, choices[0]);
++        }
+         t.tree.clear();
+         const keyed = try t.keyedOf(s.sampling);
+         // a chain window never kept keeps every row: the lanes' undrafted step sends the next row without a keep
+@@ -294,6 +323,7 @@ pub const GpuTarget = struct {
+         }
+         if (s.start != t.f.slot.pos) return error.NotAChain;
+         if (s.tokens.len > t.max_rows) return error.WindowRows;
++        try @import("grammar_gpu.zig").segments(t.f, segments);
+         try t.f.window(s.tokens);
+         if (keyed) |smp| return t.sampler.?.choose(0, @intCast(s.tokens.len), smp, s.draws, choices[0][0..s.tokens.len]);
+         try t.f.greedy(choices[0][0..s.tokens.len]);
+@@ -404,8 +434,16 @@ pub const GpuTarget = struct {
+     const chains: branches.Chains.VTable = .{ .run = chainRun, .drop = chainDrop };
+ 
+     fn chainRun(p: *anyopaque, slot: u32, start: u64, tokens: []const u32, draws: []const u64, sampling: ?lanes.Sampling, out: []u32) anyerror!void {
++        const t = self_(p);
++        var arena = std.heap.ArenaAllocator.init(t.f.gpa);
++        defer arena.deinit();
++        const words = (t.f.cfg.vocab + 31) / 32;
++        const masks: []u32 = if (t.tree_masks.len == 0) &.{} else try arena.allocator().alloc(u32, tokens.len * words);
++        if (masks.len != 0) for (t.tree.rows[0..tokens.len], 0..) |row, i| {
++            @memcpy(masks[i * words ..][0..words], t.tree_masks[@as(usize, row) * words ..][0..words]);
++        };
+         var one = [_][]u32{out};
+-        return window(p, &.{.{ .slot = slot, .start = start, .tokens = tokens, .parents = null, .draws = draws, .sampling = sampling }}, &one);
++        return window(p, &.{.{ .slot = slot, .start = start, .tokens = tokens, .parents = null, .draws = draws, .sampling = sampling, .masks = masks }}, &one);
+     }
+ 
+     fn chainDrop(p: *anyopaque, slot: u32) anyerror!void {
+diff --git a/zig/tests/cuda/contract_deepseek_images.zig b/zig/tests/cuda/contract_deepseek_images.zig
+index 885a7bfee1eee41e6fdb9180badf16032822b686..f0decbe224cb10cef786c4488571e8f8cff9ba57 100644
+--- a/zig/tests/cuda/contract_deepseek_images.zig
++++ b/zig/tests/cuda/contract_deepseek_images.zig
+@@ -1,6 +1,6 @@
+ //! Every registered DeepSeek image is explicit; unknown names continue to the refusing common resolver.
+ const std = @import("std");
+-pub const names = [_][]const u8{ "dsv41_exl3_experts", "dsv41_x3ld", "dsv41_x3pf", "dsv41_x3gm", "dsv41_linear", "dsv41_x3seg", "dsv41_dense3", "dsv41_attn", "dsv41_topk", "dsv41_mhc", "dsv41_mhc_pf", "dsv41_router_gemv", "dsv41_pfdense_k8", "dsv41_pfdense_k10", "dsv41_pfdense_k12", "dsv41_pfdense_k16", "dsv41_engram_gate", "dsv41_l2pace", "dsv41_l2pf", "dsv41_x3gm_plan", "dsv41_topk_keys", "dsv41_pointwise", "dsv41_kvsplit", "dsv41_glue", "dsv41_x3gm3", "dsv41_pfglue", "dsv41_router_glue", "dsv41_kv_glue", "dsv41_x3ld_epi", "dsv41_topk_b", "dsv41_sampling", "dsv41_lin2" };
++pub const names = @import("contract_deepseek_names").names;
+ fn Blob(comptime name: []const u8) type {
+     return struct {
+         pub const bytes align(16) = @embedFile("contract_fatbin_" ++ name).*;
+diff --git a/zig/tests/cuda/contract_images_test.zig b/zig/tests/cuda/contract_images_test.zig
+index 9a604b6b5023ad7259d4bf266bc85a0d620117c0..29c56767933a2e7f3c53e8838843ea1ae074ccb1 100644
+--- a/zig/tests/cuda/contract_images_test.zig
++++ b/zig/tests/cuda/contract_images_test.zig
+@@ -27,7 +27,7 @@ test "contract image: every registered DeepSeek image selects distinct matching
+         try std.testing.expectEqualStrings(r.launch.image, try resolve(r.launch.image));
+         try names.put(std.testing.allocator, r.launch.image, {});
+     }
+-    try std.testing.expectEqual(@as(usize, 32), names.count());
++    try std.testing.expectEqual(@import("contract_deepseek_images.zig").names.len, names.count());
+ }
+ 
+ test "contract image: all 32 Qwen4 launches select their own embedded images" {

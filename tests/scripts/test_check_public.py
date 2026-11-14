@@ -116,3 +116,20 @@ def test_bash32_empty_file_list(tmp_path, bash32):
     assert result.returncode == 2, result.stdout + result.stderr
     assert "no files to scan" in result.stderr
     assert "unbound variable" not in result.stderr
+
+
+def test_patch_series_internal_names_fail_in_strings_too(tmp_path):
+    # The line patches/0074 carried before the fix: the test host's name inside a report string, not a comment.
+    root = checkout(tmp_path)
+    (root / "patches").mkdir()
+    patch = root / "patches" / "0001-fixture.patch"
+    host = "node" + "01"
+    patch.write_text(f'+    "timing_scope": "{host} nice19; CPU clock excludes QUIET pauses"\n')
+    result = scan(root)
+    assert result.returncode == 1 and "internal names in the engine patch series" in result.stdout, result.stdout
+    patch.write_text('+    "timing_scope": "test host, nice 19; CPU clock excludes QUIET pauses"\n')
+    assert scan(root).returncode == 0
+    # Outside patches/ the series rule does not apply (docs may describe a two-node pair in their own words).
+    patch.unlink()
+    (root / "notes.txt").write_text(f"rank 1 runs on {host}\n")
+    assert scan(root).returncode == 0

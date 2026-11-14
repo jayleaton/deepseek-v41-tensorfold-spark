@@ -32,6 +32,9 @@ for key in IMAGE TF_TP_MASTER NCCL_SOCKET_IFNAME NCCL_IB_HCA MODEL_DIR ENGRAM_DI
     [[ -n "${!key:-}" && "${!key}" != *'<'* ]] || { echo "set required native setting $key" >&2; exit 2; }
 done
 rev=$(safe_capture revision cat config/tensorfold.rev)
+# The engine tree the recipe's patch series gives on that upstream commit (scripts/build-native.sh).
+tree=
+[[ ! -f config/tensorfold.tree ]] || tree=$(safe_capture revision cat config/tensorfold.tree)
 export TF_EXPERIMENTAL=deepseek
 export NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
 export NCCL_CUMEM_HOST_ENABLE=${NCCL_CUMEM_HOST_ENABLE:-0}
@@ -119,6 +122,10 @@ if [[ "$mode" == --effective-profile ]]; then
 fi
 image_rev=$(safe_capture revision docker image inspect -f '{{index .Config.Labels "org.tensorfold.revision"}}' "$IMAGE")
 [[ "$image_rev" == "$rev" ]] || { echo "image engine revision differs from config/tensorfold.rev" >&2; exit 2; }
+if [[ -n "$tree" ]]; then
+    image_tree=$(safe_capture revision docker image inspect -f '{{index .Config.Labels "org.tensorfold.tree"}}' "$IMAGE")
+    [[ "$image_tree" == "$tree" ]] || { echo "image engine tree differs from config/tensorfold.tree; rebuild the image" >&2; exit 2; }
+fi
 # The image's runtime config, platform and ordered layer digests, hashed inside the control so no image setting value
 # is printed. Not its .Id: that is the manifest digest under Docker's containerd image store and the config digest
 # under overlay2, so the same loaded image has two IDs on a mixed pair.

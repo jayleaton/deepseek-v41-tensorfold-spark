@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 23:54:42 +0700
+Subject: [PATCH 016/207] deepseek: retain strict arithmetic oracle controls
+
+Address mimeding's issue #33 with independent host controls for FP32 source order, signed zero, rank-zero-first reduction and BF16 storage boundaries. Retain FP64 nonzero controls and negative witnesses. Runtime arithmetic, precision and comparison tolerances are unchanged.
+---
+ .../deepseek_v41/arithmetic_oracle_test.zig   | 68 +++++++++++++++++++
+ zig/src/families/deepseek_v41/asset_main.zig  |  1 +
+ 2 files changed, 69 insertions(+)
+ create mode 100644 zig/src/families/deepseek_v41/arithmetic_oracle_test.zig
+
+diff --git a/zig/src/families/deepseek_v41/arithmetic_oracle_test.zig b/zig/src/families/deepseek_v41/arithmetic_oracle_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..71392846c5cdbec07c4e1991d7e1ccc05c2a1107
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/arithmetic_oracle_test.zig
+@@ -0,0 +1,68 @@
++//! Exact-storage controls for mhc_cuda.cu post1 and rank0-first gathering; no device qualification.
++const std = @import("std");
++const named = @import("named.zig");
++const t = std.testing;
++
++fn add(x: f32, y: f32) f32 {
++    @setFloatMode(.strict);
++    return x + y;
++}
++
++fn mul(x: f32, y: f32) f32 {
++    @setFloatMode(.strict);
++    return x * y;
++}
++
++fn raw(x: f32) u32 {
++    return @bitCast(x);
++}
++
++/// mhc_cuda.cu loads rank zero, adds ascending FP32 partials, then rounds the result to BF16.
++fn gathered(parts: []const f32) f32 {
++    var sum = parts[0];
++    for (parts[1..]) |part| sum = add(sum, part);
++    return named.bf16Widen(named.bf16Round(sum));
++}
++
++/// post1 uses four separately rounded products and ascending additions before its residual and BF16 store.
++fn post(br: f32, scale: f32, x: [4]f32, c: [4]f32) u16 {
++    const mix = add(add(add(mul(c[0], x[0]), mul(c[1], x[1])), mul(c[2], x[2])), mul(c[3], x[3]));
++    return named.bf16Round(add(mul(scale, br), mix));
++}
++
++test "arithmetic oracle: actual residual addition changes zero bits; identity shortcut is a retained negative" {
++    const negative: f32 = @bitCast(@as(u32, 0x80000000));
++    const actual = post(negative, 1, @splat(0), @splat(1));
++    try t.expectEqual(@as(u16, 0), actual);
++    try t.expectEqual(@as(u16, 0x8000), named.bf16Round(negative));
++    try t.expect(actual != named.bf16Round(negative));
++    try t.expectEqual(@as(u16, 0x8000), post(negative, 1, @splat(negative), @splat(1)));
++    try t.expectEqual(@as(f32, 0), named.bf16Widen(actual));
++}
++
++test "arithmetic oracle: rank-zero load preserves negative zero and ordered nonzero cancellation" {
++    const negative: f32 = @bitCast(@as(u32, 0x80000000));
++    const parts = [_]f32{ negative, negative, negative };
++    try t.expectEqual(@as(u32, 0x80000000), raw(gathered(&parts)));
++    var wrong: f32 = 0;
++    for (parts) |v| wrong = add(wrong, v);
++    try t.expectEqual(@as(u32, 0), raw(wrong));
++    try t.expect(raw(wrong) != raw(gathered(&parts)));
++    const cancellation = [_]f32{ 0x1p24, 1, -0x1p24 };
++    try t.expectEqual(@as(u32, 0), raw(gathered(&cancellation)));
++    const reordered = gathered(&.{ 0x1p24, -0x1p24, 1 });
++    try t.expectEqual(@as(f32, 1), reordered);
++    try t.expect(raw(reordered) != raw(gathered(&cancellation)));
++    const independent_fp64: f64 = @as(f64, cancellation[0]) + @as(f64, cancellation[1]) + @as(f64, cancellation[2]);
++    try t.expectEqual(@as(f64, 1), independent_fp64);
++}
++
++test "arithmetic oracle: BF16 storage occurs after the FP32 rank sum, including midpoint ties" {
++    const half = @as(f32, 0x1p-8);
++    try t.expectEqual(@as(u16, 0x3f80), named.bf16Round(gathered(&.{ 1, half })));
++    try t.expectEqual(@as(u16, 0x3f81), named.bf16Round(gathered(&.{ 1, half, 0x1p-16 })));
++    try t.expectEqual(@as(u16, 0xbf80), named.bf16Round(gathered(&.{ -1, -half })));
++    const early = add(named.bf16Widen(named.bf16Round(1 + half)), 0x1p-16);
++    try t.expectEqual(@as(u16, 0x3f80), named.bf16Round(early));
++    try t.expect(named.bf16Round(early) != named.bf16Round(gathered(&.{ 1, half, 0x1p-16 })));
++}
+diff --git a/zig/src/families/deepseek_v41/asset_main.zig b/zig/src/families/deepseek_v41/asset_main.zig
+index 1f67e30185c450341ddf0f6f89bc4653a081b5e5..aca93641ab430f5981c0f0dd1d4b1cf0c873f693 100644
+--- a/zig/src/families/deepseek_v41/asset_main.zig
++++ b/zig/src/families/deepseek_v41/asset_main.zig
+@@ -63,4 +63,5 @@ test "asset commands cannot select a GPU operation" {
+ test {
+     _ = @import("config.zig");
+     _ = @import("engram_discovery.zig");
++    _ = @import("arithmetic_oracle_test.zig");
+ }

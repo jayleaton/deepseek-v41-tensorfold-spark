@@ -1,0 +1,1242 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 19:33:28 +0700
+Subject: [PATCH 127/207] Revert S3 3af553e61 (static int lists): T5's merge
+ gate, wrong graph-v4 values under mutation and an empty-range panic
+
+ec763a32d's defs and asserts stay graph-only (Lowered.graph_only, as f94b928b7), so calc and ELF keep T2's pinned steps; mbpp-66 is an ELF's again.
+---
+ zig/src/core/compute_circuit_proof_test.zig   |   6 +-
+ zig/src/core/runner_frontend_integer.zig      |  11 +-
+ zig/src/core/runner_frontend_integer_ast.zig  | 141 ++---
+ zig/src/core/runner_frontend_integer_list.zig | 484 ------------------
+ .../runner_frontend_integer_list_test.zig     | 202 --------
+ .../core/runner_frontend_integer_python.zig   |  71 +--
+ zig/src/core/runner_frontend_test.zig         |   1 -
+ zig/src/core/runner_graph_table.zig           |  16 +-
+ 8 files changed, 62 insertions(+), 870 deletions(-)
+ delete mode 100644 zig/src/core/runner_frontend_integer_list.zig
+ delete mode 100644 zig/src/core/runner_frontend_integer_list_test.zig
+
+diff --git a/zig/src/core/compute_circuit_proof_test.zig b/zig/src/core/compute_circuit_proof_test.zig
+index 70d52ae1d6034a43fc42d72ee61ac465599ea808..b5fd649a8c129efb9d601d072fa2cd73f860cc79 100644
+--- a/zig/src/core/compute_circuit_proof_test.zig
++++ b/zig/src/core/compute_circuit_proof_test.zig
+@@ -18,10 +18,10 @@ const calc_owned = [_][]const u8{ "add30-06", "add30-11", "add30-22", "add30-23"
+ const bank_owned = [_][]const u8{"bignum-10"};
+ /// Floor division with divmod and Fraction, Decimal: the graph bank's, or an ELF's when compiling.
+ const graph_owned = [_][]const u8{ "div_big-04", "div_big-08", "div_big-20", "div_big-23", "div_big-32", "div_big-36", "mul_big-08", "mul_big-17", "mul_big-18" };
+-/// One-expression integer defs with asserts (mbpp-66 over a static int list): the bank's, an ELF's otherwise.
+-const def_owned = [_][]const u8{ "mbpp-80", "mbpp-86", "mbpp-66" };
++/// One-expression integer defs with asserts: the bank's since the def inlining, an ELF's otherwise.
++const def_owned = [_][]const u8{ "mbpp-80", "mbpp-86" };
+ /// MBPP functions only an ELF runs.
+-const elf_owned = [_][]const u8{"mbpp-56"};
++const elf_owned = [_][]const u8{ "mbpp-56", "mbpp-66" };
+ 
+ test "compute runner proof: served S3 (no ELF): owned calls print the sandbox's bytes, never as an ELF" {
+     try proof(false);
+diff --git a/zig/src/core/runner_frontend_integer.zig b/zig/src/core/runner_frontend_integer.zig
+index ecad61e8f835758f80b16b1b9daef1c4e28f1d14..72f25805b94a8279ac2a061e91f5850635d26176 100644
+--- a/zig/src/core/runner_frontend_integer.zig
++++ b/zig/src/core/runner_frontend_integer.zig
+@@ -3,18 +3,17 @@ const ast = @import("runner_frontend_integer_ast.zig");
+ const compiler = @import("runner_frontend_program_compile.zig");
+ const cost = @import("runner_frontend_integer_cost.zig");
+ 
+-/// graph_only: only the graph route takes the table (lists, more than eight values); `source` is empty.
++/// graph_only: only the graph route takes the table (defs, asserts); `source` is empty.
+ pub const Lowered = struct { source: []u8, estimated_steps: ?usize, table: ?Table = null, graph_only: bool = false };
+ 
+ /// A lowered script's DAG and ordered outputs, the data the runtime evaluates; literal text is dropped (use value).
+ pub const Table = struct {
+     nodes: [64]ast.Node = undefined,
+     count: usize = 0,
+-    roots: [32]usize = undefined,
+-    endings: [32]u8 = undefined, // ' ', '\n', or ',' between a printed list's elements
+-    styles: [32]u8 = @splat(0), // 0 integer/bool/tuple, 1 exact integral float, 2 fixed Decimal
+-    scales: [32]u8 = @splat(0),
+-    brackets: [32]u8 = @splat(0), // 1: a list's `[` before the value, 2: its `]` after
++    roots: [8]usize = undefined,
++    endings: [8]u8 = undefined,
++    styles: [8]u8 = @splat(0), // 0 integer/bool/tuple, 1 exact integral float, 2 fixed Decimal
++    scales: [8]u8 = @splat(0),
+     outputs: usize = 0,
+ };
+ 
+diff --git a/zig/src/core/runner_frontend_integer_ast.zig b/zig/src/core/runner_frontend_integer_ast.zig
+index a7f126cb802ed3d3c269ec3fda4508e9409a6709..1cd893ed970d3a6b8dfeb0a833ec40893d71fe63 100644
+--- a/zig/src/core/runner_frontend_integer_ast.zig
++++ b/zig/src/core/runner_frontend_integer_ast.zig
+@@ -1,10 +1,7 @@
+ const std = @import("std");
+-const list = @import("runner_frontend_integer_list.zig");
+ 
+ pub const Invalid = error{Unsupported};
+ pub const limit: i512 = std.math.pow(i512, 10, 62);
+-/// Elements all of a script's lists may hold together (each one a node, so the node budget binds first).
+-pub const max_items = 64;
+ pub const Op = enum(u8) { literal, neg, add, sub, mul, floor, mod, pow, powmod, digits, divmod, gcd, isqrt, factorial, range_product, digit_sum, eq, ne, lt, le, gt, ge };
+ pub const Node = struct {
+     op: Op,
+@@ -33,68 +30,25 @@ pub const Parser = struct {
+     frame: ?Frame = null,
+     active: u8 = 0, // functions being inlined, one bit each: a call to one of them is recursion
+     check_only: bool = false, // a def's body at its definition: syntax only, names are not looked up
+-    // static int lists: parse-time values over element nodes; a name of kind list holds its index in lists
+-    items: [max_items]usize = undefined,
+-    item_count: usize = 0,
+-    lists: [16]list.List = undefined,
+-    list_count: usize = 0,
+-    kinds: [32]bool = undefined,
+-    module_count: usize = 0, // the module's names: bindings[0..module_count] outside any frame or comprehension
+-    allow_lists: bool = false, // the whole-script lowering's lists and min/max; every other parser keeps its grammar
+-    listed: bool = false, // a list or min/max parsed: the graph route's script only (calc and ELF keep their own)
+-    asserted: bool = false, // an `assert` proved: like a def or a list, the graph route's script only
++    asserted: bool = false, // an `assert` proved: like a def, the graph route's script only
+ 
+     /// `def name(params): return <expr>`, inlined at each call; `body` borrows the script.
+     pub const Function = struct { name: []const u8, params: [4][]const u8 = undefined, arity: usize = 0, body: []const u8 };
+     const Frame = struct { start: usize, globals: usize };
+-    /// An int node, or a list's index in `lists`.
+-    pub const Operand = struct { index: usize, list: bool };
+-    pub const Mark = struct { pos: usize, count: usize, items: usize, lists: usize };
+ 
+     // Names and literal slices borrow source storage; bind after parsing the RHS to preserve prior roots.
+     pub fn bind(self: *Parser, name: []const u8, root: usize) Invalid!void {
+-        return self.bindAs(name, .{ .index = root, .list = false });
+-    }
+-
+-    pub fn bindAs(self: *Parser, name: []const u8, v: Operand) Invalid!void {
+-        if (name.len == 0 or v.index >= (if (v.list) self.list_count else self.count) or self.function(name) != null)
+-            return error.Unsupported;
+-        for (self.names[0..self.binding_count], self.roots[0..self.binding_count], 0..) |bound_name, *bound_root, i| {
++        if (name.len == 0 or root >= self.count or self.function(name) != null) return error.Unsupported;
++        for (self.names[0..self.binding_count], self.roots[0..self.binding_count]) |bound_name, *bound_root| {
+             if (std.mem.eql(u8, name, bound_name)) {
+-                bound_root.* = v.index;
+-                self.kinds[i] = v.list;
++                bound_root.* = root;
+                 return;
+             }
+         }
+         if (self.binding_count == self.names.len) return error.Unsupported;
+         self.names[self.binding_count] = name;
+-        self.roots[self.binding_count] = v.index;
+-        self.kinds[self.binding_count] = v.list;
++        self.roots[self.binding_count] = root;
+         self.binding_count += 1;
+-        self.module_count = self.binding_count;
+-    }
+-
+-    /// Where to drop what a parse added (a failed attempt, or nodes only a proof reads).
+-    pub fn mark(self: *const Parser) Mark {
+-        return .{ .pos = self.pos, .count = self.count, .items = self.item_count, .lists = self.list_count };
+-    }
+-
+-    pub fn reset(self: *Parser, m: Mark) void {
+-        self.pos, self.count, self.item_count, self.list_count = .{ m.pos, m.count, m.items, m.lists };
+-    }
+-
+-    /// A call argument or a whole right side: a list when one parses up to `,`, `)` or the end, else an int.
+-    pub fn operand(self: *Parser, depth: usize) Invalid!Operand {
+-        if (list.ahead(self)) {
+-            const m = self.mark();
+-            if (list.parse(self, depth)) |li| {
+-                self.space();
+-                if (self.pos == self.source.len or self.source[self.pos] == ',' or self.source[self.pos] == ')')
+-                    return .{ .index = li, .list = true };
+-            } else |_| {}
+-            self.reset(m);
+-        }
+-        return .{ .index = try self.expr(depth), .list = false };
+     }
+ 
+     /// A def as Python compiles it: the body must parse now (names resolve at each call), the name must be new.
+@@ -105,9 +59,9 @@ pub const Parser = struct {
+             if (std.mem.eql(u8, p, f.name)) return error.Unsupported;
+             for (f.params[0..i]) |q| if (std.mem.eql(u8, p, q)) return error.Unsupported;
+         }
+-        const saved = .{ self.source, self.pos, self.count, self.item_count, self.list_count };
++        const saved = .{ self.source, self.pos, self.count };
+         defer {
+-            self.source, self.pos, self.count, self.item_count, self.list_count = saved;
++            self.source, self.pos, self.count = saved;
+             self.check_only = false;
+         }
+         self.check_only = true;
+@@ -125,40 +79,28 @@ pub const Parser = struct {
+         return null;
+     }
+ 
+-    /// A name's binding: a body's params, then module names (never a caller's); newest first, so targets shadow.
+-    fn slot(self: *const Parser, name: []const u8) ?usize {
++    /// The node a name holds where it is read: in a body its parameters, then the module's names (never a caller's).
++    fn lookup(self: *const Parser, name: []const u8) ?usize {
+         const visible: [2][2]usize = if (self.frame) |f| .{ .{ f.start, self.binding_count }, .{ 0, f.globals } } else .{ .{ 0, self.binding_count }, .{ 0, 0 } };
+         for (visible) |range| {
+-            var i = range[1];
+-            while (i > range[0]) {
+-                i -= 1;
+-                if (std.mem.eql(u8, name, self.names[i])) return i;
++            for (self.names[range[0]..range[1]], self.roots[range[0]..range[1]]) |bound_name, root| {
++                if (std.mem.eql(u8, name, bound_name)) return root;
+             }
+         }
+         return null;
+     }
+ 
+-    fn lookup(self: *const Parser, name: []const u8) ?usize {
+-        const s = self.slot(name) orelse return null;
+-        return if (self.kinds[s]) null else self.roots[s];
+-    }
+-
+-    pub fn lookupList(self: *const Parser, name: []const u8) ?usize {
+-        const s = self.slot(name) orelse return null;
+-        return if (self.kinds[s]) self.roots[s] else null;
+-    }
+-
+     /// `f(args)` with f's body parsed over the argument nodes: pure, so inlining is exact; recursion refuses.
+     fn call(self: *Parser, index: usize, depth: usize) Invalid!usize {
+         const f = self.functions[index];
+         const bit = @as(u8, 1) << @intCast(index);
+         if (self.active & bit != 0) return error.Unsupported;
+-        var args: [4]Operand = undefined;
++        var args: [4]usize = undefined;
+         var n: usize = 0;
+         try self.need("(");
+         if (!self.take(")")) while (true) {
+             if (n == args.len) return error.Unsupported;
+-            args[n] = try self.operand(depth + 1);
++            args[n] = try self.expr(depth + 1);
+             n += 1;
+             if (self.take(")")) break;
+             try self.need(",");
+@@ -169,12 +111,11 @@ pub const Parser = struct {
+             self.source, self.pos, self.binding_count, self.frame, self.active = saved;
+         }
+         // read the outer frame before writing: a struct literal assigned in place may alias self.frame
+-        const globals = if (self.frame) |outer| outer.globals else self.module_count;
++        const globals = if (self.frame) |outer| outer.globals else self.binding_count;
+         self.frame = .{ .start = self.binding_count, .globals = globals };
+         for (f.params[0..n], args[0..n]) |p, arg| {
+             self.names[self.binding_count] = p;
+-            self.roots[self.binding_count] = arg.index;
+-            self.kinds[self.binding_count] = arg.list;
++            self.roots[self.binding_count] = arg;
+             self.binding_count += 1;
+         }
+         self.active |= bit;
+@@ -209,26 +150,25 @@ pub const Parser = struct {
+         return .{ q, r };
+     }
+ 
+-    pub fn space(self: *Parser) void {
++    fn space(self: *Parser) void {
+         while (self.pos < self.source.len and (self.source[self.pos] == ' ' or self.source[self.pos] == '\t'))
+             self.pos += 1;
+     }
+ 
+-    pub fn take(self: *Parser, s: []const u8) bool {
++    fn take(self: *Parser, s: []const u8) bool {
+         self.space();
+         if (!std.mem.startsWith(u8, self.source[self.pos..], s)) return false;
+         self.pos += s.len;
+         return true;
+     }
+ 
+-    pub fn need(self: *Parser, s: []const u8) Invalid!void {
++    fn need(self: *Parser, s: []const u8) Invalid!void {
+         if (!self.take(s)) return error.Unsupported;
+     }
+ 
+-    pub fn add(self: *Parser, node: Node) Invalid!usize {
++    fn add(self: *Parser, node: Node) Invalid!usize {
+         if (self.count == self.nodes.len) return error.Unsupported;
+         self.nodes[self.count] = node;
+-        self.proved[self.count] = false; // a reset may reuse the slot
+         self.count += 1;
+         return self.count - 1;
+     }
+@@ -242,7 +182,7 @@ pub const Parser = struct {
+         return null;
+     }
+ 
+-    pub fn expr(self: *Parser, depth: usize) Invalid!usize {
++    fn expr(self: *Parser, depth: usize) Invalid!usize {
+         const left = try self.sum(depth);
+         const op = self.comparison() orelse return left;
+         const right = try self.sum(depth);
+@@ -306,16 +246,8 @@ pub const Parser = struct {
+             try self.need(")");
+             return n;
+         }
+-        if (list.ahead(self)) return list.index(self, try list.parse(self, depth), depth);
+         if (try self.algorithm(depth)) |n| return n;
+-        if (self.word("sum")) {
+-            if (!self.allow_lists) return self.digitSum(depth);
+-            const m = self.mark();
+-            if (self.digitSum(depth)) |n| return n else |_| self.reset(m);
+-            return list.sum(self, depth);
+-        }
+-        if (self.allow_lists and self.word("min")) return list.extreme(self, depth, false);
+-        if (self.allow_lists and self.word("max")) return list.extreme(self, depth, true);
++        if (self.word("sum")) return self.digitSum(depth);
+         if (self.word("divmod")) {
+             try self.need("(");
+             const a = try self.expr(depth + 1);
+@@ -335,10 +267,13 @@ pub const Parser = struct {
+             return self.add(.{ .op = .powmod, .l = a, .r = b, .k = m });
+         }
+         if (self.word("len")) {
+-            if (!self.allow_lists) return self.textLength(depth);
+-            const m = self.mark();
+-            if (self.textLength(depth)) |n| return n else |_| self.reset(m);
+-            return list.length(self, depth);
++            try self.need("(");
++            try self.need("str");
++            try self.need("(");
++            const n = try self.expr(depth + 1);
++            try self.need(")");
++            try self.need(")");
++            return self.add(.{ .op = .digits, .l = n });
+         }
+         if (self.word("int")) return self.convert();
+         self.space();
+@@ -353,13 +288,10 @@ pub const Parser = struct {
+                 if (called) {
+                     try self.need("(");
+                     if (!self.take(")")) while (true) {
+-                        _ = try self.operand(depth + 1);
++                        _ = try self.expr(depth + 1);
+                         if (self.take(")")) break;
+                         try self.need(",");
+                     };
+-                } else if (self.take("[")) {
+-                    _ = try self.expr(depth + 1);
+-                    try self.need("]");
+                 }
+                 return self.add(.{ .op = .literal, .value = 1, .text = "1" });
+             }
+@@ -416,7 +348,7 @@ pub const Parser = struct {
+         return try self.add(.{ .op = op, .l = a, .r = b, .k = k });
+     }
+ 
+-    pub fn word(self: *Parser, token: []const u8) bool {
++    fn word(self: *Parser, token: []const u8) bool {
+         self.space();
+         const rest = self.source[self.pos..];
+         if (!std.mem.startsWith(u8, rest, token)) return false;
+@@ -426,7 +358,7 @@ pub const Parser = struct {
+         return true;
+     }
+ 
+-    pub fn identifier(self: *Parser) Invalid![]const u8 {
++    fn identifier(self: *Parser) Invalid![]const u8 {
+         self.space();
+         const start = self.pos;
+         while (self.pos < self.source.len and
+@@ -439,17 +371,6 @@ pub const Parser = struct {
+         return name;
+     }
+ 
+-    /// len(str(n)): n's digit count, its sign included.
+-    fn textLength(self: *Parser, depth: usize) Invalid!usize {
+-        try self.need("(");
+-        try self.need("str");
+-        try self.need("(");
+-        const n = try self.expr(depth + 1);
+-        try self.need(")");
+-        try self.need(")");
+-        return self.add(.{ .op = .digits, .l = n });
+-    }
+-
+     fn digitSum(self: *Parser, depth: usize) Invalid!usize {
+         try self.need("(");
+         const mapped = self.word("map");
+diff --git a/zig/src/core/runner_frontend_integer_list.zig b/zig/src/core/runner_frontend_integer_list.zig
+deleted file mode 100644
+index 3e5b371dd92fa68ee6eb689e7a46bef9128904b7..0000000000000000000000000000000000000000
+--- a/zig/src/core/runner_frontend_integer_list.zig
++++ /dev/null
+@@ -1,484 +0,0 @@
+-//! Static int lists in the integer lowering: literals, range, list(), sorted(), comprehensions; len/sum/min/max/[i].
+-const std = @import("std");
+-const ast = @import("runner_frontend_integer_ast.zig");
+-const Parser = ast.Parser;
+-const Invalid = ast.Invalid;
+-
+-/// items[start..][0..len] of the parser; a range object prints as `range(...)`, so it is never printed here.
+-pub const List = struct { start: usize = 0, len: usize = 0, range: bool = false };
+-
+-/// Small literals the lowering itself makes (an index, a length): their text, as a literal node must carry one.
+-const digits = blk: {
+-    @setEvalBranchQuota(20000);
+-    var texts: [ast.max_items + 1][]const u8 = undefined;
+-    for (&texts, 0..) |*t, i| t.* = std.fmt.comptimePrint("{d}", .{i});
+-    break :blk texts;
+-};
+-
+-fn number(p: *Parser, v: usize) Invalid!usize {
+-    if (v > ast.max_items) return error.Unsupported;
+-    return p.add(.{ .op = .literal, .value = @intCast(v), .text = digits[v] });
+-}
+-
+-/// Whether a list expression starts here (nothing consumed): `[`, `range(`/`sorted(`/`list(`, or a name holding one.
+-pub fn ahead(p: *Parser) bool {
+-    if (!p.allow_lists) return false;
+-    p.space();
+-    const save = p.pos;
+-    defer p.pos = save;
+-    if (p.pos < p.source.len and p.source[p.pos] == '[') return true;
+-    for ([_][]const u8{ "range", "sorted", "list" }) |w| {
+-        p.pos = save;
+-        if (p.word(w)) {
+-            p.space();
+-            return p.pos < p.source.len and p.source[p.pos] == '(';
+-        }
+-    }
+-    p.pos = save;
+-    if (p.check_only) return false; // a def's body at its definition: a name may be anything
+-    const name = p.identifier() catch return false;
+-    p.space();
+-    if (p.pos < p.source.len and p.source[p.pos] == '(') return false;
+-    return p.lookupList(name) != null;
+-}
+-
+-/// `text` as one whole list expression (an assignment's right side, a print argument).
+-pub fn whole(p: *Parser, text: []const u8) Invalid!usize {
+-    p.source = std.mem.trim(u8, text, " \t");
+-    p.pos = 0;
+-    const li = try parse(p, 0);
+-    p.space();
+-    if (p.pos != p.source.len) return error.Unsupported;
+-    return li;
+-}
+-
+-/// A list expression here. Never a node: its length, filter and order come from the exact proof, its values from code.
+-pub fn parse(p: *Parser, depth: usize) Invalid!usize {
+-    if (depth > 12) return error.Unsupported;
+-    p.space();
+-    if (p.pos < p.source.len and p.source[p.pos] == '[') {
+-        const close = closing(p.source, p.pos) orelse return error.Unsupported;
+-        const content = p.source[p.pos + 1 .. close];
+-        const li = if (top(content, "for", 0) != null) try comprehension(p, content, depth) else try literal(p, content, depth);
+-        p.pos = close + 1;
+-        return li;
+-    }
+-    if (p.word("range")) return range(p, depth);
+-    const sorting = p.word("sorted");
+-    if (sorting or p.word("list")) {
+-        const content = try parenthesized(p);
+-        var arg = content;
+-        var reverse = false;
+-        // a bare generator is the only argument (its targets' commas are its own)
+-        const generator = top(content, "for", 0) != null;
+-        if (sorting and !generator) {
+-            // sorted(xs, reverse=True|False); key= or anything else refuses
+-            if (separator(content)) |comma| {
+-                const kw = std.mem.trim(u8, content[comma + 1 ..], " \t");
+-                if (std.mem.eql(u8, kw, "reverse=True")) reverse = true else if (!std.mem.eql(u8, kw, "reverse=False")) return error.Unsupported;
+-                arg = content[0..comma];
+-            }
+-        } else if (!generator and separator(content) != null) return error.Unsupported;
+-        const src = try argument(p, arg, depth);
+-        if (p.check_only) return src;
+-        const l = p.lists[src];
+-        var elems: [ast.max_items]usize = undefined;
+-        @memcpy(elems[0..l.len], p.items[l.start..][0..l.len]);
+-        if (sorting) {
+-            const Ctx = struct { p: *Parser, reverse: bool };
+-            // stable, as Python's sort: equal ints keep their order either way
+-            std.sort.insertion(usize, elems[0..l.len], Ctx{ .p = p, .reverse = reverse }, struct {
+-                fn less(c: Ctx, x: usize, y: usize) bool {
+-                    const a = c.p.nodes[x].value;
+-                    const b = c.p.nodes[y].value;
+-                    return if (c.reverse) a > b else a < b;
+-                }
+-            }.less);
+-        }
+-        return make(p, elems[0..l.len], false);
+-    }
+-    const name = try p.identifier();
+-    if (p.check_only) return placeholder(p);
+-    return p.lookupList(name) orelse error.Unsupported;
+-}
+-
+-/// The argument of sorted()/list()/sum()/min()/max(): a bare generator expression, or a list.
+-fn argument(p: *Parser, text: []const u8, depth: usize) Invalid!usize {
+-    const t = std.mem.trim(u8, text, " \t");
+-    if (top(t, "for", 0) != null) return comprehension(p, t, depth);
+-    return nested(p, t, depth);
+-}
+-
+-/// `text` as one whole list expression, the parser's position kept.
+-fn nested(p: *Parser, text: []const u8, depth: usize) Invalid!usize {
+-    const saved = .{ p.source, p.pos };
+-    defer {
+-        p.source, p.pos = saved;
+-    }
+-    p.source = std.mem.trim(u8, text, " \t");
+-    p.pos = 0;
+-    const li = try parse(p, depth + 1);
+-    p.space();
+-    if (p.pos != p.source.len) return error.Unsupported;
+-    return li;
+-}
+-
+-fn placeholder(p: *Parser) Invalid!usize {
+-    const one = try p.add(.{ .op = .literal, .value = 1, .text = "1" });
+-    return make(p, &.{one}, false);
+-}
+-
+-/// A new list of these element nodes, each proved now (Python builds a list eagerly: `[1//0]` raises at once).
+-pub fn make(p: *Parser, elems: []const usize, is_range: bool) Invalid!usize {
+-    p.listed = true;
+-    if (p.list_count == p.lists.len or p.item_count + elems.len > p.items.len) return error.Unsupported;
+-    for (elems) |e| {
+-        if (e >= p.count or p.nodes[e].op == .divmod) return error.Unsupported; // a tuple is not an int element
+-        if (p.check_only) continue;
+-        _ = try p.prove(e, e);
+-    }
+-    @memcpy(p.items[p.item_count..][0..elems.len], elems);
+-    p.lists[p.list_count] = .{ .start = p.item_count, .len = elems.len, .range = is_range };
+-    p.item_count += elems.len;
+-    p.list_count += 1;
+-    return p.list_count - 1;
+-}
+-
+-fn literal(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+-    var elems: [ast.max_items]usize = undefined;
+-    var n: usize = 0;
+-    const saved = .{ p.source, p.pos };
+-    defer {
+-        p.source, p.pos = saved;
+-    }
+-    p.source = content;
+-    p.pos = 0;
+-    p.space();
+-    while (p.pos < p.source.len) {
+-        if (n == elems.len) return error.Unsupported;
+-        elems[n] = try p.expr(depth + 1);
+-        n += 1;
+-        p.space();
+-        if (p.pos == p.source.len) break;
+-        try p.need(",");
+-        p.space();
+-    }
+-    return make(p, elems[0..n], false);
+-}
+-
+-/// range(n) is the literals 0..n-1; range(start, stop[, step]) is start, then each element before plus the step.
+-fn range(p: *Parser, depth: usize) Invalid!usize {
+-    var args: [3]usize = undefined;
+-    var n: usize = 0;
+-    try p.need("(");
+-    while (true) {
+-        if (n == 3) return error.Unsupported;
+-        args[n] = try p.expr(depth + 1);
+-        n += 1;
+-        if (p.take(")")) break;
+-        try p.need(",");
+-    }
+-    if (p.check_only) return placeholder(p);
+-    for (args[0..n]) |a| if (p.boolean(a) or p.nodes[a].op == .divmod) return error.Unsupported;
+-    const start: ?usize = if (n == 1) null else args[0];
+-    const stop = if (n == 1) args[0] else args[1];
+-    const step: ?usize = if (n == 3) args[2] else null;
+-    const a: i512 = if (start) |s| try p.prove(s, s) else 0;
+-    const b = try p.prove(stop, stop);
+-    const s: i512 = if (step) |x| try p.prove(x, x) else 1;
+-    if (s == 0) return error.Unsupported; // ValueError in Python
+-    const span = if (s > 0) b - a else a - b;
+-    const mag = if (s > 0) s else -s;
+-    const len: i512 = if (span <= 0) 0 else @divFloor(span + mag - 1, mag);
+-    if (len > ast.max_items) return error.Unsupported;
+-    const count: usize = @intCast(len);
+-    var elems: [ast.max_items]usize = undefined;
+-    if (start) |first| {
+-        if (count != 0) elems[0] = first;
+-        const inc = if (count > 1) step orelse try number(p, 1) else 0;
+-        for (1..@max(count, 1)) |k| elems[k] = try p.add(.{ .op = .add, .l = elems[k - 1], .r = inc });
+-    } else for (0..count) |k| {
+-        elems[k] = try number(p, k);
+-    }
+-    return make(p, elems[0..count], true);
+-}
+-
+-/// `body for target in iterable [if cond]...`: one `for` clause; targets are one name, or two over zip/enumerate.
+-fn comprehension(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+-    const f = top(content, "for", 0) orelse return error.Unsupported;
+-    const body = std.mem.trim(u8, content[0..f], " \t");
+-    const in_at = top(content, "in", f + 3) orelse return error.Unsupported;
+-    if (top(content, "for", f + 3) != null) return error.Unsupported; // a second for clause
+-    var targets_text = std.mem.trim(u8, content[f + 3 .. in_at], " \t");
+-    if (targets_text.len >= 2 and targets_text[0] == '(' and targets_text[targets_text.len - 1] == ')')
+-        targets_text = std.mem.trim(u8, targets_text[1 .. targets_text.len - 1], " \t");
+-    var targets: [2][]const u8 = undefined;
+-    var arity: usize = 0;
+-    var names = std.mem.splitScalar(u8, targets_text, ',');
+-    while (names.next()) |raw| {
+-        if (arity == 2) return error.Unsupported;
+-        targets[arity] = std.mem.trim(u8, raw, " \t");
+-        if (!target(targets[arity])) return error.Unsupported;
+-        arity += 1;
+-    }
+-    if (arity == 2 and std.mem.eql(u8, targets[0], targets[1])) return error.Unsupported;
+-    const first_if = top(content, "if", in_at + 2);
+-    const iterable = std.mem.trim(u8, content[in_at + 2 .. first_if orelse content.len], " \t");
+-    var conds: [4][]const u8 = undefined;
+-    var nconds: usize = 0;
+-    var at = first_if;
+-    while (at) |i| {
+-        if (nconds == conds.len) return error.Unsupported;
+-        const next = top(content, "if", i + 2);
+-        conds[nconds] = std.mem.trim(u8, content[i + 2 .. next orelse content.len], " \t");
+-        if (conds[nconds].len == 0) return error.Unsupported;
+-        nconds += 1;
+-        at = next;
+-    }
+-    if (body.len == 0 or iterable.len == 0) return error.Unsupported;
+-    // the iterable: zip(a, b) and enumerate(a[, start]) give pairs; any other list gives single values
+-    var columns: [2]List = undefined;
+-    var first: ?usize = null; // enumerate's start node
+-    var pairs: enum { none, zip, enumerate } = .none;
+-    {
+-        const saved = .{ p.source, p.pos };
+-        defer {
+-            p.source, p.pos = saved;
+-        }
+-        p.source = iterable;
+-        p.pos = 0;
+-        if (p.word("zip")) {
+-            const args = try parenthesized(p);
+-            const comma = separator(args) orelse return error.Unsupported;
+-            if (separator(args[comma + 1 ..]) != null) return error.Unsupported;
+-            columns[0] = p.lists[try nested(p, args[0..comma], depth)];
+-            columns[1] = p.lists[try nested(p, args[comma + 1 ..], depth)];
+-            pairs = .zip;
+-        } else if (p.word("enumerate")) {
+-            const args = try parenthesized(p);
+-            const comma = separator(args);
+-            columns[1] = p.lists[try nested(p, args[0 .. comma orelse args.len], depth)];
+-            if (comma) |c| {
+-                first = try sub(p, std.mem.trim(u8, args[c + 1 ..], " \t"), depth);
+-                if (p.boolean(first.?) or p.nodes[first.?].op == .divmod) return error.Unsupported;
+-            }
+-            pairs = .enumerate;
+-        } else {
+-            columns[0] = p.lists[try parse(p, depth + 1)];
+-        }
+-        p.space();
+-        if (p.pos != p.source.len) return error.Unsupported;
+-    }
+-    if ((pairs == .none) != (arity == 1)) return error.Unsupported;
+-    const len = switch (pairs) {
+-        .none => columns[0].len,
+-        .zip => @min(columns[0].len, columns[1].len),
+-        .enumerate => columns[1].len,
+-    };
+-    var out: [ast.max_items]usize = undefined;
+-    var kept: usize = 0;
+-    var counter: usize = 0; // enumerate's count from its start: the start, then one more each element
+-    const one = if (first != null and len > 1) try number(p, 1) else 0;
+-    for (0..len) |k| {
+-        var values: [2]usize = undefined;
+-        switch (pairs) {
+-            .none => values[0] = p.items[columns[0].start + k],
+-            .zip => values = .{ p.items[columns[0].start + k], p.items[columns[1].start + k] },
+-            .enumerate => {
+-                counter = if (first) |s| (if (k == 0) s else try p.add(.{ .op = .add, .l = counter, .r = one })) else try number(p, k);
+-                values = .{ counter, p.items[columns[1].start + k] };
+-            },
+-        }
+-        // the targets are the comprehension's own names: they shadow, and vanish after it (Python 3 scoping)
+-        const bound = p.binding_count;
+-        defer p.binding_count = bound;
+-        if (p.binding_count + arity > p.names.len) return error.Unsupported;
+-        for (targets[0..arity], values[0..arity]) |name, value| {
+-            p.names[p.binding_count] = name;
+-            p.roots[p.binding_count] = value;
+-            p.kinds[p.binding_count] = false;
+-            p.binding_count += 1;
+-        }
+-        // a condition only selects, by its exact value: its nodes never print, so they are dropped after the proof
+-        var keep = true;
+-        for (conds[0..nconds]) |cond| {
+-            const m = p.mark();
+-            const c = try sub(p, cond, depth);
+-            if (p.nodes[c].op == .divmod) return error.Unsupported;
+-            if (!p.check_only and try p.prove(c, c) == 0) keep = false;
+-            p.reset(m);
+-            if (!keep) break;
+-        }
+-        if (!keep) continue;
+-        if (kept == out.len) return error.Unsupported;
+-        out[kept] = try sub(p, body, depth);
+-        kept += 1;
+-    }
+-    return make(p, out[0..kept], false);
+-}
+-
+-/// An int expression over `text`, the parser's position kept.
+-fn sub(p: *Parser, text: []const u8, depth: usize) Invalid!usize {
+-    const saved = .{ p.source, p.pos };
+-    defer {
+-        p.source, p.pos = saved;
+-    }
+-    p.source = text;
+-    p.pos = 0;
+-    const n = try p.expr(depth + 1);
+-    p.space();
+-    if (p.pos != p.source.len) return error.Unsupported;
+-    return n;
+-}
+-
+-fn target(name: []const u8) bool {
+-    if (name.len == 0 or !(std.ascii.isAlphabetic(name[0]) or name[0] == '_')) return false;
+-    for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+-    for ([_][]const u8{ "for", "in", "if", "else", "and", "or", "not", "is", "lambda", "None", "True", "False", "sum", "len", "min", "max", "range", "sorted", "list", "zip", "enumerate", "print", "pow", "divmod", "int", "str", "abs", "math", "gcd", "isqrt", "factorial", "prod" }) |w|
+-        if (std.mem.eql(u8, name, w)) return false;
+-    return true;
+-}
+-
+-/// The text inside `( ... )` at the position (after the call's name); the position moves past `)`.
+-fn parenthesized(p: *Parser) Invalid![]const u8 {
+-    p.space();
+-    if (p.pos >= p.source.len or p.source[p.pos] != '(') return error.Unsupported;
+-    const close = closing(p.source, p.pos) orelse return error.Unsupported;
+-    const content = p.source[p.pos + 1 .. close];
+-    p.pos = close + 1;
+-    return content;
+-}
+-
+-// ---- int consumers, called from the parser's atoms ----
+-
+-/// len(xs): the list's static length, a literal; the list's own new nodes are dropped.
+-pub fn length(p: *Parser, depth: usize) Invalid!usize {
+-    const content = try parenthesized(p);
+-    // len() of a generator is a TypeError
+-    if (top(content, "for", 0) != null or separator(content) != null) return error.Unsupported;
+-    const m = p.mark();
+-    const li = try nested(p, content, depth);
+-    const len = if (p.check_only) 1 else p.lists[li].len;
+-    p.reset(m);
+-    return number(p, len);
+-}
+-
+-/// sum(xs) or sum(generator): 0 for none, else the elements added left to right (start= refuses).
+-pub fn sum(p: *Parser, depth: usize) Invalid!usize {
+-    const content = try parenthesized(p);
+-    if (top(content, "for", 0) == null and separator(content) != null) return error.Unsupported;
+-    const l = p.lists[try argument(p, content, depth)];
+-    if (l.len == 0) return number(p, 0);
+-    var acc = p.items[l.start];
+-    // sum([True]) is 1, an int
+-    if (l.len == 1 and p.boolean(acc)) return p.add(.{ .op = .add, .l = try number(p, 0), .r = acc });
+-    for (p.items[l.start + 1 ..][0 .. l.len - 1]) |e| acc = try p.add(.{ .op = .add, .l = acc, .r = e });
+-    return acc;
+-}
+-
+-/// min/max of one list or generator, or of two or more ints: the first extreme element (an empty list refuses).
+-pub fn extreme(p: *Parser, depth: usize, comptime largest: bool) Invalid!usize {
+-    p.listed = true;
+-    const content = try parenthesized(p);
+-    var elems: [ast.max_items]usize = undefined;
+-    var n: usize = 0;
+-    if (top(content, "for", 0) == null and separator(content) != null) {
+-        var rest = content;
+-        while (true) {
+-            if (n == elems.len) return error.Unsupported;
+-            const comma = separator(rest);
+-            // a key= or default= does not parse as an int; a list argument is a TypeError
+-            elems[n] = try sub(p, std.mem.trim(u8, rest[0 .. comma orelse rest.len], " \t"), depth);
+-            if (p.nodes[elems[n]].op == .divmod) return error.Unsupported;
+-            n += 1;
+-            if (comma) |c| rest = rest[c + 1 ..] else break;
+-        }
+-    } else {
+-        const l = p.lists[try argument(p, content, depth)];
+-        @memcpy(elems[0..l.len], p.items[l.start..][0..l.len]);
+-        n = l.len;
+-    }
+-    if (n == 0) return error.Unsupported; // ValueError
+-    if (p.check_only) return elems[0];
+-    var best = elems[0];
+-    var value = try p.prove(best, best);
+-    for (elems[1..n]) |e| {
+-        const v = try p.prove(e, e);
+-        if (if (largest) v > value else v < value) {
+-            best = e;
+-            value = v;
+-        }
+-    }
+-    return best;
+-}
+-
+-/// xs[i] for a proved index (negative from the end); out of range refuses (IndexError).
+-pub fn index(p: *Parser, li: usize, depth: usize) Invalid!usize {
+-    try p.need("[");
+-    const i = try p.expr(depth + 1);
+-    try p.need("]");
+-    if (p.check_only) return i;
+-    if (p.boolean(i) or p.nodes[i].op == .divmod) return error.Unsupported;
+-    const l = p.lists[li];
+-    const v = try p.prove(i, i);
+-    const at = if (v < 0) v + @as(i512, @intCast(l.len)) else v;
+-    if (at < 0 or at >= l.len) return error.Unsupported;
+-    return p.items[l.start + @as(usize, @intCast(at))];
+-}
+-
+-// ---- text scanning at bracket depth 0, outside quotes ----
+-
+-/// The index of the bracket closing the one at `open`.
+-pub fn closing(text: []const u8, open: usize) ?usize {
+-    var depth: usize = 0;
+-    var quote: u8 = 0;
+-    var i = open;
+-    while (i < text.len) : (i += 1) {
+-        const c = text[i];
+-        if (quote != 0) {
+-            if (c == '\\') i += 1 else if (c == quote) quote = 0;
+-            continue;
+-        }
+-        switch (c) {
+-            '\'', '"' => quote = c,
+-            '(', '[', '{' => depth += 1,
+-            ')', ']', '}' => {
+-                depth -= 1;
+-                if (depth == 0) return i;
+-            },
+-            else => {},
+-        }
+-    }
+-    return null;
+-}
+-
+-/// The first top-level comma.
+-fn separator(text: []const u8) ?usize {
+-    return @import("runner_frontend_integer_statements.zig").separator(text, ',');
+-}
+-
+-/// The first whole word `w` at depth 0 from `from`.
+-fn top(text: []const u8, w: []const u8, from: usize) ?usize {
+-    var depth: usize = 0;
+-    var quote: u8 = 0;
+-    var i = from;
+-    while (i < text.len) : (i += 1) {
+-        const c = text[i];
+-        if (quote != 0) {
+-            if (c == '\\') i += 1 else if (c == quote) quote = 0;
+-            continue;
+-        }
+-        switch (c) {
+-            '\'', '"' => quote = c,
+-            '(', '[', '{' => depth += 1,
+-            ')', ']', '}' => depth -|= 1,
+-            else => if (depth == 0 and std.mem.startsWith(u8, text[i..], w)) {
+-                const before_ok = i == 0 or !(std.ascii.isAlphanumeric(text[i - 1]) or text[i - 1] == '_');
+-                const end = i + w.len;
+-                const after_ok = end == text.len or !(std.ascii.isAlphanumeric(text[end]) or text[end] == '_');
+-                if (before_ok and after_ok) return i;
+-            },
+-        }
+-    }
+-    return null;
+-}
+diff --git a/zig/src/core/runner_frontend_integer_list_test.zig b/zig/src/core/runner_frontend_integer_list_test.zig
+deleted file mode 100644
+index 1f7c9634ad7dbadf9390839e3930937d65dd9470..0000000000000000000000000000000000000000
+--- a/zig/src/core/runner_frontend_integer_list_test.zig
++++ /dev/null
+@@ -1,202 +0,0 @@
+-//! Static int lists in the integer lowering (S3): mbpp-66 and shapes around it on the graph route, CPython's stdout.
+-const std = @import("std");
+-const api = @import("runner_api.zig");
+-const graph = @import("runner_graph.zig");
+-const route = @import("runner_graph_route.zig");
+-const table = @import("runner_graph_table.zig");
+-const integer_python = @import("runner_frontend_integer_python.zig");
+-const integer = @import("runner_frontend_integer.zig");
+-
+-const gpa = std.testing.allocator;
+-
+-/// mbpp-66 as recorded at arm-d (imr-measure-20261101T155322Z), then variations; expected stdout from CPython 3.
+-const cases = [_][2][]const u8{
+-    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nassert pos_count([1, -2, 3, -4]) == 2\nprint(pos_count([1, -2, 3, -4]))", "2\n" },
+-    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nprint(pos_count([0, 5, -7, 8, 9]), pos_count(list(range(-3, 4))))\n", "3 3\n" },
+-    .{ "xs = [3, 1, 2]\nprint(len(xs), sum(xs), min(xs), max(xs))\n", "3 6 1 3\n" },
+-    .{ "print(sorted([3, 1, 2]))\n", "[1, 2, 3]\n" },
+-    .{ "print(sorted([3, 1, 2], reverse=True))\n", "[3, 2, 1]\n" },
+-    .{ "print(sorted([2, -1, 2, 0, -1]))\n", "[-1, -1, 0, 2, 2]\n" },
+-    .{ "print(list(range(5)))\nprint(list(range(2, 11, 3)))\nprint(list(range(10, 0, -3)))\n", "[0, 1, 2, 3, 4]\n[2, 5, 8]\n[10, 7, 4, 1]\n" },
+-    .{ "n = 6\nprint([i * i for i in range(1, n) if i % 2 == 1])\n", "[1, 9, 25]\n" },
+-    .{ "a = [1, 2, 3]\nb = [10, 20, 30]\nprint([x + y for x, y in zip(a, b)])\n", "[11, 22, 33]\n" },
+-    .{ "print(list(x * y for x, y in zip([1, 2, 3], [4, 5])))\n", "[4, 10]\n" },
+-    .{ "xs = [5, 7, 9]\nprint([i * x for i, x in enumerate(xs)], [i for i, x in enumerate(xs, 1) if x > 6])\n", "[0, 7, 18] [2, 3]\n" },
+-    .{ "print(sum(x * x for x in range(10)))\n", "285\n" },
+-    .{ "xs = [4, -1, 7]\nprint(xs, xs[0], xs[-1])\n", "[4, -1, 7] 4 7\n" },
+-    .{ "print([x > 2 for x in [1, 2, 3, 4]])\n", "[False, False, True, True]\n" },
+-    .{ "print(max(3, 9, 4), min(3, -9, 4), max([1, 5, 5, 2]))\n", "9 -9 5\n" },
+-    .{ "print(sum([1 > 0]), sum([2 > 1, 3 > 1]))\n", "1 2\n" },
+-    .{ "def avg_floor(xs):\n    return sum(xs) // len(xs)\nprint(avg_floor([10, 20, 31]))\n", "20\n" },
+-    .{ "x = 100\nys = [x + 1 for x in range(3)]\nprint(ys, x)\n", "[1, 2, 3] 100\n" },
+-    .{ "a = [1, 2]\nb = a\nprint(b, a)\n", "[1, 2] [1, 2]\n" },
+-    .{ "print([2 ** 100, -(3 ** 40)])\n", "[1267650600228229401496703205376, -12157665459056928801]\n" },
+-    .{ "print(sum(x for x in range(5) if x > 10), len([]), sum([]))\n", "0 0 0\n" },
+-    .{ "print(sorted(x % 5 for x in range(12, 3, -2)))\n", "[0, 1, 2, 3, 4]\n" },
+-    .{ "xs = [1, 2]\nprint(xs)\nprint(len(xs))\n", "[1, 2]\n2\n" },
+-    .{ "print([x for x in range(20) if x % 2 == 0 if x % 3 == 0])\n", "[0, 6, 12, 18]\n" },
+-    .{ "print(list(range(12)))\n", "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]\n" },
+-    // an empty range with a start (T5: `sum(range(3,1))` panicked in ReleaseSafe)
+-    .{ "print(sum(range(3, 1)), len(range(4, 2)), sum(range(2, 2, 3)))\n", "0 0 0\n" },
+-    .{ "k = 3\nxs = [k, k * 2]\nk = 10\nprint(xs, k)\n", "[3, 6] 10\n" },
+-    .{ "print([1, 2, 3,][1], len(range(7, 1, -2)), range(10)[3])\n", "2 3 3\n" },
+-    .{ "xs = sorted([5, 3, 8])\nprint(xs[0] + xs[-1])\n", "11\n" },
+-};
+-
+-/// Scripts Python raises on, or runs beyond this lowering or its budget: each refuses, and the sandbox runs it.
+-const refused = [_][]const u8{
+-    // mutation through an alias, or of a list at all
+-    "a = [1, 2]\nb = a\nb.append(3)\nprint(a)\n",
+-    "a = [1, 2]\nb = a\nb[0] = 9\nprint(a)\n",
+-    "a = [1, 2]\na += [3]\nprint(a)\n",
+-    "a = [3, 1]\na.sort()\nprint(a)\n",
+-    "a = [1, 2]\ndel a[0]\nprint(a)\n",
+-    // nested lists
+-    "print([[1, 2], [3]])\n",
+-    "xs = [[1], [2]]\nprint(len(xs))\n",
+-    "print([[1, 2]][0])\n",
+-    "print(sum([x] for x in [1]))\n",
+-    // non-int elements
+-    "print([1, 'a'])\n",
+-    "print([1.5, 2])\n",
+-    "print([None])\n",
+-    "print([divmod(7, 2)])\n",
+-    "xs = [1, 2]\nprint(xs + [3])\n",
+-    "xs = [1]\nprint(xs * 2)\n",
+-    // unbounded or oversized range, a zero step
+-    "print(sum(range(10 ** 9)))\n",
+-    "print(len(range(100)))\n",
+-    "print(list(range(1, 5, 0)))\n",
+-    // sorted with key=, min/max with key= or default=
+-    "print(sorted([3, 1], key=abs))\n",
+-    "print(sorted([3, 1], key=lambda x: -x))\n",
+-    "print(max([3, 1], key=abs))\n",
+-    "print(min([], default=0))\n",
+-    // Python raises
+-    "print(min([]))\n",
+-    "print(max(x for x in [1] if x > 5))\n",
+-    "print([1, 2][2])\n",
+-    "xs = [1, 1 // 0]\nprint(2)\n",
+-    "print(len(x for x in [1]))\n",
+-    "ys = [x for x in [1]]\nprint(x)\n",
+-    // print of what has no list value here
+-    "print([])\n",
+-    "print(range(3))\n",
+-    "xs = range(4)\nprint(xs)\n",
+-    // beyond this lowering
+-    "print([x * y for x in [1, 2] for y in [3]])\n",
+-    "print(sum([1], 10))\n",
+-    "print(*[1, 2])\n",
+-    "print([x if x > 0 else 0 for x in [1, -1]])\n",
+-    "sorted = 3\nprint(sorted)\n",
+-};
+-
+-/// What the table's proved values print, lists in Python's repr (ints and bools; no tuples or formats here).
+-fn proved(a: std.mem.Allocator, code: []const u8) !?[]u8 {
+-    const lowered = try integer_python.lowerWithCost(a, code, 0) orelse return null;
+-    defer a.free(lowered.source);
+-    const t = lowered.table.?;
+-    var out: std.ArrayList(u8) = .empty;
+-    for (t.roots[0..t.outputs], t.endings[0..t.outputs], t.brackets[0..t.outputs]) |root, end, bracket| {
+-        if (bracket & 1 != 0) try out.append(a, '[');
+-        const n = t.nodes[root];
+-        switch (n.op) {
+-            .eq, .ne, .lt, .le, .gt, .ge => try out.appendSlice(a, if (n.value != 0) "True" else "False"),
+-            else => try out.print(a, "{d}", .{n.value}),
+-        }
+-        if (bracket & 2 != 0) try out.append(a, ']');
+-        try out.appendSlice(a, if (end == ',') ", " else &.{end});
+-    }
+-    return try out.toOwnedSlice(a);
+-}
+-
+-test "runner frontend integer list: static int lists give CPython's values; other shapes refuse" {
+-    for (cases) |c| {
+-        const got = try proved(gpa, c[0]) orelse {
+-            std.debug.print("refused: {s}\n", .{c[0]});
+-            return error.TestExpectedLowering;
+-        };
+-        defer gpa.free(got);
+-        try std.testing.expectEqualStrings(c[1], got);
+-    }
+-    for (refused) |code| {
+-        const got = try integer_python.lowerWithCost(gpa, code, 0);
+-        if (got) |g| {
+-            gpa.free(g.source);
+-            std.debug.print("lowered, must refuse: {s}\n", .{code});
+-            return error.TestExpectedRefusal;
+-        }
+-    }
+-}
+-
+-test "runner frontend integer list: lists are the graph route's only; calc and C lowerings refuse them as before" {
+-    const printed = "print(sorted([3, 1, 2]))\n";
+-    const lowered = (try integer_python.lowerWithCost(gpa, printed, 0)).?;
+-    defer gpa.free(lowered.source);
+-    try std.testing.expect(lowered.graph_only);
+-    try std.testing.expectEqual(@as(?[]u8, null), try integer_python.lower(gpa, printed));
+-    try std.testing.expect(try integer_python.lowerWithCost(gpa, printed, 1 << 30) == null);
+-    for ([_][]const u8{ "xs = [3, 1, 2]\nprint(sum(xs), max(xs))\n", "print(sum(i*i for i in range(10)))\n", "print(max(3, 4))\n" }) |code| {
+-        try std.testing.expectEqual(@as(?[]u8, null), try integer_python.lower(gpa, code));
+-        try std.testing.expectEqual(@as(?[]u8, null), try integer_python.lowerCalc(gpa, code));
+-    }
+-    // the inline expression lowering (and Decimal, Fraction over the same parser) takes no list grammar
+-    for ([_][]const u8{ "sum([1, 2])", "max(3, 4)", "len([1])", "[5, 6][0]" }) |code|
+-        try std.testing.expectEqual(@as(?[]u8, null), try integer.lower(gpa, code));
+-    // the integer lowering without lists is unchanged
+-    const source = (try integer_python.lower(gpa, "x = 3\nprint(x * 4, len(str(x)))\n")).?;
+-    defer gpa.free(source);
+-    try std.testing.expect(std.mem.indexOf(u8, source, "tf_run_prints(") != null);
+-}
+-
+-test "runner frontend integer list: a filter's and an assert's nodes are dropped after their proof" {
+-    const lowered = (try integer_python.lowerWithCost(gpa, cases[0][0], 0)).?;
+-    defer gpa.free(lowered.source);
+-    const t = lowered.table.?;
+-    // the call's list (4 literals, two negated), the kept elements' two 1s and their sum; no comparison survives
+-    for (t.nodes[0..t.count]) |n| try std.testing.expect(n.op != .gt and n.op != .eq);
+-    try std.testing.expectEqual(@as(i512, 2), t.nodes[t.roots[0]].value);
+-}
+-
+-/// A backend no test here may start (every program is a graph one).
+-const Never = struct {
+-    fn backend() api.Backend {
+-        return .{ .ctx = undefined, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
+-    }
+-    fn start(_: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
+-        return error.Busy;
+-    }
+-    fn poll(_: *anyopaque, _: api.JobId) api.Poll {
+-        unreachable;
+-    }
+-    fn cancel(_: *anyopaque, _: api.JobId) void {}
+-    fn release(_: *anyopaque, _: u64) void {}
+-};
+-
+-test "runner frontend integer list: the scripts run on the real bank and print CPython's stdout (TF_RUNNER_GRAPH_BANK)" {
+-    const g = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
+-    var bank = try graph.Bank.load(gpa, std.mem.span(g));
+-    defer bank.deinit();
+-    const backend = try graph.backend(gpa, &bank, 2);
+-    defer graph.destroy(backend);
+-    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = backend };
+-    defer d.deinit();
+-    const b = d.backend();
+-    for (cases, 0..) |c, i| {
+-        const bytes = (try table.translate(gpa, &bank, c[0])) orelse {
+-            std.debug.print("not on the bank: {s}\n", .{c[0]});
+-            return error.TestExpectedRoute;
+-        };
+-        defer gpa.free(bytes);
+-        const job = try b.start(i + 1, .{ .kind = .graph, .bytes = bytes }, 50_000_000);
+-        const r = while (true) switch (b.poll(job)) {
+-            .running => std.Thread.yield() catch {},
+-            .done => |x| break x,
+-        };
+-        defer b.release(i + 1);
+-        if (r.status != .ok or !std.mem.eql(u8, r.out, c[1])) std.debug.print("{s}: {t} '{s}'\n", .{ c[0], r.status, r.out });
+-        try std.testing.expectEqual(api.Status.ok, r.status);
+-        try std.testing.expectEqualStrings(c[1], r.out);
+-    }
+-    for (refused) |code| try std.testing.expectEqual(null, try table.translate(gpa, &bank, code));
+-}
+diff --git a/zig/src/core/runner_frontend_integer_python.zig b/zig/src/core/runner_frontend_integer_python.zig
+index 7caca6eb2de5f6f85f6b066665711700f58cfd46..c1418d8b9e156abb6d28cc3649ebfba89b77ef1c 100644
+--- a/zig/src/core/runner_frontend_integer_python.zig
++++ b/zig/src/core/runner_frontend_integer_python.zig
+@@ -3,7 +3,6 @@ const ast = @import("runner_frontend_integer_ast.zig");
+ const integer = @import("runner_frontend_integer.zig");
+ const compiler = @import("runner_frontend_program_compile.zig");
+ const cost = @import("runner_frontend_integer_cost.zig");
+-const list = @import("runner_frontend_integer_list.zig");
+ const Allocator = std.mem.Allocator;
+ const Failure = Allocator.Error || ast.Invalid;
+ 
+@@ -30,21 +29,19 @@ fn checked(a: Allocator, code: []const u8, budget: usize) Failure!integer.Lowere
+     var steps: ?usize = null;
+     const roots = script.roots[0..script.count];
+     const endings = script.endings[0..script.count];
+-    var t = integer.table(parser, roots, endings, null, null);
+-    @memcpy(t.brackets[0..script.count], script.brackets[0..script.count]);
+-    // lists, defs, asserts or over eight outputs: only the graph route's table (calc and ELF keep their routes)
+-    if (parser.listed or parser.function_count != 0 or parser.asserted or script.count > 8) {
++    // defs or asserts: only the graph route's table (calc and ELF keep T2's pinned steps)
++    if (parser.function_count != 0 or parser.asserted) {
+         if (budget != 0) return error.Unsupported;
+-        return .{ .source = try a.alloc(u8, 0), .estimated_steps = null, .table = t, .graph_only = true };
++        return .{ .source = try a.alloc(u8, 0), .estimated_steps = null, .table = integer.table(parser, roots, endings, null, null), .graph_only = true };
+     }
+     if (budget != 0) steps = cost.estimateMany(parser, roots, budget) orelse return error.Unsupported;
+-    return .{ .source = try integer.lowerPrints(a, parser, roots, endings), .estimated_steps = steps, .table = t };
++    return .{ .source = try integer.lowerPrints(a, parser, roots, endings), .estimated_steps = steps, .table = integer.table(parser, roots, endings, null, null) };
+ }
+ 
+ // Shares whole-script validation with the RV32 path, including unused assignments and import gates.
+ pub fn lowerCalc(a: Allocator, code: []const u8) Allocator.Error!?[]u8 {
+     var script = parseScript(code) catch return null;
+-    if (script.parser.listed or script.parser.function_count != 0 or script.parser.asserted) return null;
++    if (script.parser.function_count != 0 or script.parser.asserted) return null;
+     return @import("runner_frontend_integer_calc.zig").lower(a, &script.parser, script.root);
+ }
+ 
+@@ -57,9 +54,8 @@ pub fn parseScript(code: []const u8) ast.Invalid!Script {
+ 
+ const Outputs = struct {
+     parser: ast.Parser,
+-    roots: [32]usize = undefined,
+-    endings: [32]u8 = undefined, // ' ' or '\n' as print ends a value; ',' between a list's elements
+-    brackets: [32]u8 = @splat(0), // 1: a list opens before the value, 2: it closes after
++    roots: [8]usize = undefined,
++    endings: [8]u8 = undefined,
+     count: usize = 0,
+ };
+ const statements = @import("runner_frontend_integer_statements.zig");
+@@ -67,7 +63,7 @@ const statements = @import("runner_frontend_integer_statements.zig");
+ fn parseOutputs(code: []const u8, multiple: bool) ast.Invalid!Outputs {
+     if (code.len == 0 or code.len > 4096 or std.mem.indexOfScalar(u8, code, '\r') != null)
+         return error.Unsupported;
+-    var parser: ast.Parser = .{ .source = "", .require_math_import = true, .allow_lists = true };
++    var parser: ast.Parser = .{ .source = "", .require_math_import = true };
+     var lines = statements.Iterator{ .code = code };
+     var outputs = Outputs{ .parser = undefined };
+     var expression_only = false;
+@@ -131,17 +127,6 @@ fn expression(parser: *ast.Parser, text: []const u8) ast.Invalid!usize {
+     return parser.parse();
+ }
+ 
+-/// A whole right side or print argument: a static int list when one parses, else an int expression.
+-fn side(parser: *ast.Parser, text: []const u8) ast.Invalid!ast.Parser.Operand {
+-    parser.source = std.mem.trim(u8, text, " \t");
+-    parser.pos = 0;
+-    if (list.ahead(parser)) {
+-        const m = parser.mark();
+-        if (list.whole(parser, parser.source)) |li| return .{ .index = li, .list = true } else |_| parser.reset(m);
+-    }
+-    return .{ .index = try parser.parse(), .list = false };
+-}
+-
+ fn assignment(parser: *ast.Parser, names: []const u8, rhs: []const u8) ast.Invalid!void {
+     if (statements.separator(names, ',')) |comma| {
+         const first = std.mem.trim(u8, names[0..comma], " \t");
+@@ -152,9 +137,9 @@ fn assignment(parser: *ast.Parser, names: []const u8, rhs: []const u8) ast.Inval
+         try parser.bind(second, pair[1]);
+     } else {
+         if (!validBinding(names)) return error.Unsupported;
+-        const v = try side(parser, rhs);
+-        if (!v.list and parser.nodes[v.index].op == .divmod) return error.Unsupported;
+-        try parser.bindAs(names, v);
++        const root = try expression(parser, rhs);
++        if (parser.nodes[root].op == .divmod) return error.Unsupported;
++        try parser.bind(names, root);
+     }
+ }
+ 
+@@ -225,10 +210,8 @@ fn returned(stmt: []const u8) ast.Invalid![]const u8 {
+ /// `assert <int cmp>`, proved on the outputs' exact values: true prints nothing; false refuses (the sandbox raises).
+ fn check(parser: *ast.Parser, text: []const u8) ast.Invalid!void {
+     if (statements.separator(text, ',') != null) return error.Unsupported; // a message: refuse rather than evaluate it
+-    const m = parser.mark();
+     const root = try expression(parser, text);
+     if (!parser.boolean(root) or parser.nodes[root].value == 0) return error.Unsupported;
+-    parser.reset(m); // its nodes only proved it: they never print
+     parser.asserted = true;
+ }
+ 
+@@ -237,24 +220,10 @@ fn printRoots(parser: *ast.Parser, outputs: *Outputs, text: []const u8, multiple
+     while (true) {
+         const comma = statements.separator(rest, ',');
+         if (comma != null and !multiple) return error.Unsupported;
+-        const ending: u8 = if (comma != null) ' ' else '\n';
+-        const v = try side(parser, rest[0 .. comma orelse rest.len]);
+-        if (v.list) {
+-            // Python's repr: [1, -2, True]; an empty list or a range object prints no value, so it refuses
+-            const l = parser.lists[v.index];
+-            if (!multiple or l.range or l.len == 0 or outputs.count + l.len > outputs.roots.len) return error.Unsupported;
+-            for (parser.items[l.start..][0..l.len], 0..) |e, i| {
+-                outputs.roots[outputs.count] = e;
+-                outputs.endings[outputs.count] = if (i + 1 == l.len) ending else ',';
+-                outputs.brackets[outputs.count] = @as(u8, @intFromBool(i == 0)) | @as(u8, if (i + 1 == l.len) 2 else 0);
+-                outputs.count += 1;
+-            }
+-        } else {
+-            if (outputs.count == outputs.roots.len) return error.Unsupported;
+-            outputs.roots[outputs.count] = v.index;
+-            outputs.endings[outputs.count] = ending;
+-            outputs.count += 1;
+-        }
++        if (outputs.count == outputs.roots.len) return error.Unsupported;
++        outputs.roots[outputs.count] = try expression(parser, rest[0 .. comma orelse rest.len]);
++        outputs.endings[outputs.count] = if (comma != null) ' ' else '\n';
++        outputs.count += 1;
+         if (comma) |i| rest = rest[i + 1 ..] else break;
+     }
+ }
+@@ -274,11 +243,11 @@ fn validBinding(name: []const u8) bool {
+     if (name.len == 0 or !(std.ascii.isAlphabetic(name[0]) or name[0] == '_')) return false;
+     for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+     for ([_][]const u8{
+-        "print",  "pow",    "divmod",    "int",       "str",          "len",     "sum",    "map",    "range", "all",   "abs",       "math",
+-        "gcd",    "isqrt",  "factorial", "prod",      "True",         "False",   "None",   "and",    "or",    "not",   "if",        "else",
+-        "for",    "while",  "in",        "is",        "def",          "return",  "import", "from",   "as",    "class", "del",       "yield",
+-        "lambda", "global", "nonlocal",  "try",       "except",       "finally", "with",   "assert", "raise", "pass",  "break",     "continue",
+-        "async",  "await",  "elif",      "__debug__", "__builtins__", "min",     "max",    "sorted", "list",  "zip",   "enumerate",
++        "print",  "pow",    "divmod",    "int",       "str",          "len",     "sum",    "map",    "range", "all",   "abs",   "math",
++        "gcd",    "isqrt",  "factorial", "prod",      "True",         "False",   "None",   "and",    "or",    "not",   "if",    "else",
++        "for",    "while",  "in",        "is",        "def",          "return",  "import", "from",   "as",    "class", "del",   "yield",
++        "lambda", "global", "nonlocal",  "try",       "except",       "finally", "with",   "assert", "raise", "pass",  "break", "continue",
++        "async",  "await",  "elif",      "__debug__", "__builtins__",
+     }) |reserved| if (std.mem.eql(u8, name, reserved)) return false;
+     return true;
+ }
+diff --git a/zig/src/core/runner_frontend_test.zig b/zig/src/core/runner_frontend_test.zig
+index 31ec5fb8ce5216e2c37fc6150873b52ac01dc9d7..aadb686418cc39ee48b60191783b2491a1dca060 100644
+--- a/zig/src/core/runner_frontend_test.zig
++++ b/zig/src/core/runner_frontend_test.zig
+@@ -6,7 +6,6 @@ test {
+     _ = @import("runner_frontend_integer_test.zig");
+     _ = @import("runner_frontend_integer_python.zig");
+     _ = @import("runner_frontend_integer_def_test.zig");
+-    _ = @import("runner_frontend_integer_list_test.zig");
+     _ = @import("runner_frontend_algorithm_test.zig");
+     _ = @import("runner_frontend_cwide_test.zig");
+     _ = @import("runner_frontend_blocks_test.zig");
+diff --git a/zig/src/core/runner_graph_table.zig b/zig/src/core/runner_graph_table.zig
+index 92cff390cbcb0c3415c2a6cf71b3b34c1d27c57b..b7838363fb369a0b579e9001b85085337d5b59e4 100644
+--- a/zig/src/core/runner_graph_table.zig
++++ b/zig/src/core/runner_graph_table.zig
+@@ -30,20 +30,10 @@ pub fn lower(a: Allocator, bank: *const graph.Bank, t: *const integer.Table) All
+     defer arena_state.deinit();
+     const arena = arena_state.allocator();
+     var e: Emit = .{ .arena = arena, .bank = bank, .t = t };
+-    for (t.roots[0..t.outputs], t.endings[0..t.outputs], t.styles[0..t.outputs], t.scales[0..t.outputs], t.brackets[0..t.outputs]) |root, end, style, scale, bracket| {
+-        const closes = bracket & 2 != 0;
+-        // a printed list: `[` J, each value J with `, ` J between, `]` with the print's own separator
+-        const outer: u8 = if (end == ' ') 'S' else if (end == '\n') 'N' else if (end == ',' and !closes) 'J' else return null;
+-        const sep: u8 = if (bracket != 0 or end == ',') 'J' else outer;
+-        if (root >= t.count or bracket > 3) return null;
++    for (t.roots[0..t.outputs], t.endings[0..t.outputs], t.styles[0..t.outputs], t.scales[0..t.outputs]) |root, end, style, scale| {
++        const sep: u8 = if (end == ' ') 'S' else if (end == '\n') 'N' else return null;
++        if (root >= t.count) return null;
+         const n = t.nodes[root];
+-        if (bracket != 0 or end == ',') {
+-            if (n.op == .divmod or style != 0) return null;
+-            if (bracket & 1 != 0) try e.text('J', "[");
+-            if (!try e.value(if (boolean(n.op)) 'B' else 'I', 'J', try e.render(root))) return null;
+-            if (closes) try e.text(outer, "]") else try e.text('J', ", ");
+-            continue;
+-        }
+         if (style != 0 and (n.op == .divmod or boolean(n.op))) return null;
+         if (style > 2 or scale > 6) return null;
+         if (n.op == .divmod) {

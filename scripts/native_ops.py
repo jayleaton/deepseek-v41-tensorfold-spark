@@ -72,6 +72,12 @@ class Lifecycle:
         self.revision = (self.root / 'config/tensorfold.rev').read_text().strip()
         if not re.fullmatch(r'[0-9a-f]{40}', self.revision):
             raise OpsError('invalid engine revision', 2)
+        # The patched engine tree (config/tensorfold.tree), when the recipe has a patch series. A patch-only rollback
+        # keeps the revision, so a container is current only when its image's org.tensorfold.tree label is this tree.
+        tree_file = self.root / 'config/tensorfold.tree'
+        self.tree = tree_file.read_text().strip() if tree_file.exists() else None
+        if self.tree is not None and not re.fullmatch(r'[0-9a-f]{40}', self.tree):
+            raise OpsError('invalid engine tree', 2)
         state = Path(self.env['STATE_DIR']) / 'native-ops'
         self.stop_file = Path(self.env.get('STOP_FILE', str(state / 'STOP')))
         self.lock_file = Path(self.env.get('LIFECYCLE_LOCK', str(state / 'lifecycle.lock')))
@@ -267,8 +273,15 @@ class Lifecycle:
         except (OSError, ValueError, TimeoutError):
             return False
 
+    def current(self, item):
+        """An owned container runs the pinned engine tree (always true without a patch series)."""
+        labels = item.get('Config', {}).get('Labels') or {}
+        return self.tree is None or labels.get('org.tensorfold.tree') == self.tree
+
     def ready(self, pair, timeout=None):
-        return all(item and item.get('State', {}).get('Running') is True for item in pair) and self.healthy(timeout)
+        # An owned container on another tree is never reused: start stops it (still owned) and launches the pin.
+        return (all(item and item.get('State', {}).get('Running') is True and self.current(item) for item in pair)
+                and self.healthy(timeout))
 
     def preflight(self):
         self.policy(check_stop=False)

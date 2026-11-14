@@ -1,0 +1,336 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 09:45:46 +0700
+Subject: [PATCH 157/207] dsv41 runner trace: drop a name's binding on any
+ reassignment
+
+A name the model reassigned stayed bound to its first value, so the
+trace form could state a value right for the bound span but wrong for
+what the model meant ("Let N=280,223,976,814,164 ... Step3 N=... Compute
+N*65536" claimed a value 12,816 off; "N=0 ... N = N*256 + b" claimed
+0*256 + 118).
+
+Every `Name =` not after an operator now counts as an assignment,
+including a label before the name (`Step3 N=`), `Let N =`, a right side
+that does not parse (`N = N*256 + b`), and approximate or hypothetical
+text. A bound name is poisoned (the trace abstains) unless the new right
+side is the same integer (runner_trace_value.same, cut at a doubt); an
+unbindable first sighting blocks later binding; a name states only on
+its first bindable definition. Notation the parser refuses (`1|2`,
+`1e9+7`) poisons rather than being normalized.
+
+(cherry picked from commit c17578b72c8f77db257f95f8ede3a80468a314a7)
+---
+ zig/src/core/runner.zig             |   1 +
+ zig/src/core/runner_trace.zig       |  68 +++++++++++----
+ zig/src/core/runner_trace_test.zig  |  30 +++++++
+ zig/src/core/runner_trace_text.zig  |   8 ++
+ zig/src/core/runner_trace_value.zig | 124 ++++++++++++++++++++++++++++
+ 5 files changed, 215 insertions(+), 16 deletions(-)
+ create mode 100644 zig/src/core/runner_trace_value.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 9387b2ef760ea01091b1362a24c7e084f265cd8c..66661ee772836593f9214f811f2d98c99f604584 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -595,4 +595,5 @@ test {
+     _ = @import("runner_trace_divmod_test.zig");
+     _ = @import("runner_trace_named_test.zig");
+     _ = @import("runner_graph_edit.zig");
++    _ = @import("runner_trace_value.zig");
+ }
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index d268bf48569491c5929cfa45d139892ccd0f58bf..0e087bcd690320fd6c743efa450d98dd78c8b634 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -2,6 +2,7 @@
+ const std = @import("std");
+ const text = @import("runner_trace_text.zig");
+ const expr = @import("runner_trace_expr.zig");
++const value = @import("runner_trace_value.zig");
+ const Allocator = std.mem.Allocator;
+ const Expr = expr.Expr;
+ 
+@@ -17,6 +18,7 @@ pub const Tracer = struct {
+     scratch: std.heap.ArenaAllocator,
+     names: std.ArrayList(expr.Name) = .empty,
+     fired: std.ArrayList([]const u8) = .empty,
++    stated: std.ArrayList([]const u8) = .empty, // names whose first bindable definition was looked at as a statement
+     repeat: u8 = 0, // times a displayed line may be owned again when the reasoning restates it (TraceAsk.repeat)
+     whole: bool = false, // TF_DSV41_RUNNER_STATED: also comma sentences, gcd(x, y), `L = R.` restated and a hex value
+ 
+@@ -47,6 +49,11 @@ pub const Tracer = struct {
+         };
+     }
+ 
++    fn wasStated(t: *const Tracer, n: []const u8) bool {
++        for (t.stated.items) |m| if (std.mem.eql(u8, m, n)) return true;
++        return false;
++    }
++
+     fn lookup(t: *const Tracer, n: []const u8) ?*const expr.Name {
+         for (t.names.items) |*e| if (std.mem.eql(u8, e.name, n)) return e;
+         return null;
+@@ -93,27 +100,56 @@ pub const Tracer = struct {
+                 continue;
+             };
+             i = d.rhs;
+-            if (!text.defLeftOk(clean[0..d.start])) continue;
+-            const txt_end = text.defEnd(clean, d.rhs) orelse continue;
+-            const txt = clean[d.rhs..txt_end];
+-            if (text.approx(clean[d.rhs..charsOn(clean, txt_end, 3)])) continue;
+-            if (std.mem.indexOfAny(u8, txt, "[]") != null) continue;
+-            if (text.hypothetical(text.sentenceAt(clean, d.start))) continue;
+-            const e = try t.parse(txt) orelse continue;
++            // `A * B = …` states a value; every other `Name =` assigns, even one that binds nothing
++            if (!text.assignLeft(clean[0..d.start])) continue;
+             const n = clean[d.start..d.name_end];
+-            if (t.lookup(n)) |old| {
+-                // a second definition by other text poisons the name
+-                if (old.expr != null and !std.mem.eql(u8, old.expr.?.source, e.source)) t.poison(n);
+-                continue;
++            const known = t.lookup(n) != null;
++            // any assignment but the same value again poisons: a stale value is wrong for what the model means
++            if (t.lookup(n)) |old| if (old.expr) |o| if (!try t.restates(clean, d, o.source)) t.poison(n);
++            const b = if (text.defLeftOk(clean[0..d.start])) try t.bindable(clean, d) else null;
++            if (!known) {
++                if (b) |v| {
++                    const e = v.e;
++                    const kept: Expr = .{ .source = try a.dupe(u8, e.source), .display = try a.dupe(u8, e.display), .bound = e.bound, .ops = e.ops, .constant = e.constant, .run = try a.dupe(u8, e.run) };
++                    try t.names.append(a, .{ .name = try a.dupe(u8, n), .expr = kept });
++                } else {
++                    // an assignment that binds nothing still blocks the name: a later value may not be the one meant
++                    try t.names.append(a, .{ .name = try a.dupe(u8, n), .expr = null });
++                }
+             }
+-            const kept: Expr = .{ .source = try a.dupe(u8, e.source), .display = try a.dupe(u8, e.display), .bound = e.bound, .ops = e.ops, .constant = e.constant, .run = try a.dupe(u8, e.run) };
+-            try t.names.append(a, .{ .name = try a.dupe(u8, n), .expr = kept });
+-            // a first wide definition with nothing after it states that computation ("N = A*2^64 + B.")
+-            if (hasArith(e.source) and e.bound >= 12 and e.bound <= max_digits and text.sentenceEndsAt(clean, txt_end) and
+-                !t.firedHas(e.display)) define.* = .{ .source = e.source, .display = e.display, .run = e.run };
++            // a name's first wide definition with nothing after it states it, bound or not ("N = A*2^64 + B.")
++            const x = b orelse continue;
++            if (t.wasStated(n)) continue;
++            try t.stated.append(a, try a.dupe(u8, n));
++            if (hasArith(x.e.source) and x.e.bound >= 12 and x.e.bound <= max_digits and text.sentenceEndsAt(clean, x.end) and
++                !t.firedHas(x.e.display)) define.* = .{ .source = x.e.source, .display = x.e.display, .run = x.e.run };
+         }
+     }
+ 
++    /// The value a definition binds and its text's end; null if approximate, bracketed, hypothetical or unparsed.
++    fn bindable(t: *Tracer, clean: []const u8, d: text.Def) Allocator.Error!?struct { e: Expr, end: usize } {
++        const txt_end = text.defEnd(clean, d.rhs) orelse return null;
++        const txt = clean[d.rhs..txt_end];
++        if (text.approx(clean[d.rhs..charsOn(clean, txt_end, 3)])) return null;
++        if (std.mem.indexOfAny(u8, txt, "[]") != null) return null;
++        if (text.hypothetical(text.sentenceAt(clean, d.start))) return null;
++        const e = try t.parse(txt) orelse return null;
++        return .{ .e = e, .end = txt_end };
++    }
++
++    /// The assignment's right side is the value `source` has, in any form ("B = 12,000,000,000 + 345,678,901?").
++    fn restates(t: *Tracer, clean: []const u8, d: text.Def, source: []const u8) Allocator.Error!bool {
++        const txt_end = text.defEnd(clean, d.rhs) orelse return false;
++        var txt = clean[d.rhs..txt_end];
++        // a doubt ends the value it doubts: "12,000,000,000 + 345,678,901? Or use pattern"
++        for ([_][]const u8{ "?", "~", "≈" }) |m| if (std.mem.indexOf(u8, txt, m)) |k| {
++            txt = txt[0..k];
++        };
++        // notation the parser refuses ("D = 1|2" may be OR, "M = 1e9+7") is no restatement: the name is poisoned
++        const e = try t.parse(txt) orelse return false;
++        return std.mem.eql(u8, e.source, source) or try value.same(t.scratch.allocator(), e.source, source);
++    }
++
+     fn statement(t: *Tracer, clean: []const u8, h: text.Head) Allocator.Error!?Found {
+         const a = t.scratch.allocator();
+         const rest = clean[h.end..];
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+index 046475982977c1b8996aed7c9d8d979a43cc0f5f..61d78a3f4a1bccdee064aa3199a1bc7534785a31 100644
+--- a/zig/src/core/runner_trace_test.zig
++++ b/zig/src/core/runner_trace_test.zig
+@@ -118,6 +118,36 @@ test "runner trace: a name after an operator is no definition; a redefinition po
+     try expectStated(&.{ "Let A = 12,345.", "A = 12345.", "Need compute A*1000003." }, "(12345)*1000003");
+ }
+ 
++test "runner trace: any reassignment poisons a name, so a stale value never states (live big-number-015)" {
++    // `Step k N=`: a label before the name (trace3 run2 s3 claimed 280223976814164*65536, 12,816 off the model's N)
++    try expectNone(&.{ "Let N=280,223,976,814,164.", "Step3 N=18,364,758,544,493,064,720.", "Compute N*65536." });
++    // `N = f(N)`: a loop rule moves N every step (trace4a s2 claimed 0*256 + 118)
++    try expectNone(&.{ "N=0.", "N = N*256 + b.", "b5=118. Need N*256+118." });
++    // `N =` and `Let N =` with another value
++    try expectNone(&.{ "N = 280223976814164.", "N = 18364758544493064720.", "Need compute N*65536." });
++    try expectNone(&.{ "N = 5.", "Let N = 6.", "Need compute N*1000003." });
++    // a first assignment that binds nothing (a note, a hypothesis) blocks a later value too
++    try expectNone(&.{ "Let A = 12345678901 (≈1.2e10).", "A = 12345678901.", "Need compute A*1000003." });
++    try expectNone(&.{ "If A = 6 then fine.", "Let A = 5.", "Need compute A*1000003." });
++    // kept: the same value again, with a note or a label, and a name after an operator assigns nothing
++    try expectStated(&.{ "Let N=280,223,976,814,164.", "N=280,223,976,814,164 (~2.802e14).", "Compute N*65536." }, "(280223976814164)*65536");
++    try expectStated(&.{ "Let N=280,223,976,814,164.", "Step3 N=280,223,976,814,164.", "Compute N*65536." }, "(280223976814164)*65536");
++    try expectStated(&.{ "Let B = 5.", "2 * B = 10.", "Need compute B*1000003." }, "(5)*1000003");
++    // the same line's own computation never reads the old value: `N = N*256 + 118` states nothing
++    try expectNone(&.{ "N=0.", "N = N*256 + 118." });
++    try expectNone(&.{ "N = 280,223,976,814,164.", "N = N*65536 + 12,816." });
++    // as before, only a name's first definition states its computation; a reassignment's never does
++    try expectNone(&.{ "Let N = 5.", "N = 280,223,976,814,164 * 3." });
++    // kept: a reassigned name's line still states its own literal computation (it binds nothing)
++    try expectStated(&.{ "L = b1*b2.", "Compute L = 899,435,521 * 109,096,961." }, "899435521*109096961");
++    // notation the parser refuses poisons, never normalizes: `1|2` may be OR, `12|345` may be OR, 1eN is not read
++    try expectNone(&.{ "Let D=12.", "D=1|2.", "Need compute D*1000003." });
++    try expectNone(&.{ "Let D = 12345.", "D=12|345.", "Need compute D*1000003." });
++    try expectNone(&.{ "Let M = 1,000,000,007.", "M = 1e9+7.", "Need compute M*1000003." });
++    // kept: the same value in another form, doubted (live R4 product-b)
++    try expectStated(&.{ "Let B = 12,345,678,901.", "B = 12,000,000,000 + 345,678,901? Or use pattern.", "Need compute B*1000003." }, "(12345678901)*1000003");
++}
++
+ test "runner trace: an owned line restated through its names never fires again (live big-number-019)" {
+     var t = trace.Tracer.init(gpa);
+     defer t.deinit();
+diff --git a/zig/src/core/runner_trace_text.zig b/zig/src/core/runner_trace_text.zig
+index 6b89cb01580568e71d0d29eec1899abae0fc6ff1..d4c3452c1206860ff87ed3d12a06580e915b4eac 100644
+--- a/zig/src/core/runner_trace_text.zig
++++ b/zig/src/core/runner_trace_text.zig
+@@ -182,6 +182,14 @@ pub fn defLeftOk(left: []const u8) bool {
+     return !std.mem.endsWith(u8, l, "×");
+ }
+ 
++/// `Name =` here assigns the name (a label, `Let` or a digit may lead: "Step3 N = …"); after an operator it states one.
++pub fn assignLeft(left: []const u8) bool {
++    const l = std.mem.trimEnd(u8, left, " \t");
++    if (l.len == 0) return true;
++    if (std.mem.indexOfScalar(u8, "+-*/^=", l[l.len - 1]) != null) return false;
++    return !std.mem.endsWith(u8, l, "×");
++}
++
+ /// The shortest right side followed by a sentence end, ", ", " (", or " by|from|and|then|is|which|so|has".
+ pub fn defEnd(s: []const u8, rhs: usize) ?usize {
+     var k = rhs + 1;
+diff --git a/zig/src/core/runner_trace_value.zig b/zig/src/core/runner_trace_value.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..818877c4fb1a472c42a4bdc6b83067ddd7e3b450
+--- /dev/null
++++ b/zig/src/core/runner_trace_value.zig
+@@ -0,0 +1,124 @@
++//! The runner's `trace` form: the integer value of a checked source, to tell a restated name from a reassigned one.
++const std = @import("std");
++const Allocator = std.mem.Allocator;
++const Int = std.math.big.int.Managed;
++
++/// The widest value evaluated: a wider source is never called the same (the name it would keep is poisoned instead).
++const max_bits = 4096;
++
++/// `x` and `y` (sources over + - * ** %, brackets, decimal and 0x literals) are one integer; `a` should be an arena.
++pub fn same(a: Allocator, x: []const u8, y: []const u8) Allocator.Error!bool {
++    const u = try value(a, x) orelse return false;
++    const v = try value(a, y) orelse return false;
++    return u.eql(v);
++}
++
++fn value(a: Allocator, s: []const u8) Allocator.Error!?Int {
++    var p: Eval = .{ .a = a, .s = s };
++    const v = p.sum() catch |e| switch (e) {
++        error.OutOfMemory => return error.OutOfMemory,
++        error.Refused => return null,
++    };
++    return if (p.i == s.len) v else null;
++}
++
++/// Python's precedence: sum := term (+|- term)*; term := unary (*|% unary)*; unary := -unary | atom [** digits].
++const Eval = struct {
++    a: Allocator,
++    s: []const u8,
++    i: usize = 0,
++
++    const Error = error{ OutOfMemory, Refused };
++
++    fn fail(e: anyerror) Error {
++        return if (e == error.OutOfMemory) error.OutOfMemory else error.Refused;
++    }
++
++    fn eat(p: *Eval, op: []const u8) bool {
++        if (!std.mem.startsWith(u8, p.s[p.i..], op)) return false;
++        p.i += op.len;
++        return true;
++    }
++
++    fn wide(v: Int) Error!Int {
++        return if (v.bitCountAbs() > max_bits) error.Refused else v;
++    }
++
++    fn sum(p: *Eval) Error!Int {
++        var v = try p.term();
++        while (p.i < p.s.len and (p.s[p.i] == '+' or p.s[p.i] == '-')) {
++            const plus = p.s[p.i] == '+';
++            p.i += 1;
++            const r = try p.term();
++            var out = Int.init(p.a) catch |e| return fail(e);
++            if (plus) out.add(&v, &r) catch |e| return fail(e) else out.sub(&v, &r) catch |e| return fail(e);
++            v = try wide(out);
++        }
++        return v;
++    }
++
++    fn term(p: *Eval) Error!Int {
++        var v = try p.unary();
++        while (p.i < p.s.len and (p.s[p.i] == '%' or (p.s[p.i] == '*' and !std.mem.startsWith(u8, p.s[p.i..], "**")))) {
++            const op = p.s[p.i];
++            p.i += 1;
++            const r = try p.unary();
++            var out = Int.init(p.a) catch |e| return fail(e);
++            if (op == '*') {
++                out.mul(&v, &r) catch |e| return fail(e);
++            } else {
++                if (r.eqlZero()) return error.Refused;
++                var q = Int.init(p.a) catch |e| return fail(e);
++                q.divFloor(&out, &v, &r) catch |e| return fail(e); // Python's % takes the divisor's sign
++            }
++            v = try wide(out);
++        }
++        return v;
++    }
++
++    fn unary(p: *Eval) Error!Int {
++        if (p.eat("-")) {
++            var v = try p.unary();
++            v.negate();
++            return v;
++        }
++        const base = try p.atom();
++        if (!p.eat("**")) return base;
++        const k0 = p.i;
++        while (p.i < p.s.len and std.ascii.isDigit(p.s[p.i])) p.i += 1;
++        const k = std.fmt.parseInt(u32, p.s[k0..p.i], 10) catch return error.Refused;
++        if (base.bitCountAbs() > 1 and @as(u64, base.bitCountAbs()) * k > max_bits + 64) return error.Refused;
++        var out = Int.init(p.a) catch |e| return fail(e);
++        out.pow(&base, k) catch |e| return fail(e);
++        return wide(out);
++    }
++
++    fn atom(p: *Eval) Error!Int {
++        if (p.eat("(")) {
++            const v = try p.sum();
++            if (!p.eat(")")) return error.Refused;
++            return v;
++        }
++        const hex = p.eat("0x");
++        const d0 = p.i;
++        while (p.i < p.s.len and (if (hex) std.ascii.isHex(p.s[p.i]) else std.ascii.isDigit(p.s[p.i]))) p.i += 1;
++        if (p.i == d0 or p.i - d0 > max_bits / 3) return error.Refused;
++        var v = Int.init(p.a) catch |e| return fail(e);
++        v.setString(if (hex) 16 else 10, p.s[d0..p.i]) catch |e| return fail(e);
++        return wide(v);
++    }
++};
++
++test "runner trace value: a restatement in another form is the same integer; a different value, a wide or bad one is not" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    try std.testing.expect(try same(a, "12345678901", "12000000000+345678901"));
++    try std.testing.expect(try same(a, "(0xFEDCBA98)*2**32+(0x76543210)", "18364758544493064720"));
++    try std.testing.expect(try same(a, "-7%3", "2")); // Python: the divisor's sign
++    try std.testing.expect(try same(a, "-2**2", "-4"));
++    try std.testing.expect(!try same(a, "280223976814164", "18364758544493064720"));
++    try std.testing.expect(!try same(a, "2**100000", "2**100000")); // too wide to evaluate: poisoned, never kept
++    try std.testing.expect(!try same(a, "5%0", "5"));
++    try std.testing.expect(!try same(a, "12+", "12"));
++}

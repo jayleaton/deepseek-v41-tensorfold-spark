@@ -1,0 +1,317 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 12:11:11 +0700
+Subject: [PATCH 026/207] server: render DeepSeek-V4.x chat with its own
+ encoder and schema prompt
+
+DeepSeek-V4.x releases ship encoding.py, not a Jinja template. A
+checkpoint that carries one anyway (flash17 keeps September's file for
+older loaders) made every chat prompt render through that stale file
+instead of the native encoder the published engine uses, changing
+prompt ids, effort defaults and tool rules. The native encoder now
+renders DeepSeek-V4.x unless --chat-template names an override.
+
+The native path also covers what the Jinja path did: image parts become
+the image token when the server serves images (still refused otherwise),
+and a request's response_format schema is shown as the encoder's
+"## Response Format" block, as the published engine does by default
+(TF_DSV41_SCHEMA_PROMPT=0 turns it off). /tokenize renders the same way.
+
+Host tests run the committed encoding.py goldens, now including the
+response_format cases, through HfText; cover the ignored checkpoint
+Jinja, the override, served and refused images, json_object, string and
+object schemas and the knob.
+---
+ zig/src/server/deepseek_chat_test.zig | 59 ++++++++++++++++++++++-----
+ zig/src/server/errors.zig             |  2 +
+ zig/src/server/hf_text.zig            | 40 +++++++++++++++++-
+ zig/src/server/model_text.zig         |  4 ++
+ zig/src/server/prompt.zig             |  7 +++-
+ zig/src/server/tokens.zig             |  1 +
+ 6 files changed, 99 insertions(+), 14 deletions(-)
+
+diff --git a/zig/src/server/deepseek_chat_test.zig b/zig/src/server/deepseek_chat_test.zig
+index bf5e3d17341f968fa25a68695f02a95eb97fe6ca..21d5513b69d73979541f9900b106806d6ab49b39 100644
+--- a/zig/src/server/deepseek_chat_test.zig
++++ b/zig/src/server/deepseek_chat_test.zig
+@@ -29,16 +29,21 @@ test "DeepSeek chat: missing Jinja uses the committed encoding.py text goldens"
+     const lines = try std.Io.Dir.cwd().readFileAlloc(t.io, "zig/src/families/deepseek_v41/fixtures/serve/template.jsonl", a, .limited(4 << 20));
+     var it = std.mem.splitScalar(u8, lines, '\n');
+     var checked: usize = 0;
++    var schemas: usize = 0;
+     while (it.next()) |line| {
+         if (line.len == 0) continue;
+         const c = (try json.parseText(a, line)).ok;
+-        if (c.get("error").? != .null or !c.get("drop_thinking").?.bool or c.get("response_format").? != .null or c.get("image_text").? != .null) continue;
++        if (c.get("error").? != .null or !c.get("drop_thinking").?.bool or c.get("image_text").? != .null) continue;
+         const thinking = c.get("thinking").?.bool;
+         var opts: @import("model_text.zig").RenderOptions = .{
+             .enable_thinking = thinking,
+             .add_generation_prompt = c.get("generation").?.bool,
+             .reasoning_effort = if (thinking) try json.stringify(a, c.get("budget").?, .{}) else null,
+         };
++        // encoding.py's schema, as a request's response_format carries it (TF_DSV41_SCHEMA_PROMPT's default)
++        const schema = c.get("response_format").?;
++        if (schema != .null) opts.response_format = (try json.parseText(a, try std.fmt.allocPrint(a, "{{\"type\":\"json_schema\",\"json_schema\":{{\"schema\":{s}}}}}", .{try json.stringify(a, schema, .{})}))).ok;
++        schemas += @intFromBool(schema != .null);
+         if (c.get("effort_field")) |effort| opts.reasoning_effort = switch (effort) {
+             .string, .int => |s| s,
+             else => unreachable,
+@@ -51,7 +56,8 @@ test "DeepSeek chat: missing Jinja uses the committed encoding.py text goldens"
+         checked += 1;
+     }
+     try t.expect(checked >= 20);
+-    std.debug.print("DEEPSEEK_CHAT_GOLDENS {d} committed encoding.py cases\n", .{checked});
++    try t.expect(schemas >= 10);
++    std.debug.print("DEEPSEEK_CHAT_GOLDENS {d} committed encoding.py cases ({d} with a response_format)\n", .{ checked, schemas });
+ }
+ 
+ test "DeepSeek chat: native request control spellings stay masked and structural tokens stay trusted" {
+@@ -90,7 +96,7 @@ test "DeepSeek chat: native request control spellings stay masked and structural
+     try t.expectEqual(@as(usize, 2), users);
+ }
+ 
+-test "DeepSeek chat: Jinja and explicit overrides win and text-only image parts refuse" {
++test "DeepSeek chat: an explicit override wins, a checkpoint Jinja does not, and images render only when served" {
+     var arena = std.heap.ArenaAllocator.init(t.allocator);
+     defer arena.deinit();
+     const a = arena.allocator();
+@@ -103,10 +109,13 @@ test "DeepSeek chat: Jinja and explicit overrides win and text-only image parts
+     const override = try HfText.load(a, t.io, tmp.path, path, a, &problem);
+     defer override.deinit();
+     try t.expectEqualStrings("overrideH", (try override.text().render(a, messages, .{}, &problem)).text);
++    // DeepSeek-V4.x releases ship encoding.py, not Jinja: a checkpoint's own file (a stale copy) is not read
+     try tmp.tmp.dir.writeFile(t.io, .{ .sub_path = "chat_template.jinja", .data = "jinja{{ messages[0].content }}" });
+-    const jinja = try HfText.load(a, t.io, tmp.path, null, a, &problem);
+-    defer jinja.deinit();
+-    try t.expectEqualStrings("jinjaH", (try jinja.text().render(a, messages, .{}, &problem)).text);
++    const packed_jinja = try HfText.load(a, t.io, tmp.path, null, a, &problem);
++    defer packed_jinja.deinit();
++    const native_text = (try packed_jinja.text().render(a, messages, .{}, &problem)).text;
++    try t.expect(std.mem.startsWith(u8, native_text, "<｜begin▁of▁sentence｜>"));
++    try t.expect(std.mem.indexOf(u8, native_text, "jinja") == null);
+     var other = try fixture(a, "deepseek_v41");
+     defer other.deinit();
+     const native = try HfText.load(a, t.io, other.path, null, a, &problem);
+@@ -114,6 +123,36 @@ test "DeepSeek chat: Jinja and explicit overrides win and text-only image parts
+     const images = (try json.parseText(a, "[{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"local\"}}]}]")).ok;
+     try t.expectError(error.Template, native.text().render(a, images, .{}, &problem));
+     try t.expect(std.mem.indexOf(u8, problem, "images are not served") != null);
++    // a server with image input: the part becomes the image token, which images.zig expands
++    const served = try native.text().render(a, images, .{ .images = true }, &problem);
++    const ids = try served.encode(native.text(), a, &problem);
++    try t.expect(std.mem.indexOfScalar(u32, ids, native.text().tokenId("<｜deepseek_image｜>").?) != null);
++}
++
++test "DeepSeek chat: response_format shows its schema unless TF_DSV41_SCHEMA_PROMPT=0" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var tmp = try fixture(a, "deepseek_v41");
++    defer tmp.deinit();
++    var problem: []const u8 = "";
++    const hf = try HfText.load(a, t.io, tmp.path, null, a, &problem);
++    defer hf.deinit();
++    const messages = try tf.messages(a, "H");
++    const object = (try json.parseText(a, "{\"type\":\"json_object\"}")).ok;
++    const schema = (try json.parseText(a, "{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"n\",\"schema\":\"{\\\"type\\\":\\\"integer\\\"}\"}}")).ok;
++    const plain = (try json.parseText(a, "{\"type\":\"text\"}")).ok;
++    const shown = (try hf.text().render(a, messages, .{ .response_format = object }, &problem)).text;
++    try t.expect(std.mem.indexOf(u8, shown, "## Response Format") != null);
++    try t.expect(std.mem.indexOf(u8, shown, "\"object\"") != null);
++    const string_schema = (try hf.text().render(a, messages, .{ .response_format = schema }, &problem)).text;
++    try t.expect(std.mem.indexOf(u8, string_schema, "\"integer\"") != null);
++    const none = (try hf.text().render(a, messages, .{}, &problem)).text;
++    try t.expectEqualStrings(none, (try hf.text().render(a, messages, .{ .response_format = plain }, &problem)).text);
++    hf.schema_prompt = false;
++    try t.expectEqualStrings(none, (try hf.text().render(a, messages, .{ .response_format = object }, &problem)).text);
++    try t.expect(@import("hf_text.zig").schemaPrompt(null) and @import("hf_text.zig").schemaPrompt("1"));
++    try t.expect(!@import("hf_text.zig").schemaPrompt(" 0 "));
+ }
+ 
+ const Script = struct {
+@@ -209,7 +248,7 @@ test "DeepSeek chat: the no-Jinja OpenAI route submits the native masked prompt
+     try t.expectEqualSlices(u32, expected, script.seen);
+ }
+ 
+-test "DeepSeek chat: tool-only Jinja metadata survives the native default fallback" {
++test "DeepSeek chat: tool-only Jinja metadata does not replace the native encoder" {
+     var arena = std.heap.ArenaAllocator.init(t.allocator);
+     defer arena.deinit();
+     const a = arena.allocator();
+@@ -221,14 +260,14 @@ test "DeepSeek chat: tool-only Jinja metadata survives the native default fallba
+     var problem: []const u8 = "";
+     const hf = try HfText.load(a, t.io, tmp.path, null, a, &problem);
+     defer hf.deinit();
+-    try t.expect(std.mem.indexOf(u8, hf.text().templateSource(), "No user query found") != null);
++    try t.expect(std.mem.indexOf(u8, hf.text().templateSource(), "No user query found") == null);
+     try t.expect(std.mem.indexOf(u8, hf.text().templateSource(), "thinking_mode") != null);
+     const messages = try tf.messages(a, "H");
+-    try t.expectEqualStrings("No user query found H", (try hf.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem)).text);
++    try t.expect(std.mem.startsWith(u8, (try hf.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem)).text, "<｜begin▁of▁sentence｜>"));
+     try t.expect(std.mem.startsWith(u8, (try hf.text().render(a, messages, .{}, &problem)).text, "<｜begin▁of▁sentence｜>"));
+     var script: Script = .{};
+     const srv = try @import("server.zig").Server.init(a, t.io, script.engine(), hf.text(), .{ .served_name = "m", .model_ids = &.{"m"} }, null);
+     defer srv.deinit();
+-    try t.expect(srv.needs_user_after_tool);
++    try t.expect(!srv.needs_user_after_tool);
+     try t.expect(srv.thinking_switch);
+ }
+diff --git a/zig/src/server/errors.zig b/zig/src/server/errors.zig
+index d6f9b289f932edd74e42a4d41a30902a49cb35c3..8977cf3a14ba163d5082b3dea06cb046de45046c 100644
+--- a/zig/src/server/errors.zig
++++ b/zig/src/server/errors.zig
+@@ -26,6 +26,8 @@ pub const Cx = struct {
+     message: []const u8 = "",
+     /// The request's ``chat_template_kwargs.clear_thinking``, over the server's (GLM-5.3 templates only).
+     clear_thinking: ?bool = null,
++    /// The request's ``response_format``, for templates that show its schema in the prompt (DeepSeek-V4.1's).
++    response_format: ?@import("json").Value = null,
+ 
+     pub fn fail(cx: *Cx, kind: Kind, comptime fmt: []const u8, args: anytype) Refused {
+         cx.kind = kind;
+diff --git a/zig/src/server/hf_text.zig b/zig/src/server/hf_text.zig
+index 247be44ce3ec68316a8f35a7da096787a9e79226..f619c6a8036c44a91e52a83ca04fa5d7fc5edd34 100644
+--- a/zig/src/server/hf_text.zig
++++ b/zig/src/server/hf_text.zig
+@@ -18,12 +18,18 @@ pub fn glmClearThinking(value: ?[]const u8) ?bool {
+     return if (std.mem.eql(u8, v, "1")) true else null;
+ }
+ 
++/// ``TF_DSV41_SCHEMA_PROMPT``: on unless 0 (the published engine's default).
++pub fn schemaPrompt(value: ?[]const u8) bool {
++    return !std.mem.eql(u8, std.mem.trim(u8, value orelse "", " \t\r\n"), "0");
++}
++
+ pub const HfText = struct {
+     gpa: Allocator,
+     arena: std.heap.ArenaAllocator,
+     tok: tokenizer.Tokenizer,
+     source: []const u8 = "",
+     native_deepseek: bool = false,
++    schema_prompt: bool = true, // TF_DSV41_SCHEMA_PROMPT: response_format's schema as the encoder's ``## Response Format``
+     clear_thinking: ?bool = null, // GLM-5.3's, given to its template on every render (``glmClearThinking``)
+     tool_source: []const u8 = "",
+     compiled: ?template.Compiled = null,
+@@ -72,7 +78,9 @@ pub const HfText = struct {
+                 problem.* = try std.fmt.allocPrint(pa, "cannot read chat template override ({s})", .{@errorName(e)});
+                 return error.Load;
+             };
+-        } else try t.readTemplates(io, a, dir, config);
++        } else if (!t.native_deepseek) try t.readTemplates(io, a, dir, config);
++        // DeepSeek-V4.x releases ship encoding.py, not Jinja: a checkpoint's Jinja is a third party's (--chat-template)
++        if (t.native_deepseek) t.schema_prompt = schemaPrompt(if (std.c.getenv("TF_DSV41_SCHEMA_PROMPT")) |v| std.mem.span(v) else null);
+         t.specials = try specialsOf(a, config);
+         t.eos = t.eosIds(a, model_config, generation, config, t.tok.id_to_token.tokens.items.len) catch |e| {
+             if (e == error.OutOfMemory) return e;
+@@ -326,8 +334,12 @@ pub const HfText = struct {
+         return if (t.tool_source.len > 0) std.mem.concat(t.arena.allocator(), u8, &.{ source, " ", t.tool_source }) catch source else source;
+     }
+ 
+-    fn renderDeepseek(_: *HfText, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error!model_text.Rendered {
++    fn renderDeepseek(t: *HfText, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error!model_text.Rendered {
+         var opts: dsv41.Options = .{ .thinking = options.enable_thinking, .add_generation_prompt = options.add_generation_prompt };
++        if (options.images) opts.image = .{ .text = imageMarker }; // the image token, expanded by images.zig
++        if (t.schema_prompt) if (options.response_format) |rf| {
++            opts.response_format = try schemaFor(a, rf);
++        };
+         if (options.tools) |tools| {
+             if (tools != .array) {
+                 problem.* = "tools must be a list";
+@@ -352,6 +364,30 @@ pub const HfText = struct {
+         return .{ .text = out.text, .spans = out.spans };
+     }
+ 
++    fn imageMarker(_: ?*anyopaque, _: Value) []const u8 {
++        return dsv41.IMAGE;
++    }
++
++    /// ``schema_for_prompt``: what ``## Response Format`` shows for a ``response_format``, or null.
++    fn schemaFor(a: Allocator, rf: Value) Allocator.Error!?Value {
++        if (rf != .object) return null;
++        const kind = rf.get("type") orelse return null;
++        if (kind != .string) return null;
++        if (std.mem.eql(u8, kind.string, "json_object")) return switch (try json.parseText(a, "{\"type\": \"object\"}")) {
++            .ok => |v| v,
++            .err => null,
++        };
++        if (!std.mem.eql(u8, kind.string, "json_schema")) return null;
++        const js = rf.get("json_schema") orelse return null;
++        if (js != .object) return null;
++        var schema = js.get("schema") orelse js.get("json_schema") orelse return null;
++        if (schema == .string) schema = switch (try json.parseText(a, schema.string)) {
++            .ok => |v| v,
++            .err => return null,
++        };
++        return schema;
++    }
++
+     fn renderFn(ctx: *anyopaque, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error!model_text.Rendered {
+         const t = self(ctx);
+         const compiled = if (options.tools != null and t.tool_compiled != null) &t.tool_compiled.? else if (t.compiled) |*c| c else {
+diff --git a/zig/src/server/model_text.zig b/zig/src/server/model_text.zig
+index e430693e47cb7ca63b3e4e122d77d898c62978ef..ec489ce52cd7fd64913a788cf827f39b1742974c 100644
+--- a/zig/src/server/model_text.zig
++++ b/zig/src/server/model_text.zig
+@@ -12,6 +12,10 @@ pub const RenderOptions = struct {
+     reasoning_effort: ?[]const u8 = null,
+     /// A request's ``clear_thinking``; a GLM-5.3 template takes it over the server's.
+     clear_thinking: ?bool = null,
++    /// The request's ``response_format`` (DeepSeek-V4.1's encoder shows its schema as ``## Response Format``).
++    response_format: ?json.Value = null,
++    /// The server serves images: a template's image parts render (else a DeepSeek-V4.1 encoder refuses them).
++    images: bool = false,
+ };
+ 
+ pub const Error = error{ Template, OutOfMemory };
+diff --git a/zig/src/server/prompt.zig b/zig/src/server/prompt.zig
+index 114296fb02af1cef42c55d3b7df4f8c32bcb9ef4..68a919d620570fb093b7e1c1f3c232174322d2a8 100644
+--- a/zig/src/server/prompt.zig
++++ b/zig/src/server/prompt.zig
+@@ -38,6 +38,8 @@ pub fn renderIds(srv: *Server, cx: *Cx, messages: Value, tools: []const Value, t
+         .enable_thinking = thinking,
+         .reasoning_effort = if (thinking) effort else null,
+         .clear_thinking = cx.clear_thinking,
++        .response_format = cx.response_format,
++        .images = srv.info.vision != null,
+     };
+     var ids = render(srv, cx.a, normalized, options, &problem) catch |e| switch (e) {
+         error.OutOfMemory => return error.OutOfMemory,
+@@ -110,6 +112,7 @@ pub fn prepare(srv: *Server, cx: *Cx, input: chat.Input, thinking: bool, effort:
+         } },
+         .ids => |ids| return .{ .ids = ids },
+     };
++    cx.response_format = input.fields.get("response_format");
+     const prompt = try renderIds(srv, cx, input.messages, input.tools, thinking, effort, true);
+     const history = try renderIds(srv, cx, input.messages, input.tools, thinking, effort, false);
+     var history_len: usize = 0;
+@@ -155,7 +158,7 @@ pub fn rewindLen(srv: *Server, cx: *Cx, messages: Value, real_count: usize, tool
+     const user = json.copyObject(cx.a, messages.array[user_index].object) catch return 0;
+     user.put(cx.a, "content", .{ .string = "\u{2063}probe" }) catch return 0;
+     list[user_index] = .{ .object = user };
+-    var scratch: Cx = .{ .a = cx.a, .clear_thinking = cx.clear_thinking };
++    var scratch: Cx = .{ .a = cx.a, .clear_thinking = cx.clear_thinking, .response_format = cx.response_format };
+     const probe = renderIds(srv, &scratch, .{ .array = list }, tools, thinking, effort, true) catch return 0;
+     const i = std.mem.indexOfDiff(u32, prompt, probe) orelse return 0;
+     return if (i < prompt.len) i else 0;
+@@ -174,7 +177,7 @@ pub fn systemPrefixLen(srv: *Server, cx: *Cx, messages: Value, tools: []const Va
+     user.put(cx.a, "role", .{ .string = "user" }) catch return 0;
+     user.put(cx.a, "content", .{ .string = "\u{2063}probe" }) catch return 0;
+     probe[first_user] = .{ .object = user };
+-    var scratch: Cx = .{ .a = cx.a, .clear_thinking = cx.clear_thinking };
++    var scratch: Cx = .{ .a = cx.a, .clear_thinking = cx.clear_thinking, .response_format = cx.response_format };
+     const other = renderIds(srv, &scratch, .{ .array = probe }, tools, thinking, effort, true) catch return 0;
+     var shared: usize = 0;
+     while (shared < @min(prompt_ids.len, other.len) and prompt_ids[shared] == other[shared]) shared += 1;
+diff --git a/zig/src/server/tokens.zig b/zig/src/server/tokens.zig
+index d7ca9a372847ed040c8add14eaac6c300a733387..4c6ed5c3c072274d03d859556e05d293ae56055b 100644
+--- a/zig/src/server/tokens.zig
++++ b/zig/src/server/tokens.zig
+@@ -38,6 +38,7 @@ fn tokenize(srv: *Server, cx: *Cx, body: Value) errors.Refused!Value {
+         const thinking = try fields.thinkingFields(cx, body, srv.effort_levels);
+         const on = thinking.enable orelse srv.config.enable_thinking;
+         cx.clear_thinking = thinking.clear;
++        cx.response_format = body.get("response_format");
+         ids = prompt.renderIds(srv, cx, msgs, tools, on, srv.effortFor(thinking.effort), generation) catch |e| switch (e) {
+             error.Refused => return cx.other(cx.message),
+             else => |x| return x,

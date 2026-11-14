@@ -1,0 +1,402 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 20:17:52 +0700
+Subject: [PATCH 001/207] deepseek: build CPU asset generators before CUDA
+ images
+
+Install the token-map exporter and the real AOT planner without booting a CUDA model. Parse complete release metadata for CPU preparation while retaining checkpoint representation refusals in serving.
+
+Host checks cover CLI admission and the public 1017 config. The second node CPU qualification passes formatting, zero new lean identities, native/plain builds, the full host and CUDA subsets, kernel contracts, security, golden, fuzz and CI tool checks. Actual metadata produces the canonical token map and the reference generators produce RoPE, signatures, needs and an SM121 cubin.
+---
+ build.zig                                     |   1 +
+ docs/recipes/deepseek-v41-cuda.md             |  38 ++++
+ zig/build/dsv41_assets.zig                    |  17 ++
+ zig/dsv41_token_map.zig                       |   2 +-
+ zig/src/families/deepseek_v41/asset_main.zig  |  44 +++++
+ zig/src/families/deepseek_v41/config.zig      |  32 +++-
+ .../fixtures/flash1017-config.json            | 170 ++++++++++++++++++
+ 7 files changed, 302 insertions(+), 2 deletions(-)
+ create mode 100644 docs/recipes/deepseek-v41-cuda.md
+ create mode 100644 zig/build/dsv41_assets.zig
+ create mode 100644 zig/src/families/deepseek_v41/asset_main.zig
+ create mode 100644 zig/src/families/deepseek_v41/fixtures/flash1017-config.json
+
+diff --git a/build.zig b/build.zig
+index 60eadf478ad8cf9d90518ac71e6660b85a300300..5611d50694846b0c790e61c756790cc50b16d426 100644
+--- a/build.zig
++++ b/build.zig
+@@ -65,6 +65,7 @@ pub fn build(b: *std.Build) void {
+     @import("zig/build/dsv41_cuda.zig").steps(b);
+     @import("zig/build/dsv41_state.zig").steps(b);
+     @import("zig/build/dsv41_draft.zig").steps(b);
++    @import("zig/build/dsv41_assets.zig").steps(b);
+     const target = b.standardTargetOptions(.{});
+     @import("zig/build/copy_source.zig").steps(b);
+     @import("zig/build/checkpoint_io_host.zig").steps(b, target);
+diff --git a/docs/recipes/deepseek-v41-cuda.md b/docs/recipes/deepseek-v41-cuda.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f50791ee368336b6fcfb3a9e9ae6abc6b7a015d9
+--- /dev/null
++++ b/docs/recipes/deepseek-v41-cuda.md
+@@ -0,0 +1,38 @@
++# Experimental DeepSeek-V4.1 CUDA asset preparation
++
++The native engine remains experimental. CPU build and host-test results do not qualify a checkpoint or GPU.
++Serving still applies the native checkpoint representation and architecture refusals.
++
++Build the CPU generators before preparing the CUDA images:
++
++```sh
++zig build dsv41-assets
++zig build test-dsv41-assets-host test-dsv41-token-map
++zig-out/bin/tf-dsv41-token-map --tokenizer MODEL/tokenizer.json --config MODEL/config.json --output ASSETS/engram-token-map.bin
++zig-out/bin/tf-dsv41-assets aot-needs ASSETS/sigs.json ASSETS/needs.json
++```
++
++The token-map generator validates release geometry and records the original tokenizer and config SHA256 values.
++Its metadata reader accepts the official unquantized configuration for asset generation; this does not admit that
++matrix representation to the serving loader. The file uses `DSENGR01`, including prime buckets, multipliers and
++lookup ids, with a JSON provenance sidecar. The legacy `engram-host.bin` fixture format is not a serving asset.
++
++`aot-needs` executes the family's actual symbolic planner on the CPU. Supply the intended rank, world, context,
++slot, draft, sampling, prefill and image settings through the same environment used for serving. It never opens a
++CUDA driver. Enumerating an image or two-rank plan does not execute a GPU or distributed model.
++
++The external Triton reference tools produce `sigs.json`, compile every specialization in `needs.json` for the
++actual target SM, and write `aot/`. The reference RoPE generator writes `rope.bin` using fixed CPU table blocks;
++its rows must cover context plus 2048. Keep the reference revision, compiler versions, options, manifests and
++hashes with these generated assets. Do not substitute captured images from another checkpoint or profile.
++The recipe's reference tools are versioned separately from this native runtime.
++
++Build installable ARM64 binaries on the native ARM64 host with real runtime and family CUDA images:
++
++```sh
++zig build dsv41-serve -Doptimize=ReleaseSafe -Dnvcc=/usr/local/cuda/bin/nvcc -Ddsv41-nvcc=/usr/local/cuda/bin/nvcc -Dsm=121
++```
++
++This installs rank zero's `tensorfold-dsv41` and the follower tool `tf-dsv41`. The runtime reads
++`TF_DSV41_ASSETS/{rope.bin,engram-token-map.bin,aot/}`. Compile-only targets use inert synthetic images and
++cannot produce a serving qualification receipt. Keep generated images and compiler caches outside source control.
+diff --git a/zig/build/dsv41_assets.zig b/zig/build/dsv41_assets.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..06c612faa6108c125ee3019805d572757fe02802
+--- /dev/null
++++ b/zig/build/dsv41_assets.zig
+@@ -0,0 +1,17 @@
++const std = @import("std");
++
++pub fn steps(b: *std.Build) void {
++    const step = b.step("dsv41-assets", "Install CPU-only DeepSeek token-map and AOT-plan generators");
++    const asset_module = @import("dsv41_cuda.zig").module(b, b.graph.host, "asset_main.zig", false);
++    const assets = b.addExecutable(.{ .name = "tf-dsv41-assets", .root_module = asset_module });
++    step.dependOn(&b.addInstallArtifact(assets, .{}).step);
++    const token_map = b.addExecutable(.{ .name = "tf-dsv41-token-map", .root_module = b.createModule(.{
++        .root_source_file = b.path("zig/dsv41_token_map.zig"),
++        .target = b.graph.host,
++        .optimize = .ReleaseSafe,
++        .link_libc = true,
++    }) });
++    step.dependOn(&b.addInstallArtifact(token_map, .{}).step);
++    const tests = b.addRunArtifact(b.addTest(.{ .root_module = asset_module }));
++    b.step("test-dsv41-assets-host", "DeepSeek asset commands refuse GPU operations and malformed arguments").dependOn(&tests.step);
++}
+diff --git a/zig/dsv41_token_map.zig b/zig/dsv41_token_map.zig
+index a2c111f280b2b78c930dd634e81280de7a04bf8f..0bbd20086422c2b69894705e2e9d77489945fd19 100644
+--- a/zig/dsv41_token_map.zig
++++ b/zig/dsv41_token_map.zig
+@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
+     var t = try tok.loadTokenizer(io, a, tokenizer_path.?);
+     defer t.deinit();
+ 
+-    const config = try @import("src/families/deepseek_v41/config.zig").Config.parse(a, config_bytes);
++    const config = try @import("src/families/deepseek_v41/config.zig").Config.parseMetadata(a, config_bytes);
+ 
+     // Decode, fall back to the raw token on U+FFFD, normalize, then deduplicate keys in first-seen order.
+     var key_arena = std.heap.ArenaAllocator.init(a);
+diff --git a/zig/src/families/deepseek_v41/asset_main.zig b/zig/src/families/deepseek_v41/asset_main.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5ce8d65f2da69e0d3afc36b7164fbacfa062e19
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/asset_main.zig
+@@ -0,0 +1,44 @@
++//! CPU-only asset planning; neither command opens a CUDA driver or executes model code.
++const std = @import("std");
++
++const Command = union(enum) { help, needs: struct { sigs: []const u8, output: []const u8 } };
++
++fn parse(args: []const []const u8) !Command {
++    if (args.len == 2 and std.mem.eql(u8, args[1], "--help")) return .help;
++    if (args.len == 4 and std.mem.eql(u8, args[1], "aot-needs")) {
++        if (args[2].len == 0 or args[3].len == 0) return error.BadArguments;
++        return .{ .needs = .{ .sigs = args[2], .output = args[3] } };
++    }
++    return error.BadArguments;
++}
++
++pub fn main(init: std.process.Init) !u8 {
++    const args = try init.minimal.args.toSlice(init.arena.allocator());
++    const command = parse(args) catch {
++        std.debug.print("usage: tf-dsv41-assets aot-needs SIGS OUT\n", .{});
++        return 2;
++    };
++    switch (command) {
++        .help => std.debug.print("tf-dsv41-assets aot-needs SIGS OUT (CPU only; serving settings from the environment)\n", .{}),
++        .needs => |paths| {
++            var buffer: [4096]u8 = undefined;
++            var log = std.Io.File.stderr().writer(init.io, &buffer);
++            try @import("aot_needs.zig").main(init.gpa, init.io, paths.sigs, paths.output, &log.interface);
++        },
++    }
++    return 0;
++}
++
++test "asset commands cannot select a GPU operation" {
++    try std.testing.expectError(error.BadArguments, parse(&.{ "assets", "follow", "pack", "assets" }));
++    try std.testing.expectError(error.BadArguments, parse(&.{ "assets", "generate", "pack", "trace" }));
++    try std.testing.expectError(error.BadArguments, parse(&.{ "assets", "aot-needs", "sigs" }));
++    try std.testing.expectError(error.BadArguments, parse(&.{ "assets", "aot-needs", "", "out" }));
++    const got = try parse(&.{ "assets", "aot-needs", "sigs.json", "needs.json" });
++    try std.testing.expectEqualStrings("sigs.json", got.needs.sigs);
++    try std.testing.expectEqualStrings("needs.json", got.needs.output);
++}
++
++test {
++    _ = @import("config.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/config.zig b/zig/src/families/deepseek_v41/config.zig
+index 4c5fc320666bb7a96f1d492117798bb8d67dbc03..da8b28c0c2611f2a6e238ab2650917423e7db70f 100644
+--- a/zig/src/families/deepseek_v41/config.zig
++++ b/zig/src/families/deepseek_v41/config.zig
+@@ -111,6 +111,15 @@ pub const Config = struct {
+ 
+     /// Checkpoint JSON (text_config, else top level); absent keys keep release values, unknown routing is refused.
+     pub fn parse(gpa: std.mem.Allocator, json: []const u8) !Config {
++        return parseWith(gpa, json, true);
++    }
++
++    /// CPU asset generation checks release geometry without admitting the checkpoint's matrix representation.
++    pub fn parseMetadata(gpa: std.mem.Allocator, json: []const u8) !Config {
++        return parseWith(gpa, json, false);
++    }
++
++    fn parseWith(gpa: std.mem.Allocator, json: []const u8, checkpoint: bool) !Config {
+         const parsed = try std.json.parseFromSlice(std.json.Value, gpa, json, .{ .parse_numbers = false });
+         defer parsed.deinit();
+         if (parsed.value != .object) return error.BadConfig;
+@@ -170,7 +179,7 @@ pub const Config = struct {
+             }
+         }
+         try c.validate();
+-        try requireCheckpoint(top, text);
++        if (checkpoint) try requireCheckpoint(top, text) else try requireMetadata(top, text);
+         try c.validateRelease();
+         return c;
+     }
+@@ -438,6 +447,12 @@ fn requireCheckpoint(top: std.json.ObjectMap, text: std.json.ObjectMap) !void {
+     const version = quant.object.get("version") orelse return error.MissingField;
+     if (method != .string or !std.mem.eql(u8, method.string, "exl3") or version != .string or
+         (!std.mem.eql(u8, version.string, "1") and !std.mem.startsWith(u8, version.string, "1."))) return error.UnsupportedCheckpoint;
++    try requireMetadata(top, text);
++}
++
++fn requireMetadata(top: std.json.ObjectMap, text: std.json.ObjectMap) !void {
++    const model = top.get("model_type") orelse return error.MissingField;
++    if (model != .string or !std.mem.eql(u8, model.string, "deepseek_v41")) return error.UnsupportedCheckpoint;
+     inline for (.{ "candidate_block_size", "candidate_source_layer_id", "candidate_topk_blocks", "compress_ratios", "compress_rope_theta", "engram_compressed_vocab_size", "engram_head_dim", "engram_layer_ids", "engram_max_ngram_size", "engram_n_heads", "engram_num_embeddings", "engram_pad_token_id", "engram_vocab_size", "hc_eps", "hc_mult", "hc_sinkhorn_iters", "head_dim", "hidden_size", "index_head_dim", "index_n_heads", "index_source_layer_ids", "index_topk", "kv_source_layer_ids", "max_position_embeddings", "moe_intermediate_size", "n_routed_experts", "n_shared_experts", "norm_topk_prob", "num_attention_heads", "num_experts_per_tok", "num_hidden_layers", "num_key_value_heads", "num_nextn_predict_layers", "o_groups", "o_lora_rank", "q_lora_rank", "qk_rope_head_dim", "rms_norm_eps", "rope_theta", "routed_scaling_factor", "scoring_func", "sliding_window", "swiglu_limit", "topk_method", "vocab_size" }) |key| {
+         if (!text.contains(key)) return error.MissingField;
+     }
+@@ -479,3 +494,18 @@ test "Engram pad alias cannot override the admitted token id" {
+     defer a.free(conflict);
+     try std.testing.expectError(error.BadConfig, Config.parse(a, conflict));
+ }
++
++test "asset metadata preserves release checks without widening checkpoint admission" {
++    const a = std.testing.allocator;
++    const bytes = @embedFile("fixtures/flash1017-config.json");
++    const c = try Config.parseMetadata(a, bytes);
++    try std.testing.expectEqual(@as(u32, 99092), c.engram_compressed_vocab);
++    try std.testing.expectEqual(@as(u32, 5120), c.hidden);
++    try std.testing.expectError(error.MissingField, Config.parse(a, bytes));
++    const missing = try std.mem.replaceOwned(u8, a, bytes, "engram_n_heads", "unused_engram_heads");
++    defer a.free(missing);
++    try std.testing.expectError(error.MissingField, Config.parseMetadata(a, missing));
++    const changed = try std.mem.replaceOwned(u8, a, bytes, "5120", "5248");
++    defer a.free(changed);
++    try std.testing.expectError(error.UnsupportedArchitecture, Config.parseMetadata(a, changed));
++}
+diff --git a/zig/src/families/deepseek_v41/fixtures/flash1017-config.json b/zig/src/families/deepseek_v41/fixtures/flash1017-config.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..09917a9139b22d5bf8be52132787f435147b1020
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/fixtures/flash1017-config.json
+@@ -0,0 +1,170 @@
++{
++  "architectures": [
++    "DeepseekV41ForCausalLM"
++  ],
++  "model_type": "deepseek_v41",
++  "dtype": "bfloat16",
++  "transformers_version": "5.6.0",
++  "bos_token_id": 0,
++  "eos_token_id": 1,
++  "pad_token_id": 2,
++  "image_token_id": 129264,
++  "quantization_config": {
++    "quant_method": "fp8",
++    "activation_scheme": "dynamic",
++    "weight_block_size": [
++      32,
++      32
++    ],
++    "scale_fmt": "ue8m0",
++    "expert_dtype": "fp4"
++  },
++  "text_config": {
++    "model_type": "deepseek_v41_text",
++    "vocab_size": 129280,
++    "hidden_size": 5120,
++    "moe_intermediate_size": 2304,
++    "num_hidden_layers": 40,
++    "num_attention_heads": 64,
++    "num_key_value_heads": 1,
++    "head_dim": 512,
++    "qk_rope_head_dim": 64,
++    "q_lora_rank": 1280,
++    "o_lora_rank": 1024,
++    "o_groups": 8,
++    "hidden_act": "silu",
++    "swiglu_limit": 10.0,
++    "rms_norm_eps": 1e-20,
++    "attention_bias": false,
++    "attention_dropout": 0.0,
++    "initializer_range": 0.02,
++    "use_cache": true,
++    "tie_word_embeddings": false,
++    "max_position_embeddings": 1048576,
++    "rope_theta": 10000,
++    "rope_scaling": {
++      "rope_type": "yarn",
++      "factor": 16,
++      "beta_fast": 32,
++      "beta_slow": 1,
++      "original_max_position_embeddings": 65536
++    },
++    "n_routed_experts": 384,
++    "n_shared_experts": 1,
++    "num_experts_per_tok": 6,
++    "scoring_func": "sqrtsoftplus",
++    "topk_method": "noaux_tc",
++    "norm_topk_prob": true,
++    "routed_scaling_factor": 1.5,
++    "sliding_window": 128,
++    "compress_ratios": [
++      0,
++      0,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      2,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      1,
++      0,
++      0,
++      0
++    ],
++    "compress_rope_theta": 160000,
++    "kv_source_layer_ids": [
++      2,
++      8,
++      14,
++      20
++    ],
++    "index_source_layer_ids": [
++      2,
++      8,
++      14,
++      20,
++      24,
++      28,
++      32,
++      36
++    ],
++    "index_n_heads": 32,
++    "index_head_dim": 128,
++    "index_topk": 512,
++    "candidate_source_layer_id": 20,
++    "candidate_topk_blocks": 2048,
++    "candidate_block_size": 8,
++    "hc_mult": 4,
++    "hc_sinkhorn_iters": 20,
++    "hc_eps": 1e-06,
++    "engram_layer_ids": [
++      1,
++      14
++    ],
++    "engram_num_embeddings": [
++      384006168,
++      384016682
++    ],
++    "engram_max_ngram_size": 4,
++    "engram_vocab_size": 16000000,
++    "engram_n_heads": 8,
++    "engram_head_dim": 256,
++    "engram_pad_token_id": 2,
++    "engram_compressed_vocab_size": 99092,
++    "num_nextn_predict_layers": 3,
++    "dspark_block_size": 5,
++    "dspark_noise_token_id": 128799,
++    "dspark_target_layer_ids": [
++      37,
++      38,
++      39
++    ],
++    "dspark_markov_rank": 256,
++    "dspark_n_routed_experts": 128,
++    "dspark_num_experts_per_tok": 3
++  },
++  "vision_config": {
++    "model_type": "deepseek_v41_vision",
++    "num_hidden_layers": 32,
++    "hidden_size": 1024,
++    "num_attention_heads": 16,
++    "intermediate_size": 2816,
++    "patch_size": 14,
++    "rope_theta": 10000,
++    "downsample_ratio": 3,
++    "max_image_tokens": 1024,
++    "min_pixels": 295936,
++    "max_wh_ratio": null
++  }
++}

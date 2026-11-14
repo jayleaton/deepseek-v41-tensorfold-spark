@@ -1,0 +1,1546 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 00:37:31 +0700
+Subject: [PATCH 079/207] Merge S2 7d0df4313 (trace runner form)
+
+Trace cells get their own trace key in the per-reply runner summary.
+
+Squashed merge of 1 commits:
+- runner: trace form owns a stated integer computation where its hand trace starts (Jay Leaton)
+---
+ zig/src/core/runner.zig            |  57 +++-
+ zig/src/core/runner_scan.zig       |  66 ++++-
+ zig/src/core/runner_test.zig       |   6 +-
+ zig/src/core/runner_trace.zig      | 210 +++++++++++++++
+ zig/src/core/runner_trace_expr.zig | 271 +++++++++++++++++++
+ zig/src/core/runner_trace_test.zig | 318 +++++++++++++++++++++++
+ zig/src/core/runner_trace_text.zig | 401 +++++++++++++++++++++++++++++
+ 7 files changed, 1316 insertions(+), 13 deletions(-)
+ create mode 100644 zig/src/core/runner_trace.zig
+ create mode 100644 zig/src/core/runner_trace_expr.zig
+ create mode 100644 zig/src/core/runner_trace_test.zig
+ create mode 100644 zig/src/core/runner_trace_text.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index d25a0eab92b424d8eb0df93572ccfc427867354a..b3157fa96c7e8fa010629a61d364af5a3e648f11 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -3,6 +3,7 @@ const std = @import("std");
+ const lanes = @import("lanes");
+ const api = @import("runner_api.zig");
+ const scan = @import("runner_scan.zig");
++const trace = @import("runner_trace.zig");
+ pub const place = @import("runner_place.zig");
+ const Allocator = std.mem.Allocator;
+ const log = std.log.scoped(.runner);
+@@ -45,13 +46,15 @@ pub const Config = struct {
+         c.place = try place.Config.parse(get, prefix);
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
+         c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
++        c.scan.trace_window = try knob(u32, get, prefix ++ "_TRACE_WINDOW", c.scan.trace_window, 1, 65536);
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+             c.scan.repl = false;
+             c.scan.inline_math = false;
++            c.scan.trace = false;
+             var it = std.mem.splitScalar(u8, f, ',');
+             while (it.next()) |form| {
+-                if (std.mem.eql(u8, form, "fence")) c.scan.fence = true else if (std.mem.eql(u8, form, "repl")) c.scan.repl = true else if (std.mem.eql(u8, form, "inline")) c.scan.inline_math = true else return bad(prefix ++ "_FORMS", f);
++                if (std.mem.eql(u8, form, "fence")) c.scan.fence = true else if (std.mem.eql(u8, form, "repl")) c.scan.repl = true else if (std.mem.eql(u8, form, "inline")) c.scan.inline_math = true else if (std.mem.eql(u8, form, "trace")) c.scan.trace = true else return bad(prefix ++ "_FORMS", f);
+             }
+         };
+         if (get(prefix ++ "_SPANS")) |sp| if (sp.len > 0) {
+@@ -114,6 +117,7 @@ const Cell = struct {
+     abstained: bool = false,
+     told: enum { none, owned, abstained } = .none, // what its result header got
+     owned_tokens: u32 = 0,
++    stated: ?scan.Stated = null, // form trace: the `[exact: …]` line's expression (text in the arena)
+ };
+ 
+ /// One reply's cells, runs and the trigger it waits on; every method runs on the engine thread.
+@@ -161,16 +165,26 @@ pub const Session = struct {
+         errdefer gpa.free(cell.lang);
+         cell.code = try gpa.dupe(u8, c.code);
+         errdefer gpa.free(cell.code);
+-        // earlier code cells are the notebook; inline values define nothing
++        // earlier code cells are the notebook; inline values and stated computations define nothing
+         var n: usize = 0;
+-        for (s.cells.items) |p| n += @intFromBool(p.form != .inline_expr);
++        for (s.cells.items) |p| n += @intFromBool(p.form != .inline_expr and p.stated == null);
+         const prior = try cell.arena.allocator().alloc([]const u8, n);
+         n = 0;
+-        for (s.cells.items) |p| if (p.form != .inline_expr) {
++        for (s.cells.items) |p| if (p.form != .inline_expr and p.stated == null) {
+             prior[n] = p.code;
+             n += 1;
+         };
+         try s.cells.append(gpa, cell);
++        // a stated computation is literals only: no notebook names to shadow
++        if (c.trace) |st| {
++            cell.stated = .{ .display = try cell.arena.allocator().dupe(u8, st.display), .divmod = st.divmod };
++            const task: Translate = .{ .cell = cell, .fe = s.r.frontend, .prior = &.{}, .placer = s.r.placer };
++            cell.thread = std.Thread.spawn(.{}, Translate.spawned, .{task}) catch blk: {
++                task.run();
++                break :blk null;
++            };
++            return;
++        }
+         // exact inline math would contradict a reply reasoning in Python floats
+         if (c.float_context) {
+             cell.translation = .{ .abstain = .context };
+@@ -197,9 +211,10 @@ pub const Session = struct {
+         if (!c.abstained and c.result == null) return null;
+         s.waiting = null;
+         const held_ms = (nowNs() -| s.held_at) / std.time.ns_per_ms;
++        s.held_ms += held_ms;
++        if (w.trace) return try s.ownTrace(c, w.index, held_ms);
+         // an inline value is owned only when the run halted with a one-line value
+         if (!c.abstained and w.inline_space != null and (c.result.?.status != .ok or std.mem.indexOfScalar(u8, std.mem.trimEnd(u8, c.result.?.out, "\n"), '\n') != null)) c.abstained = true;
+-        s.held_ms += held_ms;
+         if (c.abstained) {
+             s.abstained_n += 1;
+             c.told = .abstained;
+@@ -215,6 +230,31 @@ pub const Session = struct {
+         return ids;
+     }
+ 
++    /// Form trace: one `[exact: <expr> = <value>]` line, or nothing (abstain) unless the run printed one integer value.
++    fn ownTrace(s: *Session, c: *Cell, index: u32, held_ms: u64) Allocator.Error![]u32 {
++        const gpa = s.r.gpa;
++        const tx = s.r.text.?;
++        const line = if (!c.abstained and c.result.?.status == .ok) try trace.owned(gpa, c.stated.?.display, c.stated.?.divmod, c.result.?.out) else null;
++        if (line) |text| {
++            defer gpa.free(text);
++            const ids = try tx.encode(tx.ctx, gpa, text);
++            if (ids.len <= s.r.cfg.max_tokens) {
++                s.owned_n += 1;
++                c.told = .owned;
++                c.owned_tokens = @intCast(ids.len);
++                const res = c.result.?;
++                log.info("reply {d} cell {d} (trace): owned {d} tokens, {d} steps, run {d} ms, held {d} ms", .{ s.id, index, ids.len, res.steps, res.exec_ns / std.time.ns_per_ms, held_ms });
++                return ids;
++            }
++            gpa.free(ids);
++        }
++        c.abstained = true;
++        s.abstained_n += 1;
++        c.told = .abstained;
++        log.info("reply {d} cell {d} (trace): abstain ({s}), held {d} ms", .{ s.id, index, if (c.result != null and c.result.?.status == .ok) "not one value" else why(c), held_ms });
++        return try gpa.alloc(u32, 0);
++    }
++
+     fn why(c: *const Cell) []const u8 {
+         if (c.translation == .abstain) return @tagName(c.translation.abstain);
+         const res = c.result orelse return "backend start";
+@@ -301,10 +341,10 @@ pub const Session = struct {
+ 
+     /// The reply's cells per form, owned cells by program kind and the summed hold, as JSON in `buf` (runtime.runner).
+     pub fn summary(s: *const Session, buf: []u8) []const u8 {
+-        var forms = std.mem.zeroes([3][4]u32);
++        var forms = std.mem.zeroes([4][4]u32);
+         var kinds = std.mem.zeroes([3]u32);
+         for (s.cells.items) |c| {
+-            const f = &forms[@backingInt(c.form)];
++            const f = &forms[if (c.stated != null) 3 else @backingInt(c.form)];
+             f[0] += 1;
+             switch (c.told) {
+                 .none => {},
+@@ -318,7 +358,7 @@ pub const Session = struct {
+         }
+         var w: std.Io.Writer = .fixed(buf);
+         w.writeByte('{') catch return "";
+-        for (forms, [_][]const u8{ "fence", "repl", "inline" }) |f, name|
++        for (forms, [_][]const u8{ "fence", "repl", "inline", "trace" }) |f, name|
+             w.print("\"{s}\":{{\"closed\":{d},\"owned\":{d},\"abstained\":{d},\"owned_tokens\":{d}}},", .{ name, f[0], f[1], f[2], f[3] }) catch return "";
+         w.print("\"owned_by\":{{\"calc\":{d},\"elf\":{d},\"graph\":{d}}},\"held_ms\":{d}}}", .{ kinds[0], kinds[1], kinds[2], s.held_ms }) catch return "";
+         return w.buffered();
+@@ -373,4 +413,5 @@ const Translate = struct {
+ test {
+     _ = @import("runner_scan.zig");
+     _ = @import("runner_api.zig");
++    _ = @import("runner_trace_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 62ab993a5938a81f159de6b16c8ebafc7050285d..6a6d7cce2e87a89a94d81f4d2a66f55ba278b870 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -1,6 +1,7 @@
+ //! The in-model runner's scanner: closed code cells and the model's own result headers, from committed reply bytes.
+ const std = @import("std");
+ const api = @import("runner_api.zig");
++const trace = @import("runner_trace.zig");
+ const Allocator = std.mem.Allocator;
+ 
+ pub const Config = struct {
+@@ -10,16 +11,25 @@ pub const Config = struct {
+     reasoning_only: bool = false, // triggers only while the think block is open
+     inline_math: bool = false, // `A op B =` at a line's end: the value after `=` (exact math semantics)
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
++    trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
++    trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
+ };
+ 
++/// Trace ownerships per reply, and trace cells (stated computations) a reply may open.
++const trace_owned_max = 16;
++const trace_cells_max = 32;
++
+ /// Text that puts the reply in a language's float semantics, where exact inline math would contradict it.
+ const float_cues = [_][]const u8{ "float", "Decimal(", "sum(", "round(", "0.1+0.2", "0.1 + 0.2" };
+ 
+ /// A closed cell; `lang` and `code` live in the scanner until the next `feed`.
+-pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, float_context: bool = false };
++pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, float_context: bool = false, trace: ?Stated = null };
++
++/// A trace cell's line text: what `[exact: … = value]` shows, and whether the value is a (quotient, remainder) pair.
++pub const Stated = struct { display: []const u8, divmod: bool };
+ 
+ /// Cell `index`'s result begins: `fenced` closes a fence after it; `inline_space` (inline: value only) adds a space.
+-pub const Trigger = struct { index: u32, fenced: bool = false, inline_space: ?bool = null };
++pub const Trigger = struct { index: u32, fenced: bool = false, inline_space: ?bool = null, trace: bool = false }; // trace: `[exact: …]` line
+ 
+ pub const Events = struct { closed: ?Closed = null, trigger: ?Trigger = null };
+ 
+@@ -41,11 +51,23 @@ pub const Scanner = struct {
+     tail_len: usize = 0,
+     think: bool = false, // the think block was open at the last token
+     code_cells: u32 = 0, // fence and REPL cells closed so far
++    tracer: ?trace.Tracer = null, // names and owned statements (form trace; made at the first reasoning line)
++    trace_src: std.ArrayList(u8) = .empty, // the pending statement's Python source
++    trace_disp: std.ArrayList(u8) = .empty,
++    trace_armed: std.ArrayList(u8) = .empty, // the source of the trace cell armed in this token
++    trace_cell: ?u32 = null, // the stated computation waiting for its cue
++    trace_at: u32 = 0, // the token its line ended at
++    trace_cells: u32 = 0,
++    trace_owned: u32 = 0,
+ 
+     pub fn deinit(s: *Scanner, a: Allocator) void {
+         s.line.deinit(a);
+         s.lang.deinit(a);
+         s.code.deinit(a);
++        s.trace_src.deinit(a);
++        s.trace_disp.deinit(a);
++        s.trace_armed.deinit(a);
++        if (s.tracer) |*t| t.deinit();
+     }
+ 
+     /// One committed token's bytes; `think_open`: the think block is open at this token.
+@@ -63,6 +85,7 @@ pub const Scanner = struct {
+             s.since += 1;
+             if (s.since > s.cfg.lookahead) s.state = .prose;
+         }
++        if (s.trace_cell != null and s.tokens - s.trace_at > s.cfg.trace_window) s.trace_cell = null;
+         for (bytes) |b| {
+             s.cue(b);
+             if (s.armed != null and b != '\n' and b != ' ' and b != '\t' and b != '\r') s.armed = null;
+@@ -74,6 +97,7 @@ pub const Scanner = struct {
+             s.line.clearRetainingCapacity();
+         }
+         ev.trigger = s.armed;
++        if (ev.trigger) |t| if (t.trace) try s.traceSpent(t.index);
+         const allowed = think_open or !s.cfg.reasoning_only;
+         if (s.cfg.inline_math and allowed and s.state != .fence and ev.closed == null and ev.trigger == null and
+             std.mem.indexOfScalar(u8, bytes, '=') != null)
+@@ -132,10 +156,48 @@ pub const Scanner = struct {
+                     if (allowed) s.fire(false);
+                     return;
+                 };
++                if (s.cfg.trace and allowed) try s.traceLine(a, ev, raw);
+             },
+         }
+     }
+ 
++    /// A reasoning prose line: a pending statement's cue fires it; the line's own statement opens a trace cell.
++    fn traceLine(s: *Scanner, a: Allocator, ev: *Events, raw: []const u8) Allocator.Error!void {
++        if (s.tracer == null) s.tracer = trace.Tracer.init(a);
++        const t = &s.tracer.?;
++        var fired = false;
++        if (s.trace_cell != null and trace.cue(raw)) fired = try s.traceArm(a);
++        const found = try t.line(raw) orelse return;
++        if (s.trace_cell != null and std.mem.eql(u8, found.source, s.trace_src.items)) return;
++        if (ev.closed != null or s.trace_cells >= trace_cells_max or s.trace_owned >= trace_owned_max) return;
++        s.trace_src.clearRetainingCapacity();
++        try s.trace_src.appendSlice(a, found.source);
++        s.trace_disp.clearRetainingCapacity();
++        try s.trace_disp.appendSlice(a, found.display);
++        ev.closed = .{ .index = s.cells, .form = .repl, .lang = "python", .code = s.trace_src.items, .trace = .{ .display = s.trace_disp.items, .divmod = found.divmod } };
++        s.trace_cell = s.cells;
++        s.trace_at = s.tokens;
++        s.cells += 1;
++        s.trace_cells += 1;
++        if (found.same_line and !fired) _ = try s.traceArm(a);
++    }
++
++    /// Arms the pending trace cell's trigger at this line's end, unless another form's trigger is armed.
++    fn traceArm(s: *Scanner, a: Allocator) Allocator.Error!bool {
++        if (s.armed != null) return false;
++        s.armed = .{ .index = s.trace_cell.?, .trace = true };
++        s.trace_armed.clearRetainingCapacity();
++        try s.trace_armed.appendSlice(a, s.trace_src.items);
++        return true;
++    }
++
++    /// The armed trace trigger survived its token: that statement is owned once, and no longer pending.
++    fn traceSpent(s: *Scanner, index: u32) Allocator.Error!void {
++        if (s.tracer) |*t| try t.fire(s.trace_armed.items);
++        if (s.trace_cell == index) s.trace_cell = null;
++        s.trace_owned += 1;
++    }
++
+     fn cue(s: *Scanner, b: u8) void {
+         if (s.tail_len == s.tail.len) {
+             std.mem.copyForwards(u8, s.tail[0 .. s.tail.len - 1], s.tail[1..]);
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 1ff0c5fdf813fef42a71c409d07223833f79b479..5da59468c4596ad74443d3716e9988fcb53387b0 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -157,7 +157,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_math: bool = false, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_math: bool = false, trace: bool = false, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -172,7 +172,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     defer core.deinit();
+     var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
+     back.delay = o.delay;
+-    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .scan = .{ .inline_math = o.inline_math } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
+     if (o.runner) host.runner = &run;
+     const boxes = try gpa.alloc(Box, models.len);
+     defer gpa.free(boxes);
+@@ -380,7 +380,7 @@ test "runner: a reply's runtime block counts its cells by form, owned tokens and
+     freeAll(texts);
+     defer for (sums) |s| gpa.free(s);
+     // the product and its newline: one token a character
+-    try std.testing.expectEqualStrings("{\"fence\":{\"closed\":1,\"owned\":1,\"abstained\":0,\"owned_tokens\":61},\"repl\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0},\"inline\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0},\"owned_by\":{\"calc\":1,\"elf\":0,\"graph\":0},\"held_ms\":", sums[0][0 .. std.mem.lastIndexOf(u8, sums[0], "\"held_ms\":").? + 10]);
++    try std.testing.expectEqualStrings("{\"fence\":{\"closed\":1,\"owned\":1,\"abstained\":0,\"owned_tokens\":61},\"repl\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0},\"inline\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0},\"trace\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0},\"owned_by\":{\"calc\":1,\"elf\":0,\"graph\":0},\"held_ms\":", sums[0][0 .. std.mem.lastIndexOf(u8, sums[0], "\"held_ms\":").? + 10]);
+     try std.testing.expect(std.mem.startsWith(u8, sums[1], "{\"fence\":{\"closed\":1,\"owned\":0,\"abstained\":1,\"owned_tokens\":0}"));
+     var off: [1][]u8 = undefined;
+     var lone = [_]Model{.{ .lead = mul_cell }};
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b6364a7a8bf0d0bb424312fb8d6f4db834e7096
+--- /dev/null
++++ b/zig/src/core/runner_trace.zig
+@@ -0,0 +1,210 @@
++//! The runner's `trace` form: whole integer computations the reasoning states, and the lines where hand work starts.
++const std = @import("std");
++const text = @import("runner_trace_text.zig");
++const expr = @import("runner_trace_expr.zig");
++const Allocator = std.mem.Allocator;
++const Expr = expr.Expr;
++
++/// The integer frontend's width: a statement whose syntax bound is wider is never a candidate.
++pub const max_digits = 62;
++
++/// A stated computation: Python source for the frontend, the expression shown to the model, divmod's re-shaping.
++pub const Found = struct { source: []const u8, display: []const u8, divmod: bool = false, same_line: bool = false };
++
++/// Per reply: the names the reasoning defined and the sources already owned (`keep`); one line's work (`scratch`).
++pub const Tracer = struct {
++    keep: std.heap.ArenaAllocator,
++    scratch: std.heap.ArenaAllocator,
++    names: std.ArrayList(expr.Name) = .empty,
++    fired: std.ArrayList([]const u8) = .empty,
++
++    pub fn init(gpa: Allocator) Tracer {
++        return .{ .keep = .init(gpa), .scratch = .init(gpa) };
++    }
++
++    pub fn deinit(t: *Tracer) void {
++        t.keep.deinit();
++        t.scratch.deinit();
++    }
++
++    /// The source owned once: the same statement never fires twice in a reply.
++    pub fn fire(t: *Tracer, source: []const u8) Allocator.Error!void {
++        const a = t.keep.allocator();
++        try t.fired.append(a, try a.dupe(u8, source));
++    }
++
++    fn firedHas(t: *const Tracer, source: []const u8) bool {
++        for (t.fired.items) |f| if (std.mem.eql(u8, f, source)) return true;
++        return false;
++    }
++
++    fn poison(t: *Tracer, n: []const u8) void {
++        for (t.names.items) |*m| if (std.mem.eql(u8, m.name, n)) {
++            m.expr = null;
++        };
++    }
++
++    fn lookup(t: *const Tracer, n: []const u8) ?*const expr.Name {
++        for (t.names.items) |*e| if (std.mem.eql(u8, e.name, n)) return e;
++        return null;
++    }
++
++    /// One completed reasoning line: its definitions, then its first viable statement; text valid until the next call.
++    pub fn line(t: *Tracer, raw: []const u8) Allocator.Error!?Found {
++        _ = t.scratch.reset(.retain_capacity);
++        const a = t.scratch.allocator();
++        const clean = try text.stripNotes(a, raw);
++        var define: ?Found = null;
++        try t.definitions(clean, &define);
++        var heads: std.ArrayList(text.Head) = .empty;
++        try text.goalHeads(a, clean, &heads);
++        try text.bareHeads(a, clean, &heads);
++        std.mem.sort(text.Head, heads.items, {}, text.Head.less);
++        var first: ?Found = null;
++        var last_head: usize = 0;
++        for (heads.items) |h| {
++            last_head = @max(last_head, h.end);
++            if (first != null) continue;
++            if (try t.statement(clean, h)) |f| first = f;
++        }
++        if (first) |*f| {
++            f.same_line = text.cueIn(clean[last_head..]);
++            return f.*;
++        }
++        return define;
++    }
++
++    fn definitions(t: *Tracer, clean: []const u8, define: *?Found) Allocator.Error!void {
++        const a = t.keep.allocator();
++        var i: usize = 0;
++        while (i < clean.len) {
++            const d = text.defAt(clean, i) orelse {
++                i += 1;
++                continue;
++            };
++            i = d.rhs;
++            if (!text.defLeftOk(clean[0..d.start])) continue;
++            const txt_end = text.defEnd(clean, d.rhs) orelse continue;
++            const txt = clean[d.rhs..txt_end];
++            if (text.approx(clean[d.rhs..charsOn(clean, txt_end, 3)])) continue;
++            if (std.mem.indexOfAny(u8, txt, "[]") != null) continue;
++            if (text.hypothetical(text.sentenceAt(clean, d.start))) continue;
++            const e = try t.parse(txt) orelse continue;
++            const n = clean[d.start..d.name_end];
++            if (t.lookup(n)) |old| {
++                // a second definition by other text poisons the name
++                if (old.expr != null and !std.mem.eql(u8, old.expr.?.source, e.source)) t.poison(n);
++                continue;
++            }
++            const kept: Expr = .{ .source = try a.dupe(u8, e.source), .display = try a.dupe(u8, e.display), .bound = e.bound, .ops = e.ops, .constant = e.constant };
++            try t.names.append(a, .{ .name = try a.dupe(u8, n), .expr = kept });
++            // a first wide definition with nothing after it states that computation ("N = A*2^64 + B.")
++            if (hasArith(e.source) and e.bound >= 12 and e.bound <= max_digits and text.sentenceEndsAt(clean, txt_end) and
++                !t.firedHas(e.source)) define.* = .{ .source = e.source, .display = e.display };
++        }
++    }
++
++    fn statement(t: *Tracer, clean: []const u8, h: text.Head) Allocator.Error!?Found {
++        const a = t.scratch.allocator();
++        const rest = clean[h.end..];
++        const ph = text.phrase(rest) orelse return null;
++        if (text.approx(rest[0..ph.end])) return null;
++        if (text.listed(rest, ph)) return null;
++        if (std.mem.indexOfScalar(u8, text.sentenceAt(clean, h.end), '?') != null) return null;
++        var parts: [2]Expr = undefined;
++        for (ph.parts[0..ph.n], 0..) |p, k| parts[k] = try t.parse(rest[p[0]..p[1]]) orelse return null;
++        var f: Found = undefined;
++        var bound: u32 = 0;
++        switch (ph.kind) {
++            .expr => {
++                if (parts[0].ops == 0) return null;
++                f = .{ .source = parts[0].source, .display = parts[0].display };
++                bound = parts[0].bound;
++            },
++            .divmod => {
++                f = .{ .source = try std.fmt.allocPrint(a, "divmod({s}, {s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} ÷ {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }), .divmod = true };
++                bound = parts[0].bound;
++            },
++            .mul => {
++                f = .{ .source = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} * {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }) };
++                bound = expr.sat(parts[0].bound + parts[1].bound);
++            },
++            .subfrom => {
++                f = .{ .source = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].source, parts[0].source }), .display = try std.fmt.allocPrint(a, "{s} - {s}", .{ try wrapped(a, parts[1]), try wrapped(a, parts[0]) }) };
++                bound = expr.sat(@max(parts[0].bound, parts[1].bound) + 1);
++            },
++        }
++        if (t.firedHas(f.source) or bound > max_digits) return null;
++        // a bare sentence counts only when it is plainly a computation: a power or a six-digit literal
++        if (h.bare and std.mem.indexOf(u8, f.source, "**") == null and !hasDigitRun(f.source, 6)) return null;
++        return f;
++    }
++
++    fn parse(t: *Tracer, s: []const u8) Allocator.Error!?Expr {
++        return expr.parse(t.scratch.allocator(), t.names.items, s);
++    }
++};
++
++/// "[exact: <display> = <value>]\n" from a circuit's printed value, or null (abstain: not one integer, or not (q, r)).
++pub fn owned(a: Allocator, display: []const u8, divmod: bool, out: []const u8) Allocator.Error!?[]u8 {
++    const v = if (std.mem.endsWith(u8, out, "\n")) out[0 .. out.len - 1] else out;
++    if (v.len == 0 or std.mem.indexOfScalar(u8, v, '\n') != null) return null;
++    if (!divmod) {
++        if (!isInt(v)) return null;
++        return try std.fmt.allocPrint(a, "[exact: {s} = {s}]\n", .{ display, v });
++    }
++    if (v.len < 6 or v[0] != '(' or v[v.len - 1] != ')') return null;
++    const inner = v[1 .. v.len - 1];
++    const comma = std.mem.indexOf(u8, inner, ", ") orelse return null;
++    const q = inner[0..comma];
++    const r = inner[comma + 2 ..];
++    if (!isInt(q) or !isInt(r)) return null;
++    return try std.fmt.allocPrint(a, "[exact: {s} = {s} remainder {s}]\n", .{ display, q, r });
++}
++
++fn isInt(s: []const u8) bool {
++    const d = if (s.len > 0 and s[0] == '-') s[1..] else s;
++    if (d.len == 0) return false;
++    for (d) |c| if (!std.ascii.isDigit(c)) return false;
++    return true;
++}
++
++fn wrapped(a: Allocator, e: Expr) Allocator.Error![]const u8 {
++    return if (e.ops > 0) std.fmt.allocPrint(a, "({s})", .{e.display}) else e.display;
++}
++
++fn hasArith(source: []const u8) bool {
++    var i: usize = 0;
++    while (i < source.len) : (i += 1) {
++        if (source[i] == '*' and i + 1 < source.len and source[i + 1] == '*') {
++            i += 1;
++            continue;
++        }
++        if (std.mem.indexOfScalar(u8, "-+*%", source[i]) != null) return true;
++    }
++    return false;
++}
++
++/// The byte index `n` UTF-8 characters past `i` (the study counts characters: "≈" is one).
++fn charsOn(s: []const u8, i: usize, n: usize) usize {
++    var j = i;
++    var left = n;
++    while (j < s.len and left > 0) {
++        j += 1;
++        while (j < s.len and s[j] & 0xC0 == 0x80) j += 1;
++        left -= 1;
++    }
++    return j;
++}
++
++fn hasDigitRun(s: []const u8, n: usize) bool {
++    var run: usize = 0;
++    for (s) |c| {
++        run = if (std.ascii.isDigit(c)) run + 1 else 0;
++        if (run >= n) return true;
++    }
++    return false;
++}
++
++/// A hand trace starts in this text (a step, table or digit line, long division, carry, borrow, by hand, ...).
++pub const cue = text.cueIn;
+diff --git a/zig/src/core/runner_trace_expr.zig b/zig/src/core/runner_trace_expr.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..2671312960c00f76b2bbb318b5e9e178d295515a
+--- /dev/null
++++ b/zig/src/core/runner_trace_expr.zig
+@@ -0,0 +1,271 @@
++//! The runner's `trace` form: integer expression text to checked Python source, display text and a width bound.
++const std = @import("std");
++const text = @import("runner_trace_text.zig");
++const Allocator = std.mem.Allocator;
++
++pub const inf: u32 = 1 << 20;
++
++pub const Kind = enum { num, name, op };
++pub const Tok = struct { kind: Kind, text: []const u8 };
++
++/// A parsed operand: Python source, display text, syntax bound in decimal digits, binary operators, literal-only.
++pub const Expr = struct { source: []u8, display: []u8, bound: u32, ops: u32, constant: bool };
++
++pub const Name = struct { name: []u8, expr: ?Expr };
++
++pub fn sat(x: u32) u32 {
++    return @min(x, inf);
++}
++
++/// Expression text to a checked expression, or null (not a plain integer expression, or an unknown/poisoned name).
++pub fn parse(a: Allocator, names: []const Name, s: []const u8) Allocator.Error!?Expr {
++    var toks = try tokenize(a, s) orelse return null;
++    toks = try expandRun(a, toks) orelse return null;
++    var p: Parser = .{ .names = names, .a = a, .toks = toks };
++    const e = p.sum() catch |err| switch (err) {
++        error.OutOfMemory => return error.OutOfMemory,
++        error.Refused => return null,
++    };
++    if (p.i != toks.len) return null;
++    return e;
++}
++
++/// Numbers (plain, strict comma groups, 0x hex), names, + - * ^ ( ) mod and `...`; null on anything else.
++fn tokenize(a: Allocator, s: []const u8) Allocator.Error!?[]Tok {
++    var out: std.ArrayList(Tok) = .empty;
++    var i: usize = 0;
++    while (i < s.len) {
++        const c = s[i];
++        if (text.isSpace(c)) {
++            i += 1;
++            continue;
++        }
++        if (i > 0 and (std.ascii.isAlphanumeric(s[i - 1]) or s[i - 1] == ',' or s[i - 1] == '.') and std.ascii.isAlphanumeric(c)) return null;
++        if (std.ascii.isDigit(c)) {
++            const n = number(s, i) orelse return null;
++            var digits: std.ArrayList(u8) = .empty;
++            for (s[i..n]) |d| if (d != ',') try digits.append(a, d);
++            if (digits.items.len > 1 and digits.items[0] == '0' and digits.items[1] != 'x') return null;
++            try out.append(a, .{ .kind = .num, .text = digits.items });
++            i = n;
++            continue;
++        }
++        const nl = text.nameLen(s, i);
++        if (nl > 0 and (i + nl == s.len or !text.isWord(s[i + nl]))) {
++            try out.append(a, .{ .kind = .name, .text = s[i .. i + nl] });
++            i += nl;
++            continue;
++        }
++        if (std.mem.startsWith(u8, s[i..], "...") or std.mem.startsWith(u8, s[i..], "…")) {
++            try out.append(a, .{ .kind = .op, .text = "..." });
++            i += 3;
++            continue;
++        }
++        if (std.mem.startsWith(u8, s[i..], "**")) {
++            try out.append(a, .{ .kind = .op, .text = "^" });
++            i += 2;
++            continue;
++        }
++        const op: ?[]const u8, const w: usize = if (std.mem.indexOfScalar(u8, "+-*^()", c) != null)
++            .{ s[i .. i + 1], 1 }
++        else if (std.mem.startsWith(u8, s[i..], "×") or std.mem.startsWith(u8, s[i..], "·"))
++            .{ "*", 2 }
++        else if (std.mem.startsWith(u8, s[i..], "−"))
++            .{ "-", 3 }
++        else if (i + 3 <= s.len and std.ascii.eqlIgnoreCase(s[i .. i + 3], "mod") and (i + 3 == s.len or !std.ascii.isAlphabetic(s[i + 3])))
++            .{ "%", 3 }
++        else
++            .{ null, 0 };
++        try out.append(a, .{ .kind = .op, .text = op orelse return null });
++        i += w;
++    }
++    return out.items;
++}
++
++/// The end of a number token at `i`: 0x hex, strict comma groups or plain digits, not running into a word.
++fn number(s: []const u8, i: usize) ?usize {
++    const stop = struct {
++        fn ok(t: []const u8, j: usize, comma: bool) bool {
++            if (j >= t.len) return true;
++            if (text.isWord(t[j]) or (comma and t[j] == ',')) return false;
++            return !(t[j] == '.' and j + 1 < t.len and std.ascii.isDigit(t[j + 1]));
++        }
++    };
++    if (s[i] == '0' and i + 2 < s.len and s[i + 1] == 'x' and std.ascii.isHex(s[i + 2])) {
++        var j = i + 2;
++        while (j < s.len and std.ascii.isHex(s[j])) j += 1;
++        if (j < s.len and (text.isWord(s[j]) or s[j] == ',' or s[j] == '.')) return null;
++        return j;
++    }
++    if (s[i] != '0') {
++        var j = i;
++        while (j < s.len and j - i < 3 and std.ascii.isDigit(s[j])) j += 1;
++        var groups: usize = 0;
++        while (j + 3 < s.len + 0 and s[j] == ',' and allDigits(s[j + 1 .. j + 4])) : (groups += 1) j += 4;
++        if (groups > 0 and stop.ok(s, j, true)) return j;
++    }
++    var j = i;
++    while (j < s.len and std.ascii.isDigit(s[j])) j += 1;
++    return if (stop.ok(s, j, true)) j else null;
++}
++
++fn allDigits(s: []const u8) bool {
++    for (s) |c| if (!std.ascii.isDigit(c)) return false;
++    return true;
++}
++
++/// `a*b*...*c` with b = a+1 and c - a <= 64 becomes the explicit product; any other `...` refuses.
++fn expandRun(a: Allocator, toks: []Tok) Allocator.Error!?[]Tok {
++    var dots = false;
++    for (toks) |t| dots = dots or std.mem.eql(u8, t.text, "...");
++    if (!dots) return toks;
++    if (toks.len != 7) return null;
++    const shape = [_][]const u8{ "", "*", "", "*", "...", "*", "" };
++    for (toks, shape) |t, want| {
++        if (want.len == 0) {
++            if (t.kind != .num or t.text.len > 6 or std.mem.startsWith(u8, t.text, "0x")) return null;
++        } else if (!std.mem.eql(u8, t.text, want)) return null;
++    }
++    const x = std.fmt.parseInt(u32, toks[0].text, 10) catch return null;
++    const y = std.fmt.parseInt(u32, toks[2].text, 10) catch return null;
++    const z = std.fmt.parseInt(u32, toks[6].text, 10) catch return null;
++    if (y != x + 1 or z <= y or z - x > 64) return null;
++    var out: std.ArrayList(Tok) = .empty;
++    var n = x;
++    while (n <= z) : (n += 1) {
++        if (n != x) try out.append(a, .{ .kind = .op, .text = "*" });
++        try out.append(a, .{ .kind = .num, .text = try std.fmt.allocPrint(a, "{d}", .{n}) });
++    }
++    return out.items;
++}
++
++/// sum := term (+|- term)*; term := factor (*|mod factor)*; factor := -factor | atom [^ factor]; one reading only.
++const Parser = struct {
++    names: []const Name,
++    a: Allocator,
++    toks: []const Tok,
++    i: usize = 0,
++    depth: u32 = 0, // brackets open at the cursor
++    last_mod: bool = false, // the term just parsed ends in `mod`
++
++    const Error = error{ OutOfMemory, Refused };
++
++    fn peek(p: *const Parser, op: []const u8) bool {
++        return p.i < p.toks.len and p.toks[p.i].kind == .op and std.mem.eql(u8, p.toks[p.i].text, op);
++    }
++
++    fn sum(p: *Parser) Error!Expr {
++        var e = try p.term();
++        var terms: u32 = 1;
++        var has_mod = p.last_mod;
++        while (p.peek("+") or p.peek("-")) {
++            const op = p.toks[p.i].text;
++            p.i += 1;
++            const r = try p.term();
++            has_mod = has_mod or p.last_mod;
++            terms += 1;
++            e = .{ .source = try cat(p.a, &.{ e.source, op, r.source }), .display = try cat(p.a, &.{ e.display, " ", op, " ", r.display }), .bound = sat(@max(e.bound, r.bound) + 1), .ops = e.ops + r.ops + 1, .constant = false };
++        }
++        // `A + B mod M` reads two ways: mod only in an expression that is one term
++        if (has_mod and terms > 1) return error.Refused;
++        return e;
++    }
++
++    fn term(p: *Parser) Error!Expr {
++        var e = try p.factor();
++        var moded = false;
++        while (p.peek("*") or p.peek("%")) {
++            const op = p.toks[p.i].text;
++            if (moded or (op[0] == '%' and p.depth > 0)) return error.Refused; // mod last, never in brackets
++            p.i += 1;
++            const start = p.i;
++            const r = try p.factor();
++            if (op[0] == '%') {
++                // the modulus is a plain number, name or power chain (10^18), never a sum or a bracket
++                for (p.toks[start..p.i]) |t| if (t.kind == .op and !std.mem.eql(u8, t.text, "^")) return error.Refused;
++                moded = true;
++                e = .{ .source = try cat(p.a, &.{ e.source, "%", r.source }), .display = try cat(p.a, &.{ e.display, " mod ", r.display }), .bound = r.bound, .ops = e.ops + r.ops + 1, .constant = false };
++            } else {
++                e = .{ .source = try cat(p.a, &.{ e.source, "*", r.source }), .display = try cat(p.a, &.{ e.display, "*", r.display }), .bound = sat(e.bound + r.bound), .ops = e.ops + r.ops + 1, .constant = false };
++            }
++        }
++        p.last_mod = moded;
++        return e;
++    }
++
++    fn factor(p: *Parser) Error!Expr {
++        if (p.peek("-")) {
++            p.i += 1;
++            const e = try p.factor();
++            return .{ .source = try cat(p.a, &.{ "-", e.source }), .display = try cat(p.a, &.{ "-", e.display }), .bound = e.bound, .ops = e.ops, .constant = false };
++        }
++        const base = try p.atom();
++        if (!p.peek("^")) return base;
++        p.i += 1;
++        if (p.i >= p.toks.len or p.toks[p.i].kind != .num) return error.Refused; // a literal exponent only
++        const k_text = p.toks[p.i].text;
++        p.i += 1;
++        if (p.peek("^")) return error.Refused; // a^b^c
++        const k = std.fmt.parseInt(u32, k_text, 10) catch return error.Refused;
++        const bound: u32 = if (base.constant and k <= 4096) constPowDigits(base.source, k) else sat(@as(u32, @intCast(@min(@as(u64, base.bound) * k, inf))));
++        return .{ .source = try cat(p.a, &.{ base.source, "**", k_text }), .display = try cat(p.a, &.{ base.display, "^", k_text }), .bound = bound, .ops = base.ops + 1, .constant = false };
++    }
++
++    fn atom(p: *Parser) Error!Expr {
++        if (p.i >= p.toks.len) return error.Refused;
++        const t = p.toks[p.i];
++        p.i += 1;
++        switch (t.kind) {
++            .num => return .{ .source = try p.a.dupe(u8, t.text), .display = try p.a.dupe(u8, t.text), .bound = litDigits(t.text), .ops = 0, .constant = true },
++            .name => {
++                const e = lookup(p.names, t.text) orelse return error.Refused;
++                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = if (e.ops > 0) try cat(p.a, &.{ "(", e.display, ")" }) else e.display, .bound = e.bound, .ops = e.ops, .constant = e.constant };
++            },
++            .op => {
++                if (!std.mem.eql(u8, t.text, "(")) return error.Refused;
++                p.depth += 1;
++                const e = try p.sum();
++                if (!p.peek(")")) return error.Refused;
++                p.depth -= 1;
++                p.i += 1;
++                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = try cat(p.a, &.{ "(", e.display, ")" }), .bound = e.bound, .ops = e.ops, .constant = e.constant };
++            },
++        }
++    }
++};
++
++fn cat(a: Allocator, parts: []const []const u8) Allocator.Error![]u8 {
++    return std.mem.concat(a, u8, parts);
++}
++
++/// Decimal digits of a literal (hex: of its value).
++fn litDigits(lit: []const u8) u32 {
++    if (!std.mem.startsWith(u8, lit, "0x")) return @intCast(@min(lit.len, inf));
++    const h = lit.len - 2;
++    if (h <= 32) {
++        const v = std.fmt.parseInt(u128, lit[2..], 16) catch return inf;
++        var d: u32 = 1;
++        var x = v;
++        while (x >= 10) : (x /= 10) d += 1;
++        return d;
++    }
++    return @intCast(@min(h * 121 / 100 + 1, inf));
++}
++
++/// Digits of a constant base raised to `k`, from logarithms of the literal (its own width, not an answer).
++fn constPowDigits(source: []const u8, k: u32) u32 {
++    var s = source;
++    while (s.len >= 2 and s[0] == '(' and s[s.len - 1] == ')') s = s[1 .. s.len - 1];
++    const v: f64 = if (std.mem.startsWith(u8, s, "0x"))
++        @floatFromInt(std.fmt.parseInt(u128, s[2..], 16) catch return inf)
++    else
++        std.fmt.parseFloat(f64, s) catch return inf;
++    if (v < 2 or k == 0) return 1;
++    const d = @as(f64, @floatFromInt(k)) * std.math.log10(v);
++    return @intFromFloat(@min(@floor(d + 1e-9) + 1, @as(f64, inf)));
++}
++
++fn lookup(names: []const Name, n: []const u8) ?Expr {
++    for (names) |m| if (std.mem.eql(u8, m.name, n)) return m.expr;
++    return null;
++}
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..db21ad37f49eded9c02511502c18ef31d3a87c3b
+--- /dev/null
++++ b/zig/src/core/runner_trace_test.zig
+@@ -0,0 +1,318 @@
++//! Form trace: real census reasoning lines own `[exact: …]`, ambiguous ones abstain; scanner and lane-host replies.
++const std = @import("std");
++const trace = @import("runner_trace.zig");
++const scan = @import("runner_scan.zig");
++const rapi = @import("runner_api.zig");
++const rt = @import("runner_test.zig");
++
++const gpa = std.testing.allocator;
++
++/// The Python source a line states (after `lines` defined its names), or null.
++fn stated(lines: []const []const u8) !?[]u8 {
++    var t = trace.Tracer.init(gpa);
++    defer t.deinit();
++    var last: ?[]u8 = null;
++    for (lines) |l| {
++        if (last) |x| gpa.free(x);
++        last = null;
++        if (try t.line(l)) |f| last = try gpa.dupe(u8, f.source);
++    }
++    return last;
++}
++
++fn expectStated(lines: []const []const u8, want: []const u8) !void {
++    const got = try stated(lines) orelse {
++        std.debug.print("abstained: {s}\n", .{lines[lines.len - 1]});
++        return error.TestExpectedStatement;
++    };
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(want, got);
++}
++
++fn expectNone(lines: []const []const u8) !void {
++    if (try stated(lines)) |got| {
++        defer gpa.free(got);
++        std.debug.print("stated {s} from: {s}\n", .{ got, lines[lines.len - 1] });
++        return error.TestUnexpectedStatement;
++    }
++}
++
++// Verbatim T6 census reasoning lines (t6-census/raw).
++const bn019 = "We need answer division. Need compute quotient remainder for huge integer. Need be accurate. We can use big integer arithmetic manually. Need divide A=314159265358979323846264338327950288419716939937510 by B=271828182845904523536. Need quotient and remainder.";
++const bn001 = "We need answer exact multiplication. Need compute. Need be careful. Need multiply A=12345678901234567890 (20 digits?) B=9876543210987654321 (19 digits). Need exact product.";
++const bn008 = "We need answer compute 7^123 mod 1000000007. Need calculate accurately. Need provide maybe concise. Let's compute carefully. Mod p=1,000,000,007 prime. Need exponentiation.";
++const bn015 = "Let A = 0xFEDCBA9876543210, B=0x0123456789ABCDEF. N = A*2^64 + B.";
++const bn017 = "We need answer exact product 41*42*...*60. Need compute. Need be careful. Could express as 60!/40! maybe exact integer. User asks exact product. Need provide number. Let's compute accurately.";
++const bn020 = "We need answer. Need compute exact. Need be careful. Expression (10^80 + 123456789)^2 - 10^160. Expand: 2*123456789*10^80 + 123456789^2. Need exact decimal. Need compute 123456789^2. Let's calculate. 123,456,789^2. Known? 123456789^2 = 15241578750190521? Let's verify. 123456789*123456789.";
++const rc009 = "We need answer. Need compute exact value 2^100 - 3^50. Need run code? As AI no execution environment? We can compute manually with big ints, verify. Need exact. Let's calculate carefully. Need maybe use Python mentally? Let's derive.";
++const ar008 = "We need answer compute. Need be careful. 2^37 - 3^19. Let's calculate.";
++const bn002 = "Need divide 10^30 -1 by 97. Let's calculate exact quotient. N = 999,999,999,999,999,999,999,999,999,999 (30 nines). Divide by 97. Need quotient. We can do long division or use formula. Need exact.";
++const bn006 = "We need answer arithmetic. Need be careful. Need subtract A=876543210987654321098765432109 from B=1000000000000000000000000000000 (1 followed? Let's count). Need compute B - A.";
++const bn010 = [_][]const u8{
++    "Let's denote A=12,345,678,901,234,567,890 (20 digits? Let's count). B=98,765,432,109,876,543,210 (20 digits? Actually 98 quintillion = 20 digits). Need gcd.",
++    "So gcd(A,B)=gcd(A, 900,000,000,090). Let C=900,000,000,090.",
++    "Need gcd(A,C). A=12,345,678,901,234,567,890. C ~9e11. Need compute A mod C. Could use factors.",
++};
++
++test "runner trace: census statements extract exactly what the line states" {
++    try expectStated(&.{bn019}, "divmod(314159265358979323846264338327950288419716939937510, 271828182845904523536)");
++    try expectStated(&.{bn001}, "(12345678901234567890) * (9876543210987654321)");
++    try expectStated(&.{bn008}, "7**123%1000000007");
++    try expectStated(&.{bn015}, "(0xFEDCBA9876543210)*2**64+(0x0123456789ABCDEF)");
++    try expectStated(&.{bn017}, "41*42*43*44*45*46*47*48*49*50*51*52*53*54*55*56*57*58*59*60");
++    try expectStated(&.{rc009}, "2**100-3**50");
++    try expectStated(&.{ar008}, "2**37-3**19");
++    try expectStated(&.{bn002}, "divmod(10**30-1, 97)");
++    try expectStated(&bn010, "(12345678901234567890)%(900000000090)");
++}
++
++test "runner trace: a statement too wide for the frontend yields to the line's next one (big-number-020)" {
++    try expectStated(&.{bn020}, "123456789**2");
++}
++
++test "runner trace: the display line and the owned text" {
++    var t = trace.Tracer.init(gpa);
++    defer t.deinit();
++    const f = (try t.line(bn019)).?;
++    try std.testing.expect(f.divmod);
++    try std.testing.expectEqualStrings("314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536", f.display);
++    const line = (try trace.owned(gpa, f.display, true, "(1155727349790921717910215407028, 23663814570294126502)\n")).?;
++    defer gpa.free(line);
++    try std.testing.expectEqualStrings("[exact: 314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536 = 1155727349790921717910215407028 remainder 23663814570294126502]\n", line);
++    const g = (try t.line(bn008)).?;
++    try std.testing.expectEqualStrings("7^123 mod 1000000007", g.display);
++    var fresh = trace.Tracer.init(gpa); // bn019 above defined A and B; bn015's other A poisons it
++    defer fresh.deinit();
++    const h = (try fresh.line(bn015)).?;
++    try std.testing.expectEqualStrings("0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF", h.display);
++    for ([_][]const u8{ "3.75\n", "1\n2\n", "", "(1, 2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "x", false, out));
++    for ([_][]const u8{ "(1, 2, 3)\n", "7\n", "(1,2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "x", true, out));
++}
++
++test "runner trace: doubts, lists, hypotheticals and two readings abstain" {
++    try expectNone(&.{bn006}); // "(1 followed? Let's count)" sits in B's sentence
++    try expectNone(&.{ "Let D = 271828182845904523536.", "Let's compute D*155, D*156 etc." });
++    try expectNone(&.{ "Let M = 1234567890.", "If P = M*(10^10+1) then fine.", "Need compute P*2." });
++    try expectNone(&.{ "Let A = 5. Let M = 7.", "Need compute A + 3 mod M." });
++    try expectNone(&.{"Need compute 2^3^2."});
++    try expectNone(&.{ "Let M = 7.", "Need compute (5 mod M)*2." });
++    try expectNone(&.{"Need compute A ~2.718e20 * 3."});
++    try expectNone(&.{"Need compute 3^400 mod 10^18? Not sure."});
++    try expectNone(&.{"Need compute 2^64*3, right?"}); // the doubt sits after the phrase, in its sentence
++    try expectNone(&.{ "Let A = 12345678901 (≈1.2e10).", "Need compute A*1000003." }); // an approximate definition binds nothing
++    try expectNone(&.{"Need compute 1.5*2."});
++    try expectNone(&.{"Need compute 012*3."});
++    try expectNone(&.{"Need compute [314,159,265]*2."});
++    try expectNone(&.{"Need compute positions 12-20."});
++    try expectNone(&.{"Need compute 12,34 + 5."});
++    try expectNone(&.{"Need compute 2^N."});
++    try expectNone(&.{"Need compute 41*43*...*60."});
++}
++
++test "runner trace: a name after an operator is no definition; a redefinition poisons the name" {
++    try expectStated(&.{ "Let B = 5.", "A * B = 37,276,043,023,296,000 * 273,589,847,231,500,800.", "Need compute B*1000003." }, "(5)*1000003");
++    try expectNone(&.{ "Let A = 5.", "Let A = 6.", "Need compute A*1000003." });
++    try expectStated(&.{ "Let A = 12,345.", "A = 12345.", "Need compute A*1000003." }, "(12345)*1000003");
++}
++
++test "runner trace: negative controls: prose, code and small inline sums state nothing" {
++    try expectNone(&.{"We need answer. Need be careful. Let's think about the algorithm."});
++    try expectNone(&.{"for i in range(10): total = total * 3"});
++    try expectStated(&.{"Need compute 2+3."}, "2+3"); // a small sum after a goal head is still a statement
++}
++
++test "runner trace: hand-trace cues" {
++    for ([_][]const u8{ "Step i=0: rem=314.", "We can perform long division or use modular arithmetic.", "314,159 * 271,828.", "Let's do base 1000.", "Then carry 3 into the next group", "Row 0: [0,1,2]", "So 41*42=1722." }) |l|
++        try std.testing.expect(trace.cue(l));
++    for ([_][]const u8{ "So that is all.", "Need quotient and remainder.", "We need compute. Let's denote B." }) |l|
++        try std.testing.expect(!trace.cue(l));
++}
++
++fn feedAll(s: *scan.Scanner, tokens: []const []const u8, out: *std.ArrayList(scan.Events)) !void {
++    for (tokens) |t| try out.append(gpa, try s.feed(gpa, t, true));
++}
++
++test "runner trace: the scanner closes a trace cell at its line and triggers at the cue line's end" {
++    var s: scan.Scanner = .{ .cfg = .{ .trace = true } };
++    defer s.deinit(gpa);
++    var ev: std.ArrayList(scan.Events) = .empty;
++    defer ev.deinit(gpa);
++    try feedAll(&s, &.{ bn019, "\n", "\n", "We need compute.", " Nothing yet.\n", "We can perform long division or use modular arithmetic.", "\n", "Step i=0: rem=314.\n" }, &ev);
++    const c = ev.items[1].closed.?;
++    try std.testing.expectEqual(scan.Stated{ .display = c.trace.?.display, .divmod = true }, c.trace.?);
++    try std.testing.expectEqualStrings("divmod(314159265358979323846264338327950288419716939937510, 271828182845904523536)", c.code);
++    try std.testing.expect(c.form == .repl);
++    for (ev.items[0..6]) |e| try std.testing.expectEqual(@as(?scan.Trigger, null), e.trigger);
++    try std.testing.expectEqual(scan.Trigger{ .index = 0, .trace = true }, ev.items[6].trigger.?);
++    try std.testing.expectEqual(@as(?scan.Trigger, null), ev.items[7].trigger); // owned once
++}
++
++test "runner trace: off by default, out of window, spoiled tokens wait for the next cue" {
++    var off: scan.Scanner = .{ .cfg = .{} };
++    defer off.deinit(gpa);
++    var ev: std.ArrayList(scan.Events) = .empty;
++    defer ev.deinit(gpa);
++    try feedAll(&off, &.{ bn019 ++ "\n", "We can perform long division.\n" }, &ev);
++    for (ev.items) |e| try std.testing.expect(e.closed == null and e.trigger == null);
++    ev.clearRetainingCapacity();
++    var far: scan.Scanner = .{ .cfg = .{ .trace = true, .trace_window = 2 } };
++    defer far.deinit(gpa);
++    try feedAll(&far, &.{ bn019 ++ "\n", "a", "b", "c", "We can perform long division.\n" }, &ev);
++    try std.testing.expect(ev.items[0].closed != null and ev.items[4].trigger == null);
++    ev.clearRetainingCapacity();
++    var spoil: scan.Scanner = .{ .cfg = .{ .trace = true } };
++    defer spoil.deinit(gpa);
++    try feedAll(&spoil, &.{ bn019 ++ "\n", "We can perform long division.\nStep", " i=0: rem=314.\n" }, &ev);
++    try std.testing.expect(ev.items[1].trigger == null);
++    try std.testing.expectEqual(scan.Trigger{ .index = 0, .trace = true }, ev.items[2].trigger.?);
++}
++
++test "runner trace: a fence's code lines state nothing, and a trace cell is no notebook prior" {
++    var s: scan.Scanner = .{ .cfg = .{ .trace = true } };
++    defer s.deinit(gpa);
++    var ev: std.ArrayList(scan.Events) = .empty;
++    defer ev.deinit(gpa);
++    try feedAll(&s, &.{ "```python\n", "Need compute 2^100 - 3^50.\n", "Step 1\n", "```\n" }, &ev);
++    for (ev.items[0..3]) |e| try std.testing.expect(e.closed == null and e.trigger == null);
++}
++
++/// The circuit's printed values for the trace programs (the fake frontend passes the Python source through).
++const TraceBack = struct {
++    delay: u32 = 0,
++    fault: bool = false,
++    jobs: std.ArrayList(struct { prog: []u8, polls: u32 }) = .empty,
++
++    const answers = [_][2][]const u8{
++        .{ "(987654) * (137)", "135308598\n" },
++        .{ "7**123%1000000007", "937329259\n" },
++    };
++
++    fn backend(b: *TraceBack) rapi.Backend {
++        return .{ .ctx = b, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(ctx: *anyopaque, _: u64, p: rapi.Program, _: u64) error{ OutOfMemory, Busy }!rapi.JobId {
++        const b: *TraceBack = @ptrCast(@alignCast(ctx));
++        try b.jobs.append(gpa, .{ .prog = try gpa.dupe(u8, p.bytes), .polls = 0 });
++        return b.jobs.items.len - 1;
++    }
++    fn poll(ctx: *anyopaque, job: rapi.JobId) rapi.Poll {
++        const b: *TraceBack = @ptrCast(@alignCast(ctx));
++        const j = &b.jobs.items[job];
++        j.polls += 1;
++        if (j.polls <= b.delay) return .running;
++        if (b.fault) return .{ .done = .{ .status = .fault, .out = "" } };
++        for (answers) |x| if (std.mem.eql(u8, x[0], j.prog)) return .{ .done = .{ .status = .ok, .out = x[1], .steps = 100 } };
++        return .{ .done = .{ .status = .fault, .out = "" } };
++    }
++    fn cancel(_: *anyopaque, _: rapi.JobId) void {}
++    fn release(_: *anyopaque, _: u64) void {}
++    fn deinit(b: *TraceBack) void {
++        for (b.jobs.items) |j| gpa.free(j.prog);
++        b.jobs.deinit(gpa);
++    }
++};
++
++/// One reply; `guess` is the model's own line after `lead` (a digit line is itself a cue).
++fn traced(lead: []const u8, guess: []const u8, on: bool, delay: u32, fault: bool) ![]u8 {
++    var back: TraceBack = .{ .delay = delay, .fault = fault };
++    defer back.deinit();
++    var unused: rt.Back = .{};
++    defer unused.deinit();
++    var m = [_]rt.Model{.{ .lead = lead, .guess = guess }};
++    const texts = try rt.replies(&m, .{ .trace = on, .backend = back.backend() }, &unused);
++    defer gpa.free(texts);
++    return texts[0];
++}
++
++const mul_lead = "Need multiply A=987654 B=137. Need exact product.\nLet's do long multiplication.\n";
++
++test "runner trace: the reply owns one [exact: …] line after the cue, then the model goes on" {
++    const got = try traced(mul_lead, "ok", true, 0, false);
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(mul_lead ++ "[exact: 987654 * 137 = 135308598]\nDone.", got);
++    const pow = "We need answer compute 7^123 mod 1000000007. Let's compute carefully.\nWe can do it by hand.\n";
++    const same = try traced(pow, "ok", true, 0, false);
++    defer gpa.free(same);
++    try std.testing.expectEqualStrings(pow ++ "[exact: 7^123 mod 1000000007 = 937329259]\nDone.", same);
++}
++
++test "runner trace: late runs give the same reply; faults, the form off and no cue keep the model's text" {
++    const early = try traced(mul_lead, "ok", true, 0, false);
++    defer gpa.free(early);
++    const late = try traced(mul_lead, "ok", true, 6, false);
++    defer gpa.free(late);
++    try std.testing.expectEqualStrings(early, late);
++    const fault = try traced(mul_lead, "ok", true, 0, true);
++    defer gpa.free(fault);
++    try std.testing.expectEqualStrings(mul_lead ++ "ok\nDone.", fault);
++    const off = try traced(mul_lead, "ok", false, 0, false);
++    defer gpa.free(off);
++    try std.testing.expectEqualStrings(mul_lead ++ "ok\nDone.", off);
++    const quiet = "Need multiply A=987654 B=137. Need exact product.\nThat is the task.\n";
++    const nocue = try traced(quiet, "ok", true, 0, false);
++    defer gpa.free(nocue);
++    try std.testing.expectEqualStrings(quiet ++ "ok\nDone.", nocue);
++    const digits = try traced(quiet, "135308598", true, 0, false); // the model's own digit line is a hand-work cue
++    defer gpa.free(digits);
++    try std.testing.expectEqualStrings(quiet ++ "135308598\n[exact: 987654 * 137 = 135308598]\n", digits);
++}
++
++fn env(name: [:0]const u8) ?[]const u8 {
++    const v = std.c.getenv(name) orelse return null;
++    return std.mem.span(v);
++}
++
++fn readAll(path: []const u8) ![]u8 {
++    var threaded: std.Io.Threaded = .init_single_threaded;
++    return std.Io.Dir.cwd().readFileAlloc(threaded.io(), path, gpa, .limited(1 << 30));
++}
++
++test "runner trace: census replay equals the offline study (TF_TRACE_CENSUS, TF_TRACE_EXPECT)" {
++    const path = env("TF_TRACE_CENSUS") orelse {
++        std.debug.print("skip trace census replay: TF_TRACE_CENSUS unset\n", .{});
++        return;
++    };
++    const data = try readAll(path);
++    defer gpa.free(data);
++    var got: std.ArrayList(u8) = .empty;
++    defer got.deinit(gpa);
++    var lines = std.mem.splitScalar(u8, data, '\n');
++    while (lines.next()) |row| {
++        if (row.len == 0) continue;
++        var parsed = try std.json.parseFromSlice(struct { id: []const u8, text: []const u8 }, gpa, row, .{ .ignore_unknown_fields = true });
++        defer parsed.deinit();
++        var s: scan.Scanner = .{ .cfg = .{ .trace = true, .fence = false, .repl = false } };
++        defer s.deinit(gpa);
++        var codes: std.ArrayList([]u8) = .empty;
++        defer {
++            for (codes.items) |c| gpa.free(c);
++            codes.deinit(gpa);
++        }
++        var parts = std.mem.splitScalar(u8, parsed.value.text, '\n');
++        while (parts.next()) |part| {
++            const ev = try s.feed(gpa, part, true);
++            if (ev.closed) |c| try codes.append(gpa, try gpa.dupe(u8, c.code));
++            const nl = try s.feed(gpa, "\n", true);
++            if (nl.closed) |c| try codes.append(gpa, try gpa.dupe(u8, c.code));
++            if (nl.trigger) |t| if (t.trace) try got.print(gpa, "{s}\t{s}\n", .{ parsed.value.id, codes.items[t.index] });
++        }
++    }
++    std.debug.print("trace census replay: {d} owned lines\n{s}", .{ std.mem.count(u8, got.items, "\n"), got.items });
++    const expect = env("TF_TRACE_EXPECT") orelse return;
++    const want = try readAll(expect);
++    defer gpa.free(want);
++    try std.testing.expectEqualStrings(want, got.items);
++}
++
++test "runner trace: the reply's runtime block counts a trace cell under trace, not repl" {
++    var back: TraceBack = .{};
++    defer back.deinit();
++    var unused: rt.Back = .{};
++    defer unused.deinit();
++    var m = [_]rt.Model{.{ .lead = mul_lead, .guess = "ok" }};
++    var sums: [1][]u8 = undefined;
++    rt.freeAll(try rt.replies(&m, .{ .trace = true, .backend = back.backend(), .summaries = &sums }, &unused));
++    defer gpa.free(sums[0]);
++    try std.testing.expect(std.mem.indexOf(u8, sums[0], "\"repl\":{\"closed\":0,\"owned\":0,") != null);
++    try std.testing.expect(std.mem.indexOf(u8, sums[0], "\"trace\":{\"closed\":1,\"owned\":1,\"abstained\":0,") != null);
++}
+diff --git a/zig/src/core/runner_trace_text.zig b/zig/src/core/runner_trace_text.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d805ccfddcbadecb493abc89a3a365b65c38c5fb
+--- /dev/null
++++ b/zig/src/core/runner_trace_text.zig
+@@ -0,0 +1,401 @@
++//! The runner's `trace` form: sentence, definition, statement-phrase and hand-trace cue predicates over one line.
++const std = @import("std");
++const Allocator = std.mem.Allocator;
++
++pub fn isWord(c: u8) bool {
++    return std.ascii.isAlphanumeric(c) or c == '_';
++}
++
++pub fn isSpace(c: u8) bool {
++    return c == ' ' or c == '\t' or c == '\r';
++}
++
++/// Case-insensitive `words` at `i`, separated by one or more spaces; the end index, else null.
++pub fn seq(s: []const u8, i: usize, words: []const []const u8) ?usize {
++    var j = i;
++    for (words, 0..) |w, k| {
++        if (k > 0) {
++            const from = j;
++            while (j < s.len and isSpace(s[j])) j += 1;
++            if (j == from) return null;
++        }
++        if (j + w.len > s.len or !std.ascii.eqlIgnoreCase(s[j .. j + w.len], w)) return null;
++        j += w.len;
++    }
++    return j;
++}
++
++pub fn wordAt(s: []const u8, i: usize, w: []const u8, whole: bool) bool {
++    if (i > 0 and isWord(s[i - 1])) return false;
++    if (i + w.len > s.len or !std.ascii.eqlIgnoreCase(s[i .. i + w.len], w)) return false;
++    return !whole or i + w.len == s.len or !isWord(s[i + w.len]);
++}
++
++fn anyWord(s: []const u8, words: []const []const u8, whole: bool) bool {
++    for (0..s.len) |i| for (words) |w| if (wordAt(s, i, w, whole)) return true;
++    return false;
++}
++
++/// Doubt or approximation near a number: ? ~ ≈, 1.2e20, maybe/known/wait/around, approx…/estimate…/guess….
++pub fn approx(s: []const u8) bool {
++    if (std.mem.indexOfAny(u8, s, "?~") != null or std.mem.indexOf(u8, s, "≈") != null) return true;
++    for (0..s.len) |i| {
++        if (!std.ascii.isDigit(s[i])) continue;
++        var j = i + 1;
++        if (j < s.len and s[j] == '.') j += 1;
++        while (j < s.len and std.ascii.isDigit(s[j])) j += 1;
++        if (j + 1 < s.len and (s[j] == 'e' or s[j] == 'E') and std.ascii.isDigit(s[j + 1])) return true;
++    }
++    return anyWord(s, &.{ "maybe", "known", "wait", "around" }, true) or anyWord(s, &.{ "approx", "estimate", "guess" }, false);
++}
++
++/// A sentence with a question or a hypothesis (if/suppose/would/could/…) defines nothing.
++pub fn hypothetical(s: []const u8) bool {
++    if (std.mem.indexOfScalar(u8, s, '?') != null) return true;
++    const t = std.mem.trimStart(u8, s, " \t");
++    for ([_][]const u8{ "if", "suppose", "assume", "maybe", "wait", "perhaps" }) |w| if (wordAt(t, 0, w, true)) return true;
++    return anyWord(s, &.{ "maybe", "would", "could", "should", "might", "if" }, true);
++}
++
++/// The sentence of `clean` around byte `i` (ends at ". ", "? " or "! ").
++pub fn sentenceAt(clean: []const u8, i: usize) []const u8 {
++    var a: usize = 0;
++    for ([_][]const u8{ ". ", "? ", "! " }) |sep| {
++        if (std.mem.lastIndexOf(u8, clean[0..i], sep)) |k| a = @max(a, k + 2);
++    }
++    var b: usize = clean.len;
++    for ([_][]const u8{ ". ", "? ", "! " }) |sep| {
++        if (std.mem.indexOfPos(u8, clean, i, sep)) |k| b = @min(b, k + 1);
++    }
++    return clean[@min(a, b)..b];
++}
++
++/// Drops digit-count notes ("(20 digits?)", "(30 nines)", "(7 groups)") and the spaces before them.
++pub fn stripNotes(a: Allocator, raw: []const u8) Allocator.Error![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    var i: usize = 0;
++    while (i < raw.len) {
++        if (raw[i] == '(') if (std.mem.indexOfScalarPos(u8, raw, i + 1, ')')) |close| {
++            const inner = raw[i + 1 .. close];
++            if (std.mem.indexOfScalar(u8, inner, '(') == null and isNote(inner)) {
++                while (out.items.len > 0 and isSpace(out.items[out.items.len - 1])) out.items.len -= 1;
++                i = close + 1;
++                continue;
++            }
++        };
++        try out.append(a, raw[i]);
++        i += 1;
++    }
++    return out.items;
++}
++
++fn isNote(inner: []const u8) bool {
++    for (0..inner.len) |i| {
++        if (wordAt(inner, i, "digit", true) or wordAt(inner, i, "digits", true)) return true;
++        if (wordAt(inner, i, "group", true) or wordAt(inner, i, "groups", true)) return true;
++    }
++    var j: usize = 0;
++    while (j < inner.len and std.ascii.isDigit(inner[j])) j += 1;
++    if (j == 0) return false;
++    const k = j;
++    while (j < inner.len and isSpace(inner[j])) j += 1;
++    return j > k and std.mem.eql(u8, inner[j..], "nines");
++}
++
++/// A hand trace starts here: a step, table or digit line, or words like long division, carry, borrow, by hand.
++pub fn cueIn(s: []const u8) bool {
++    var i: usize = 0;
++    while (i < s.len and isSpace(s[i])) i += 1;
++    for ([_][]const u8{ "so", "now" }) |w| if (seq(s, i, &.{w})) |j| if (j < s.len and isSpace(s[j])) {
++        i = j;
++        while (i < s.len and isSpace(s[i])) i += 1;
++        break;
++    };
++    if (i < s.len and std.ascii.isDigit(s[i])) return true;
++    if (wordAt(s, i, "step", true) or wordAt(s, i, "start", true) or (seq(s, i, &.{"first,"}) != null)) return true;
++    if (i < s.len and (s[i] == 'i' or s[i] == 'I')) {
++        var j = i + 1;
++        while (j < s.len and isSpace(s[j])) j += 1;
++        if (j < s.len and s[j] == '=') {
++            j += 1;
++            while (j < s.len and isSpace(s[j])) j += 1;
++            if (j < s.len and s[j] == '0' and (j + 1 == s.len or !isWord(s[j + 1]))) return true;
++        }
++    }
++    if (seq(s, i, &.{"row"})) |j| {
++        var k = j;
++        while (k < s.len and isSpace(s[k])) k += 1;
++        if (k < s.len and s[k] == '0' and (k + 1 == s.len or !isWord(s[k + 1]))) return true;
++    }
++    const phrases = [_][]const []const u8{
++        &.{ "long", "division" },   &.{ "partial", "product" }, &.{ "repeated", "squaring" },
++        &.{ "step", "by", "step" }, &.{ "by", "hand" },
++    };
++    const lets = [_][]const u8{ "compute", "calculate", "do", "multiply", "perform", "use", "divide", "subtract", "add", "square" };
++    for (0..s.len) |k| {
++        for (phrases) |p| if (seq(s, k, p) != null) return true;
++        for ([_][]const u8{ "carry", "carries" }) |w| if (wordAt(s, k, w, true)) return true;
++        for ([_][]const u8{ "group", "borrow", "manual" }) |w| if (wordAt(s, k, w, false)) return true;
++        if (wordAt(s, k, "base", false)) {
++            var j = k + 4;
++            while (j < s.len and isSpace(s[j])) j += 1;
++            for ([_][]const u8{ "1000", "10^", "1e", "10**" }) |b| if (std.mem.startsWith(u8, s[j..], b)) return true;
++        }
++        for ([_][]const u8{ "let's", "lets" }) |l| for (lets) |v| if (seq(s, k, &.{ l, v }) != null) return true;
++        for ([_][]const u8{ "carefully", "exactly", "step" }) |v| if (seq(s, k, &.{ "compute", v }) != null) return true;
++        for ([_][]const u8{ "use", "perform", "do", "compute" }) |v| if (seq(s, k, &.{ "we", "can", v }) != null) return true;
++    }
++    return false;
++}
++
++// ---- definitions ----
++
++pub const Def = struct { start: usize, name_end: usize, rhs: usize };
++
++pub fn nameLen(s: []const u8, i: usize) usize {
++    if (i >= s.len or !std.ascii.isUpper(s[i])) return 0;
++    var j = i + 1;
++    if (j < s.len and std.ascii.isAlphabetic(s[j])) j += 1;
++    if (j < s.len and std.ascii.isDigit(s[j])) j += 1;
++    return j - i;
++}
++
++/// `Name = ` at `i` (not inside a word, a comma group or a decimal).
++pub fn defAt(s: []const u8, i: usize) ?Def {
++    if (i > 0 and (isWord(s[i - 1]) or s[i - 1] == ',' or s[i - 1] == '.')) return null;
++    const n = nameLen(s, i);
++    if (n == 0) return null;
++    var j = i + n;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    if (j >= s.len or s[j] != '=') return null;
++    j += 1;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    return .{ .start = i, .name_end = i + n, .rhs = j };
++}
++
++/// The name starts a definition: it does not follow an operator, `=`, a closing bracket or a digit ("A * B = …").
++pub fn defLeftOk(left: []const u8) bool {
++    const l = std.mem.trimEnd(u8, left, " \t");
++    if (l.len == 0) return true;
++    const c = l[l.len - 1];
++    if (std.ascii.isDigit(c) or std.mem.indexOfScalar(u8, "+-*/^=)]>", c) != null) return false;
++    return !std.mem.endsWith(u8, l, "×");
++}
++
++/// The shortest right side followed by a sentence end, ", ", " (", or " by|from|and|then|is|which|so|has".
++pub fn defEnd(s: []const u8, rhs: usize) ?usize {
++    var k = rhs + 1;
++    while (k <= s.len) : (k += 1) {
++        var j = k;
++        while (j < s.len and isSpace(s[j])) j += 1;
++        if (j == s.len) return k;
++        if ((s[j] == '.' or s[j] == ';') and (j + 1 == s.len or isSpace(s[j + 1]))) return k;
++        if (s[j] == ',' and j + 1 < s.len and isSpace(s[j + 1])) return k;
++        if (j > k and s[j] == '(') return k;
++        if (j > k) for ([_][]const u8{ "by", "from", "and", "then", "is", "which", "so", "has" }) |w| {
++            if (j + w.len <= s.len and std.mem.eql(u8, s[j .. j + w.len], w) and (j + w.len == s.len or !isWord(s[j + w.len]))) return k;
++        };
++    }
++    return null;
++}
++
++pub fn sentenceEndsAt(s: []const u8, k: usize) bool {
++    var j = k;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    return j == s.len or ((s[j] == '.' or s[j] == ';') and (j + 1 == s.len or isSpace(s[j + 1])));
++}
++
++// ---- statements ----
++
++pub const Head = struct {
++    end: usize,
++    bare: bool = false,
++    pub fn less(_: void, x: Head, y: Head) bool {
++        return x.end < y.end;
++    }
++};
++
++/// need / we need / need to / let's / compute / calculate / evaluate / expression, then optionally a verb.
++pub fn goalHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocator.Error!void {
++    const heads = [_][]const []const u8{ &.{ "we", "need", "to" }, &.{ "we", "need" }, &.{ "need", "to" }, &.{"need"}, &.{"let's"}, &.{"lets"}, &.{"compute"}, &.{"calculate"}, &.{"evaluate"}, &.{"expression"} };
++    var i: usize = 0;
++    while (i < s.len) {
++        if (i > 0 and !(isSpace(s[i - 1]) or s[i - 1] == '.' or s[i - 1] == ':' or s[i - 1] == ';')) {
++            i += 1;
++            continue;
++        }
++        var end: ?usize = null;
++        for (heads) |h| if (seq(s, i, h)) |j| if (j == s.len or !isWord(s[j])) {
++            end = j;
++            break;
++        };
++        var j = end orelse {
++            i += 1;
++            continue;
++        };
++        for ([_][]const u8{ "compute", "calculate", "evaluate", "find", "to" }) |v| {
++            var k = j;
++            while (k < s.len and isSpace(s[k])) k += 1;
++            if (k > j and seq(s, k, &.{v}) != null and k + v.len < s.len and isSpace(s[k + v.len])) {
++                j = k + v.len;
++                break;
++            }
++        }
++        const after = j;
++        while (j < s.len and isSpace(s[j])) j += 1;
++        if (j == after) {
++            i += 1;
++            continue;
++        }
++        try out.append(a, .{ .end = j });
++        i = j;
++    }
++}
++
++/// A sentence that is only an expression: starts with a digit or `(`, ends with a digit or `)` right before ". ".
++pub fn bareHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocator.Error!void {
++    var i: usize = 0;
++    while (i < s.len) : (i += 1) {
++        if (!(i == 0 or (i >= 2 and s[i - 2] == '.' and s[i - 1] == ' '))) continue;
++        if (!(std.ascii.isDigit(s[i]) or s[i] == '(')) continue;
++        var j = i;
++        while (j < s.len) {
++            const c = s[j];
++            if (std.ascii.isAlphanumeric(c) or std.mem.indexOfScalar(u8, "^*+-() ", c) != null) {
++                j += 1;
++            } else if (std.mem.startsWith(u8, s[j..], "×")) {
++                j += 2;
++            } else if (std.mem.startsWith(u8, s[j..], "−")) {
++                j += 3;
++            } else break;
++        }
++        if (j > i and j < s.len and s[j] == '.' and (j + 1 == s.len or isSpace(s[j + 1])) and
++            (std.ascii.isDigit(s[j - 1]) or s[j - 1] == ')')) try out.append(a, .{ .end = i, .bare = true });
++    }
++}
++
++pub const Phrase = struct { kind: enum { divmod, mul, subfrom, expr }, parts: [2][2]usize = undefined, n: usize = 1, end: usize };
++
++const fill_words = [_][]const u8{ "the", "answer", "exact", "exactly", "value", "of", "integer", "decimal", "product", "sum", "difference", "result", "floor", "huge", "number", "big" };
++const trail_words = [_][]const u8{ "exactly", "exact", "accurately", "carefully", "precisely", "manually" };
++
++/// The phrase a head introduces, up to the first sentence end (`.,;:` then a space, or the line's end).
++pub fn phrase(rest: []const u8) ?Phrase {
++    var i: usize = 0;
++    var n: usize = 0;
++    while (n < 4) : (n += 1) {
++        var hit = false;
++        for (fill_words) |w| if (seq(rest, i, &.{w})) |j| if (j < rest.len and isSpace(rest[j])) {
++            i = j;
++            while (i < rest.len and isSpace(rest[i])) i += 1;
++            hit = true;
++            break;
++        };
++        if (!hit) break;
++    }
++    if (verbPhrase(rest, i, "divide", &.{"by"})) |p| return .{ .kind = .divmod, .parts = p.parts, .n = 2, .end = p.end };
++    if (verbPhrase(rest, i, "multiply", &.{ "by", "and", "with" })) |p| return .{ .kind = .mul, .parts = p.parts, .n = 2, .end = p.end };
++    if (multiplyDefs(rest, i)) |p| return .{ .kind = .mul, .parts = p.parts, .n = 2, .end = p.end };
++    if (verbPhrase(rest, i, "subtract", &.{"from"})) |p| return .{ .kind = .subfrom, .parts = p.parts, .n = 2, .end = p.end };
++    const e = lazyEnd(rest, i) orelse return null;
++    return .{ .kind = .expr, .parts = .{ .{ i, e.text }, undefined }, .end = e.end };
++}
++
++const Two = struct { parts: [2][2]usize, end: usize };
++
++/// An optional `Name =` before an operand (case-insensitive name, as the census regex reads it).
++fn skipDef(s: []const u8, i: usize) usize {
++    if (i >= s.len or !std.ascii.isAlphabetic(s[i])) return i;
++    var j = i + 1;
++    if (j < s.len and std.ascii.isAlphabetic(s[j])) j += 1;
++    if (j < s.len and std.ascii.isDigit(s[j])) j += 1;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    if (j >= s.len or s[j] != '=') return i;
++    j += 1;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    return j;
++}
++
++/// `verb X <sep> Y`: X up to the first spaced separator word, Y up to the first sentence end.
++fn verbPhrase(s: []const u8, i: usize, verb: []const u8, seps: []const []const u8) ?Two {
++    var j = seq(s, i, &.{verb}) orelse return null;
++    const after = j;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    if (j == after) return null;
++    const x0 = skipDef(s, j);
++    var k = x0 + 1;
++    while (k < s.len) : (k += 1) {
++        if (!isSpace(s[k])) continue;
++        var m = k;
++        while (m < s.len and isSpace(s[m])) m += 1;
++        for (seps) |sep| {
++            if (m + sep.len < s.len and std.ascii.eqlIgnoreCase(s[m .. m + sep.len], sep) and isSpace(s[m + sep.len])) {
++                var y = m + sep.len;
++                while (y < s.len and isSpace(s[y])) y += 1;
++                y = skipDef(s, y);
++                const e = lazyEnd(s, y) orelse return null;
++                return .{ .parts = .{ .{ x0, k }, .{ y, e.text } }, .end = e.end };
++            }
++        }
++    }
++    return null;
++}
++
++/// `multiply A=x B=y`: two definitions side by side.
++fn multiplyDefs(s: []const u8, i: usize) ?Two {
++    var j = seq(s, i, &.{"multiply"}) orelse return null;
++    const after = j;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    if (j == after) return null;
++    const x0 = skipDef(s, j);
++    if (x0 == j) return null;
++    var k = x0 + 1;
++    while (k < s.len) : (k += 1) {
++        if (!isSpace(s[k])) continue;
++        var m = k;
++        while (m < s.len and isSpace(s[m])) m += 1;
++        const y = skipDef(s, m);
++        if (y == m) continue;
++        const e = lazyEnd(s, y) orelse return null;
++        return .{ .parts = .{ .{ x0, k }, .{ y, e.text } }, .end = e.end };
++    }
++    return null;
++}
++
++/// The shortest text from `i` (at least one byte) followed by an optional trailer word and a sentence end.
++fn lazyEnd(s: []const u8, i: usize) ?struct { text: usize, end: usize } {
++    var k = i + 1;
++    while (k <= s.len) : (k += 1) {
++        var j = k;
++        while (j < s.len and isSpace(s[j])) j += 1;
++        if (j > k) for (trail_words) |w| if (seq(s, j, &.{w})) |t| if (endAt(s, t)) |e| return .{ .text = k, .end = e };
++        if (endAt(s, k)) |e| return .{ .text = k, .end = e };
++    }
++    return null;
++}
++
++fn endAt(s: []const u8, k: usize) ?usize {
++    var j = k;
++    while (j < s.len and isSpace(s[j])) j += 1;
++    if (j == s.len) return j;
++    if (std.mem.indexOfScalar(u8, ".;:,", s[j]) != null and (j + 1 == s.len or isSpace(s[j + 1]))) {
++        return if (j + 1 < s.len) j + 2 else j + 1;
++    }
++    return null;
++}
++
++/// "Compute D*349, D*350": a phrase ending in a comma before another candidate is a list, not one computation.
++pub fn listed(rest: []const u8, ph: Phrase) bool {
++    if (ph.end < 2 or rest[ph.end - 2] != ',') return false;
++    const w = rest[ph.end - 2 .. @min(rest.len, ph.end + 2)];
++    var j: usize = 1;
++    while (j < w.len and isSpace(w[j])) j += 1;
++    if (j < w.len and std.ascii.isDigit(w[j])) return true;
++    if (j < w.len and std.ascii.isUpper(w[j])) {
++        j += 1;
++        if (j < w.len and isWord(w[j])) j += 1;
++        while (j < w.len and isSpace(w[j])) j += 1;
++        return j < w.len and (w[j] == '*' or w[j] == 0xC3);
++    }
++    return false;
++}

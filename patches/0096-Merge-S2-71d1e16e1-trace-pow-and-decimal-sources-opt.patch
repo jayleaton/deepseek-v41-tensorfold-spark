@@ -1,0 +1,805 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 08:32:14 +0700
+Subject: [PATCH 096/207] Merge S2 71d1e16e1 (trace pow and decimal sources;
+ opt-in restated-line repeat)
+
+Squashed merge of 2 commits:
+- runner trace: a request may word the owned line or turn trace off (Jay Leaton)
+- runner trace: pow and decimal sources for the frontend; opt-in repeat of a restated line (Jay Leaton)
+---
+ zig/src/core/engine_api.zig         |   4 +-
+ zig/src/core/lane_stream.zig        |   2 +-
+ zig/src/core/runner.zig             |  20 +++-
+ zig/src/core/runner_cost_bench.zig  |   2 +-
+ zig/src/core/runner_hold_bench.zig  |   2 +-
+ zig/src/core/runner_open.zig        |   3 +
+ zig/src/core/runner_scan.zig        |   8 +-
+ zig/src/core/runner_settle_test.zig |   4 +-
+ zig/src/core/runner_test.zig        |   4 +-
+ zig/src/core/runner_trace.zig       |  60 +++++++++---
+ zig/src/core/runner_trace_expr.zig  |  51 +++++++++--
+ zig/src/core/runner_trace_test.zig  | 136 +++++++++++++++++++++++++++-
+ zig/src/server/chat.zig             |   2 +
+ zig/src/server/openai.zig           |   2 +-
+ zig/src/server/runner_guide.zig     |  55 +++++++++++
+ 15 files changed, 311 insertions(+), 44 deletions(-)
+
+diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
+index 8de4ac1e0fa3e0129b365c0ef39433899cae3f7c..d54c0e438a0cbf3a6d2b77b61388ad85bff9bdb2 100644
+--- a/zig/src/core/engine_api.zig
++++ b/zig/src/core/engine_api.zig
+@@ -74,8 +74,7 @@ pub const Request = struct {
+     stop: ?Stop = null,
+     /// false: one token a round and no drafts, the serial reference drafted replies must equal.
+     drafts: bool = true,
+-    /// Background work yields to foreground arrivals.
+-    background: bool = false,
++    background: bool = false, // background work yields to foreground arrivals
+     /// The prompt length its kept states count as (0: its own); a pass prefilling a reply carries that request's.
+     born: u32 = 0,
+     /// Prompt prefix lengths worth keeping for a later turn: the rendered history, then shared system blocks.
+@@ -119,6 +118,7 @@ pub const Request = struct {
+     /// At an EOS the stream holds for ``Engine.resumeHeld`` (a built-in tool's result) instead of finishing.
+     hold_eos: bool = false,
+     run_cells: bool = false, // code cells the reply writes run on the host's in-model runner (core/runner.zig)
++    run_trace: @import("runner.zig").TraceAsk = .{}, // with run_cells: the request's own say over form trace
+ 
+     /// The prompt as the prompt cache matches it: an image request's placeholders stand for their images.
+     pub fn cacheKey(r: *const Request) []const u32 {
+diff --git a/zig/src/core/lane_stream.zig b/zig/src/core/lane_stream.zig
+index d7cf0d80d22b1152296dd5bfd6ff92a000f5e051..c3216904f65158769056200d9ff180d989a2baf3 100644
+--- a/zig/src/core/lane_stream.zig
++++ b/zig/src/core/lane_stream.zig
+@@ -38,7 +38,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
+     const recall = recalls.reader(h, job);
+     // forced result rows would leave a grammar, and logprob rows would rank tokens the model never drew
+     if (h.runner) |rn| if (r.run_cells and r.structure == null and r.logprobs == null) {
+-        job.runner = rn.session() catch return !h.drop(job, "out of memory");
++        job.runner = rn.session(r.run_trace) catch return !h.drop(job, "out of memory");
+     };
+     job.stream = lanes.Stream.init(h.gpa, .{
+         .id = "request",
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 853a57aeeeb16da6439474562dfbd39c5a30103c..8061db2e18d773871b723a0f69f5faba114f1b62 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -86,6 +86,13 @@ pub const Text = struct {
+     encode: *const fn (ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32,
+ };
+ 
++/// A request's say over form trace (chat fields "runner_trace", "runner_trace_format"); defaults change nothing.
++pub const TraceAsk = struct {
++    off: bool = false, // no trace cells in this reply, though the server's forms have trace
++    format: []const u8 = "", // the owned line, `{}` for `<expr> = <value>` (validFormat); "": `[exact: {}]`
++    repeat: u8 = 0, // a restated, already owned line is owned again up to this many times (0..max_repeat)
++};
++
+ /// The server-wide runner: a frontend, a backend and the server's tokenizer (set at its start); sessions are per reply.
+ pub const Runner = struct {
+     gpa: Allocator,
+@@ -97,10 +104,15 @@ pub const Runner = struct {
+     placer: ?*place.Placer = null, // the backend's job threads and the translations run placed
+ 
+     /// A reply's session; null until the server has given the runner its tokenizer.
+-    pub fn session(r: *Runner) Allocator.Error!?*Session {
++    pub fn session(r: *Runner, ask: TraceAsk) Allocator.Error!?*Session {
+         if (r.text == null) return null;
++        const format = try r.gpa.dupe(u8, ask.format);
++        errdefer r.gpa.free(format);
+         const s = try r.gpa.create(Session);
+-        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = r.cfg.scan } };
++        var cfg = r.cfg.scan;
++        if (ask.off) cfg.trace = false;
++        cfg.trace_repeat = ask.repeat;
++        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = cfg }, .format = format };
+         r.next_id += 1;
+         return s;
+     }
+@@ -137,6 +149,7 @@ pub const Session = struct {
+     forcing: ?struct { at: u64, left: usize, cell: u32 } = null, // an owned result's forced tokens still to commit
+     resume_ms: u64 = 0, // summed: an owned result's settling to the model's first token after it
+     broken: bool = false, // out of memory once: no more cells, no more holds
++    format: []u8, // TraceAsk.format, owned
+ 
+     pub fn hook(s: *Session) lanes.stream.RunnerHook {
+         return .{ .ptr = s, .token = onToken };
+@@ -254,7 +267,7 @@ pub const Session = struct {
+     fn ownTrace(s: *Session, c: *Cell, index: u32, held_ms: u64) Allocator.Error![]u32 {
+         const gpa = s.r.gpa;
+         const tx = s.r.text.?;
+-        const line = if (!c.abstained and c.result.?.status == .ok) try trace.owned(gpa, c.stated.?.display, c.stated.?.divmod, c.result.?.out) else null;
++        const line = if (!c.abstained and c.result.?.status == .ok) try trace.owned(gpa, s.format, c.stated.?.display, c.stated.?.divmod, c.result.?.out) else null;
+         if (line) |text| {
+             defer gpa.free(text);
+             const ids = try tx.encode(tx.ctx, gpa, text);
+@@ -434,6 +447,7 @@ pub const Session = struct {
+         s.r.backend.release(s.id);
+         s.cells.deinit(gpa);
+         s.scan.deinit(gpa);
++        gpa.free(s.format);
+         gpa.destroy(s);
+     }
+ };
+diff --git a/zig/src/core/runner_cost_bench.zig b/zig/src/core/runner_cost_bench.zig
+index 1ea4834393418a6fa176bd2cc2141bf2cdab5d52..fb997487d43b486943e7cb2e22cabc93853fa751 100644
+--- a/zig/src/core/runner_cost_bench.zig
++++ b/zig/src/core/runner_cost_bench.zig
+@@ -65,7 +65,7 @@ fn pass(gpa: std.mem.Allocator, r: *runner.Runner, replies: []const Reply, mode:
+             t.tokens += rep.tokens.len;
+             continue;
+         }
+-        const s = (try r.session()).?;
++        const s = (try r.session(.{})).?;
+         defer s.destroy();
+         const hook = s.hook();
+         for (rep.tokens, 0..) |tok, i| {
+diff --git a/zig/src/core/runner_hold_bench.zig b/zig/src/core/runner_hold_bench.zig
+index 3ad31acee3db8714051a2aff4fde4d365e092a57..1e8836fbf1ff7c18a2a063b8f102e73586ed7be4 100644
+--- a/zig/src/core/runner_hold_bench.zig
++++ b/zig/src/core/runner_hold_bench.zig
+@@ -63,7 +63,7 @@ const Arm = struct {
+ 
+ fn pass(gpa: std.mem.Allocator, r: *runner.Runner, replies: []const cost.Reply, arm: Arm, fires: *std.ArrayList(Fire), digest: *std.hash.Wyhash) !void {
+     for (replies) |rep| {
+-        const s = (try r.session()).?;
++        const s = (try r.session(.{})).?;
+         defer s.destroy();
+         const hook = s.hook();
+         for (rep.tokens, 0..) |tok, i| {
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index 3334878de94a378792d713a35d2dfe3a2debace7..56e8135dfc98bc548f36792f32c0c499afe8ec1c 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -10,6 +10,9 @@ const log = std.log.scoped(.runner);
+ pub const Config = runner.Config;
+ pub const Runner = runner.Runner;
+ pub const Text = runner.Text;
++pub const TraceAsk = runner.TraceAsk;
++pub const validTraceFormat = @import("runner_trace.zig").validFormat;
++pub const maxTraceRepeat = @import("runner_trace.zig").max_repeat;
+ pub const place = runner.place;
+ 
+ const Opened = struct {
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 7d026e9c8f06342856f5d47089222ffa795aa191..74c3015c3c267a7c2740070e105f4fa4d4b06ec9 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -13,6 +13,7 @@ pub const Config = struct {
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+     trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
++    trace_repeat: u8 = 0, // a restated, already owned line is owned again up to this many times
+ };
+ 
+ /// Trace ownerships per reply, and trace cells (stated computations) a reply may open.
+@@ -163,7 +164,10 @@ pub const Scanner = struct {
+ 
+     /// A reasoning prose line: a pending statement's cue fires it; the line's own statement opens a trace cell.
+     fn traceLine(s: *Scanner, a: Allocator, ev: *Events, raw: []const u8) Allocator.Error!void {
+-        if (s.tracer == null) s.tracer = trace.Tracer.init(a);
++        if (s.tracer == null) {
++            s.tracer = trace.Tracer.init(a);
++            s.tracer.?.repeat = s.cfg.trace_repeat;
++        }
+         const t = &s.tracer.?;
+         var fired = false;
+         if (s.trace_cell != null and trace.cue(raw)) fired = try s.traceArm(a);
+@@ -171,7 +175,7 @@ pub const Scanner = struct {
+         if (s.trace_cell != null and std.mem.eql(u8, found.display, s.trace_disp.items)) return;
+         if (ev.closed != null or s.trace_cells >= trace_cells_max or s.trace_owned >= trace_owned_max) return;
+         s.trace_src.clearRetainingCapacity();
+-        try s.trace_src.appendSlice(a, found.source);
++        try s.trace_src.appendSlice(a, found.run);
+         s.trace_disp.clearRetainingCapacity();
+         try s.trace_disp.appendSlice(a, found.display);
+         ev.closed = .{ .index = s.cells, .form = .repl, .lang = "python", .code = s.trace_src.items, .trace = .{ .display = s.trace_disp.items, .divmod = found.divmod } };
+diff --git a/zig/src/core/runner_settle_test.zig b/zig/src/core/runner_settle_test.zig
+index d4535c7eaac138ef6003980c50712725eaeee552..b6d9b0a54bc5d16dd14e400eb3029b07195502be 100644
+--- a/zig/src/core/runner_settle_test.zig
++++ b/zig/src/core/runner_settle_test.zig
+@@ -84,7 +84,7 @@ const Run = struct { owned: []u8, ticks: [4]u32, started: u32, here: u32 };
+ fn run(settle_us: u32, back: *Back, open_gate_at: ?u32) !Run {
+     var r: runner.Runner = .{ .gpa = gpa, .cfg = .{ .settle_us = settle_us }, .frontend = .{ .translate = translate }, .backend = back.backend(), .text = .{ .bytes = bytes, .encode = encode } };
+     r.cfg.scan.inline_math = true;
+-    const s = (try r.session()).?;
++    const s = (try r.session(.{})).?;
+     defer s.destroy();
+     const hook = s.hook();
+     var owned: std.ArrayList(u8) = .empty;
+@@ -164,7 +164,7 @@ test "runner settle: a backend without a run here still settles in one tick when
+     try std.testing.expectEqual(null, plain.now(.{ .kind = .graph, .bytes = "7*6" }, 10, 10));
+     var r: runner.Runner = .{ .gpa = gpa, .cfg = .{ .settle_us = 3000 }, .frontend = .{ .translate = translate }, .backend = plain, .text = .{ .bytes = bytes, .encode = encode } };
+     r.cfg.scan.inline_math = true;
+-    const s = (try r.session()).?;
++    const s = (try r.session(.{})).?;
+     defer s.destroy();
+     const hook = s.hook();
+     var held = false;
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index d767d5c59e3d81edacfe69e9b5518eb6c7a3ae62..d4ee96ad3ce3b9861585825c6c54df1201ab5d1d 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -157,7 +157,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_math: bool = false, trace: bool = false, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -186,7 +186,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     for (models, 0..) |_, i| {
+         boxes[i] = .{};
+         prompts[i] = prompt ++ [_]u32{@intCast(i)}; // the router tells the streams apart by their last prompt token
+-        requests[i] = .{ .prompt = &prompts[i], .max_tokens = 400, .eos = &.{EOS}, .run_cells = o.run_cells };
++        requests[i] = .{ .prompt = &prompts[i], .max_tokens = 400, .eos = &.{EOS}, .run_cells = o.run_cells, .run_trace = o.trace_ask };
+         try e.submit(@intCast(i + 1), &requests[i], .{ .ctx = &boxes[i], .event = Box.event });
+     }
+     const out = try gpa.alloc([]u8, models.len);
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index 8842b046b0934f766da5d7a8b569245600700028..0830ed6c882e5237413e2aeb6e233bea59dc27b1 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -9,7 +9,7 @@ const Expr = expr.Expr;
+ pub const max_digits = 62;
+ 
+ /// A stated computation: Python source for the frontend, the expression shown to the model, divmod's re-shaping.
+-pub const Found = struct { source: []const u8, display: []const u8, divmod: bool = false, same_line: bool = false };
++pub const Found = struct { source: []const u8, display: []const u8, divmod: bool = false, same_line: bool = false, run: []const u8 };
+ 
+ /// Per reply: the names the reasoning defined and the sources already owned (`keep`); one line's work (`scratch`).
+ pub const Tracer = struct {
+@@ -17,6 +17,7 @@ pub const Tracer = struct {
+     scratch: std.heap.ArenaAllocator,
+     names: std.ArrayList(expr.Name) = .empty,
+     fired: std.ArrayList([]const u8) = .empty,
++    repeat: u8 = 0, // times a displayed line may be owned again when the reasoning restates it (TraceAsk.repeat)
+ 
+     pub fn init(gpa: Allocator) Tracer {
+         return .{ .keep = .init(gpa), .scratch = .init(gpa) };
+@@ -27,15 +28,16 @@ pub const Tracer = struct {
+         t.scratch.deinit();
+     }
+ 
+-    /// The displayed line owned once: a restatement through names (other source, same display) never fires again.
++    /// A displayed line owned: a restatement (also through names) fires again only `repeat` more times.
+     pub fn fire(t: *Tracer, display: []const u8) Allocator.Error!void {
+         const a = t.keep.allocator();
+         try t.fired.append(a, try a.dupe(u8, display));
+     }
+ 
+     fn firedHas(t: *const Tracer, display: []const u8) bool {
+-        for (t.fired.items) |f| if (std.mem.eql(u8, f, display)) return true;
+-        return false;
++        var n: usize = 0;
++        for (t.fired.items) |f| n += @intFromBool(std.mem.eql(u8, f, display));
++        return n > t.repeat;
+     }
+ 
+     fn poison(t: *Tracer, n: []const u8) void {
+@@ -69,8 +71,10 @@ pub const Tracer = struct {
+         }
+         if (first) |*f| {
+             f.same_line = text.cueIn(clean[last_head..]);
++            f.run = try printed(a, f.run);
+             return f.*;
+         }
++        if (define) |*d| d.run = try printed(a, d.run);
+         return define;
+     }
+ 
+@@ -96,11 +100,11 @@ pub const Tracer = struct {
+                 if (old.expr != null and !std.mem.eql(u8, old.expr.?.source, e.source)) t.poison(n);
+                 continue;
+             }
+-            const kept: Expr = .{ .source = try a.dupe(u8, e.source), .display = try a.dupe(u8, e.display), .bound = e.bound, .ops = e.ops, .constant = e.constant };
++            const kept: Expr = .{ .source = try a.dupe(u8, e.source), .display = try a.dupe(u8, e.display), .bound = e.bound, .ops = e.ops, .constant = e.constant, .run = try a.dupe(u8, e.run) };
+             try t.names.append(a, .{ .name = try a.dupe(u8, n), .expr = kept });
+             // a first wide definition with nothing after it states that computation ("N = A*2^64 + B.")
+             if (hasArith(e.source) and e.bound >= 12 and e.bound <= max_digits and text.sentenceEndsAt(clean, txt_end) and
+-                !t.firedHas(e.display)) define.* = .{ .source = e.source, .display = e.display };
++                !t.firedHas(e.display)) define.* = .{ .source = e.source, .display = e.display, .run = e.run };
+         }
+     }
+ 
+@@ -118,19 +122,19 @@ pub const Tracer = struct {
+         switch (ph.kind) {
+             .expr => {
+                 if (parts[0].ops == 0) return null;
+-                f = .{ .source = parts[0].source, .display = parts[0].display };
++                f = .{ .source = parts[0].source, .display = parts[0].display, .run = parts[0].run };
+                 bound = parts[0].bound;
+             },
+             .divmod => {
+-                f = .{ .source = try std.fmt.allocPrint(a, "divmod({s}, {s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} ÷ {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }), .divmod = true };
++                f = .{ .source = try std.fmt.allocPrint(a, "divmod({s}, {s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} ÷ {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }), .divmod = true, .run = try std.fmt.allocPrint(a, "divmod({s}, {s})", .{ parts[0].run, parts[1].run }) };
+                 bound = parts[0].bound;
+             },
+             .mul => {
+-                f = .{ .source = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} * {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }) };
++                f = .{ .source = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} * {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }), .run = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].run, parts[1].run }) };
+                 bound = expr.sat(parts[0].bound + parts[1].bound);
+             },
+             .subfrom => {
+-                f = .{ .source = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].source, parts[0].source }), .display = try std.fmt.allocPrint(a, "{s} - {s}", .{ try wrapped(a, parts[1]), try wrapped(a, parts[0]) }) };
++                f = .{ .source = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].source, parts[0].source }), .display = try std.fmt.allocPrint(a, "{s} - {s}", .{ try wrapped(a, parts[1]), try wrapped(a, parts[0]) }), .run = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].run, parts[0].run }) };
+                 bound = expr.sat(@max(parts[0].bound, parts[1].bound) + 1);
+             },
+         }
+@@ -145,13 +149,29 @@ pub const Tracer = struct {
+     }
+ };
+ 
+-/// "[exact: <display> = <value>]\n" from a circuit's printed value, or null (abstain: not one integer, or not (q, r)).
+-pub fn owned(a: Allocator, display: []const u8, divmod: bool, out: []const u8) Allocator.Error!?[]u8 {
++/// The owned line's default wording: `{}` stands for `<display> = <value>`.
++pub const default_format = "[exact: {}]";
++
++/// The most a request may ask a restated line to be owned again (runner_trace_repeat).
++pub const max_repeat = 3;
++
++/// The longest wording a request may give (runner_trace_format).
++pub const max_format = 128;
++
++/// A request's wording: one line, at most `max_format` bytes, `{}` exactly once.
++pub fn validFormat(f: []const u8) bool {
++    return f.len <= max_format and std.mem.count(u8, f, "{}") == 1 and std.mem.indexOfAny(u8, f, "\r\n") == null;
++}
++
++/// `format` around "<display> = <value>\n" from a circuit's printed value, or null (not one integer, or not (q, r)).
++pub fn owned(a: Allocator, format: []const u8, display: []const u8, divmod: bool, out: []const u8) Allocator.Error!?[]u8 {
++    const f = if (format.len > 0) format else default_format;
++    const at = std.mem.indexOf(u8, f, "{}").?;
+     const v = if (std.mem.endsWith(u8, out, "\n")) out[0 .. out.len - 1] else out;
+     if (v.len == 0 or std.mem.indexOfScalar(u8, v, '\n') != null) return null;
+     if (!divmod) {
+         if (!isInt(v)) return null;
+-        return try std.fmt.allocPrint(a, "[exact: {s} = {s}]\n", .{ display, v });
++        return try std.fmt.allocPrint(a, "{s}{s} = {s}{s}\n", .{ f[0..at], display, v, f[at + 2 ..] });
+     }
+     if (v.len < 6 or v[0] != '(' or v[v.len - 1] != ')') return null;
+     const inner = v[1 .. v.len - 1];
+@@ -159,7 +179,7 @@ pub fn owned(a: Allocator, display: []const u8, divmod: bool, out: []const u8) A
+     const q = inner[0..comma];
+     const r = inner[comma + 2 ..];
+     if (!isInt(q) or !isInt(r)) return null;
+-    return try std.fmt.allocPrint(a, "[exact: {s} = {s} remainder {s}]\n", .{ display, q, r });
++    return try std.fmt.allocPrint(a, "{s}{s} = {s} remainder {s}{s}\n", .{ f[0..at], display, q, r, f[at + 2 ..] });
+ }
+ 
+ fn isInt(s: []const u8) bool {
+@@ -173,6 +193,18 @@ fn wrapped(a: Allocator, e: Expr) Allocator.Error![]const u8 {
+     return if (e.ops > 0) std.fmt.allocPrint(a, "({s})", .{e.display}) else e.display;
+ }
+ 
++/// A whole-statement pow(a, b, m) as `print(...)`: the form the graph bank's modular-power plan takes; else `run`.
++fn printed(a: Allocator, run: []const u8) Allocator.Error![]const u8 {
++    if (!std.mem.startsWith(u8, run, "pow(") or run[run.len - 1] != ')') return run;
++    var depth: usize = 0;
++    for (run[3 .. run.len - 1]) |c| {
++        if (c == '(') depth += 1;
++        if (c == ')') depth -= 1;
++        if (depth == 0) return run; // pow(...) is only part of the statement
++    }
++    return std.mem.concat(a, u8, &.{ "print(", run, ")" });
++}
++
+ fn hasArith(source: []const u8) bool {
+     var i: usize = 0;
+     while (i < source.len) : (i += 1) {
+diff --git a/zig/src/core/runner_trace_expr.zig b/zig/src/core/runner_trace_expr.zig
+index 2671312960c00f76b2bbb318b5e9e178d295515a..b4678357bd736f122b047bd8495e0d75ced818bf 100644
+--- a/zig/src/core/runner_trace_expr.zig
++++ b/zig/src/core/runner_trace_expr.zig
+@@ -8,8 +8,10 @@ pub const inf: u32 = 1 << 20;
+ pub const Kind = enum { num, name, op };
+ pub const Tok = struct { kind: Kind, text: []const u8 };
+ 
+-/// A parsed operand: Python source, display text, syntax bound in decimal digits, binary operators, literal-only.
+-pub const Expr = struct { source: []u8, display: []u8, bound: u32, ops: u32, constant: bool };
++/// A parsed operand: source, display, digit bound, operators, literal-only; `run` the frontend's source, `pw` a power.
++pub const Expr = struct { source: []u8, display: []u8, bound: u32, ops: u32, constant: bool, run: []u8, pw: ?Pow = null };
++
++pub const Pow = struct { base: []u8, k: []const u8 };
+ 
+ pub const Name = struct { name: []u8, expr: ?Expr };
+ 
+@@ -164,7 +166,7 @@ const Parser = struct {
+             const r = try p.term();
+             has_mod = has_mod or p.last_mod;
+             terms += 1;
+-            e = .{ .source = try cat(p.a, &.{ e.source, op, r.source }), .display = try cat(p.a, &.{ e.display, " ", op, " ", r.display }), .bound = sat(@max(e.bound, r.bound) + 1), .ops = e.ops + r.ops + 1, .constant = false };
++            e = .{ .source = try cat(p.a, &.{ e.source, op, r.source }), .display = try cat(p.a, &.{ e.display, " ", op, " ", r.display }), .bound = sat(@max(e.bound, r.bound) + 1), .ops = e.ops + r.ops + 1, .constant = false, .run = try cat(p.a, &.{ e.run, op, r.run }) };
+         }
+         // `A + B mod M` reads two ways: mod only in an expression that is one term
+         if (has_mod and terms > 1) return error.Refused;
+@@ -174,6 +176,7 @@ const Parser = struct {
+     fn term(p: *Parser) Error!Expr {
+         var e = try p.factor();
+         var moded = false;
++        var times = false;
+         while (p.peek("*") or p.peek("%")) {
+             const op = p.toks[p.i].text;
+             if (moded or (op[0] == '%' and p.depth > 0)) return error.Refused; // mod last, never in brackets
+@@ -184,9 +187,12 @@ const Parser = struct {
+                 // the modulus is a plain number, name or power chain (10^18), never a sum or a bracket
+                 for (p.toks[start..p.i]) |t| if (t.kind == .op and !std.mem.eql(u8, t.text, "^")) return error.Refused;
+                 moded = true;
+-                e = .{ .source = try cat(p.a, &.{ e.source, "%", r.source }), .display = try cat(p.a, &.{ e.display, " mod ", r.display }), .bound = r.bound, .ops = e.ops + r.ops + 1, .constant = false };
++                // a lone power mod m runs as Python's three-argument pow: the same value, an exact modular route
++                const run = if (e.pw != null and !times) try cat(p.a, &.{ "pow(", e.pw.?.base, ", ", e.pw.?.k, ", ", try tens(p.a, r.run), ")" }) else try cat(p.a, &.{ e.run, "%", r.run });
++                e = .{ .source = try cat(p.a, &.{ e.source, "%", r.source }), .display = try cat(p.a, &.{ e.display, " mod ", r.display }), .bound = r.bound, .ops = e.ops + r.ops + 1, .constant = false, .run = run };
+             } else {
+-                e = .{ .source = try cat(p.a, &.{ e.source, "*", r.source }), .display = try cat(p.a, &.{ e.display, "*", r.display }), .bound = sat(e.bound + r.bound), .ops = e.ops + r.ops + 1, .constant = false };
++                times = true;
++                e = .{ .source = try cat(p.a, &.{ e.source, "*", r.source }), .display = try cat(p.a, &.{ e.display, "*", r.display }), .bound = sat(e.bound + r.bound), .ops = e.ops + r.ops + 1, .constant = false, .run = try cat(p.a, &.{ e.run, "*", r.run }) };
+             }
+         }
+         p.last_mod = moded;
+@@ -197,7 +203,7 @@ const Parser = struct {
+         if (p.peek("-")) {
+             p.i += 1;
+             const e = try p.factor();
+-            return .{ .source = try cat(p.a, &.{ "-", e.source }), .display = try cat(p.a, &.{ "-", e.display }), .bound = e.bound, .ops = e.ops, .constant = false };
++            return .{ .source = try cat(p.a, &.{ "-", e.source }), .display = try cat(p.a, &.{ "-", e.display }), .bound = e.bound, .ops = e.ops, .constant = false, .run = try cat(p.a, &.{ "-", e.run }) };
+         }
+         const base = try p.atom();
+         if (!p.peek("^")) return base;
+@@ -208,7 +214,7 @@ const Parser = struct {
+         if (p.peek("^")) return error.Refused; // a^b^c
+         const k = std.fmt.parseInt(u32, k_text, 10) catch return error.Refused;
+         const bound: u32 = if (base.constant and k <= 4096) constPowDigits(base.source, k) else sat(@as(u32, @intCast(@min(@as(u64, base.bound) * k, inf))));
+-        return .{ .source = try cat(p.a, &.{ base.source, "**", k_text }), .display = try cat(p.a, &.{ base.display, "^", k_text }), .bound = bound, .ops = base.ops + 1, .constant = false };
++        return .{ .source = try cat(p.a, &.{ base.source, "**", k_text }), .display = try cat(p.a, &.{ base.display, "^", k_text }), .bound = bound, .ops = base.ops + 1, .constant = false, .run = try cat(p.a, &.{ base.run, "**", k_text }), .pw = .{ .base = base.run, .k = k_text } };
+     }
+ 
+     fn atom(p: *Parser) Error!Expr {
+@@ -216,10 +222,10 @@ const Parser = struct {
+         const t = p.toks[p.i];
+         p.i += 1;
+         switch (t.kind) {
+-            .num => return .{ .source = try p.a.dupe(u8, t.text), .display = try p.a.dupe(u8, t.text), .bound = litDigits(t.text), .ops = 0, .constant = true },
++            .num => return .{ .source = try p.a.dupe(u8, t.text), .display = try p.a.dupe(u8, t.text), .bound = litDigits(t.text), .ops = 0, .constant = true, .run = try decimal(p.a, t.text) },
+             .name => {
+                 const e = lookup(p.names, t.text) orelse return error.Refused;
+-                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = if (e.ops > 0) try cat(p.a, &.{ "(", e.display, ")" }) else e.display, .bound = e.bound, .ops = e.ops, .constant = e.constant };
++                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = if (e.ops > 0) try cat(p.a, &.{ "(", e.display, ")" }) else e.display, .bound = e.bound, .ops = e.ops, .constant = e.constant, .run = try cat(p.a, &.{ "(", e.run, ")" }) };
+             },
+             .op => {
+                 if (!std.mem.eql(u8, t.text, "(")) return error.Refused;
+@@ -228,7 +234,7 @@ const Parser = struct {
+                 if (!p.peek(")")) return error.Refused;
+                 p.depth -= 1;
+                 p.i += 1;
+-                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = try cat(p.a, &.{ "(", e.display, ")" }), .bound = e.bound, .ops = e.ops, .constant = e.constant };
++                return .{ .source = try cat(p.a, &.{ "(", e.source, ")" }), .display = try cat(p.a, &.{ "(", e.display, ")" }), .bound = e.bound, .ops = e.ops, .constant = e.constant, .run = try cat(p.a, &.{ "(", e.run, ")" }) };
+             },
+         }
+     }
+@@ -238,6 +244,31 @@ fn cat(a: Allocator, parts: []const []const u8) Allocator.Error![]u8 {
+     return std.mem.concat(a, u8, parts);
+ }
+ 
++/// A modulus `10**k` written out in digits (notation, like hex in decimal); any other modulus as it is.
++fn tens(a: Allocator, run: []const u8) Allocator.Error![]const u8 {
++    if (!std.mem.startsWith(u8, run, "10**") or run.len == 4 or !allDigits(run[4..])) return run;
++    const k = std.fmt.parseInt(u8, run[4..], 10) catch return run;
++    if (k > 128) return run;
++    const out = try a.alloc(u8, @as(usize, k) + 1);
++    out[0] = '1';
++    @memset(out[1..], '0');
++    return out;
++}
++
++/// A literal as the frontend gets it: hex in decimal (text plumbing, the value unchanged), else as written.
++fn decimal(a: Allocator, lit: []const u8) Allocator.Error![]u8 {
++    if (!std.mem.startsWith(u8, lit, "0x")) return a.dupe(u8, lit);
++    var v = try std.math.big.int.Managed.init(a);
++    v.setString(16, lit[2..]) catch |e| switch (e) {
++        error.OutOfMemory => return error.OutOfMemory,
++        else => unreachable, // number() admits hex digits only
++    };
++    return v.toString(a, 10, .lower) catch |e| switch (e) {
++        error.OutOfMemory => return error.OutOfMemory,
++        else => unreachable, // base 10 is valid
++    };
++}
++
+ /// Decimal digits of a literal (hex: of its value).
+ fn litDigits(lit: []const u8) u32 {
+     if (!std.mem.startsWith(u8, lit, "0x")) return @intCast(@min(lit.len, inf));
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+index 6167aac3a14f662eccdd5f4dce161a989f14dee5..f6ec22bdcf048c40deff2d1bf572009e1ce82468 100644
+--- a/zig/src/core/runner_trace_test.zig
++++ b/zig/src/core/runner_trace_test.zig
+@@ -4,6 +4,9 @@ const trace = @import("runner_trace.zig");
+ const scan = @import("runner_scan.zig");
+ const rapi = @import("runner_api.zig");
+ const rt = @import("runner_test.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const runner = @import("runner.zig");
+ 
+ const gpa = std.testing.allocator;
+ 
+@@ -76,7 +79,7 @@ test "runner trace: the display line and the owned text" {
+     const f = (try t.line(bn019)).?;
+     try std.testing.expect(f.divmod);
+     try std.testing.expectEqualStrings("314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536", f.display);
+-    const line = (try trace.owned(gpa, f.display, true, "(1155727349790921717910215407028, 23663814570294126502)\n")).?;
++    const line = (try trace.owned(gpa, "", f.display, true, "(1155727349790921717910215407028, 23663814570294126502)\n")).?;
+     defer gpa.free(line);
+     try std.testing.expectEqualStrings("[exact: 314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536 = 1155727349790921717910215407028 remainder 23663814570294126502]\n", line);
+     const g = (try t.line(bn008)).?;
+@@ -85,8 +88,8 @@ test "runner trace: the display line and the owned text" {
+     defer fresh.deinit();
+     const h = (try fresh.line(bn015)).?;
+     try std.testing.expectEqualStrings("0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF", h.display);
+-    for ([_][]const u8{ "3.75\n", "1\n2\n", "", "(1, 2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "x", false, out));
+-    for ([_][]const u8{ "(1, 2, 3)\n", "7\n", "(1,2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "x", true, out));
++    for ([_][]const u8{ "3.75\n", "1\n2\n", "", "(1, 2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", false, out));
++    for ([_][]const u8{ "(1, 2, 3)\n", "7\n", "(1,2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", true, out));
+ }
+ 
+ test "runner trace: doubts, lists, hypotheticals and two readings abstain" {
+@@ -124,6 +127,82 @@ test "runner trace: an owned line restated through its names never fires again (
+     try std.testing.expectEqual(null, try t.line(again));
+ }
+ 
++test "runner trace: a restated owned line fires again only as often as the request's repeat allows" {
++    var t = trace.Tracer.init(gpa);
++    defer t.deinit();
++    t.repeat = 1;
++    const f = try gpa.dupe(u8, (try t.line(bn019)).?.display);
++    defer gpa.free(f);
++    try t.fire(f);
++    const again = "Need divide A by B. A has 6 base1e9 limbs, B 3 limbs. Quotient ~ A/B ~ (3.141e50)/(2.718e20)=1.155e30.";
++    const g = (try t.line(again)).?;
++    try std.testing.expectEqualStrings(f, g.display);
++    try t.fire(g.display);
++    try std.testing.expectEqual(null, try t.line(again));
++}
++
++/// A line's statement: Python source (checks, dedup), the frontend's source and the displayed expression.
++fn expectRun(lines: []const []const u8, source: []const u8, run: []const u8, display: []const u8) !void {
++    var t = trace.Tracer.init(gpa);
++    defer t.deinit();
++    var last: ?trace.Found = null;
++    for (lines) |l| last = try t.line(l);
++    const f = last orelse return error.TestExpectedStatement;
++    try std.testing.expectEqualStrings(source, f.source);
++    try std.testing.expectEqualStrings(run, f.run);
++    try std.testing.expectEqualStrings(display, f.display);
++}
++
++test "runner trace: a lone power mod m runs as pow(a, b, m), hex runs in decimal; the shown line keeps the model's text" {
++    try expectRun(&.{bn008}, "7**123%1000000007", "print(pow(7, 123, 1000000007))", "7^123 mod 1000000007");
++    try expectRun(&.{"Need compute 3^400 mod 10^18."}, "3**400%10**18", "print(pow(3, 400, 1000000000000000000))", "3^400 mod 10^18");
++    try expectRun(&.{"Need compute (12+5)^40 mod 1000000007."}, "(12+5)**40%1000000007", "print(pow((12+5), 40, 1000000007))", "(12 + 5)^40 mod 1000000007");
++    try expectRun(&.{"Need multiply 7^123 mod 1000000007 by 3."}, "(7**123%1000000007) * (3)", "(pow(7, 123, 1000000007)) * (3)", "(7^123 mod 1000000007) * 3");
++    try expectRun(&.{bn015}, "(0xFEDCBA9876543210)*2**64+(0x0123456789ABCDEF)", "(18364758544493064720)*2**64+(81985529216486895)", "0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF");
++    // not a lone power: Python's -a**b % m and a*b**c % m are not pow(a, b, m)
++    try expectRun(&.{"Need compute -7^123 mod 1000000007."}, "-7**123%1000000007", "-7**123%1000000007", "-7^123 mod 1000000007");
++    try expectRun(&.{"Need compute 2*7^123 mod 1000000007."}, "2*7**123%1000000007", "2*7**123%1000000007", "2*7^123 mod 1000000007");
++    try expectRun(&.{"Need divide 0x10 by 3."}, "divmod(0x10, 3)", "divmod(16, 3)", "0x10 ÷ 3");
++}
++
++test "runner trace: census pow and hex statements run exactly on the real frontend and graph bank (TF_RUNNER_GRAPH_BANK)" {
++    const path = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    var bank = try graph.Bank.load(gpa, std.mem.span(path));
++    defer bank.deinit();
++    const g = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(g);
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = g, .graph = g };
++    defer dispatch.deinit();
++    var routed: route.Routed = .{ .inner = @import("runner_frontend.zig").frontend(), .bank = &bank };
++    const front = routed.frontend();
++    const cases = [_][3][]const u8{
++        .{ bn008, "7^123 mod 1000000007", "937329259\n" },
++        .{ "Need compute 3^400 mod 10^18.", "3^400 mod 10^18", "192443283334088001\n" },
++        .{ bn015, "0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF", "338770000845734292516042252062085074415\n" },
++        .{ "Let B=0x0123456789ABCDEF. Need compute (B+1)*2^64.", "(0x0123456789ABCDEF + 1)*2^64", "1512366075204170947414340898899623936\n" },
++    };
++    for (cases) |c| {
++        var t = trace.Tracer.init(gpa);
++        defer t.deinit();
++        const f = (try t.line(c[0])).?;
++        try std.testing.expectEqualStrings(c[1], f.display);
++        var cell = std.heap.ArenaAllocator.init(gpa); // as the runner translates: in the cell's arena
++        defer cell.deinit();
++        const tr = try front.translate(front.ctx, cell.allocator(), .{ .form = .repl, .lang = "python", .code = f.run });
++        std.debug.print("trace run {s}: {s}\n", .{ f.run, if (tr == .program) @tagName(tr.program.kind) else @tagName(tr.abstain) });
++        try std.testing.expect(tr == .program and tr.program.kind == .graph);
++        const d = dispatch.backend();
++        const job = try d.start(1, tr.program, 1 << 32);
++        const res = while (true) switch (d.poll(job)) {
++            .running => std.Thread.yield() catch {},
++            .done => |r| break r,
++        };
++        try std.testing.expectEqual(rapi.Status.ok, res.status);
++        try std.testing.expectEqualStrings(c[2], res.out);
++        d.release(1);
++    }
++}
++
+ test "runner trace: negative controls: prose, code and small inline sums state nothing" {
+     try expectNone(&.{"We need answer. Need be careful. Let's think about the algorithm."});
+     try expectNone(&.{"for i in range(10): total = total * 3"});
+@@ -193,7 +272,7 @@ const TraceBack = struct {
+ 
+     const answers = [_][2][]const u8{
+         .{ "(987654) * (137)", "135308598\n" },
+-        .{ "7**123%1000000007", "937329259\n" },
++        .{ "pow(7, 123, 1000000007)", "937329259\n" }, // the fake frontend drops print( )
+     };
+ 
+     fn backend(b: *TraceBack) rapi.Backend {
+@@ -223,12 +302,16 @@ const TraceBack = struct {
+ 
+ /// One reply; `guess` is the model's own line after `lead` (a digit line is itself a cue).
+ fn traced(lead: []const u8, guess: []const u8, on: bool, delay: u32, fault: bool) ![]u8 {
++    return tracedAsk(lead, guess, on, delay, fault, .{});
++}
++
++fn tracedAsk(lead: []const u8, guess: []const u8, on: bool, delay: u32, fault: bool, ask: runner.TraceAsk) ![]u8 {
+     var back: TraceBack = .{ .delay = delay, .fault = fault };
+     defer back.deinit();
+     var unused: rt.Back = .{};
+     defer unused.deinit();
+     var m = [_]rt.Model{.{ .lead = lead, .guess = guess }};
+-    const texts = try rt.replies(&m, .{ .trace = on, .backend = back.backend() }, &unused);
++    const texts = try rt.replies(&m, .{ .trace = on, .backend = back.backend(), .trace_ask = ask }, &unused);
+     defer gpa.free(texts);
+     return texts[0];
+ }
+@@ -266,6 +349,49 @@ test "runner trace: late runs give the same reply; faults, the form off and no c
+     try std.testing.expectEqualStrings(quiet ++ "135308598\n[exact: 987654 * 137 = 135308598]\n", digits);
+ }
+ 
++test "runner trace: a request's repeat reaches the reply's tracer" {
++    var r: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .scan = .{ .trace = true } }, .frontend = undefined, .backend = undefined, .text = .{ .bytes = undefined, .encode = undefined } };
++    const s = (try r.session(.{ .repeat = 2 })).?;
++    defer gpa.destroy(s);
++    defer gpa.free(s.format);
++    defer s.scan.deinit(gpa);
++    try std.testing.expectEqual(@as(u8, 2), s.scan.cfg.trace_repeat);
++}
++
++test "runner trace: a request's wording frames the owned line; runner_trace false keeps the model's text" {
++    const worded = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .format = "[exact, computed by the engine: {}]" });
++    defer gpa.free(worded);
++    try std.testing.expectEqualStrings(mul_lead ++ "[exact, computed by the engine: 987654 * 137 = 135308598]\nDone.", worded);
++    const noted = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .format = "[exact: {}] (computed exactly by the engine)" });
++    defer gpa.free(noted);
++    try std.testing.expectEqualStrings(mul_lead ++ "[exact: 987654 * 137 = 135308598] (computed exactly by the engine)\nDone.", noted);
++    const default = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .format = trace.default_format });
++    defer gpa.free(default);
++    const plain = try traced(mul_lead, "ok", true, 0, false);
++    defer gpa.free(plain);
++    try std.testing.expectEqualStrings(plain, default);
++    const off = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .off = true, .format = "[engine: {}]" });
++    defer gpa.free(off);
++    try std.testing.expectEqualStrings(mul_lead ++ "ok\nDone.", off);
++}
++
++test "runner trace: wording around divmod's quotient and remainder; a request's wording must be one line with {} once" {
++    const line = (try trace.owned(gpa, "[exact, computed by the engine: {}]", "(10^30 - 1) ÷ 97", true, "(10309278350515463917525773195, 84)\n")).?;
++    defer gpa.free(line);
++    try std.testing.expectEqualStrings("[exact, computed by the engine: (10^30 - 1) ÷ 97 = 10309278350515463917525773195 remainder 84]\n", line);
++    const lead = (try trace.owned(gpa, "{} (exact)", "2^10", false, "1024\n")).?;
++    defer gpa.free(lead);
++    try std.testing.expectEqualStrings("2^10 = 1024 (exact)\n", lead);
++    try std.testing.expect(trace.validFormat("[exact: {}]"));
++    try std.testing.expect(trace.validFormat("{}"));
++    var long: [trace.max_format + 1]u8 = undefined;
++    @memset(&long, 'x');
++    long[0..2].* = "{}".*;
++    try std.testing.expect(trace.validFormat(long[0..trace.max_format]));
++    try std.testing.expect(!trace.validFormat(&long));
++    for ([_][]const u8{ "", "[exact]", "[{} = {}]", "[exact: {}]\nmore", "[exact: {}]\r" }) |bad| try std.testing.expect(!trace.validFormat(bad));
++}
++
+ fn env(name: [:0]const u8) ?[]const u8 {
+     const v = std.c.getenv(name) orelse return null;
+     return std.mem.span(v);
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 65e2796378dbc0a16cf9733521c1bbaa253259ba..84f82fb4e417ddea708ab0702d85ca8b9dcecc73 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -185,6 +185,8 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     request.hold_eos = stops_opt.strings.len == 0 and @import("compute_turns.zig").arms(srv, input, &request);
+     // the in-model runner (TF_DSV41_RUNNER): code cells this reply writes run, their results owned in place
+     request.run_cells = srv.info.runner != null;
++    if (request.run_cells) request.run_trace = @import("runner_guide.zig").traceAsk(f) catch
++        return cx.refuse("runner_trace must be a boolean, runner_trace_format one line of at most 128 bytes with {} once, runner_trace_repeat 0 to 3");
+     return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .guide = guided.guide };
+ }
+ 
+diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
+index 4a98e1090c5db8df5d7c9e3266dd6bfe330abe31..dfd37df28d6ae331ce437c88a4c40da7a280b9f6 100644
+--- a/zig/src/server/openai.zig
++++ b/zig/src/server/openai.zig
+@@ -152,7 +152,7 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value) errors.Refused!Plan {
+         input.temperature = if (t == .float) t.float else std.fmt.parseFloat(f64, t.int) catch 0;
+     };
+     const sampling = try json.newObject(cx.a);
+-    for ([_][]const u8{ "temperature", "top_p", "top_k", "min_p", "presence_penalty", "frequency_penalty", "seed", "priority", "model", "draft", "thinking_budget", "ignore_eos", "return_token_ids", "stop", "grammar_budget", "runner_guide" } ++ grammar.fields) |k| if (body.get(k)) |v| try sampling.put(cx.a, k, v);
++    for ([_][]const u8{ "temperature", "top_p", "top_k", "min_p", "presence_penalty", "frequency_penalty", "seed", "priority", "model", "draft", "thinking_budget", "ignore_eos", "return_token_ids", "stop", "grammar_budget", "runner_guide", "runner_trace", "runner_trace_format", "runner_trace_repeat" } ++ grammar.fields) |k| if (body.get(k)) |v| try sampling.put(cx.a, k, v);
+     try grammar.refusal(cx, body);
+     if (input.tools.len > 0 and try tool_specs.choiceRequiresCall(cx.a, body.get("tool_choice"))) try sampling.put(cx.a, "tool_call_required", .{ .bool = true });
+     if (body.field("parallel_tool_calls")) |p| if (p == .bool and !p.bool) try sampling.put(cx.a, "tool_call_single", .{ .bool = true });
+diff --git a/zig/src/server/runner_guide.zig b/zig/src/server/runner_guide.zig
+index 079908ee136dea96c4d98930452bf68a2ca018f0..0621224a0237c3b968ba5fc64b9c7a5204f62672 100644
+--- a/zig/src/server/runner_guide.zig
++++ b/zig/src/server/runner_guide.zig
+@@ -2,6 +2,9 @@
+ const std = @import("std");
+ const json = @import("json");
+ const Value = json.Value;
++const TraceAsk = @import("engine_api").runner.TraceAsk;
++const validTraceFormat = @import("engine_api").runner.validTraceFormat;
++const maxTraceRepeat = @import("engine_api").runner.maxTraceRepeat;
+ 
+ /// RUNNER-GUIDE.md without its final newline (76 tokens on DeepSeek V4.1).
+ pub const text = "Exact computation is available. Write the full expression inline as `<expr> =`, or a Python fenced cell with `print(<expr>)` followed by a `Result:` header. The exact value will follow. Request the whole computation early; wait for the result instead of working digits, loops, carries or long division by hand. Unsupported requests leave your own continuation.";
+@@ -69,6 +72,58 @@ pub fn with(a: std.mem.Allocator, messages: Value, guide: []const u8) std.mem.Al
+     return .{ .array = out };
+ }
+ 
++/// A chat's "runner_trace" (false: none), "runner_trace_format" (the line), "runner_trace_repeat"; null: as booted.
++pub fn traceAsk(fields: Value) error{BadTrace}!TraceAsk {
++    var ask: TraceAsk = .{};
++    if (fields.get("runner_trace")) |v| switch (v) {
++        .null => {},
++        .bool => |on| ask.off = !on,
++        else => return error.BadTrace,
++    };
++    if (fields.get("runner_trace_format")) |v| switch (v) {
++        .null => {},
++        .string => |t| ask.format = if (validTraceFormat(t)) t else return error.BadTrace,
++        else => return error.BadTrace,
++    };
++    if (fields.get("runner_trace_repeat")) |v| switch (v) {
++        .null => {},
++        .int => ask.repeat = std.math.cast(u8, v.int64() orelse return error.BadTrace) orelse return error.BadTrace,
++        else => return error.BadTrace,
++    };
++    if (ask.repeat > maxTraceRepeat) return error.BadTrace;
++    return ask;
++}
++
++test "runner guide: a chat's runner_trace and runner_trace_format, and their refusals" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const f = try json.newObject(a);
++    try std.testing.expectEqualDeep(TraceAsk{}, try traceAsk(.{ .object = f }));
++    try f.put(a, "runner_trace", .{ .bool = false });
++    try f.put(a, "runner_trace_format", .{ .string = "[exact, computed by the engine: {}]" });
++    const got = try traceAsk(.{ .object = f });
++    try std.testing.expect(got.off);
++    try std.testing.expectEqualStrings("[exact, computed by the engine: {}]", got.format);
++    try f.put(a, "runner_trace", .{ .bool = true });
++    try f.put(a, "runner_trace_format", .null);
++    try std.testing.expectEqualDeep(TraceAsk{}, try traceAsk(.{ .object = f }));
++    for ([_]Value{ .{ .string = "[exact]" }, .{ .string = "[{}]\n{}" }, .{ .string = "a\n{}" }, .{ .bool = true } }) |bad| {
++        try f.put(a, "runner_trace_format", bad);
++        try std.testing.expectError(error.BadTrace, traceAsk(.{ .object = f }));
++    }
++    try f.put(a, "runner_trace_format", .null);
++    try f.put(a, "runner_trace", .{ .string = "off" });
++    try std.testing.expectError(error.BadTrace, traceAsk(.{ .object = f }));
++    try f.put(a, "runner_trace", .null);
++    try f.put(a, "runner_trace_repeat", .{ .int = "1" });
++    try std.testing.expectEqual(@as(u8, 1), (try traceAsk(.{ .object = f })).repeat);
++    for ([_]Value{ .{ .int = "4" }, .{ .int = "-1" }, .{ .int = "300" }, .{ .string = "1" }, .{ .bool = true } }) |bad| {
++        try f.put(a, "runner_trace_repeat", bad);
++        try std.testing.expectError(error.BadTrace, traceAsk(.{ .object = f }));
++    }
++}
++
+ test "runner guide: T5's RUNNER-GUIDE.md bytes; joins a system message or leads the chat" {
+     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+     defer arena.deinit();

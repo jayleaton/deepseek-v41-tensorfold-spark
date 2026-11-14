@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 12:05:37 +0700
+Subject: [PATCH 106/207] In-model runner: proof covers a computed divisor (25)
+ and a zero divisor (nothing owned) on the direct binding
+
+---
+ zig/src/core/runner_proof_test.zig | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index ec4d8a2af6b9f26f4a06cc3cc5b62529d36ea1da..05fa78b3a9c88368f714df5f738d3cea82a24734 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -314,6 +314,7 @@ test "runner proof: S1's and S2's six saved cells take the graph route and print
+         .{ "print(7**123%1000000007)", "937329259\n" },
+         .{ "print(3**400%10**18)", "192443283334088001\n" },
+         .{ "print(0xFEDCBA9876543210*2**64+0x0123456789ABCDEF)", "338770000845734292516042252062085074415\n" },
++        .{ "a=3\nprint(100//(a+1))\n", "25\n" }, // a computed divisor (T2's table refused it before graph-v4)
+     }) |c| {
+         var arena = std.heap.ArenaAllocator.init(gpa);
+         defer arena.deinit();
+@@ -328,5 +329,14 @@ test "runner proof: S1's and S2's six saved cells take the graph route and print
+             return error.TestExpectedEqual;
+         }
+     }
++    // a zero divisor is Python's ZeroDivisionError: no printed value is owned
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const z = try front.translate(front.ctx, arena.allocator(), .{ .form = .fence, .lang = "python", .code = "a=-1\nprint(100//(a+1))\n" });
++    if (z == .program) {
++        const r = finish(b, try b.start(1, z.program, 4_000_000));
++        std.debug.print("zero divisor: {t} '{s}'\n", .{ r.status, r.out });
++        try std.testing.expect(r.status != .ok);
++    }
+     b.release(1);
+ }

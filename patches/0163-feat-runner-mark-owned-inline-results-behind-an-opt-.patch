@@ -1,0 +1,374 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 08:03:53 +0700
+Subject: [PATCH 163/207] feat(runner): mark owned inline results behind an
+ opt-in knob
+
+Resolved against T2 64dcd5831 receipt records: every token is still recorded with its full bytes
+(marker included) before the mark narrows what the scanner sees, and the owned record stays ahead
+of the forcing state. The destroy join comment moves onto its line to keep runner.zig at 600.
+
+(cherry picked from commit 9455a17e7d2d0b417779d0638761beaef9a6a861)
+---
+ zig/src/core/runner.zig        | 84 +++++++++++++++++-----------------
+ zig/src/core/runner_output.zig | 73 +++++++++++++++++++++++++++++
+ zig/src/core/runner_test.zig   | 69 +++++++++++++++++++++++++++-
+ 3 files changed, 183 insertions(+), 43 deletions(-)
+ create mode 100644 zig/src/core/runner_output.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 66661ee772836593f9214f811f2d98c99f604584..af87ea3719f88f7dc3cb0506af5cef2f868160b4 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -8,6 +8,10 @@ const records = @import("runner_receipt.zig");
+ pub const place = @import("runner_place.zig");
+ const Allocator = std.mem.Allocator;
+ const log = std.log.scoped(.runner);
++const output = @import("runner_output.zig");
++
++/// Opt-in attribution on a successfully owned inline value; plain-text tokens, not a special token.
++pub const inline_mark_suffix = output.suffix;
+ 
+ pub const Config = struct {
+     scan: scan.Config = .{},
+@@ -25,6 +29,7 @@ pub const Config = struct {
+     guide: []const u8 = "", // PREFIX_GUIDE: "1" RUNNER-GUIDE.md, else a file, as chats' default guide (server/runner_guide.zig)
+     guide_max_bytes: usize = 512, // PREFIX_GUIDE_MAX_BYTES: request guide cap, opt-in up to 2048 bytes
+     compile: bool = true, // false: the frontend never builds an ELF (no clang); calc and graph programs only (S3)
++    inline_mark: bool = false, // PREFIX_INLINE_MARK: tag owned inline values; off preserves their bytes
+     sync_graph: bool = false, // PREFIX_SYNC_GRAPH: a graph result settles at its trigger token, in that round (no hold)
+     cells: bool = true, // PREFIX_CELLS: the receipt records each owned cell's span, route and landed value (runner_receipt.zig)
+ 
+@@ -50,6 +55,7 @@ pub const Config = struct {
+         c.max_tokens = try knob(u32, get, prefix ++ "_MAX_TOKENS", c.max_tokens, 1, 1 << 20);
+         c.exact = try knob(u1, get, prefix ++ "_EXACT", 0, 0, 1) == 1;
+         c.settle_us = try knob(u32, get, prefix ++ "_SETTLE_US", c.settle_us, 0, 100_000);
++        c.inline_mark = try knob(u1, get, prefix ++ "_INLINE_MARK", 0, 0, 1) == 1;
+         c.sync_graph = try knob(u1, get, prefix ++ "_SYNC_GRAPH", 0, 0, 1) == 1;
+         if (c.sync_graph and c.backend != .graph) return bad(prefix ++ "_SYNC_GRAPH", "1 (backend is not graph)");
+         c.cells = try knob(u1, get, prefix ++ "_CELLS", 1, 0, 1) == 1;
+@@ -97,11 +103,7 @@ pub const Config = struct {
+ };
+ 
+ /// The engine's tokenizer as the runner needs it: one token's bytes, and text to token ids.
+-pub const Text = struct {
+-    ctx: ?*anyopaque = null,
+-    bytes: *const fn (ctx: ?*anyopaque, token: u32) []const u8,
+-    encode: *const fn (ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32,
+-};
++pub const Text = output.Text;
+ 
+ /// A request's say over form trace (chat fields "runner_trace", "runner_trace_format"); defaults change nothing.
+ pub const TraceAsk = struct {
+@@ -164,7 +166,12 @@ pub const Session = struct {
+     abstained_n: u32 = 0,
+     held_ms: u64 = 0, // summed over the reply's holds
+     held_ticks: u32 = 0, // the current hold's ticks so far (the serving log's)
+-    forcing: ?struct { at: u64, left: usize, cell: u32 } = null, // an owned result's forced tokens still to commit
++    forcing: ?struct {
++        at: u64,
++        left: usize,
++        cell: u32,
++        inline_bytes_left: ?usize = null,
++    } = null, // an owned result's forced tokens still to commit
+     resume_ms: u64 = 0, // summed: an owned result's settling to the model's first token after it
+     terminal_seen: bool = false,
+     broken: bool = false, // out of memory once: no more cells, no more holds
+@@ -229,7 +236,9 @@ pub const Session = struct {
+         }
+         const bytes = if (think_end) "" else tx.bytes(tx.ctx, token);
+         try s.rec.token(s.r.gpa, token, bytes, think_open);
+-        const ev = try s.scan.feed(s.r.gpa, bytes, think_open);
++        const scanning = if (s.forcing) |*r| output.scanning(&r.inline_bytes_left, bytes) else bytes;
++        if (scanning.len == 0 and bytes.len > 0) return false;
++        const ev = try s.scan.feed(s.r.gpa, scanning, think_open);
+         if (ev.closed) |c| try s.open(c);
+         const t = ev.trigger orelse return false;
+         if (!can_hold or t.index >= s.cells.items.len) return false;
+@@ -348,6 +357,11 @@ pub const Session = struct {
+         if (w.trace) return try s.ownTrace(c, w.index, held_ms);
+         // an inline value is owned only when the run halted with a one-line value
+         if (!c.abstained and w.inline_space != null and (c.result.?.status != .ok or std.mem.indexOfScalar(u8, std.mem.trimEnd(u8, c.result.?.out, "\n"), '\n') != null)) c.abstained = true;
++        if (!c.abstained and s.r.cfg.inline_mark and w.inline_space != null) {
++            const value = output.value(c.result.?.out);
++            if (std.mem.trim(u8, value, " \t\r").len == 0 or std.mem.indexOfAny(u8, value, "\r\n") != null)
++                c.abstained = true;
++        }
+         if (c.abstained) {
+             s.abstained_n += 1;
+             c.told = .abstained;
+@@ -356,13 +370,28 @@ pub const Session = struct {
+         }
+         const res = c.result.?;
+         const ids = try s.owned(res, w);
++        if (s.r.cfg.inline_mark and w.inline_space != null and ids.len == 0) {
++            c.abstained = true;
++            c.told = .abstained;
++            s.abstained_n += 1;
++            log.info("reply {d} cell {d}: marked inline value exceeds token cap", .{ s.id, w.index });
++            return ids;
++        }
+         s.owned_n += 1;
+         c.told = .owned;
+         c.owned_tokens = @intCast(ids.len);
+         s.rec.owned(s.r.gpa, w.index, ids) catch {
+             s.rec.on = false; // out of memory: this reply's receipt has no records
+         };
+-        s.forcing = .{ .at = nowNs(), .left = ids.len, .cell = w.index };
++        s.forcing = .{
++            .at = nowNs(),
++            .left = ids.len,
++            .cell = w.index,
++            .inline_bytes_left = if (s.r.cfg.inline_mark and w.inline_space != null)
++                output.value(res.out).len + @intFromBool(w.inline_space.?)
++            else
++                null,
++        };
+         log.info("reply {d} cell {d} ({s} {t}): owned {d} tokens, {t} after {d} steps, run {d} ms, held {d} ms, ticks {d}", .{ s.id, w.index, c.lang, c.form, ids.len, res.status, res.steps, res.exec_ns / std.time.ns_per_ms, held_ms, s.held_ticks });
+         return ids;
+     }
+@@ -477,38 +506,12 @@ pub const Session = struct {
+         if (res.status == .abstain or (res.status == .ok and res.out.len == 0)) c.abstained = true;
+     }
+ 
+-    /// The owned text for a settled run (INTERFACES.md §5), as token ids within the token cap.
++    /// The owned text for a settled run, as token ids within the token cap.
+     fn owned(s: *Session, res: api.Result, w: scan.Trigger) Allocator.Error![]u32 {
+-        const gpa = s.r.gpa;
+-        const tx = s.r.text.?;
+-        var body: std.ArrayList(u8) = .empty;
+-        defer body.deinit(gpa);
+-        const out = if (std.mem.endsWith(u8, res.out, "\n")) res.out[0 .. res.out.len - 1] else res.out;
+-        if (w.inline_space) |space| {
+-            // only the value after `=`; past the cap it is the model's own text again
+-            try body.appendSlice(gpa, if (space) " " else "");
+-            try body.appendSlice(gpa, out);
+-            const ids = try tx.encode(tx.ctx, gpa, body.items);
+-            if (ids.len <= s.r.cfg.max_tokens) return ids;
+-            gpa.free(ids);
+-            return try gpa.alloc(u32, 0);
+-        }
+-        if (w.terminal) try body.appendSlice(gpa, "\nResult:\n") else if (w.newline_before)
+-            try body.append(gpa, '\n');
+-        try body.appendSlice(gpa, out);
+-        switch (res.status) {
+-            .ok, .abstain => {},
+-            .budget => try body.print(gpa, "\n[stopped after {d} steps]", .{res.steps}),
+-            .fault => try body.appendSlice(gpa, "\n[machine fault]"),
+-        }
+-        const ids = try tx.encode(tx.ctx, gpa, body.items);
+-        defer gpa.free(ids);
+-        const tail = try tx.encode(tx.ctx, gpa, if (w.fenced) "\n```\n" else "\n");
+-        defer gpa.free(tail);
+-        const note = if (ids.len > s.r.cfg.max_tokens) try tx.encode(tx.ctx, gpa, "\n[output cut]") else try gpa.alloc(u32, 0);
+-        defer gpa.free(note);
+-        const keep = ids[0..@min(ids.len, s.r.cfg.max_tokens)];
+-        return std.mem.concat(gpa, u32, &.{ keep, note, tail });
++        return output.owned(s.r.gpa, s.r.text.?, res, w, .{
++            .max_tokens = s.r.cfg.max_tokens,
++            .inline_mark = s.r.cfg.inline_mark,
++        });
+     }
+ 
+     /// Whether the session waits on a run (its stream is held at a trigger).
+@@ -526,8 +529,7 @@ pub const Session = struct {
+         const gpa = s.r.gpa;
+         gpa.free(s.sync_ids);
+         if (s.cells.items.len > 0) log.info("reply {d}: {d} cells closed, {d} owned, {d} abstained at a header, {d} never claimed", .{ s.id, s.cells.items.len, s.owned_n, s.abstained_n, s.cells.items.len - s.owned_n - s.abstained_n });
+-        // every translation first: a later cell's borrows earlier cells' code as its prior
+-        for (s.cells.items) |c| if (c.thread) |th| th.join();
++        for (s.cells.items) |c| if (c.thread) |th| th.join(); // all first: a later cell's prior borrows earlier code
+         for (s.cells.items) |c| {
+             if (c.job) |j| s.r.backend.cancel(j);
+             gpa.free(c.lang);
+diff --git a/zig/src/core/runner_output.zig b/zig/src/core/runner_output.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d035cee5ece3648c2be2c2e83e5358b44862fc03
+--- /dev/null
++++ b/zig/src/core/runner_output.zig
+@@ -0,0 +1,73 @@
++//! Encodes a settled run's output for its inline, fence or REPL delivery position.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const scan = @import("runner_scan.zig");
++const Allocator = std.mem.Allocator;
++
++pub const suffix = " @engine";
++pub const Policy = struct { max_tokens: u32, inline_mark: bool = false };
++pub const Text = struct {
++    ctx: ?*anyopaque = null,
++    bytes: *const fn (ctx: ?*anyopaque, token: u32) []const u8,
++    encode: *const fn (ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32,
++};
++
++pub fn value(out: []const u8) []const u8 {
++    return if (std.mem.endsWith(u8, out, "\n")) out[0 .. out.len - 1] else out;
++}
++
++pub fn owned(gpa: Allocator, tx: Text, res: api.Result, w: scan.Trigger, policy: Policy) Allocator.Error![]u32 {
++    var body: std.ArrayList(u8) = .empty;
++    defer body.deinit(gpa);
++    const out = value(res.out);
++    if (w.inline_space) |space| {
++        // only the value after `=`; past the cap it is the model's own text again
++        try body.appendSlice(gpa, if (space) " " else "");
++        try body.appendSlice(gpa, out);
++        if (policy.inline_mark) try body.appendSlice(gpa, suffix);
++        const ids = try tx.encode(tx.ctx, gpa, body.items);
++        if (ids.len <= policy.max_tokens) return ids;
++        gpa.free(ids);
++        return try gpa.alloc(u32, 0);
++    }
++    if (w.terminal) try body.appendSlice(gpa, "\nResult:\n") else if (w.newline_before)
++        try body.append(gpa, '\n');
++    try body.appendSlice(gpa, out);
++    switch (res.status) {
++        .ok, .abstain => {},
++        .budget => try body.print(gpa, "\n[stopped after {d} steps]", .{res.steps}),
++        .fault => try body.appendSlice(gpa, "\n[machine fault]"),
++    }
++    const ids = try tx.encode(tx.ctx, gpa, body.items);
++    defer gpa.free(ids);
++    const tail = try tx.encode(tx.ctx, gpa, if (w.fenced) "\n```\n" else "\n");
++    defer gpa.free(tail);
++    const note = if (ids.len > policy.max_tokens) try tx.encode(tx.ctx, gpa, "\n[output cut]") else try gpa.alloc(u32, 0);
++    defer gpa.free(note);
++    const keep = ids[0..@min(ids.len, policy.max_tokens)];
++    return std.mem.concat(gpa, u32, &.{ keep, note, tail });
++}
++
++/// The model sees the suffix; the computation scanner sees only the result's original bytes.
++pub fn scanning(remaining: *?usize, bytes: []const u8) []const u8 {
++    if (remaining.*) |*left| {
++        const keep = @min(left.*, bytes.len);
++        left.* -= keep;
++        return bytes[0..keep];
++    }
++    return bytes;
++}
++test "runner: inline provenance scanner view excludes only forced metadata" {
++    const a = std.testing.allocator;
++    var scanner: scan.Scanner = .{ .cfg = .{ .inline_math = true } };
++    defer scanner.deinit(a);
++    _ = try scanner.feed(a, "47 * 83 =", true);
++    var remaining: ?usize = 5;
++    for ([_][]const u8{ " 39", "01 @", "engine" }) |chunk| {
++        const kept = scanning(&remaining, chunk);
++        if (kept.len > 0) _ = try scanner.feed(a, kept, true);
++    }
++    try std.testing.expectEqualStrings("47 * 83 = 3901", scanner.line.items);
++    var model: ?usize = null;
++    try std.testing.expectEqualStrings(" @engine", scanning(&model, " @engine"));
++}
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index d5fdef64dac9619f1bb4d68688c0601719f7d30c..963a52a76c11baa9e480e3999085bc39c6641b59 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -89,6 +89,7 @@ pub const Back = struct {
+     gate: std.atomic.Value(bool) = .init(true),
+     jobs: std.ArrayList(struct { prog: []u8, polls: u32 }) = .empty,
+     started: u32 = 0,
++    result: ?rapi.Result = null,
+ 
+     const answers = [_][2][]const u8{
+         .{ "123456789012345678901234567890 * 987654321098765432109876543210", product ++ "\n" },
+@@ -113,6 +114,7 @@ pub const Back = struct {
+         const j = &b.jobs.items[job];
+         j.polls += 1;
+         if (j.polls <= b.delay or !b.gate.load(.acquire)) return .running;
++        if (b.result) |result| return .{ .done = result };
+         for (answers) |x| if (std.mem.eql(u8, x[0], j.prog)) return .{ .done = .{ .status = .ok, .out = x[1], .steps = 100 } };
+         return .{ .done = .{ .status = .fault, .out = "" } };
+     }
+@@ -159,7 +161,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_mark: bool = false, result_tokens: u32 = 512, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -174,7 +176,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     defer core.deinit();
+     var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
+     back.delay = o.delay;
+-    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .inline_mark = o.inline_mark, .max_tokens = o.result_tokens, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
+     if (o.runner) host.runner = &run;
+     const boxes = try gpa.alloc(Box, models.len);
+     defer gpa.free(boxes);
+@@ -433,6 +435,14 @@ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     const c = (try runner.Config.parse(&K.get, "TF_R")).?;
+     try std.testing.expect(!c.scan.fence and c.scan.repl and c.scan.reasoning_only and c.max_steps == 99 and !c.exact);
+     try std.testing.expectEqual(@as(usize, 10522), c.compile_steps);
++    try std.testing.expect(!c.inline_mark);
++    for ([_][]const u8{ "0", "1" }) |value| {
++        K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_INLINE_MARK", value } };
++        try std.testing.expectEqual(std.mem.eql(u8, value, "1"), (try runner.Config.parse(&K.get, "TF_R")).?.inline_mark);
++    }
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_INLINE_MARK", "2" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_COMPILE_STEPS", "32768" } };
+     const wider = (try runner.Config.parse(&K.get, "TF_R")).?;
+     try std.testing.expectEqual(@as(usize, 32768), wider.compile_steps);
+@@ -506,3 +516,58 @@ test {
+     _ = @import("runner_handoff_native_test.zig");
+     _ = @import("runner_teardown_test.zig");
+ }
++
++test "runner: inline provenance tags only successful owned inline values" {
++    const t = std.testing;
++    for ([_][]const u8{ "So 47 * 83 =", "So 47 * 83 = " }) |lead| {
++        const got = try one(lead, .{ .inline_math = true, .inline_mark = true });
++        defer gpa.free(got);
++        try t.expectEqualStrings("So 47 * 83 = 3901 @engine\nDone.", got);
++        const off = try one(lead, .{ .inline_math = true });
++        defer gpa.free(off);
++        try t.expectEqualStrings("So 47 * 83 = 3901\nDone.", off);
++    }
++    for ([_][]const u8{ "No computation here.", "So 99 * 13 =", "So 47 * undefined_x =" }) |lead| {
++        const got = try one(lead, .{ .inline_math = true, .inline_mark = true });
++        defer gpa.free(got);
++        const off = try one(lead, .{ .inline_math = true });
++        defer gpa.free(off);
++        try t.expectEqualStrings(off, got);
++        try t.expect(std.mem.indexOf(u8, got, runner.inline_mark_suffix) == null);
++    }
++    const cell = "```python\nprint(2**100)\n```\nResult:\n";
++    const marked = try one(cell, .{ .inline_mark = true });
++    defer gpa.free(marked);
++    const plain = try one(cell, .{});
++    defer gpa.free(plain);
++    try t.expectEqualStrings(plain, marked);
++    const disabled = try one("So 47 * 83 =", .{ .inline_math = true, .inline_mark = true, .runner = false });
++    defer gpa.free(disabled);
++    try t.expectEqualStrings("So 47 * 83 =42\nDone.", disabled);
++}
++
++test "runner: inline provenance refuses a payload that cannot fit its complete marker" {
++    const got = try one("So 47 * 83 =", .{ .inline_math = true, .inline_mark = true, .result_tokens = 5 });
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings("So 47 * 83 =42\nDone.", got);
++}
++
++test "runner: inline provenance never tags an empty multiline failed or refused result" {
++    for ([_]rapi.Result{
++        .{ .status = .ok, .out = "\n" },
++        .{ .status = .ok, .out = " \n" },
++        .{ .status = .ok, .out = "3901\n\n" },
++        .{ .status = .ok, .out = "3\n4\n" },
++        .{ .status = .fault, .out = "3901" },
++        .{ .status = .budget, .out = "3901" },
++        .{ .status = .abstain, .out = "3901" },
++    }) |res| {
++        var back: Back = .{ .result = res };
++        defer back.deinit();
++        var models = [_]Model{.{ .lead = "So 47 * 83 =" }};
++        const got = try replies(&models, .{ .inline_math = true, .inline_mark = true }, &back);
++        defer gpa.free(got);
++        defer gpa.free(got[0]);
++        try std.testing.expectEqualStrings("So 47 * 83 =42\nDone.", got[0]);
++    }
++}

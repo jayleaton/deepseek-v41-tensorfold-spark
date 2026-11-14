@@ -1,0 +1,1605 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 06:58:02 +0700
+Subject: [PATCH 042/207] Merge dsv41/port-idxsplit (f3c1c452c) into candidate
+ D
+
+Squashed merge of 5 commits:
+- deepseek: split long prefill index selections by rows over TP2 (TF_DSV41_IDX_SPLIT) (Jay Leaton)
+- tp: carry a family's own settings in the bootstrap's settings digest (Jay Leaton)
+- deepseek: TF_DSV41_IDX_SPLIT cut from the rows alone, agreed at the TP bootstrap (Jay Leaton)
+- deepseek: TF_DSV41_IDX_SPLIT exactness oracle over the emitted programs (Jay Leaton)
+- deepseek: TF_DSV41_IDX_SPLIT gate fixes: no shadowed names, auto's gather count (Jay Leaton)
+---
+ zig/src/fabric/tp/bootstrap.zig               |  15 +
+ zig/src/fabric/tp/config.zig                  |  17 +
+ zig/src/fabric/tp/tp.zig                      |   2 +-
+ zig/src/families/deepseek_v41/aot_needs.zig   |  11 +-
+ zig/src/families/deepseek_v41/aot_passes.zig  |  30 +
+ zig/src/families/deepseek_v41/block.zig       |   2 +
+ .../deepseek_v41/block_prefill_select.zig     |  66 +-
+ zig/src/families/deepseek_v41/cuda_model.zig  |   1 +
+ .../families/deepseek_v41/forward_glue.zig    |  13 +
+ .../families/deepseek_v41/gate_decode_tp.zig  |   3 +-
+ zig/src/families/deepseek_v41/idx_split.zig   | 109 ++++
+ .../deepseek_v41/idx_split_oracle_test.zig    | 581 ++++++++++++++++++
+ .../families/deepseek_v41/idx_split_test.zig  | 456 ++++++++++++++
+ .../families/deepseek_v41/index_scratch.zig   |   2 +
+ .../deepseek_v41/serve_knobs_apply.zig        |   4 +
+ zig/src/families/deepseek_v41/state_test.zig  |   2 +
+ 16 files changed, 1286 insertions(+), 28 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/aot_passes.zig
+ create mode 100644 zig/src/families/deepseek_v41/idx_split.zig
+ create mode 100644 zig/src/families/deepseek_v41/idx_split_oracle_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/idx_split_test.zig
+
+diff --git a/zig/src/fabric/tp/bootstrap.zig b/zig/src/fabric/tp/bootstrap.zig
+index 84eb13d0160687afc62c887ba4a2c668c530174a..45ca044ce7c94f2128a5405f87557d6ffb013884 100644
+--- a/zig/src/fabric/tp/bootstrap.zig
++++ b/zig/src/fabric/tp/bootstrap.zig
+@@ -311,6 +311,21 @@ test "a graph cache switched off on one rank stops both at start; 0 and OFF on t
+     try std.testing.expectEqual(@as(?anyerror, error.Mismatch), family[0]);
+ }
+ 
++test "a family setting on one rank only, or a different one, stops both at start; the same or none on both starts" {
++    const a: [32]u8 = @splat(1);
++    const b: [32]u8 = @splat(2);
++    for ([_][2]?[32]u8{ .{ null, a }, .{ a, null }, .{ a, b } }) |p| {
++        const r = try agreeDigests(.{ .family = p[0] }, .{ .family = p[1] });
++        try std.testing.expectEqual(@as(?anyerror, error.Mismatch), r[0]);
++        try std.testing.expectEqual(@as(?anyerror, error.Mismatch), r[1]);
++    }
++    for ([_]?[32]u8{ null, a }) |v| {
++        const r = try agreeDigests(.{ .family = v }, .{ .family = v });
++        try std.testing.expectEqual(@as(?anyerror, null), r[0]);
++        try std.testing.expectEqual(@as(?anyerror, null), r[1]);
++    }
++}
++
+ test "Failure boundaries: acceptOn validates the world before touching a descriptor" {
+     try std.testing.expectError(error.Protocol, Bootstrap.acceptOn(-1, max_ranks + 1, 0));
+ }
+diff --git a/zig/src/fabric/tp/config.zig b/zig/src/fabric/tp/config.zig
+index c0e634ba0d86c99ec4a066fb44880cf07bb8b0e0..2b68aca714b5f1012500b1ab99d3468f8051e13d 100644
+--- a/zig/src/fabric/tp/config.zig
++++ b/zig/src/fabric/tp/config.zig
+@@ -69,6 +69,8 @@ pub const Config = struct {
+     graph_cache: ?graph_cache.Settings = null,
+     /// TF_GRAPH_CACHE as read (`Cache.init` applies the same value); only its effect on `graph_cache` is compared.
+     graph_cache_env: ?[]const u8 = null,
++    /// A family's own settings every rank must share, set before `Session.open` (null: none, the digest unchanged).
++    family: ?[32]u8 = null,
+ 
+     /// Reads every setting from `get` (the environment in `fromEnv`); unset names keep the defaults.
+     pub fn parse(get: *const fn ([]const u8) ?[]const u8) Error!Config {
+@@ -161,6 +163,7 @@ pub const Config = struct {
+         h.update(std.mem.asBytes(&c.roce_wire));
+         h.update(std.mem.asBytes(&c.roce_fallback));
+         if (c.graph_cache) |g| h.update(&g.effective(c.graph_cache_env).digest());
++        if (c.family) |f| h.update(&f);
+         var out: [32]u8 = undefined;
+         h.final(&out);
+         return out;
+@@ -292,3 +295,17 @@ test "the digest holds the graph cache's effective settings: 0, off and OFF agre
+     family_off.graph_cache = family.graph_cache;
+     try std.testing.expectEqualSlices(u8, &zero.digest(), &family_off.digest());
+ }
++
++test "no family setting leaves the digest the base's, byte for byte; a family setting changes it" {
++    const c: Config = .{ .graph_cache = .{ .max = 8 } };
++    // the pre-family digest's fields, in its order (an off / off family boot agrees on exactly these bytes)
++    var h = std.crypto.hash.sha2.Sha256.init(.{});
++    inline for (.{ "world", "backend", "mailbox_max_bytes", "roce_chunked_bytes", "failfast", "roce_wire", "roce_fallback" }) |f| h.update(std.mem.asBytes(&@field(c, f)));
++    h.update(&c.graph_cache.?.effective(c.graph_cache_env).digest());
++    var base: [32]u8 = undefined;
++    h.final(&base);
++    try std.testing.expectEqualSlices(u8, &base, &c.digest());
++    var f = c;
++    f.family = @splat(0);
++    try std.testing.expect(!std.mem.eql(u8, &base, &f.digest()));
++}
+diff --git a/zig/src/fabric/tp/tp.zig b/zig/src/fabric/tp/tp.zig
+index 63b98dc3f2c99ef9431a736ede84fcac3dac55ad..ec524ae6a4db78f86e84053cc6f50b93cb965b7a 100644
+--- a/zig/src/fabric/tp/tp.zig
++++ b/zig/src/fabric/tp/tp.zig
+@@ -46,7 +46,7 @@ pub const Session = struct {
+         const cfg = requested.resolved();
+         var b = try Bootstrap.open(cfg);
+         defer b.close();
+-        try b.agree(&cfg.digest(), "settings (TF_TP_WORLD, TF_COMM_BACKEND, TF_TP_MAILBOX_MAX_KB, TF_TP_ROCE_CHUNKED_KB, TF_TP_FAILFAST, TF_TP_ROCE_WIRE / _FALLBACK, TF_GRAPH_CACHE)");
++        try b.agree(&cfg.digest(), "settings (TF_TP_WORLD, TF_COMM_BACKEND, TF_TP_MAILBOX_MAX_KB, TF_TP_ROCE_CHUNKED_KB, TF_TP_FAILFAST, TF_TP_ROCE_WIRE / _FALLBACK, TF_GRAPH_CACHE, family settings)");
+         var diag = cuda.p2p_report.begin(cfg.rank, cfg.world);
+         defer diag.end();
+         var lib = try cuda.nccl.Library.openPath(cfg.nccl_lib);
+diff --git a/zig/src/families/deepseek_v41/aot_needs.zig b/zig/src/families/deepseek_v41/aot_needs.zig
+index 3b3cd945add52bfc72750fe560c96cb56d55af6b..4212f75f141b1c7c49bf76a1df311bdaa3b1fa57 100644
+--- a/zig/src/families/deepseek_v41/aot_needs.zig
++++ b/zig/src/families/deepseek_v41/aot_needs.zig
+@@ -192,6 +192,7 @@ pub const Served = struct {
+         o.pf_overlap_site = o.pf_overlap > 0 and try knobs.pfOverlapSite(&knobs.env); // the site pieces' `_finish_k`
+         o.stream_rb = try knobs.streamRb(&knobs.env); // TF_DSV41_STREAM_RB: the twin's variants
+         o.index_bound = try knobs.indexBound(&knobs.env); // TF_DSV41_INDEX_BOUND: `_scores_b` / `_dtopk_b` variants
++        o.idx_split = try @import("idx_split.zig").mode(&knobs.env); // TF_DSV41_IDX_SPLIT: each rank's own row blocks
+         o.mhc_site_rows = try knobs.mhcSiteRows(&knobs.env); // the site pieces' `_finish_k` rows
+         if (o.pf_overlap > 0) o.branches = (try @import("branches.zig").settings()).on;
+         if (try knobs.indexBudget(&knobs.env)) |b| o.index_budget = b;
+@@ -430,13 +431,7 @@ pub fn enumerate(gpa: std.mem.Allocator, n: *Needs, cfg: *const Config, w: *cons
+     }
+ }
+ 
+-/// The served prefill rows; under TF_DSV41_PF_4K also the forward's 2,048-row segments (piece fallback, first start).
+-pub fn promptPasses(sv: Served) [2]?Served {
+-    var two = sv;
+-    two.o.pf4k = false;
+-    two.o.prefill_rows = (block.Options{}).prefill_rows;
+-    return .{ sv, if (sv.o.pf4k) two else null };
+-}
++pub const promptPasses = @import("aot_passes.zig").promptPasses;
+ 
+ fn prompts(gpa: std.mem.Allocator, a: std.mem.Allocator, n: *Needs, cfg: *const Config, w: *const block.Widths, sv: Served, layers: []const u32, log: *std.Io.Writer) !void {
+     const P = sv.o.prefill_rows; // the full segment's regimes, then every row count at each regime's first start
+@@ -578,7 +573,7 @@ pub fn main(gpa: std.mem.Allocator, io: std.Io, sigs_path: []const u8, out_path:
+     // DSpark's ingest main_proj (a DSpark block's width; its EXL3 linear is CUDA, as slot_drafts_test.zig sets it)
+     try w.dense.put(a, "dspark.main_proj", try w.k2("L40.attn.wkv"));
+     const sv = try Served.fromEnv();
+-    try log.print("aot-needs: limit {d}, {d} slot(s), rows cap {d}, prefill rows {d}, index budget {d} MiB, R1 {}, drafts {}, slot drafts {} (group {d}), world {d}, pool {s}\n", .{ sv.o.limit, sv.slots, sv.cap, sv.o.prefill_rows, sv.o.index_budget >> 20, sv.o.r1, sv.drafts, sv.slot_drafts, sv.group, sv.o.world, if (sv.o.pool) |p| (if (p.split) "split" else "on") else "none (contiguous slot)" });
++    try log.print("aot-needs: limit {d}, {d} slot(s), rows cap {d}, prefill rows {d}, index budget {d} MiB, R1 {}, drafts {}, slot drafts {} (group {d}), world {d}, idx split {t}, pool {s}\n", .{ sv.o.limit, sv.slots, sv.cap, sv.o.prefill_rows, sv.o.index_budget >> 20, sv.o.r1, sv.drafts, sv.slot_drafts, sv.group, sv.o.world, sv.o.idx_split, if (sv.o.pool) |p| (if (p.split) "split" else "on") else "none (contiguous slot)" });
+     var n: Needs = .{ .gpa = gpa, .sigs = &parsed.value.kernels };
+     defer n.deinit();
+     try enumerate(gpa, &n, &cfg, &w, sv, log);
+diff --git a/zig/src/families/deepseek_v41/aot_passes.zig b/zig/src/families/deepseek_v41/aot_passes.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6f3b6117605d25244fdd942ab597cba2da84d62
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/aot_passes.zig
+@@ -0,0 +1,30 @@
++//! aot-needs' prompt passes: the served rows, TF_DSV41_PF_4K's 2,048-row fallback, TF_DSV41_IDX_SPLIT's other passes.
++const std = @import("std");
++const block = @import("block.zig");
++const Served = @import("aot_needs.zig").Served;
++
++comptime {
++    // CED's decoder pass (at most `keep` + 1 rows) never splits, so the split's extra passes leave it out
++    std.debug.assert(@import("idx_split.zig").min_rows > @import("ced.zig").keep + 1);
++}
++
++/// The served prefill rows; under TF_DSV41_PF_4K also the forward's 2,048-row segments (piece fallback, first start).
++pub fn promptPasses(sv: Served) [6]?Served {
++    var two = sv;
++    two.o.pf4k = false;
++    two.o.prefill_rows = (block.Options{}).prefill_rows;
++    var out: [6]?Served = .{ sv, if (sv.o.pf4k) two else null, null, null, null, null };
++    if (sv.o.idx_split == .off or sv.o.world != 2) return out;
++    // TF_DSV41_IDX_SPLIT: the other rank's own row blocks, and the replicated launches the same assets serve when off
++    for (0..2) |i| if (out[i]) |x| {
++        var y = x;
++        y.replay = false;
++        y.replay_runs = false;
++        var other = y;
++        other.o.rank = 1 - x.o.rank;
++        out[2 + i] = other;
++        y.o.idx_split = .off;
++        out[4 + i] = y;
++    };
++    return out;
++}
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 5857b8321097d3d70995528ee72d0d186a933aff..29a3930145cfe52b273e60e9ebbccb16e0de029e 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -107,6 +107,8 @@ pub const Options = struct {
+     index_budget: i64 = 256 << 20,
+     /// a row-mode program (batch.zig, rowmode.zig): row blocks score the context bucket's keys; no streamed top-k
+     rows: bool = false,
++    /// TF_DSV41_IDX_SPLIT (idx_split.zig): a TP2 prefill's index selection split by rows, the int32 rows gathered
++    idx_split: @import("idx_split.zig").Mode = .off,
+ 
+     /// TF_DSV41_MHC_DEFER_AT(_ROWS): a program of `rows` rows issues its deferred launches at the next exchange.
+     pub fn holdsDeferred(o: Options, rows: i64) bool {
+diff --git a/zig/src/families/deepseek_v41/block_prefill_select.zig b/zig/src/families/deepseek_v41/block_prefill_select.zig
+index 9feccccca071692df4c0ea82efc87f286ffd73f5..e5566261626528a38aacc41317d5bf124fdea11c 100644
+--- a/zig/src/families/deepseek_v41/block_prefill_select.zig
++++ b/zig/src/families/deepseek_v41/block_prefill_select.zig
+@@ -2,6 +2,7 @@
+ 
+ const calls = @import("block_calls.zig");
+ const longpf = @import("longpf.zig");
++const idx_split = @import("idx_split.zig");
+ const prefill = @import("block_prefill.zig");
+ const E = prefill.E;
+ const Arg = calls.Arg;
+@@ -107,6 +108,29 @@ fn step(e: *E, per_row: i64) i64 {
+     return if (e.n > 16) @max(16, @divFloor(e.o.index_budget, @max(1, per_row))) else e.n;
+ }
+ 
++/// The rows a materialised full-mode loop steps over `nvis` keys (the whole segment when it fits the budget).
++fn fullStep(e: *E, nvis: i64) i64 {
++    return if (e.n * nvis * 12 <= e.o.index_budget) e.n else step(e, nvis * 12);
++}
++
++/// TF_DSV41_IDX_SPLIT: layer `L`'s cut (null: every row here); reindex follows its source.
++fn cutOf(s: *const Seg, L: u32, reindexing: bool) ?idx_split.Cut {
++    const e = s.e;
++    const src: u32 = if (reindexing) @intCast(e.cfg.candidate_source) else L;
++    const ratio: i64 = e.cfg.compressRatio(src);
++    const nvis = @max(@divFloor(e.end(), ratio), 1);
++    // only agreed inputs (the bootstrap's mode, world, the program's rows and end): no rank-local budget or step
++    if (!idx_split.engages(e.o.idx_split, e.o.world, e.o.rows, e.n, nvis)) return null;
++    const c = idx_split.Cut.of(e.n);
++    return if (c.valid()) c else null;
++}
++
++/// This rank's rows of a split selection, then the other rank's int32 rows into place (no arithmetic).
++fn gather(e: *E, sel: Arg, c: idx_split.Cut) !void {
++    const k: i64 = e.cfg.index_topk;
++    try e.glue("ix_gather", &.{ sel, try e.buf("L.ix.gather", .{}, .i32, &.{ 2, c.big(), k }), .{ .i = c.h0 } });
++}
++
+ /// An index layer's selection (blocks._select over backend.select / select_cand / reindex).
+ pub fn select(s: *Seg, L: u32) !void {
+     const e = s.e;
+@@ -135,18 +159,21 @@ pub fn select(s: *Seg, L: u32) !void {
+         if (e.cfg.isCandidateSource(L)) s.cand = true;
+         return;
+     }
+-    if (md == .reindex and e.cfg.usesCandidates(L) and s.cand) {
++    // TF_DSV41_IDX_SPLIT: only this rank's rows [lo, hi), in this rank's own row blocks (the budget stays local)
++    const cut = cutOf(s, L, reindexing);
++    const mine: [2]i64 = if (cut) |c| c.mine(e.o.rank) else .{ 0, n };
++    if (reindexing) {
+         // backend.reindex: the row's own scores over its candidates' positions, in row blocks under the budget
+         const NK = cb * cbs;
+-        const whole = n * NK * 16 <= e.o.index_budget;
+-        const st = if (whole) n else step(e, NK * 16);
+-        var a: i64 = 0;
++        const whole = cut == null and n * NK * 16 <= e.o.index_budget;
++        const st = if (n * NK * 16 <= e.o.index_budget) n else step(e, NK * 16);
++        var a: i64 = mine[0];
+         var j: usize = 0;
+-        while (a < n) : ({
++        while (a < mine[1]) : ({
+             a += st;
+             j += 1;
+         }) {
+-            const rows = @min(st, n - a);
++            const rows = @min(st, mine[1] - a);
+             const p = if (whole) try pos(e) else try s.blockPos(j, a);
+             const ck = try e.buf("L.ix.ckeys", .{}, .i32, &.{ rows, NK });
+             try e.glue("cand_keys", &.{ try rowsOf(e, try cands(e), .i32, a, rows, cb), ck, .{ .i = cbs } });
+@@ -157,19 +184,20 @@ pub fn select(s: *Seg, L: u32) !void {
+         const cand = e.cfg.isCandidateSource(L);
+         // backend.select's stream path (full-mode layers without the candidates' scores): stream_topk.select
+         if (streamed) {
+-            try s.streamSelect(src, ratio, topk, sel[0]);
++            try s.streamSelect(src, ratio, topk, sel[0], mine);
++            if (cut) |c| try gather(e, sel[0], c);
+             try e.glue("counts", &.{ sel[0], sel[1], try e.buf("w.pos64", .{}, .i64, &.{n}), .{ .i = ratio } });
+             return;
+         }
+-        const whole = n * nvis * 12 <= e.o.index_budget;
+-        const st = if (whole) n else step(e, nvis * 12);
+-        var a: i64 = 0;
++        const whole = cut == null and n * nvis * 12 <= e.o.index_budget;
++        const st = fullStep(e, nvis);
++        var a: i64 = mine[0];
+         var j: usize = 0;
+-        while (a < n) : ({
++        while (a < mine[1]) : ({
+             a += st;
+             j += 1;
+         }) {
+-            const rows = @min(st, n - a);
++            const rows = @min(st, mine[1] - a);
+             const p = if (whole) try pos(e) else try s.blockPos(j, a);
+             const nk = if (whole) nvis else @max(@divFloor(e.start + a + rows, ratio), 1);
+             const sc = try s.scores(src, ratio, a, rows, p, nk, null, 0);
+@@ -178,25 +206,27 @@ pub fn select(s: *Seg, L: u32) !void {
+         }
+         if (cand) s.cand = true;
+     }
++    // a split's candidates stay on their rank: its reindex layers take the same cut (cutOf), only selections move
++    if (cut) |c| try gather(e, sel[0], c);
+     try e.glue("counts", &.{ sel[0], sel[1], try e.buf("w.pos64", .{}, .i64, &.{n}), .{ .i = ratio } });
+ }
+ 
+-/// Stream top-k in row blocks within its scratch budget: each block's `_stream`, then the merge glue.
+-pub fn streamSelect(s: *Seg, src: u32, ratio: i64, topk: i64, out: Arg) !void {
++/// Stream top-k over rows `mine` in row blocks within its scratch budget: each block's `_stream`, then the merge glue.
++pub fn streamSelect(s: *Seg, src: u32, ratio: i64, topk: i64, out: Arg, mine: [2]i64) !void {
+     const e = s.e;
+     const n = e.n;
+     const IH: i64 = e.cfg.index_heads;
+     const ID: i64 = e.cfg.index_dim;
+     const st = longpf.plan(n, @max(@divFloor(e.end(), ratio), 1), topk);
+     const spg = try e.paging(ratio, false);
+-    var a: i64 = 0;
++    var a: i64 = mine[0];
+     var j: usize = 0;
+-    while (a < n) : ({
++    while (a < mine[1]) : ({
+         a += st;
+         j += 1;
+     }) {
+-        const rows = @min(st, n - a);
+-        const p = if (st >= n) try pos(e) else try s.blockPos(j, a);
++        const rows = @min(st, mine[1] - a);
++        const p = if (st >= n and mine[1] - mine[0] == n) try pos(e) else try s.blockPos(j, a);
+         const nk = @max(@divFloor(e.start + a + rows, ratio), 1);
+         const ns = longpf.splits(nk);
+         const buf = try e.buf("L.ix.stream", .{}, .i64, &.{ rows, ns, 2 * topk });
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index 2e0795a71135b7472b361de63b8e930f6dc57d35..831f74c4660023e809c7c434d481c1ef6b8489e2 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -173,6 +173,7 @@ pub const Model = struct {
+         const a = m.arena.allocator();
+         const cwd = std.Io.Dir.cwd();
+         m.tcfg = try tp.Config.fromEnv();
++        m.tcfg.family = @import("idx_split.zig").agreement(&@import("serve_knobs.zig").env); // ranks refuse a mixed split
+         m.driver = try cuda.Driver.open();
+         errdefer if (!keep_owner) m.driver.close();
+         try @import("dev_arena.zig").applySchedule(&m.driver, @intCast(m.tcfg.device)); // TF_CUDA_SCHED
+diff --git a/zig/src/families/deepseek_v41/forward_glue.zig b/zig/src/families/deepseek_v41/forward_glue.zig
+index 5634bf667f5272e83793fa078b65b88929bf8394..677abf0b8f99be99d675c66bd97da24831c4bbdb 100644
+--- a/zig/src/families/deepseek_v41/forward_glue.zig
++++ b/zig/src/families/deepseek_v41/forward_glue.zig
+@@ -8,6 +8,7 @@ const run = @import("run.zig");
+ const hs = @import("host_stage.zig");
+ const fwd = @import("forward.zig");
+ const hooks = @import("forward_hooks.zig");
++const idx_split = @import("idx_split.zig");
+ const Error = fwd.Error;
+ const Forward = fwd.Forward;
+ 
+@@ -130,6 +131,18 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
+         for (0..W) |q| try r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(base + ((q * n + r0) * D) * 2, tmp + q * m * D * 2, m * D * 2, s), "cuMemcpyDtoDAsync");
+         return;
+     }
++    if (std.mem.eql(u8, step, "ix_gather")) {
++        // TF_DSV41_IDX_SPLIT: each rank's int32 selection rows all-gathered, the other's copied into place
++        const sel = c.args[0].arg.t;
++        const cut = try idx_split.glueCut(W, sel.shape[0], c.args[2].arg.i, sel.shape[1], sel.stride[0], numel(c.args[1].arg.t));
++        const xp = cut.plan(f.comm.rank());
++        const row: usize = @intCast(4 * sel.shape[1]);
++        const base = try r.tensorAddr(sel);
++        const tmp = try r.tensorAddr(c.args[1].arg.t);
++        const send: usize, const count: usize, const src: usize, const dst: usize, const rows: usize = .{ @intCast(xp.send), @intCast(xp.count), @intCast(xp.src), @intCast(xp.dst), @intCast(xp.rows) };
++        try f.comm.allGather(base + send * row, tmp, count * row / 4, .i32, s);
++        return r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(base + dst * row, tmp + src * row, rows * row, s), "cuMemcpyDtoDAsync");
++    }
+     if (std.mem.eql(u8, step, "exchange_f32")) {
+         // the MoE's fp32 partial rounded to bf16, then gathered
+         const part = c.args[0].arg.t;
+diff --git a/zig/src/families/deepseek_v41/gate_decode_tp.zig b/zig/src/families/deepseek_v41/gate_decode_tp.zig
+index de9a9c6a3b4b642e1f1c839c9958c9fd74a31d77..5e02532fd580b1c98343dad07b5e542e3ed4b4bc 100644
+--- a/zig/src/families/deepseek_v41/gate_decode_tp.zig
++++ b/zig/src/families/deepseek_v41/gate_decode_tp.zig
+@@ -38,7 +38,8 @@ pub fn main(gpa: std.mem.Allocator, io: std.Io, pack_dir: []const u8, ref: []con
+     defer arena.deinit();
+     const a = arena.allocator();
+     const cwd = std.Io.Dir.cwd();
+-    const tcfg = try tp.Config.fromEnv();
++    var tcfg = try tp.Config.fromEnv();
++    tcfg.family = @import("idx_split.zig").agreement(&@import("serve_knobs.zig").env); // as cuda_model.zig
+     const rank = tcfg.rank;
+     const world = tcfg.world;
+     try cwd.createDirPath(io, out_dir);
+diff --git a/zig/src/families/deepseek_v41/idx_split.zig b/zig/src/families/deepseek_v41/idx_split.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..4b820da38532396eb4212d9bfac2fe79ea887632
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/idx_split.zig
+@@ -0,0 +1,109 @@
++//! TF_DSV41_IDX_SPLIT: a TP2 prefill segment's index selection split by rows between the ranks, int32 rows exchanged.
++
++const std = @import("std");
++const quiet = @import("builtin").is_test; // a test's stderr is the build runner's channel
++
++/// off: every rank selects every row (the replicated path); auto: past `auto_work`; all: every eligible segment.
++pub const Mode = enum { off, auto, all };
++
++/// Segments under this many rows stay replicated (a rank's part is at least 64 rows; CED's decoder pass never splits).
++pub const min_rows: i64 = 256;
++
++/// auto: a layer splits when rows x visible keys reach this (4,096 rows at 65,536 compressed keys).
++pub const auto_work: i64 = 4096 * 65536;
++
++/// The cut's grid: rank 0's rows a multiple of this.
++pub const grid: i64 = 64;
++
++const name = "TF_DSV41_IDX_SPLIT";
++
++/// The setting as read: a mode, or a value no rank accepts (kept apart so the ranks can agree on refusing it).
++const Read = union(enum) { mode: Mode, bad: []const u8 };
++
++fn read(get: *const fn ([]const u8) ?[]const u8) Read {
++    const raw = std.mem.trim(u8, get(name) orelse return .{ .mode = .off }, " \t");
++    if (raw.len == 0 or std.mem.eql(u8, raw, "0") or std.ascii.eqlIgnoreCase(raw, "off")) return .{ .mode = .off };
++    if (std.ascii.eqlIgnoreCase(raw, "auto")) return .{ .mode = .auto };
++    if (std.mem.eql(u8, raw, "1") or std.ascii.eqlIgnoreCase(raw, "on")) return .{ .mode = .all };
++    return .{ .bad = raw };
++}
++
++/// TF_DSV41_IDX_SPLIT: unset / 0 / off = off, auto = the work threshold, 1 / on = every eligible segment.
++pub fn mode(get: *const fn ([]const u8) ?[]const u8) !Mode {
++    return switch (read(get)) {
++        .mode => |m| m,
++        .bad => |raw| {
++            if (!quiet) std.log.warn("{s}={s}: expected 0 / off, auto or 1", .{ name, raw });
++            return error.BadKnob;
++        },
++    };
++}
++
++/// The bytes the TP bootstrap's settings agreement carries for this setting (tp.Config.family); null when off.
++pub fn agreement(get: *const fn ([]const u8) ?[]const u8) ?[32]u8 {
++    // off adds nothing: an off / off boot agrees on exactly the base digest; any other pair differs and both refuse
++    const tag: []const u8 = switch (read(get)) {
++        .mode => |m| switch (m) {
++            .off => return null,
++            .auto => "auto",
++            .all => "all",
++        },
++        .bad => "invalid",
++    };
++    var out: [32]u8 = undefined;
++    var h = std.crypto.hash.sha2.Sha256.init(.{});
++    h.update(name ++ "=");
++    h.update(tag);
++    h.final(&out);
++    return out;
++}
++
++/// Whether a layer over `keys` visible keys splits a segment of `n` rows; from values every rank holds alike.
++pub fn engages(m: Mode, world: u32, rows_mode: bool, n: i64, keys: i64) bool {
++    if (m == .off or world != 2 or rows_mode or n < min_rows) return false;
++    return m == .all or n * keys >= auto_work;
++}
++
++/// Rank 0 selects rows [0, h0), rank 1 rows [h0, n); each sends `big` rows, the other's copied out of the gather.
++pub const Cut = struct {
++    n: i64,
++    h0: i64,
++
++    /// The cut of `n` rows: the 64-row grid's even one, from the rows alone (no rank-local budget or step).
++    pub fn of(n: i64) Cut {
++        return .{ .n = n, .h0 = @divFloor(n, 2 * grid) * grid };
++    }
++
++    /// This rank's rows [lo, hi).
++    pub fn mine(c: Cut, rank: u32) [2]i64 {
++        return if (rank == 0) .{ 0, c.h0 } else .{ c.h0, c.n };
++    }
++
++    /// Rows each rank sends: the larger part's (the gather's equal counts).
++    pub fn big(c: Cut) i64 {
++        return @max(c.h0, c.n - c.h0);
++    }
++
++    pub fn valid(c: Cut) bool {
++        return c.h0 > 0 and c.h0 < c.n;
++    }
++
++    /// The glue's transfers for `rank`: the gather and the copy of the other rank's rows (`Plan`).
++    pub fn plan(c: Cut, rank: u32) Plan {
++        const b = c.big();
++        // rank 0 sends rows [0, big) (its own first), rank 1 rows [n - big, n) (its own last); the rest is dropped
++        if (rank == 0) return .{ .send = 0, .count = b, .src = b + c.h0 - (c.n - b), .dst = c.h0, .rows = c.n - c.h0 };
++        return .{ .send = c.n - b, .count = b, .src = 0, .dst = 0, .rows = c.h0 };
++    }
++};
++
++/// In rows: send rows [send, send + count) into the [2 x count] gather, then its rows [src, src + rows) to row `dst`.
++pub const Plan = struct { send: i64, count: i64, src: i64, dst: i64, rows: i64 };
++
++/// The glue's checks of `ix_gather(sel [n, cols], tmp, h0)`: two ranks, a valid cut, contiguous rows, room in `tmp`.
++pub fn glueCut(world: usize, n: i64, h0: i64, cols: i64, stride: i64, tmp_elems: usize) error{BadGlue}!Cut {
++    const c: Cut = .{ .n = n, .h0 = h0 };
++    if (world != 2 or !c.valid() or cols < 1 or stride != cols) return error.BadGlue;
++    if (tmp_elems < @as(usize, @intCast(2 * c.big() * cols))) return error.BadGlue;
++    return c;
++}
+diff --git a/zig/src/families/deepseek_v41/idx_split_oracle_test.zig b/zig/src/families/deepseek_v41/idx_split_oracle_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..20b1d3fd736178a687f9894551b41c837feb2071
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/idx_split_oracle_test.zig
+@@ -0,0 +1,581 @@
++//! TF_DSV41_IDX_SPLIT exactness oracle: the emitted selection programs run on a host model of their kernels and glue.
++const std = @import("std");
++const testing = std.testing;
++const calls = @import("block_calls.zig");
++const block = @import("block.zig");
++const bp = @import("block_prefill.zig");
++const check = @import("calls_check.zig");
++const xs = @import("idx_split.zig");
++const Config = @import("config.zig").Config;
++
++const none = std.math.minInt(i64); // a masked score / key
++const Allocator = std.mem.Allocator;
++var nothing: [0]i64 = .{};
++var ties: [1 << 17]i64 = undefined; // topKeys' scratch (a row's keys at most)
++
++/// A program's host memory: each role's elements (any dtype one i64 an element), stale-filled per rank.
++const Mem = struct {
++    a: Allocator,
++    stale: i64,
++    roles: std.StringHashMapUnmanaged([]i64) = .empty,
++    layer: usize = 0, // selection layers finished (one glue.counts each)
++
++    fn name(m: *Mem, r: calls.Role) ![]const u8 {
++        return switch (r) {
++            .buf => |b| b,
++            .weight => |w| try std.fmt.allocPrint(m.a, "weight:{s}", .{w}),
++            .empty => "",
++        };
++    }
++
++    /// The elements of `t` from its first, the role grown (stale) to cover them.
++    fn view(m: *Mem, t: calls.Tensor) ![]i64 {
++        const base: usize = @intCast(@divExact(t.offset, bp.size(t.dt)));
++        var ext: usize = 1;
++        for (t.shape, t.stride) |d, s| {
++            if (d == 0) return &nothing;
++            ext += @as(usize, @intCast(d - 1)) * @as(usize, @intCast(s));
++        }
++        return (try m.role(try m.name(t.role), base + ext))[base..];
++    }
++
++    fn role(m: *Mem, nm: []const u8, len: usize) ![]i64 {
++        const g = try m.roles.getOrPut(m.a, nm);
++        if (!g.found_existing) g.value_ptr.* = &nothing;
++        if (g.value_ptr.len < len) {
++            const grown = try m.a.alloc(i64, len);
++            @memcpy(grown[0..g.value_ptr.len], g.value_ptr.*);
++            @memset(grown[g.value_ptr.len..], m.stale);
++            g.value_ptr.* = grown;
++        }
++        return g.value_ptr.*;
++    }
++};
++
++fn arg(c: *const calls.Call, nm: []const u8) calls.Arg {
++    for (c.args) |x| if (std.mem.eql(u8, x.name, nm)) return x.arg;
++    std.debug.panic("oracle: {s} has no {s}", .{ c.name, nm });
++}
++
++fn mix(x: u64) u64 {
++    var z = x +% 0x9e3779b97f4a7c15;
++    z = (z ^ (z >> 30)) *% 0xbf58476d1ce4e5b9;
++    z = (z ^ (z >> 27)) *% 0x94d049bb133111eb;
++    return z ^ (z >> 31);
++}
++
++/// The model's index score: query row `q` against key position `j` of the layer keyed `salt`; many ties.
++fn score(salt: u64, q: i64, j: i64) i64 {
++    return @intCast((@as(u64, @intCast(q * 31 + j * 17 + (j >> 5) * 7)) +% salt) % 11);
++}
++
++/// A layer's key identity: its IK view (role and offset), as every rank and the replicated program name it.
++fn saltOf(m: *Mem, t: calls.Tensor) !u64 {
++    return mix(std.hash.Wyhash.hash(@bitCast(t.offset), try m.name(t.role)));
++}
++
++/// index.sort_keys: a unique int64 a (score, position).
++fn key(s: i64, p: i64) i64 {
++    return if (s == none) none else (s << 32) | p;
++}
++
++/// The `count` largest keys of `keys` into `out` (unordered); returns how many (masked keys never taken).
++fn topKeys(keys: []const i64, count: usize, out: []i64) usize {
++    var valid: usize = 0;
++    var buckets: [16]usize = @splat(0);
++    var small = true;
++    for (keys) |x| if (x != none) {
++        valid += 1;
++        const hi = x >> 32;
++        if (hi >= 0 and hi < 16) buckets[@intCast(hi)] += 1 else small = false;
++    };
++    var got: usize = 0;
++    if (valid <= count) {
++        for (keys) |x| if (x != none) {
++            out[got] = x;
++            got += 1;
++        };
++        return got;
++    }
++    if (!small) {
++        const all = ties[0..valid];
++        for (keys) |x| if (x != none) {
++            all[got] = x;
++            got += 1;
++        };
++        std.mem.sort(i64, all, {}, std.sort.desc(i64));
++        @memcpy(out[0..count], all[0..count]);
++        return count;
++    }
++    // the cutoff score: every key above it, then its own keys from the largest position down
++    var cut: i64 = 15;
++    var above: usize = 0;
++    while (above + buckets[@intCast(cut)] < count) : (cut -= 1) above += buckets[@intCast(cut)];
++    for (keys) |x| if (x != none and x >> 32 > cut) {
++        out[got] = x;
++        got += 1;
++    };
++    var nt: usize = 0;
++    for (keys) |x| if (x != none and x >> 32 == cut) {
++        ties[nt] = x;
++        nt += 1;
++    };
++    std.mem.sort(i64, ties[0..nt], {}, std.sort.desc(i64));
++    @memcpy(out[got..count], ties[0 .. count - got]);
++    return count;
++}
++
++/// topPositions: the `count` largest keys' positions ascending, -1 padded.
++fn topPositions(keys: []const i64, count: usize, out: []i64, scratch: []i64) void {
++    const got = topKeys(keys, count, scratch);
++    for (scratch[0..got]) |*x| x.* &= 0xffffffff;
++    std.mem.sort(i64, scratch[0..got], {}, std.sort.asc(i64));
++    @memcpy(out[0..got], scratch[0..got]);
++    @memset(out[got..count], -1);
++}
++
++/// One row's visible key count and positions, the layer's record (every key a row's launch scanned).
++fn record(m: *Mem, q: i64, count: u64, sum: u64) !void {
++    var nb: [32]u8 = undefined;
++    const nm = try m.a.dupe(u8, try std.fmt.bufPrint(&nb, "oracle.vis{d}", .{m.layer}));
++    const r = try m.role(nm, @intCast(q + 1));
++    r[@intCast(q)] = @intCast(mix(count *% 0x100000001b3 +% sum) >> 1);
++}
++
++const Model = struct {
++    ih: i64,
++    id: i64,
++    topk: i64,
++
++    fn qRow(o: Model, c: *const calls.Call) i64 {
++        return @divExact(arg(c, "QI").t.offset, o.ih * o.id * 2);
++    }
++
++    /// `_scores`: rows' scores over NK keys (dense, gathered positions or candidate blocks), masked past each row.
++    fn scores(o: Model, m: *Mem, c: *const calls.Call) !void {
++        const rows: usize = @intCast(c.grid[0]);
++        const nk: usize = @intCast(arg(c, "NK").i);
++        const ratio = arg(c, "RATIO").i;
++        const p0 = (try m.view(arg(c, "POS").t))[0];
++        const salt = try saltOf(m, arg(c, "IK").t);
++        const out = try m.view(arg(c, "OUT").t);
++        const os: usize = @intCast(arg(c, "o_stride").i);
++        const gather = arg(c, "GATHER").b;
++        const cbs = arg(c, "CBS").i;
++        const ks: usize = @intCast(arg(c, "k_stride").i);
++        const gk: []const i64 = if (gather) try m.view(arg(c, "KEYS").t) else &nothing;
++        const q0 = o.qRow(c);
++        for (0..rows) |r| {
++            const ri: i64 = @intCast(r);
++            const vis = @divFloor(p0 + ri + 1, ratio);
++            var count: u64 = 0;
++            var sum: u64 = 0;
++            for (0..nk) |j| {
++                const ji: i64 = @intCast(j);
++                const kp: i64 = if (!gather) ji else if (cbs > 0) blk: {
++                    const b = gk[r * ks + j / @as(usize, @intCast(cbs))];
++                    break :blk if (b < 0) -1 else b * cbs + @mod(ji, cbs);
++                } else gk[r * ks + j];
++                const ok = kp >= 0 and kp < vis;
++                out[r * os + j] = if (ok) score(salt, q0 + ri, kp) else none;
++                if (ok) {
++                    count += 1;
++                    sum +%= @intCast(kp);
++                }
++            }
++            try record(m, q0 + ri, count, sum);
++        }
++    }
++
++    /// `_keys`: each score's sort key, at its own or its gathered position.
++    fn keys(m: *Mem, c: *const calls.Call) !void {
++        const rows: usize = @intCast(c.grid[0]);
++        const nk: usize = @intCast(arg(c, "NK").i);
++        const s = try m.view(arg(c, "S").t);
++        const k = try m.view(arg(c, "K").t);
++        const ss: usize, const ks: usize, const ps: usize = .{ @intCast(arg(c, "s_stride").i), @intCast(arg(c, "k_stride").i), @intCast(arg(c, "p_stride").i) };
++        const posn = if (arg(c, "GATHER").b) try m.view(arg(c, "POSN").t) else null;
++        for (0..rows) |r| for (0..nk) |j| {
++            const p: i64 = if (posn) |x| x[r * ps + j] else @intCast(j);
++            k[r * ks + j] = key(s[r * ss + j], p);
++        };
++    }
++
++    /// `_block_keys`: a candidate block's key, its best visible score, at its block id.
++    fn blockKeys(m: *Mem, c: *const calls.Call) !void {
++        const rows: usize = @intCast(c.grid[0]);
++        const nb: usize = @intCast(arg(c, "NB").i);
++        const bs: usize = @intCast(arg(c, "BS").i);
++        const ss: usize = @intCast(arg(c, "s_stride").i);
++        const ks: usize = @intCast(arg(c, "k_stride").i);
++        const s = try m.view(arg(c, "S").t);
++        const k = try m.view(arg(c, "K").t);
++        for (0..rows) |r| for (0..nb) |b| {
++            var best: i64 = none;
++            for (b * bs..@min((b + 1) * bs, ss)) |j| best = @max(best, s[r * ss + j]);
++            k[r * ks + b] = key(best, @intCast(b));
++        };
++    }
++
++    /// `_stream`: per split of SPLIT keys below NK, the K best visible keys of each row into BUF[row, split].
++    fn stream(o: Model, m: *Mem, c: *const calls.Call) !void {
++        const rows: usize = @intCast(c.grid[0]);
++        const nk = arg(c, "NK").i;
++        const ns: usize = @intCast(arg(c, "nsplit").i);
++        const split = arg(c, "SPLIT").i;
++        const k: usize = @intCast(arg(c, "K").i);
++        const cap: usize = @intCast(arg(c, "CAP").i);
++        const ratio = arg(c, "RATIO").i;
++        const p0 = (try m.view(arg(c, "POS").t))[0];
++        const salt = try saltOf(m, arg(c, "IK").t);
++        const bt = arg(c, "BUF").t;
++        const buf = try m.view(bt);
++        const nsb: usize = @intCast(bt.shape[1]); // the buffer's own layout, whatever nsplit says
++        const q0 = o.qRow(c);
++        const part = try m.a.alloc(i64, @intCast(split));
++        defer m.a.free(part);
++        for (0..rows) |r| {
++            const ri: i64 = @intCast(r);
++            const vis = @min(nk, @divFloor(p0 + ri + 1, ratio));
++            var count: u64 = 0;
++            var sum: u64 = 0;
++            for (0..ns) |sp| {
++                const lo: i64 = @as(i64, @intCast(sp)) * split;
++                const hi = @min(lo + split, nk);
++                var len: usize = 0;
++                var j = lo;
++                while (j < hi) : (j += 1) {
++                    const ok = j < vis;
++                    part[len] = if (ok) key(score(salt, q0 + ri, j), j) else none;
++                    len += 1;
++                    if (ok) {
++                        count += 1;
++                        sum +%= @intCast(j);
++                    }
++                }
++                const dst = buf[(r * nsb + sp) * cap ..][0..k];
++                const got = topKeys(part[0..len], k, dst);
++                @memset(dst[got..], none);
++            }
++            try record(m, q0 + ri, count, sum);
++        }
++    }
++};
++
++/// glue.topk: each row's `count` best keys' positions.
++fn glueTopk(m: *Mem, c: *const calls.Call, scratch: []i64) !void {
++    const kt = c.args[0].arg.t;
++    const ot = c.args[1].arg.t;
++    const count: usize = @intCast(c.args[2].arg.i);
++    const keys = try m.view(kt);
++    const out = try m.view(ot);
++    for (0..@intCast(kt.shape[0])) |r| {
++        const row = keys[r * @as(usize, @intCast(kt.stride[0])) ..][0..@intCast(kt.shape[1])];
++        topPositions(row, count, out[r * @as(usize, @intCast(ot.stride[0])) ..][0..count], scratch);
++    }
++}
++
++/// glue.stream_merge: each row's splits' keys, then their `k` best positions.
++fn glueMerge(m: *Mem, c: *const calls.Call, scratch: []i64) !void {
++    const bt = c.args[0].arg.t;
++    const ot = c.args[1].arg.t;
++    const k: usize = @intCast(c.args[2].arg.i);
++    const rows: usize, const ns: usize, const cap: usize = .{ @intCast(bt.shape[0]), @intCast(bt.shape[1]), @intCast(bt.shape[2]) };
++    const buf = try m.view(bt);
++    const out = try m.view(ot);
++    const all = try m.a.alloc(i64, ns * k);
++    defer m.a.free(all);
++    for (0..rows) |r| {
++        for (0..ns) |sp| @memcpy(all[sp * k ..][0..k], buf[(r * ns + sp) * cap ..][0..k]);
++        topPositions(all, k, out[r * @as(usize, @intCast(ot.stride[0])) ..][0..k], scratch);
++    }
++}
++
++/// glue.cand_keys: each candidate block's key positions (a missing block's: -1).
++fn glueCandKeys(m: *Mem, c: *const calls.Call) !void {
++    const ct = c.args[0].arg.t;
++    const kt = c.args[1].arg.t;
++    const cbs = c.args[2].arg.i;
++    const cand = try m.view(ct);
++    const ck = try m.view(kt);
++    for (0..@intCast(ct.shape[0])) |r| for (0..@intCast(ct.shape[1])) |i| for (0..@intCast(cbs)) |t| {
++        const b = cand[r * @as(usize, @intCast(ct.stride[0])) + i];
++        ck[r * @as(usize, @intCast(kt.stride[0])) + i * @as(usize, @intCast(cbs)) + t] = if (b < 0) -1 else b * cbs + @as(i64, @intCast(t));
++    };
++}
++
++/// Runs `cs` from `i.*` up to its next glue.ix_gather (returned, `i` past it) or its end (null).
++fn runTo(md: Model, m: *Mem, cs: []const calls.Call, i: *usize) !?*const calls.Call {
++    const scratch = try m.a.alloc(i64, 1 << 16);
++    defer m.a.free(scratch);
++    const eql = std.mem.eql;
++    while (i.* < cs.len) {
++        const c = &cs[i.*];
++        i.* += 1;
++        const nm = c.name;
++        if (eql(u8, nm, "glue.ix_gather")) return c;
++        if (eql(u8, nm, "_scores")) try md.scores(m, c);
++        if (eql(u8, nm, "_keys")) try Model.keys(m, c);
++        if (eql(u8, nm, "_block_keys")) try Model.blockKeys(m, c);
++        if (eql(u8, nm, "_stream")) try md.stream(m, c);
++        if (eql(u8, nm, "glue.topk")) try glueTopk(m, c, scratch);
++        if (eql(u8, nm, "glue.stream_merge")) try glueMerge(m, c, scratch);
++        if (eql(u8, nm, "glue.cand_keys")) try glueCandKeys(m, c);
++        if (eql(u8, nm, "glue.block_pos")) (try m.view(c.args[0].arg.t))[0] = c.args[1].arg.i;
++        if (eql(u8, nm, "glue.counts")) m.layer += 1;
++        // the row-block stream variants (TF_DSV41_STREAM_RB) are not modelled: a test reaching one is wrong
++        for ([_][]const u8{ "_stream_pf", "_stream_rb2", "_stream_rb4" }) |x| if (eql(u8, nm, x)) return error.Unmodelled;
++    }
++    return null;
++}
++
++/// glue.ix_gather on both ranks: the production cut checks and plan over the ranks' host rows (an all-gather, a copy).
++fn exchange(m: *[2]Mem, g: [2]*const calls.Call) !void {
++    var cut: [2]xs.Cut = undefined;
++    var cols: usize = 0;
++    for (0..2) |r| {
++        const sel = g[r].args[0].arg.t;
++        var elems: usize = 1;
++        for (g[r].args[1].arg.t.shape) |d| elems *= @intCast(d);
++        cut[r] = try xs.glueCut(2, sel.shape[0], g[r].args[2].arg.i, sel.shape[1], sel.stride[0], elems);
++        cols = @intCast(sel.shape[1]);
++    }
++    if (!std.meta.eql(cut[0], cut[1])) return error.Mismatch;
++    const count: usize = @intCast(cut[0].big());
++    var tmp: [2][]i64 = undefined;
++    for (0..2) |r| tmp[r] = try m[r].view(g[r].args[1].arg.t);
++    // the all-gather: rank r's send rows into part r of every rank's buffer
++    for (0..2) |r| {
++        const p = cut[r].plan(@intCast(r));
++        const sel = try m[r].view(g[r].args[0].arg.t);
++        for (tmp) |t| @memcpy(t[r * count * cols ..][0 .. count * cols], sel[@as(usize, @intCast(p.send)) * cols ..][0 .. count * cols]);
++    }
++    for (0..2) |r| {
++        const p = cut[r].plan(@intCast(r));
++        const sel = try m[r].view(g[r].args[0].arg.t);
++        @memcpy(sel[@as(usize, @intCast(p.dst)) * cols ..][0 .. @as(usize, @intCast(p.rows)) * cols], tmp[r][@as(usize, @intCast(p.src)) * cols ..][0 .. @as(usize, @intCast(p.rows)) * cols]);
++    }
++}
++
++/// The replicated program and both split ranks' programs, from the same inputs; error.Mismatch where they differ.
++fn compare(a: Allocator, md: Model, off: []const calls.Call, on: [2][]const calls.Call, n: i64, start: i64, cb: i64) !void {
++    var ref: Mem = .{ .a = a, .stale = -100 };
++    (try ref.role("w.pos", 1))[0] = start; // glue.positions: the segment's first position
++    var i: usize = 0;
++    if (try runTo(md, &ref, off, &i) != null) return error.Mismatch;
++    var m: [2]Mem = .{ .{ .a = a, .stale = -101 }, .{ .a = a, .stale = -102 } };
++    for (&m) |*x| (try x.role("w.pos", 1))[0] = start;
++    var at: [2]usize = .{ 0, 0 };
++    var split = false;
++    while (true) {
++        const g0 = try runTo(md, &m[0], on[0], &at[0]);
++        const g1 = try runTo(md, &m[1], on[1], &at[1]);
++        if (g0 == null and g1 == null) break;
++        if (g0 == null or g1 == null) return error.Mismatch;
++        try exchange(&m, .{ g0.?, g1.? });
++        split = true;
++    }
++    if (!split) return error.NotSplit;
++    const un: usize = @intCast(n);
++    var it = ref.roles.iterator();
++    while (it.next()) |kv| {
++        const nm = kv.key_ptr.*;
++        const want = kv.value_ptr.*;
++        if (std.mem.startsWith(u8, nm, "w.sel")) {
++            // every row's selection on both ranks: the replicated one
++            const k: usize = @intCast(md.topk);
++            for (&m) |*x| {
++                const got = x.roles.get(nm) orelse return error.Mismatch;
++                if (!std.mem.eql(i64, want[0 .. un * k], got[0 .. un * k])) return error.Mismatch;
++            }
++        } else if (std.mem.eql(u8, nm, "w.cand")) {
++            // candidates stay on their rank: each row's on the rank that selects it
++            const own = xs.Cut.of(n);
++            const w: usize = @intCast(cb);
++            for (&m, 0..) |*x, r| {
++                const mi = own.mine(@intCast(r));
++                const got = x.roles.get(nm) orelse return error.Mismatch;
++                const lo: usize, const hi: usize = .{ @intCast(mi[0]), @intCast(mi[1]) };
++                if (!std.mem.eql(i64, want[lo * w .. hi * w], got[lo * w .. hi * w])) return error.Mismatch;
++            }
++        } else if (std.mem.startsWith(u8, nm, "oracle.vis")) {
++            // every row scanned exactly the replicated row's visible keys, on a rank that ran it
++            for (0..un) |q| {
++                var hit = false;
++                for (&m) |*x| {
++                    const got = x.roles.get(nm) orelse continue;
++                    const v = if (q < got.len) got[q] else x.stale;
++                    if (v == want[q]) hit = true else if (v != x.stale) return error.Mismatch;
++                }
++                if (!hit) return error.Mismatch;
++            }
++        }
++    }
++}
++
++const Fix = struct {
++    a: Allocator,
++    cfg: Config = .{},
++    w: block.Widths = .{},
++
++    fn init(a: Allocator) !Fix {
++        var f: Fix = .{ .a = a };
++        try check.parseDense(a, &f.w, @embedFile("fixtures/dense-k2.txt"));
++        try check.parseExperts(a, &f.w, @embedFile("fixtures/expert-k2.txt"));
++        return f;
++    }
++
++    fn model(f: *const Fix) Model {
++        return .{ .ih = f.cfg.index_heads, .id = f.cfg.index_dim, .topk = f.cfg.index_topk };
++    }
++};
++
++fn opts(budget: i64) block.Options {
++    return .{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = budget };
++}
++
++/// The encoder layers of a replay (CED) piece: layers 2 / 8 / 14 stream there.
++fn encoder() [21]u32 {
++    var enc: [21]u32 = undefined;
++    for (&enc, 0..) |*l, i| l.* = @intCast(i);
++    return enc;
++}
++
++/// `cs` with a planted defect: `edit` on the first call named `name` (`back` calls before it).
++fn plant(a: Allocator, cs: []const calls.Call, name: []const u8, back: usize, edit: Edit) ![]const calls.Call {
++    const out = try a.dupe(calls.Call, cs);
++    for (out, 0..) |c, i| if (std.mem.eql(u8, c.name, name) and i >= back) {
++        const t = &out[i - back];
++        t.args = try a.dupe(calls.Named, t.args);
++        if (try edit(t)) return out;
++        return error.NoDefect;
++    };
++    return error.NoDefect;
++}
++
++fn setArg(c: *calls.Call, nm: []const u8, v: i64) void {
++    for (@constCast(c.args)) |*x| if (std.mem.eql(u8, x.name, nm)) {
++        x.arg = .{ .i = v };
++    };
++}
++
++const Edit = *const fn (*calls.Call) anyerror!bool;
++
++const Defect = struct {
++    fn nkShort(c: *calls.Call) anyerror!bool {
++        setArg(c, "NK", arg(c, "NK").i - 1);
++        return true;
++    }
++    fn posOff(c: *calls.Call) anyerror!bool {
++        if (!std.mem.eql(u8, c.name, "glue.block_pos")) return false;
++        @constCast(c.args)[1].arg = .{ .i = c.args[1].arg.i + 1 };
++        return true;
++    }
++    fn splitShort(c: *calls.Call) anyerror!bool {
++        const ns = arg(c, "nsplit").i;
++        setArg(c, "nsplit", ns - 1);
++        return ns > 1;
++    }
++    fn cutOff(c: *calls.Call) anyerror!bool {
++        @constCast(c.args)[2].arg = .{ .i = c.args[2].arg.i + xs.grid };
++        return true;
++    }
++    fn mergeRow(c: *calls.Call) anyerror!bool {
++        var t = c.args[1].arg.t;
++        t.offset += t.stride[0] * 4;
++        @constCast(c.args)[1].arg = .{ .t = t };
++        return true;
++    }
++};
++
++/// The nsplit of each `_stream` launch of `cs`.
++fn splitsOf(cs: []const calls.Call, out: *std.ArrayList(i64), a: Allocator) !void {
++    for (cs) |*c| if (std.mem.eql(u8, c.name, "_stream")) try out.append(a, arg(c, "nsplit").i);
++}
++
++test "idx split oracle: streamed layers across a stream-split boundary select every row as the replicated program" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    const enc = encoder();
++    // ratio-2 keys cross the 16,384-key split: the replicated launch has two splits, rank 0's part one
++    for ([_][2]i64{ .{ 333, 32568 }, .{ 257, 32640 }, .{ 1000, 9000 } }) |c| {
++        const n = c[0];
++        const start = c[1];
++        const base = opts(64 << 20);
++        const off = try bp.emitReplay(aa, &fx.cfg, &fx.w, base, &enc, n, start, .encoder);
++        var on: [2][]const calls.Call = undefined;
++        for (0..2) |r| {
++            var o = base;
++            o.idx_split = .all;
++            o.rank = @intCast(r);
++            on[r] = try bp.emitReplay(aa, &fx.cfg, &fx.w, o, &enc, n, start, .encoder);
++        }
++        try compare(aa, fx.model(), off, on, n, start, fx.cfg.candidate_blocks);
++        if (start != 32568) continue;
++        var s_off: std.ArrayList(i64) = .empty;
++        var s0: std.ArrayList(i64) = .empty;
++        try splitsOf(off, &s_off, aa);
++        try splitsOf(on[0], &s0, aa);
++        try testing.expect(std.mem.indexOfScalar(i64, s_off.items, 2) != null and std.mem.indexOfScalar(i64, s0.items, 1) != null);
++    }
++}
++
++test "idx split oracle: materialised layers, the candidate source and its reindex layers, in many row blocks a rank" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    var fx = try Fix.init(aa);
++    fx.cfg.candidate_blocks = 128; // fewer blocks than visible: the candidate selection drops blocks
++    var layers: [40]u32 = undefined;
++    for (&layers, 0..) |*l, i| l.* = @intCast(i);
++    for ([_][2]i64{ .{ 300, 4000 }, .{ 263, 9011 } }) |c| for ([_]i64{ 1 << 20, 64 << 20 }) |budget| {
++        const n = c[0];
++        const start = c[1];
++        const off = try bp.emitPrefill(aa, &fx.cfg, &fx.w, opts(budget), &layers, n, start, false);
++        var on: [2][]const calls.Call = undefined;
++        for (0..2) |r| {
++            var o = opts(budget);
++            o.idx_split = .all;
++            o.rank = @intCast(r);
++            on[r] = try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, start, false);
++        }
++        try compare(aa, fx.model(), off, on, n, start, fx.cfg.candidate_blocks);
++    };
++}
++
++test "idx split oracle: a planted boundary, key-range, split, cut or merge defect fails the comparison" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    const enc = encoder();
++    const n: i64 = 333;
++    const start: i64 = 32568;
++    const off = try bp.emitReplay(aa, &fx.cfg, &fx.w, opts(64 << 20), &enc, n, start, .encoder);
++    var on: [2][]const calls.Call = undefined;
++    for (0..2) |r| {
++        var o = opts(64 << 20);
++        o.idx_split = .all;
++        o.rank = @intCast(r);
++        on[r] = try bp.emitReplay(aa, &fx.cfg, &fx.w, o, &enc, n, start, .encoder);
++    }
++    const md = fx.model();
++    try compare(aa, md, off, on, n, start, fx.cfg.candidate_blocks);
++    // rank 1's first launch one key short, its row block one position late, one split short, its merge a row low
++    const defects = [_]struct { []const u8, usize, Edit }{
++        .{ "_stream", 0, Defect.nkShort },
++        .{ "_stream", 1, Defect.posOff },
++        .{ "_stream", 0, Defect.splitShort },
++        .{ "glue.stream_merge", 0, Defect.mergeRow },
++    };
++    for (defects) |d| {
++        const bad = try plant(aa, on[1], d[0], d[1], d[2]);
++        try testing.expectError(error.Mismatch, compare(aa, md, off, .{ on[0], bad }, n, start, fx.cfg.candidate_blocks));
++    }
++    // both ranks' first gather a grid step off the canonical cut
++    const b0 = try plant(aa, on[0], "glue.ix_gather", 0, Defect.cutOff);
++    const b1 = try plant(aa, on[1], "glue.ix_gather", 0, Defect.cutOff);
++    try testing.expectError(error.Mismatch, compare(aa, md, off, .{ b0, b1 }, n, start, fx.cfg.candidate_blocks));
++}
+diff --git a/zig/src/families/deepseek_v41/idx_split_test.zig b/zig/src/families/deepseek_v41/idx_split_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..92d7e650eceba903e3192597f024444955b3950b
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/idx_split_test.zig
+@@ -0,0 +1,456 @@
++//! Host tests of TF_DSV41_IDX_SPLIT: the reader, the cut and its exchange, the split programs on both ranks, the plan.
++const std = @import("std");
++const testing = std.testing;
++const calls = @import("block_calls.zig");
++const block = @import("block.zig");
++const bp = @import("block_prefill.zig");
++const buffers = @import("buffers.zig");
++const check = @import("calls_check.zig");
++const fp = @import("forward_prefill.zig");
++const xs = @import("idx_split.zig");
++const Config = @import("config.zig").Config;
++
++const Fake = struct {
++    var pairs: []const [2][]const u8 = &.{};
++    fn get(name: []const u8) ?[]const u8 {
++        for (pairs) |p| if (std.mem.eql(u8, p[0], name)) return p[1];
++        return null;
++    }
++};
++
++test "TF_DSV41_IDX_SPLIT: unset / empty / 0 / off off, auto the threshold, 1 / on every segment, anything else refused" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expectEqual(xs.Mode.off, try xs.mode(&Fake.get));
++    for ([_][2][]const u8{ .{ "", "off" }, .{ "0", "off" }, .{ "off", "off" }, .{ " OFF ", "off" }, .{ "auto", "auto" }, .{ "1", "all" }, .{ "on", "all" } }) |c| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", c[0] }};
++        try testing.expectEqual(std.meta.stringToEnum(xs.Mode, c[1]).?, try xs.mode(&Fake.get));
++    }
++    for ([_][]const u8{ "2", "yes", "-1", "auto1" }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", v }};
++        try testing.expectError(error.BadKnob, xs.mode(&Fake.get));
++    }
++}
++
++test "TF_DSV41_IDX_SPLIT agreement: off adds nothing; auto, 1 and any refused value each carry their own bytes" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expect(xs.agreement(&Fake.get) == null);
++    for ([_][]const u8{ "", "0", "off", " OFF " }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", v }};
++        try testing.expect(xs.agreement(&Fake.get) == null);
++    }
++    var got: [6][32]u8 = undefined;
++    for ([_][]const u8{ "auto", "1", "on", "yes", "2", "auto1" }, &got) |v, *g| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_SPLIT", v }};
++        g.* = xs.agreement(&Fake.get).?;
++    }
++    // 1 and on agree; every refused value agrees with every other (both ranks then refuse at apply)
++    try testing.expectEqualSlices(u8, &got[1], &got[2]);
++    try testing.expectEqualSlices(u8, &got[3], &got[4]);
++    try testing.expectEqualSlices(u8, &got[3], &got[5]);
++    // auto, all and refused differ pairwise: a mixed pair fails the bootstrap's agreement on both ranks
++    for ([_][2]usize{ .{ 0, 1 }, .{ 0, 3 }, .{ 1, 3 } }) |p| try testing.expect(!std.mem.eql(u8, &got[p[0]], &got[p[1]]));
++}
++
++test "idx split: every cut gives each rank whole rows, equal gather counts, and both ranks every row's bytes back" {
++    const k = 3;
++    var ref: [3 * 4200]i32 = undefined;
++    var local: [2][3 * 4200]i32 = undefined;
++    var tmp: [2 * 3 * 4200]i32 = undefined;
++    for (&ref, 0..) |*v, i| v.* = @intCast(i * 7 + 1);
++    var n: i64 = xs.min_rows;
++    while (n <= 4200) : (n += 1) {
++        const c = xs.Cut.of(n);
++        try testing.expect(c.valid() and @mod(c.h0, xs.grid) == 0);
++        try testing.expect(2 * c.big() - n <= 2 * xs.grid);
++        const un: usize = @intCast(n);
++        const big: usize = @intCast(c.big());
++        // the glue's checks: the cut, two ranks, contiguous rows, a gather buffer of two `big` parts
++        try testing.expectEqual(c, try xs.glueCut(2, n, c.h0, k, k, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, c.h0, k, k, 2 * big * k - 1));
++        try testing.expectError(error.BadGlue, xs.glueCut(1, n, c.h0, k, k, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, c.h0, k, k + 1, 2 * big * k));
++        try testing.expectError(error.BadGlue, xs.glueCut(2, n, 0, k, k, 2 * big * k));
++        // a rank holds its own rows' selection; the rest of its buffer is another layer's (stale) rows
++        for (0..2) |r| {
++            const mi = c.mine(@intCast(r));
++            const m: [2]usize = .{ @intCast(mi[0]), @intCast(mi[1]) };
++            for (0..un) |row| for (0..k) |j| {
++                const own = row >= m[0] and row < m[1];
++                local[r][row * k + j] = if (own) ref[row * k + j] else -7;
++            };
++            const p = c.plan(@intCast(r));
++            const s0: usize = @intCast(p.send);
++            try testing.expectEqual(c.big(), p.count);
++            try testing.expect(s0 + big <= un and s0 <= m[0] and m[1] <= s0 + big);
++            @memcpy(tmp[r * big * k ..][0 .. big * k], local[r][s0 * k ..][0 .. big * k]);
++        }
++        for (0..2) |r| {
++            const p = c.plan(@intCast(r));
++            const src: usize, const dst: usize, const rows: usize = .{ @intCast(p.src), @intCast(p.dst), @intCast(p.rows) };
++            try testing.expect(src + rows <= 2 * big);
++            @memcpy(local[r][dst * k ..][0 .. rows * k], tmp[src * k ..][0 .. rows * k]);
++            try testing.expectEqualSlices(i32, ref[0 .. un * k], local[r][0 .. un * k]);
++        }
++    }
++}
++
++fn roleEq(x: calls.Role, y: calls.Role) bool {
++    if (std.meta.activeTag(x) != std.meta.activeTag(y)) return false;
++    return switch (x) {
++        .buf => |b| std.mem.eql(u8, b, y.buf),
++        .weight => |w| std.mem.eql(u8, w, y.weight),
++        .empty => true,
++    };
++}
++
++fn argEq(x: calls.Arg, y: calls.Arg) bool {
++    if (std.meta.activeTag(x) != std.meta.activeTag(y)) return false;
++    return switch (x) {
++        .t, .opaque_table => |t| blk: {
++            const u = if (y == .t) y.t else y.opaque_table;
++            break :blk roleEq(t.role, u.role) and t.dt == u.dt and t.offset == u.offset and std.mem.eql(i64, t.shape, u.shape) and std.mem.eql(i64, t.stride, u.stride);
++        },
++        .i => |v| v == y.i,
++        .f => |v| @as(u64, @bitCast(v)) == @as(u64, @bitCast(y.f)),
++        .b => |v| v == y.b,
++        .none => true,
++        .list => |l| l.len == y.list.len and for (l, y.list) |p, q| {
++            if (!argEq(p, q)) break false;
++        } else true,
++    };
++}
++
++fn same(x: calls.Call, y: calls.Call) bool {
++    if (!std.mem.eql(u8, x.name, y.name) or x.triton != y.triton or x.glue != y.glue or x.begin != y.begin) return false;
++    if (!std.mem.eql(i64, &x.grid, &y.grid) or x.side != y.side or x.fork != y.fork or x.join != y.join) return false;
++    if (x.mark != y.mark or x.wait != y.wait or x.defer_side != y.defer_side or x.defer_join != y.defer_join) return false;
++    if (x.args.len != y.args.len) return false;
++    for (x.args, y.args) |p, q| if (!std.mem.eql(u8, p.name, q.name) or !argEq(p.arg, q.arg)) return false;
++    return true;
++}
++
++fn expectSame(x: []const calls.Call, y: []const calls.Call) !void {
++    try testing.expectEqual(x.len, y.len);
++    for (x, y) |p, q| try testing.expect(same(p, q));
++}
++
++/// A call of the selection's row loop (its blocks differ between the ranks); every other call is the replicated one.
++fn rowLoop(c: calls.Call) bool {
++    const names = [_][]const u8{ "_stream", "_scores", "_keys", "_block_keys", "glue.stream_merge", "glue.block_pos", "glue.topk", "glue.cand_keys", "glue.ix_gather" };
++    for (names) |nm| if (std.mem.eql(u8, c.name, nm)) return true;
++    return false;
++}
++
++fn argOf(c: calls.Call, name: []const u8) ?calls.Arg {
++    for (c.args) |x| if (std.mem.eql(u8, x.name, name)) return x.arg;
++    return null;
++}
++
++fn roleName(x: calls.Arg) []const u8 {
++    return if (x == .t and x.t.role == .buf) x.t.role.buf else "";
++}
++
++/// Rows [first, first + count) of a row-major view of `cols` int32 columns.
++fn rowsIn(x: calls.Arg, cols: i64) [2]i64 {
++    const a = @divExact(x.t.offset, cols * 4);
++    return .{ a, a + x.t.shape[0] };
++}
++
++const Fix = struct {
++    a: std.mem.Allocator,
++    cfg: Config = .{},
++    w: block.Widths = .{},
++
++    fn init(a: std.mem.Allocator) !Fix {
++        var f: Fix = .{ .a = a };
++        try check.parseDense(a, &f.w, @embedFile("fixtures/dense-k2.txt"));
++        try check.parseExperts(a, &f.w, @embedFile("fixtures/expert-k2.txt"));
++        return f;
++    }
++};
++
++fn longOpts(n: i64) block.Options {
++    var o: block.Options = .{ .gm_v2 = .one, .limit = 1 << 20, .rope_rows = (1 << 20) + 2048, .index_budget = 64 << 20 };
++    if (n > 2048) {
++        o.pf4k = true;
++        o.prefill_rows = 4096;
++    }
++    return o;
++}
++
++/// The rows each rank's layer `L` selects ("w.sel<L>" outputs), marked in `seen` (a row twice: a failure).
++fn markRows(cs: []const calls.Call, L: u32, k: i64, seen: []u8, mine: ?[2]i64) !void {
++    var nb: [32]u8 = undefined;
++    const role = try std.fmt.bufPrint(&nb, "w.sel{d}", .{L});
++    for (cs) |c| {
++        const is_out = std.mem.eql(u8, c.name, "glue.stream_merge") or std.mem.eql(u8, c.name, "glue.topk");
++        if (!is_out or !std.mem.eql(u8, roleName(c.args[1].arg), role)) continue;
++        const r = rowsIn(c.args[1].arg, k);
++        if (mine) |m| try testing.expect(r[0] >= m[0] and r[1] <= m[1]);
++        for (@intCast(r[0])..@intCast(r[1])) |row| {
++            try testing.expectEqual(@as(u8, 0), seen[row]);
++            seen[row] = 1;
++        }
++    }
++}
++
++/// Each collective of a program in order: its name and the elements a rank sends.
++fn collectives(a: std.mem.Allocator, cs: []const calls.Call) ![][2]i64 {
++    var out: std.ArrayList([2]i64) = .empty;
++    for (cs) |c| {
++        if (std.mem.eql(u8, c.name, "glue.ix_gather")) {
++            const g = c.args[1].arg.t;
++            try out.append(a, .{ 1, g.shape[1] * g.shape[2] });
++        } else if (calls.isExchange(c)) {
++            var e: i64 = 1;
++            for (c.args[0].arg.t.shape) |d| e *= d;
++            try out.append(a, .{ 0, e });
++        }
++    }
++    return out.items;
++}
++
++test "idx split: off and auto under its threshold emit the replicated program; split, each rank selects its own rows" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    var enc: [21]u32 = undefined;
++    for (&enc, 0..) |*l, i| l.* = @intCast(i);
++    const k: i64 = fx.cfg.index_topk;
++    for ([_]i64{ 4096, 4095, 2048, 2047, 300, 256, 255 }) |n| for ([_]i64{ 0, 8192, 262144 }) |start| {
++        const base = longOpts(n);
++        const off = try bp.emitReplay(aa, &fx.cfg, &fx.w, base, &enc, n, start, .encoder);
++        for ([_]xs.Mode{ .auto, .all }) |md| {
++            var o = base;
++            o.idx_split = md;
++            var r: [2][]const calls.Call = undefined;
++            for (0..2) |rank| {
++                o.rank = @intCast(rank);
++                r[rank] = try bp.emitReplay(aa, &fx.cfg, &fx.w, o, &enc, n, start, .encoder);
++            }
++            const nvis = @divFloor(start + n, 2); // layers 2 / 8 / 14 (ratio 2) select here
++            if (!xs.engages(md, 2, false, n, nvis)) {
++                // the replicated program, call for call, on both ranks
++                for (r) |cs| try expectSame(off, cs);
++                continue;
++            }
++            for ([_]u32{ 2, 8, 14 }) |L| {
++                const seen = try aa.alloc(u8, @intCast(n));
++                @memset(seen, 0);
++                const role = try std.fmt.allocPrint(aa, "w.sel{d}", .{L});
++                var cut: ?xs.Cut = null;
++                for (r, 0..) |cs, rank| {
++                    for (cs, 0..) |c, i| if (std.mem.eql(u8, c.name, "glue.ix_gather") and std.mem.eql(u8, roleName(c.args[0].arg), role)) {
++                        const got: xs.Cut = .{ .n = n, .h0 = c.args[2].arg.i };
++                        if (cut) |x| try testing.expectEqual(x.h0, got.h0) else cut = got;
++                        // the gather lands before the counts read the whole selection
++                        try testing.expectEqualStrings("glue.counts", cs[i + 1].name);
++                    };
++                    try markRows(cs, L, k, seen, cut.?.mine(@intCast(rank)));
++                }
++                for (seen) |v| try testing.expectEqual(@as(u8, 1), v);
++            }
++            // both ranks issue the same collectives, in order, of the same sizes
++            const c0 = try collectives(aa, r[0]);
++            const c1 = try collectives(aa, r[1]);
++            try testing.expectEqual(c0.len, c1.len);
++            for (c0, c1) |x, y| try testing.expectEqual(x, y);
++            var gathers: usize = 0;
++            for (c0) |x| gathers += @intCast(x[0]);
++            try testing.expectEqual(@as(usize, 3), gathers);
++            // outside the selection's row loop, every call is the replicated program's
++            for (r) |cs| {
++                var i: usize = 0;
++                var j: usize = 0;
++                while (true) {
++                    while (i < off.len and rowLoop(off[i])) i += 1;
++                    while (j < cs.len and rowLoop(cs[j])) j += 1;
++                    if (i == off.len or j == cs.len) break;
++                    try testing.expect(same(off[i], cs[j]));
++                    i += 1;
++                    j += 1;
++                }
++                try testing.expect(i == off.len and j == cs.len);
++            }
++            // a split block's launch: the replicated launch's constants, its own rows' keys and first position
++            for (r) |cs| for (cs, 0..) |c, i| if (std.mem.eql(u8, c.name, "_stream")) {
++                const q_row: i64 = @as(i64, fx.cfg.index_heads) * fx.cfg.index_dim * 2;
++                const a = @divExact(argOf(c, "QI").?.t.offset, q_row);
++                try testing.expectEqual(@max(@divFloor(start + a + c.grid[0], 2), 1), argOf(c, "NK").?.i);
++                try testing.expectEqualStrings("glue.block_pos", cs[i - 1].name);
++                try testing.expectEqual(start + a, cs[i - 1].args[1].arg.i);
++                const ref = for (off) |x| {
++                    if (std.mem.eql(u8, x.name, "_stream")) break x;
++                } else unreachable;
++                for ([_][]const u8{ "H", "D", "BP", "SPLIT", "K", "CAP", "BS", "MODE", "RATIO", "w_stride", "k_stride" }) |nm| try testing.expectEqual(argOf(ref, nm).?.i, argOf(c, nm).?.i);
++                for ([_][]const u8{ "WS", "SCALE" }) |nm| try testing.expectEqual(argOf(ref, nm).?.f, argOf(c, nm).?.f);
++            };
++        }
++    };
++}
++
++test "idx split: the candidate source and its reindex layers take one cut, so candidates never cross the ranks" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    var layers: [40]u32 = undefined;
++    for (&layers, 0..) |*l, i| l.* = @intCast(i);
++    const k: i64 = fx.cfg.index_topk;
++    const cb: i64 = fx.cfg.candidate_blocks;
++    for ([_]i64{ 2048, 1500 }) |n| for ([_]i64{ 4096, 131072 }) |start| {
++        var o = longOpts(n);
++        o.idx_split = .all;
++        var lo: [2][2]i64 = undefined;
++        var gathers: [2]usize = .{ 0, 0 };
++        for (0..2) |rank| {
++            o.rank = @intCast(rank);
++            const cs = try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, start, false);
++            var h0: ?i64 = null;
++            for (cs) |c| if (std.mem.eql(u8, c.name, "glue.ix_gather")) {
++                gathers[rank] += 1;
++                if (std.mem.eql(u8, roleName(c.args[0].arg), "w.sel20")) h0 = c.args[2].arg.i;
++            };
++            const m = (xs.Cut{ .n = n, .h0 = h0.? }).mine(@intCast(rank));
++            lo[rank] = m;
++            // the candidates this rank writes (layer 20) and reads (layers 24-36): its own rows only
++            for (cs) |c| {
++                const writes = std.mem.eql(u8, c.name, "glue.topk") and std.mem.eql(u8, roleName(c.args[1].arg), "w.cand");
++                const reads = std.mem.eql(u8, c.name, "glue.cand_keys");
++                if (!writes and !reads) continue;
++                const r = rowsIn(if (writes) c.args[1].arg else c.args[0].arg, cb);
++                try testing.expect(r[0] >= m[0] and r[1] <= m[1]);
++            }
++            for ([_]u32{ 20, 24, 28, 32, 36 }) |L| {
++                const seen = try aa.alloc(u8, @intCast(n));
++                @memset(seen, 0);
++                try markRows(cs, L, k, seen, m);
++                for (seen[@intCast(m[0])..@intCast(m[1])]) |v| try testing.expectEqual(@as(u8, 1), v);
++            }
++        }
++        try testing.expectEqual(lo[0][1], lo[1][0]);
++        // layers 2 / 8 / 14, the candidate source and its four reindex layers
++        try testing.expectEqual(@as(usize, 8), gathers[0]);
++        try testing.expectEqual(gathers[0], gathers[1]);
++    };
++}
++
++test "idx split: ranks with unequal index budgets still cut alike, issue the same collectives and own each row once" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const aa = arena.allocator();
++    const fx = try Fix.init(aa);
++    var layers: [40]u32 = undefined;
++    for (&layers, 0..) |*l, i| l.* = @intCast(i);
++    const k: i64 = fx.cfg.index_topk;
++    const n: i64 = 2048;
++    for ([_][2]i64{ .{ 32 << 20, 64 << 20 }, .{ 64 << 20, 1 << 20 } }) |budget| for ([_]xs.Mode{ .auto, .all }) |md| {
++        var cs: [2][]const calls.Call = undefined;
++        for (0..2) |rank| {
++            var o = longOpts(n);
++            o.idx_split = md;
++            o.rank = @intCast(rank);
++            o.index_budget = budget[rank];
++            cs[rank] = try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, 131072, false);
++        }
++        const c0 = try collectives(aa, cs[0]);
++        const c1 = try collectives(aa, cs[1]);
++        try testing.expectEqual(c0.len, c1.len);
++        for (c0, c1) |x, y| try testing.expectEqual(x, y);
++        // each split layer: one cut (the rows' canonical one) on both ranks, every row selected on exactly one
++        var gathers: usize = 0;
++        for (cs[0]) |c| if (std.mem.eql(u8, c.name, "glue.ix_gather")) {
++            gathers += 1;
++            const role = roleName(c.args[0].arg);
++            const L = try std.fmt.parseInt(u32, role["w.sel".len..], 10);
++            const cut = xs.Cut.of(n);
++            try testing.expectEqual(cut.h0, c.args[2].arg.i);
++            const seen = try aa.alloc(u8, @intCast(n));
++            @memset(seen, 0);
++            for (cs, 0..) |r, rank| try markRows(r, L, k, seen, cut.mine(@intCast(rank)));
++            for (seen) |v| try testing.expectEqual(@as(u8, 1), v);
++        };
++        // 1: every eligible layer (2 / 8 / 14, the source, its 4 reindex layers); auto: the equal-budget pair's layers
++        var o = longOpts(n);
++        o.idx_split = md;
++        var want: usize = 0;
++        for (try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, 131072, false)) |c| want += @intFromBool(std.mem.eql(u8, c.name, "glue.ix_gather"));
++        if (md == .all) try testing.expectEqual(@as(usize, 8), want);
++        try testing.expect(want > 0);
++        try testing.expectEqual(want, gathers);
++    };
++}
++
++test "idx split: never off, on one rank or four, in row mode, under 256 rows; auto from 4,096 x 65,536" {
++    for ([_]xs.Mode{ .auto, .all }) |m| {
++        try testing.expect(xs.engages(m, 2, false, 4096, 1 << 20));
++        for ([_]u32{ 1, 4 }) |w| try testing.expect(!xs.engages(m, w, false, 4096, 1 << 20));
++        try testing.expect(!xs.engages(m, 2, true, 4096, 1 << 20));
++        try testing.expect(!xs.engages(m, 2, false, xs.min_rows - 1, 1 << 20));
++    }
++    try testing.expect(!xs.engages(.off, 2, false, 4096, 1 << 20));
++    // a 4K piece's ratio-2 layers engage from token 131,072 under auto, a 2K piece's from 262,144
++    try testing.expect(xs.engages(.auto, 2, false, 4096, 131072 / 2) and !xs.engages(.auto, 2, false, 4096, 131072 / 2 - 1));
++    try testing.expect(xs.engages(.auto, 2, false, 2048, 262144 / 2) and !xs.engages(.auto, 2, false, 2048, 262144 / 2 - 1));
++    try testing.expect(xs.engages(.all, 2, false, xs.min_rows, 1));
++}
++
++/// Every role a program names, planned at least its bytes (the workspace's under the K4 tag).
++fn covered(a: std.mem.Allocator, cs: []const calls.Call, p: *const buffers.Plan, wp: *const buffers.Plan) !void {
++    var need: buffers.Plan = .{ .a = a };
++    try need.add(cs);
++    for (need.sizes.keys(), need.sizes.values()) |role, bytes| {
++        const have = if (std.mem.indexOf(u8, role, fp.K4.tag) != null) wp.sizes.get(role) orelse 0 else p.sizes.get(role) orelse 0;
++        if (have < bytes) std.debug.print("idx split: {s}: need {d}, planned {d}\n", .{ role, bytes, have });
++        try testing.expect(have >= bytes);
++    }
++}
++
++test "idx split: the buffer plan holds every ragged split segment's gather, on both ranks, 2K and 4K" {
++    const ws = @import("forward_prefill_k4.zig");
++    for ([_]bool{ false, true }) |k4| for ([_]xs.Mode{ .auto, .all }) |md| for (0..2) |rank| {
++        var arena = std.heap.ArenaAllocator.init(testing.allocator);
++        defer arena.deinit();
++        const a = arena.allocator();
++        const fx = try Fix.init(a);
++        var layers: [25]u32 = undefined;
++        for (&layers, 0..) |*l, i| l.* = @intCast(i);
++        const o: block.Options = .{ .gm_v2 = .one, .limit = 299008, .rope_rows = 301056, .index_budget = 64 << 20, .taps = true, .idx_split = md, .rank = @intCast(rank) };
++        var f = @import("forward.zig").Forward.init(a, &fx.cfg, &fx.w, o, undefined, undefined);
++        f.layers = &layers;
++        var state: fp.State = .{ .mode = .replay, .k4 = k4 };
++        f.prefill_state = &state;
++        var p: buffers.Plan = .{ .a = a };
++        var wp: buffers.Plan = .{ .a = a };
++        try fp.planPrograms(&f, &p, 2048, &layers);
++        if (k4) try ws.planWorkspace(&f, &wp, 2048, &layers);
++        try testing.expect(p.sizes.contains("L.ix.gather") or wp.sizes.contains("L.k4~ix.gather"));
++        const rows: [4]i64 = if (k4) .{ 2049, 3071, 4095, 4096 } else .{ 256, 1025, 2047, 2048 };
++        for (rows) |n| for ([_]i64{ 0, 131072, 290816 }) |start| {
++            var tmp = std.heap.ArenaAllocator.init(testing.allocator);
++            defer tmp.deinit();
++            const ta = tmp.allocator();
++            const op = if (k4) fp.k4Options(o) else o;
++            const plain = try bp.emitReplay(ta, &fx.cfg, &fx.w, op, layers[0..21], n, start, .encoder);
++            try covered(ta, if (k4) try bp.ownCalls(ta, plain, fp.K4.tag) else plain, &p, &wp);
++        };
++    };
++}
++
++test "idx split: aot-needs lists the other rank's split passes and the replicated ones beside the served passes" {
++    const an = @import("aot_needs.zig");
++    var base: an.Served = .{ .o = .{ .prefill_rows = 4096, .pf4k = true }, .slots = 4, .cap = 64, .drafts = false, .slot_drafts = false, .group = 1, .graphs = .{}, .replay = true, .replay_runs = true };
++    for (an.promptPasses(base)[2..]) |p| try testing.expect(p == null);
++    base.o.idx_split = .auto;
++    const ps = an.promptPasses(base);
++    for (ps) |p| try testing.expect(p != null);
++    for (ps[0..2]) |p| try testing.expect(p.?.replay and p.?.o.rank == 0 and p.?.o.idx_split == .auto);
++    for (ps[2..4]) |p| try testing.expect(!p.?.replay and !p.?.replay_runs and p.?.o.rank == 1 and p.?.o.idx_split == .auto);
++    for (ps[4..6]) |p| try testing.expect(!p.?.replay and p.?.o.rank == 0 and p.?.o.idx_split == .off);
++    for ([_]usize{ 0, 2, 4 }) |i| try testing.expect(ps[i].?.o.pf4k and !ps[i + 1].?.o.pf4k);
++    base.o.world = 4;
++    for (an.promptPasses(base)[2..]) |p| try testing.expect(p == null);
++}
+diff --git a/zig/src/families/deepseek_v41/index_scratch.zig b/zig/src/families/deepseek_v41/index_scratch.zig
+index 6510a5f53b41f4252d24571838717a923f9c8813..3440fd14cbaee716049d56ae1530e89acda198dd 100644
+--- a/zig/src/families/deepseek_v41/index_scratch.zig
++++ b/zig/src/families/deepseek_v41/index_scratch.zig
+@@ -36,6 +36,8 @@ pub fn plan(p: *buffers.Plan, rows: u32, o: block.Options, cfg: *const Config, c
+         .{ "L." ++ tag ++ "ix.ckeys", candidate_elements * 4 },
+         .{ "L." ++ tag ++ "ix.bkeys", (@divFloor(elements, cfg.candidate_block_size) + rows) * 8 },
+         .{ "L." ++ tag ++ "ix.stream", stream_bytes },
++        // TF_DSV41_IDX_SPLIT: a ragged segment's larger part can pass the sampled one's; a part never passes `rows`
++        .{ "L." ++ tag ++ "ix.gather", 2 * @as(i64, rows) * topk * 4 },
+     };
+     for (sizes) |entry| if (p.sizes.getPtr(entry[0])) |size| {
+         size.* = @max(size.*, @as(u64, @intCast(entry[1])));
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_apply.zig b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+index 7187cfb5b0dd533e87ad276fe7f67ee8035a7adc..76a0eea23e8e051e021f300cf881d263dc287f9d 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_apply.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+@@ -24,6 +24,7 @@ const prefillRows = pk.prefillRows;
+ const routerGroupRot = pk.routerGroupRot;
+ const streamRb = pk.streamRb;
+ const x3ldEpi = pk.x3ldEpi;
++const idx_split = @import("idx_split.zig");
+ 
+ /// The knobs onto a forward before its buffer plan, on every rank; R1 is read where the forward is made (`r1`).
+ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+@@ -50,6 +51,8 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     f.opts.pf_tbo = try pfTbo(&env);
+     f.opts.stream_rb = try streamRb(&env);
+     f.opts.index_bound = try indexBound(&env);
++    // TF_DSV41_IDX_SPLIT: the ranks agreed on it at the TP bootstrap (cuda_model.zig: tp.Config.family)
++    f.opts.idx_split = try idx_split.mode(&env);
+     // TF_DSV41_BRANCHES: the side stream exists before any capture
+     if (f.branches == null) f.branches = try @import("branches.zig").install(f.gpa, f, rank);
+     // TF_DSV41_PF_OVERLAP: the pieces' exchanges go on the branches' side stream (one peer: TP=2)
+@@ -96,6 +99,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     log.info("router grouping/rotation fusion: {s}", .{if (f.opts.router_group_rot) "on" else "off"});
+     if (f.opts.index_bound) log.info("index bound: decode index scores stop at each row's own keys (_scores_b)", .{});
+     if (f.opts.x3ld_epi) log.info("x3ld epilogues: gateup_epilogue / down_combine fused into the decode expert streamer (TF_DSV41_X3LD_EPI)", .{});
++    if (f.opts.idx_split != .off) log.info("index split: prefill selections split by rows over the two ranks ({t}: {s}), int32 rows gathered", .{ f.opts.idx_split, if (f.opts.idx_split == .auto) "rows x keys past 4,096 x 65,536" else "every segment of 256 rows or more" });
+     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
+     if (f.opts.stream_rb > 1) log.info("stream top-k: {d} rows a program (_stream_rb{d})", .{ f.opts.stream_rb, f.opts.stream_rb });
+     if (f.opts.pf_tbo) log.info("prefill tbo: encoder segments two at a time on two streams, x3gm on at most {d} SMs (0: all){s}", .{ dk.exl3.gm_sms_cap, if (f.opts.pf_overlap > 0) "; TF_DSV41_PF_OVERLAP is off under it" else "" });
+diff --git a/zig/src/families/deepseek_v41/state_test.zig b/zig/src/families/deepseek_v41/state_test.zig
+index 6fa7ebc5422dae27f759284532da336f7db62b8b..87a9a2cb710c5904de983b074ffcb41e67fa8581 100644
+--- a/zig/src/families/deepseek_v41/state_test.zig
++++ b/zig/src/families/deepseek_v41/state_test.zig
+@@ -17,6 +17,8 @@ test {
+     _ = @import("pftbo_test.zig");
+     _ = @import("pfovl_test.zig");
+     _ = @import("streamrb_test.zig");
++    _ = @import("idx_split_test.zig");
++    _ = @import("idx_split_oracle_test.zig");
+ }
+ fn force(comptime T: type) void {
+     inline for (comptime std.meta.declarations(T)) |name| {

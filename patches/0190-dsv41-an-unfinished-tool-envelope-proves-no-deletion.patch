@@ -1,0 +1,148 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 01:28:06 +0700
+Subject: [PATCH 190/207] dsv41: an unfinished tool envelope proves no
+ deletion; place the run in one pass
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+T5's r3 review: `deleted` ignored Envelope.complete, so an unfinished DSML block
+running to EOF counted as a whole deleted envelope (raw `<｜DSML｜tool_calls>…KEEP`,
+final "" got a non-null map). It also rescanned the earlier envelopes for each
+match of the final run, Θ(N²): 5,000 envelopes took 312 ms.
+
+mapOf now builds, once, per raw byte p whether raw[body..p] and raw[p..] are only
+blanks and whole complete envelopes, with one pass each way over the envelopes;
+an unfinished envelope breaks the chain past it. An unfinished envelope kept whole
+inside the final run still maps. A linear-time test holds 8x the envelopes within
+24x the time (T5's benchmark: 5,000 envelopes 31 ms, 1,000 6 ms).
+
+(cherry picked from commit 375ab1860ccc69461608190ee43ff3c28c4f86ea)
+---
+ zig/src/server/runner_projection.zig          | 55 ++++++++++++++-----
+ .../server/runner_projection_http_test.zig    | 38 +++++++++++++
+ 2 files changed, 80 insertions(+), 13 deletions(-)
+
+diff --git a/zig/src/server/runner_projection.zig b/zig/src/server/runner_projection.zig
+index 538dfec96b012282929bcc608673e90cbba8614f..b4073f4b63901a12f8c35c824f806950ce336290 100644
+--- a/zig/src/server/runner_projection.zig
++++ b/zig/src/server/runner_projection.zig
+@@ -30,29 +30,58 @@ pub fn rawFields(a: Allocator, text: model_text.Text, tokens: []const u32, think
+ pub fn mapOf(a: Allocator, raw: []const u8, final: []const u8, open: []const u8) Allocator.Error!?Map {
+     if (!std.unicode.utf8ValidateSlice(raw)) return null;
+     const body: usize = if (open.len > 0 and std.mem.startsWith(u8, raw, open)) open.len else 0;
+-    const envs = try tool_parse.envelopes(a, raw);
+-    if (final.len == 0) return if (deleted(raw, envs, body, raw.len)) .{ .raw = raw.len, .lead = raw.len, .kept = 0 } else null;
++    const cut = try Cut.of(a, raw, try tool_parse.envelopes(a, raw), body);
++    if (final.len == 0) return if (cut.before[raw.len]) .{ .raw = raw.len, .lead = raw.len, .kept = 0 } else null;
+     var found: ?Map = null;
+     var from = body;
+     while (std.mem.indexOfPos(u8, raw, from, final)) |lead| : (from = lead + 1) {
+-        if (!deleted(raw, envs, body, lead) or !deleted(raw, envs, lead + final.len, raw.len)) continue;
++        if (!cut.before[lead] or !cut.after[lead + final.len]) continue;
+         if (found != null) return null; // two runs fit: no provenance
+         found = .{ .raw = raw.len, .lead = lead, .kept = final.len };
+     }
+     return found;
+ }
+ 
+-/// raw[from..to] is only blanks and whole envelopes (envs sorted and apart); one across an end: a run in deleted text.
+-fn deleted(raw: []const u8, envs: []const tool_parse.Envelope, from: usize, to: usize) bool {
+-    var p = from;
+-    for (envs) |e| {
+-        if (e.end <= p or e.start >= to) continue;
+-        if (e.start < p or e.end > to) return false;
+-        if (reply_text.pyStrip(raw[p..e.start]).len > 0) return false;
+-        p = e.end;
++/// Per raw byte p: raw[body..p] (`before`) and raw[p..] (`after`) are only blanks and whole envelopes, none across p.
++const Cut = struct {
++    before: []bool,
++    after: []bool,
++
++    /// One pass each way over the envelopes (sorted, apart); an unfinished one (to EOF) is no proof of deletion.
++    fn of(a: Allocator, raw: []const u8, envs: []const tool_parse.Envelope, body: usize) Allocator.Error!Cut {
++        const c: Cut = .{ .before = try a.alloc(bool, raw.len + 1), .after = try a.alloc(bool, raw.len + 1) };
++        @memset(c.before, false);
++        @memset(c.after, false);
++        var ok = true;
++        var p = body;
++        for (envs) |e| if (e.end > body) {
++            ok = if (e.start < body) false else gap(c.before, raw, p, e.start, ok, true) and e.complete;
++            p = e.end;
++        };
++        _ = gap(c.before, raw, p, raw.len, ok, true);
++        ok = true;
++        var q = raw.len;
++        var i = envs.len;
++        while (i > 0 and envs[i - 1].end > body) : (i -= 1) {
++            const e = envs[i - 1];
++            ok = gap(c.after, raw, e.end, q, ok, false) and e.complete;
++            q = e.start;
++            if (q < body) return c;
++        }
++        _ = gap(c.after, raw, body, q, ok, false);
++        return c;
+     }
+-    return reply_text.pyStrip(raw[p..to]).len == 0;
+-}
++
++    /// Marks the bytes of raw[from..to] reached from its envelope side through blanks alone; true when all are blank.
++    fn gap(marks: []bool, raw: []const u8, from: usize, to: usize, ok: bool, head: bool) bool {
++        const g = raw[from..to];
++        const s = reply_text.pyStrip(g);
++        const lead = if (s.len == 0) g.len else @intFromPtr(s.ptr) - @intFromPtr(g.ptr);
++        const tail = if (s.len == 0) g.len else g.len - lead - s.len;
++        if (ok) @memset(if (head) marks[from .. from + lead + 1] else marks[to - tail .. to + 1], true);
++        return ok and s.len == 0;
++    }
++};
+ 
+ /// The reasoning and content a stream sent, read off each chunk as the client gets it.
+ pub const Sent = struct {
+diff --git a/zig/src/server/runner_projection_http_test.zig b/zig/src/server/runner_projection_http_test.zig
+index 0659743481169b63cd65687a85e87c7401e6dd62..bd88c7f7da72c1e4d3a858cef595659788fd45fe 100644
+--- a/zig/src/server/runner_projection_http_test.zig
++++ b/zig/src/server/runner_projection_http_test.zig
+@@ -338,3 +338,41 @@ test "runner projection: a run is mapped only with blanks and whole envelopes ou
+     const arg = "<tool_call>{\"x\":\"ab\"}</tool_call>"; // the run again inside a cut argument is no second origin
+     try std.testing.expectEqual(@as(?projection.Map, .{ .raw = arg.len + 2, .lead = 0, .kept = 2 }), try projection.mapOf(a, "ab" ++ arg, "ab", ""));
+ }
++
++test "runner projection: an unfinished envelope (to EOF) proves no deletion, though kept whole in the run it maps" {
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const open = "<\u{ff5c}DSML\u{ff5c}tool_calls><\u{ff5c}DSML\u{ff5c}invoke name=\"f\"><\u{ff5c}DSML\u{ff5c}parameter name=\"x\" string=\"true\">KEEP";
++    try std.testing.expectEqual(@as(?projection.Map, null), try projection.mapOf(a, open, "", "")); // T5's direct case
++    try std.testing.expectEqual(@as(?projection.Map, null), try projection.mapOf(a, "ab\n" ++ open, "ab", ""));
++    try std.testing.expectEqual(@as(?projection.Map, .{ .raw = open.len + 1, .lead = 1, .kept = open.len }), try projection.mapOf(a, "\n" ++ open, open, ""));
++}
++
++/// Replies of `n` calls then `f`: every call holds an `f` the final `f` must not map into.
++const Many = struct {
++    raws: [2][]const u8,
++    fn run(m: *const Many, i: usize) anyerror!void {
++        var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++        defer arena.deinit();
++        const got = (try projection.mapOf(arena.allocator(), m.raws[i], "f", "")).?;
++        try std.testing.expectEqual(m.raws[i].len - 1, got.lead);
++    }
++};
++
++test "runner projection: a final run among many envelopes is placed in one pass, not again per match" {
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const env = "<tool_call>{\"name\":\"f\",\"arguments\":{}}</tool_call>";
++    var m: Many = .{ .raws = undefined };
++    for (&m.raws, [_]usize{ 625, 5000 }) |*raw, n| {
++        const r = try a.alloc(u8, n * env.len + 1);
++        for (0..n) |i| @memcpy(r[i * env.len ..][0..env.len], env);
++        r[r.len - 1] = 'f';
++        raw.* = r;
++    }
++    const ns = try @import("linear_time.zig").fastest(5, @as(*const Many, &m), Many.run);
++    // 8x the envelopes: within 24x the time (or 20 ms), not 64x
++    try std.testing.expect(ns[1] <= 20 * std.time.ns_per_ms or ns[1] <= 24 * ns[0]);
++}
