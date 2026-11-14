@@ -1,0 +1,722 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 15:59:51 +0700
+Subject: [PATCH 186/207] runner: opt-in abstain records (PREFIX_ABSTAINS) name
+ every abstained cell, its source, reason and decision point
+
+T1's census could not attribute 40 of 276 abstains: runner.cells records only owned writes. With PREFIX_ABSTAINS=1
+(default 0, effective with CELLS) the final receipt adds abstain_schema 1 and one record per abstain (T1's
+ABSTAIN-RECORDS-T1-SPEC field names): cell, form, lang, code, span_sha256/span_len, prior notebook cells, display,
+source_field/at/end (the code's last exact copy before its close; null when normalized, e.g. REPL prompts) and
+source_close_at, program_kind, backend_route, stage, reason, error_name, resume_field/at/token, round,
+next_decision_token, reply_tokens, owned_tokens 0, steps, held_ms; then abstains_complete, abstains_dropped,
+abstain_frontend_detail false and runner_config. Reasons: context; the frontend's tags; out_of_memory; backend_abstain,
+budget, fault; empty_output, multiline_output, mark_value_shape, token_cap, trace_shape. Records go only into the
+final receipt, never the live notes, so stream deltas are unchanged; off, the receipt is byte-identical.
+
+Not exported (the frontend gives the runner only its abstain tag): op, op_families, plan width, width state, route
+attempts. No artifact hashes.
+
+test-runner-abstain-host: each reason forced on the lane host (source bytes, resume anchors, conservation, on/off
+identity), every frontend tag, a mixed session (last copy, normalized source, next decision, dropped means
+incomplete), and the knob (default off, 2 refused, cells off means none).
+
+(cherry picked from commit 571f1832627773e3f3ab326ba8af1a4582720e0d)
+---
+ zig/build/lane_halt_host.zig         |   1 +
+ zig/src/core/runner.zig              |  17 +-
+ zig/src/core/runner_abstain.zig      | 146 +++++++++++++++
+ zig/src/core/runner_abstain_test.zig | 260 +++++++++++++++++++++++++++
+ zig/src/core/runner_receipt.zig      |  60 ++++++-
+ zig/src/core/runner_receipt_test.zig |   4 +
+ zig/src/core/runner_test.zig         |   6 +-
+ 7 files changed, 476 insertions(+), 18 deletions(-)
+ create mode 100644 zig/src/core/runner_abstain.zig
+ create mode 100644 zig/src/core/runner_abstain_test.zig
+
+diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
+index c1a7cc73a1a432c9a630506752e96301fb29261b..fb61924f24a1e512cc727113056da05562155f75 100644
+--- a/zig/build/lane_halt_host.zig
++++ b/zig/build/lane_halt_host.zig
+@@ -14,6 +14,7 @@ pub fn steps(b: *std.Build) void {
+     b.step("test-rows-prefetch-host", "Disk states read ahead for queued requests: equality, cancellation, fallbacks").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefetch:"} })).step);
+     b.step("test-embedding-lane-host", "Prompt-only embedding jobs on the actual lane worker without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"embedding lane:"} })).step);
+     b.step("test-prefill-service-host", "The opt-in prompt-row budget beside decoding streams on the lane host with a fake backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefill service:"} })).step);
++    b.step("test-runner-abstain-host", "Abstain records: each abstained cell's source, reason and decision point").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner abstain records:"} })).step);
+     b.step("test-runner-host", "The in-model runner: scanner, held results and delivery with a fake circuit backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner"} })).step);
+     // Proof 2 on the real circuit (TF_RUNNER_CIRCUIT): optimized, since a debug evaluator takes minutes a run
+     const lanes_fast = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = b.graph.host, .optimize = .ReleaseSafe, .link_libc = true });
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 3ce33f41dd18e69b5adf916f0699c6d7fc2e2b83..47585f29033db25ea71506905ec029fb3db78745 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -5,6 +5,7 @@ const api = @import("runner_api.zig");
+ const scan = @import("runner_scan.zig");
+ const trace = @import("runner_trace.zig");
+ const records = @import("runner_receipt.zig");
++const abstain = @import("runner_abstain.zig");
+ pub const place = @import("runner_place.zig");
+ const Allocator = std.mem.Allocator;
+ const log = std.log.scoped(.runner);
+@@ -32,6 +33,7 @@ pub const Config = struct {
+     inline_mark: bool = false, // PREFIX_INLINE_MARK: tag owned inline values; off preserves their bytes
+     sync_graph: bool = false, // PREFIX_SYNC_GRAPH: a graph result settles at its trigger token, in that round (no hold)
+     cells: bool = true, // PREFIX_CELLS: the receipt records each owned cell's span, route and landed value (runner_receipt.zig)
++    abstains: bool = false, // PREFIX_ABSTAINS: with cells, each abstained cell's source, reason and stage (runner_abstain.zig)
+ 
+     /// PREFIX "1" enables (unset, "" or "0": null); PREFIX_* knobs override defaults; a bad value is error.BadKnob.
+     pub fn parse(get: *const fn ([]const u8) ?[]const u8, comptime prefix: []const u8) error{BadKnob}!?Config {
+@@ -59,6 +61,7 @@ pub const Config = struct {
+         c.sync_graph = try knob(u1, get, prefix ++ "_SYNC_GRAPH", 0, 0, 1) == 1;
+         if (c.sync_graph and c.backend != .graph) return bad(prefix ++ "_SYNC_GRAPH", "1 (backend is not graph)");
+         c.cells = try knob(u1, get, prefix ++ "_CELLS", 1, 0, 1) == 1;
++        c.abstains = try knob(u1, get, prefix ++ "_ABSTAINS", 0, 0, 1) == 1;
+         c.guide = get(prefix ++ "_GUIDE") orelse "";
+         if (std.mem.eql(u8, c.guide, "0")) c.guide = "";
+         c.guide_max_bytes = try knob(usize, get, prefix ++ "_GUIDE_MAX_BYTES", c.guide_max_bytes, 512, 2048);
+@@ -128,7 +131,7 @@ pub const Runner = struct {
+         var cfg = r.cfg.scan;
+         if (ask.off) cfg.trace = false;
+         cfg.trace_repeat = ask.repeat;
+-        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = cfg }, .format = format, .check = ask.check, .rec = .{ .on = r.cfg.cells } };
++        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = cfg }, .format = format, .check = ask.check, .rec = .{ .on = r.cfg.cells, .abstains_on = r.cfg.abstains } };
+         r.next_id += 1;
+         return s;
+     }
+@@ -273,6 +276,7 @@ pub const Session = struct {
+             n += 1;
+         };
+         try s.cells.append(gpa, cell);
++        s.rec.closed(gpa, c.index);
+         // a stated computation is literals only: no notebook names to shadow
+         if (c.trace) |st| {
+             cell.stated = .{ .display = try cell.arena.allocator().dupe(u8, st.display), .divmod = st.divmod };
+@@ -360,17 +364,14 @@ pub const Session = struct {
+                 c.abstained = true;
+         }
+         if (c.abstained) {
+-            s.abstained_n += 1;
+-            c.told = .abstained;
++            abstain.told(s, c, w.index, held_ms, null);
+             log.info("reply {d} cell {d} ({s} {t}): abstain ({s}), held {d} ms, ticks {d}", .{ s.id, w.index, c.lang, c.form, why(c), held_ms, s.held_ticks });
+             return try s.r.gpa.alloc(u32, 0);
+         }
+         const res = c.result.?;
+         const ids = try s.owned(res, w);
+         if (s.r.cfg.inline_mark and w.inline_space != null and ids.len == 0) {
+-            c.abstained = true;
+-            c.told = .abstained;
+-            s.abstained_n += 1;
++            abstain.told(s, c, w.index, held_ms, .token_cap);
+             log.info("reply {d} cell {d}: marked inline value exceeds token cap", .{ s.id, w.index });
+             return ids;
+         }
+@@ -415,9 +416,7 @@ pub const Session = struct {
+             }
+             gpa.free(ids);
+         }
+-        c.abstained = true;
+-        s.abstained_n += 1;
+-        c.told = .abstained;
++        abstain.told(s, c, index, held_ms, if (line != null) .token_cap else if (c.result != null and c.result.?.status == .ok and !c.abstained) .trace_shape else null);
+         log.info("reply {d} cell {d} (trace): abstain ({s}), held {d} ms, ticks {d}", .{ s.id, index, if (c.result != null and c.result.?.status == .ok) "not one value" else why(c), held_ms, s.held_ticks });
+         return try gpa.alloc(u32, 0);
+     }
+diff --git a/zig/src/core/runner_abstain.zig b/zig/src/core/runner_abstain.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e0d13dd7f1b3fe7cc3a96f3d8ea4f2fd669aaf1
+--- /dev/null
++++ b/zig/src/core/runner_abstain.zig
+@@ -0,0 +1,146 @@
++//! Abstain records (PREFIX_ABSTAINS, with CELLS): each abstained cell's source, reason, stage and decision point.
++const std = @import("std");
++const receipt = @import("runner_receipt.zig");
++const Allocator = std.mem.Allocator;
++
++pub const schema = 1;
++
++/// Why a cell abstained, as one stable name; its refusal stage follows from it (`stage`).
++pub const Reason = enum {
++    context, // the reply's own number context (exact inline math in a Python-float reply)
++    language, // a `calc` / `exact` cell with exact cells off
++    unsupported,
++    syntax,
++    name,
++    too_long,
++    too_big, // the frontend's own tags (runner_api.Abstain), as it gave them
++    out_of_memory, // the backend start, or keeping its result
++    backend_abstain,
++    budget,
++    fault, // the run: its own abstain (error_name: its tag), the step budget, a machine fault
++    empty_output,
++    multiline_output, // an inline value that is not one line
++    mark_value_shape, // INLINE_MARK: a blank or multi-line value cannot carry the mark
++    token_cap, // the owned text would pass the token cap
++    trace_shape, // a trace run that did not print one value
++};
++
++pub fn stage(r: Reason) []const u8 {
++    return switch (r) {
++        .context => "context",
++        .language, .unsupported, .syntax, .name, .too_long, .too_big => "frontend",
++        .out_of_memory => "dispatch",
++        .backend_abstain, .budget, .fault => "execute",
++        .empty_output, .multiline_output, .mark_value_shape, .token_cap, .trace_shape => "own",
++    };
++}
++
++/// One abstained cell at its decision; the log fills the reply's coordinates there, as an owned record's.
++pub const Abstain = struct {
++    cell: u32,
++    reason: Reason,
++    error_name: ?[]const u8 = null, // the original tag (static text)
++    held_ms: u64 = 0,
++    steps: u64 = 0,
++    content: bool = false,
++    at: u64 = 0,
++    token: u32 = 0,
++    round: u32 = 0,
++};
++
++/// Where cell `cell`'s source closed: its field and that field's bytes through the closing token.
++pub const Close = struct { cell: u32, content: bool, end: u64 };
++
++/// Why a settled cell abstained, read off its translation and result; `hint`: what only its caller knows.
++pub fn reason(c: anytype, hint: ?Reason) struct { Reason, ?[]const u8 } {
++    if (hint) |h| return .{ h, null };
++    switch (c.translation) {
++        .abstain => |t| switch (t) {
++            inline else => |x| return .{ @field(Reason, @tagName(x)), @tagName(x) },
++        },
++        .program => {},
++    }
++    const res = c.result orelse return .{ .out_of_memory, "OutOfMemory" };
++    return switch (res.status) {
++        .abstain => .{ .backend_abstain, if (res.abstain) |a| @tagName(a) else null },
++        .budget => .{ .budget, "budget" },
++        .fault => .{ .fault, "fault" },
++        .ok => if (res.out.len == 0) .{ .empty_output, null } else if (std.mem.indexOfScalar(u8, std.mem.trimEnd(u8, res.out, "\n"), '\n') != null) .{ .multiline_output, null } else .{ .mark_value_shape, null },
++    };
++}
++
++/// Cell `index` abstains at its decision: told, counted, and recorded when abstain records are on.
++pub fn told(s: anytype, c: anytype, index: u32, held_ms: u64, hint: ?Reason) void {
++    const why = reason(c, hint);
++    c.abstained = true;
++    c.told = .abstained;
++    s.abstained_n += 1;
++    s.rec.abstained(s.r.gpa, .{ .cell = index, .reason = why[0], .error_name = why[1], .held_ms = held_ms, .steps = if (c.result) |r| r.steps else 0 });
++}
++
++/// The receipt's abstain fields after its records: `abstains`, completeness, and the runner config they ran under.
++pub fn write(o: *std.ArrayList(u8), gpa: Allocator, cells: anytype, l: anytype, cfg: anytype) Allocator.Error!void {
++    try o.print(gpa, ",\"abstain_schema\":{d},\"abstains\":[", .{schema});
++    for (l.abstains.items, 0..) |a, i| {
++        if (i > 0) try o.append(gpa, ',');
++        try one(o, gpa, cells, l, a);
++    }
++    // op, op_families, plan width and route attempts: the frontend gives the runner only its abstain tag
++    try o.print(gpa, "],\"abstains_complete\":{},\"abstains_dropped\":{d},\"abstain_frontend_detail\":false", .{ l.dropped == 0 and !l.anchors_lost, l.dropped });
++    if (@TypeOf(cfg) != @TypeOf(null)) try o.print(gpa, ",\"runner_config\":{{\"backend\":\"{t}\",\"exact\":{},\"sync_graph\":{},\"inline_mark\":{},\"settle_us\":{d},\"max_steps\":{d},\"max_tokens\":{d},\"compile_steps\":{d},\"compile\":{},\"inline_math\":{},\"trace\":{}}}", .{ cfg.backend, cfg.exact, cfg.sync_graph, cfg.inline_mark, cfg.settle_us, cfg.max_steps, cfg.max_tokens, cfg.compile_steps, cfg.compile, cfg.scan.inline_math, cfg.scan.trace });
++}
++
++fn one(o: *std.ArrayList(u8), gpa: Allocator, cells: anytype, l: anytype, a: Abstain) Allocator.Error!void {
++    const c = cells[a.cell];
++    const kind: []const u8 = if (c.translation == .program) @tagName(c.translation.program.kind) else "none";
++    const route: []const u8 = if (c.translation != .program) "none" else if (c.translation.program.kind == .graph) "graph" else "circuit";
++    try o.print(gpa, "{{\"cell\":{d},\"form\":\"{s}\",", .{ a.cell, receipt.form_names[if (c.stated != null) 3 else @backingInt(c.form)] });
++    try receipt.text(o, gpa, "lang", c.lang);
++    try receipt.text(o, gpa, "code", c.code);
++    var digest: [32]u8 = undefined;
++    std.crypto.hash.sha2.Sha256.hash(c.code, &digest, .{});
++    try o.print(gpa, "\"span_sha256\":\"{s}\",\"span_len\":{d},\"prior\":[", .{ std.fmt.bytesToHex(digest, .lower), c.code.len });
++    // the notebook its frontend was given: earlier code cells, never inline values or stated computations (open)
++    var n: usize = 0;
++    if (c.stated == null) for (cells[0..a.cell]) |p| if (p.form != .inline_expr and p.stated == null) {
++        if (n > 0) try o.append(gpa, ',');
++        try receipt.quoted(o, gpa, p.code);
++        n += 1;
++    };
++    try o.appendSlice(gpa, "],");
++    if (c.stated) |st| try receipt.text(o, gpa, "display", st.display) else try o.appendSlice(gpa, "\"display\":null,");
++    const src = source(l, a.cell, if (c.stated) |st| st.display else c.code);
++    if (src.close) |cl| {
++        try o.print(gpa, "\"source_field\":\"{s}\",", .{field(cl.content)});
++        if (src.at) |at| try o.print(gpa, "\"source_at\":{d},\"source_end\":{d},", .{ at, src.end }) else try o.appendSlice(gpa, "\"source_at\":null,\"source_end\":null,");
++        try o.print(gpa, "\"source_close_at\":{d},", .{cl.end});
++    } else try o.appendSlice(gpa, "\"source_field\":null,\"source_at\":null,\"source_end\":null,\"source_close_at\":null,");
++    var next = l.tokens;
++    for (l.records.items) |r| if (r.token > a.token and r.token < next) {
++        next = r.token;
++    };
++    for (l.abstains.items) |b| if (b.token > a.token and b.token < next) {
++        next = b.token;
++    };
++    try o.print(gpa, "\"program_kind\":\"{s}\",\"backend_route\":\"{s}\",\"stage\":\"{s}\",\"reason\":\"{t}\",", .{ kind, route, stage(a.reason), a.reason });
++    if (a.error_name) |e| try o.print(gpa, "\"error_name\":\"{s}\",", .{e}) else try o.appendSlice(gpa, "\"error_name\":null,");
++    try o.print(gpa, "\"resume_field\":\"{s}\",\"resume_at\":{d},\"resume_token\":{d},\"round\":{d},\"next_decision_token\":{d},\"reply_tokens\":{d},\"owned_tokens\":0,\"steps\":{d},\"held_ms\":{d}}}", .{ field(a.content), a.at, a.token, a.round, next, l.tokens, a.steps, a.held_ms });
++}
++
++fn field(content: bool) []const u8 {
++    return if (content) "content" else "reasoning";
++}
++
++/// The source's bytes [at, end): its last exact copy before the cell closed (none: normalized, e.g. REPL prompts cut).
++fn source(l: anytype, cell: u32, needle: []const u8) struct { close: ?Close, at: ?u64 = null, end: u64 = 0 } {
++    const cl = for (l.closes.items) |x| {
++        if (x.cell == cell) break x;
++    } else return .{ .close = null };
++    const text = l.text[@intFromBool(cl.content)].items;
++    const hay = text[0..@min(text.len, cl.end)];
++    for ([_][]const u8{ needle, std.mem.trim(u8, needle, " \t\r\n") }) |want| {
++        if (want.len == 0) continue;
++        if (std.mem.lastIndexOf(u8, hay, want)) |at| return .{ .close = cl, .at = at, .end = at + want.len };
++    }
++    return .{ .close = cl };
++}
+diff --git a/zig/src/core/runner_abstain_test.zig b/zig/src/core/runner_abstain_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cbc74377d85da35c9ef3b1ed5012fbd44f62dc61
+--- /dev/null
++++ b/zig/src/core/runner_abstain_test.zig
+@@ -0,0 +1,260 @@
++//! Abstain records end to end on a lane host (each reason forced, records on/off byte-identical) and on a fake session.
++const std = @import("std");
++const rapi = @import("runner_api.zig");
++const scan = @import("runner_scan.zig");
++const records = @import("runner_receipt.zig");
++const abstain = @import("runner_abstain.zig");
++const rt = @import("runner_test.zig");
++
++const gpa = std.testing.allocator;
++const t = std.testing;
++
++const Ab = struct { cell: u32, form: []const u8, code: []const u8, display: ?[]const u8, prior: []const []const u8, source_field: ?[]const u8, source_at: ?u64, source_end: ?u64, source_close_at: ?u64, program_kind: []const u8, backend_route: []const u8, stage: []const u8, reason: []const u8, error_name: ?[]const u8, resume_field: []const u8, resume_at: u64, resume_token: u32, round: u32, next_decision_token: u32, reply_tokens: u32, owned_tokens: u32, steps: u64, held_ms: u64 };
++const Count = struct { closed: u32, owned: u32, abstained: u32 };
++const Receipt = struct { fence: Count, repl: Count, @"inline": Count, trace: Count, abstain_schema: u32 = 0, abstains: []const Ab = &.{}, abstains_complete: bool = false, abstains_dropped: u32 = 99 };
++
++fn parse(receipt: []const u8) !std.json.Parsed(Receipt) {
++    return std.json.parseFromSlice(Receipt, gpa, receipt, .{ .ignore_unknown_fields = true, .allocate = .alloc_always });
++}
++
++const mul_lead = "Need multiply A=987654 B=137. Need exact product.\nLet's do long multiplication.\n";
++const fence_lead = "```python\nprint(2**100)\n```\nResult:\n";
++
++/// `receipt` with its wall-clock fields (held_ms, resume_ms) zeroed: everything else must match byte for byte.
++fn untimed(receipt: []const u8) ![]u8 {
++    var out: std.ArrayList(u8) = .empty;
++    var i: usize = 0;
++    while (i < receipt.len) {
++        const key = for ([_][]const u8{ "\"held_ms\":", "\"resume_ms\":" }) |k| {
++            if (std.mem.startsWith(u8, receipt[i..], k)) break k;
++        } else null;
++        if (key) |k| {
++            try out.appendSlice(gpa, k);
++            try out.append(gpa, '0');
++            i += k.len;
++            while (i < receipt.len and std.ascii.isDigit(receipt[i])) i += 1;
++        } else {
++            try out.append(gpa, receipt[i]);
++            i += 1;
++        }
++    }
++    return out.toOwnedSlice(gpa);
++}
++
++/// One forced abstain: the reply, the runner's options and the fake run's result; what its record must say.
++const Case = struct { lead: []const u8, guess: []const u8 = "42", o: rt.Opts = .{}, result: ?rapi.Result = null, reason: []const u8, stage: []const u8, error_name: ?[]const u8 = null, kind: []const u8 = "calc", source: ?[]const u8 = null };
++
++const cases = [_]Case{
++    .{ .lead = "```python\nprint(undefined_total)\n```\nResult:\n", .reason = "name", .stage = "frontend", .error_name = "name", .kind = "none", .source = "print(undefined_total)\n" },
++    .{ .lead = "```calc\n2**100\n```\nResult:\n", .reason = "language", .stage = "frontend", .error_name = "language", .kind = "none", .source = "2**100\n" },
++    .{ .lead = "In Python, as a float: 1.5+2.25 =", .o = .{ .inline_math = true }, .reason = "context", .stage = "context", .error_name = "context", .kind = "none", .source = "1.5+2.25" },
++    .{ .lead = "So 99 * 13 =", .o = .{ .inline_math = true }, .reason = "fault", .stage = "execute", .error_name = "fault", .source = "99 * 13" },
++    .{ .lead = "So 47 * 83 =", .o = .{ .inline_math = true }, .result = .{ .status = .budget, .out = "3901" }, .reason = "budget", .stage = "execute", .error_name = "budget" },
++    .{ .lead = "So 47 * 83 =", .o = .{ .inline_math = true }, .result = .{ .status = .abstain, .abstain = .too_big }, .reason = "backend_abstain", .stage = "execute", .error_name = "too_big" },
++    .{ .lead = fence_lead, .result = .{ .status = .ok, .out = "" }, .reason = "empty_output", .stage = "own", .source = "print(2**100)\n" },
++    .{ .lead = "So 47 * 83 =", .o = .{ .inline_math = true }, .result = .{ .status = .ok, .out = "3\n4\n" }, .reason = "multiline_output", .stage = "own" },
++    .{ .lead = "So 47 * 83 =", .o = .{ .inline_math = true, .inline_mark = true }, .result = .{ .status = .ok, .out = " \n" }, .reason = "mark_value_shape", .stage = "own" },
++    .{ .lead = "So 47 * 83 =", .o = .{ .inline_math = true, .inline_mark = true, .result_tokens = 5 }, .reason = "token_cap", .stage = "own" },
++    .{ .lead = mul_lead, .guess = "ok", .o = .{ .trace = true }, .result = .{ .status = .ok, .out = "1\n2\n" }, .reason = "trace_shape", .stage = "own" },
++    .{ .lead = mul_lead, .guess = "ok", .o = .{ .trace = true, .result_tokens = 5 }, .result = .{ .status = .ok, .out = "135308598\n" }, .reason = "token_cap", .stage = "own" },
++};
++
++/// The reply and receipt of `c` with abstain records on or off.
++fn run(c: Case, on: bool) !struct { text: []u8, receipt: []u8 } {
++    var back: rt.Back = .{ .result = c.result };
++    defer back.deinit();
++    var m = [_]rt.Model{.{ .lead = c.lead, .guess = c.guess }};
++    var sums: [1][]u8 = undefined;
++    var o = c.o;
++    o.summaries = &sums;
++    o.abstains = on;
++    const texts = try rt.replies(&m, o, &back);
++    defer gpa.free(texts);
++    return .{ .text = texts[0], .receipt = sums[0] };
++}
++
++test "runner abstain records: each reason forced on a lane host, with its source, stage and decision point" {
++    for (cases) |c| {
++        const on = try run(c, true);
++        defer gpa.free(on.text);
++        defer gpa.free(on.receipt);
++        const p = try parse(on.receipt);
++        defer p.deinit();
++        const r = p.value;
++        errdefer std.debug.print("case {s} / {s}: {s}\n", .{ c.lead, c.reason, on.receipt });
++        // the model's own text stands: its guess right after the decision, nothing owned
++        try t.expect(std.mem.endsWith(u8, on.text, "\nDone."));
++        try t.expectEqualStrings(c.guess, on.text[on.text.len - 6 - c.guess.len ..][0..c.guess.len]);
++        try t.expectEqual(1, r.abstain_schema);
++        try t.expect(r.abstains_complete);
++        try t.expectEqual(0, r.abstains_dropped);
++        try t.expectEqual(1, r.abstains.len);
++        // conservation: one record per abstained cell over every form's counter
++        try t.expectEqual(r.abstains.len, r.fence.abstained + r.repl.abstained + r.@"inline".abstained + r.trace.abstained);
++        const a = r.abstains[0];
++        try t.expectEqualStrings(c.reason, a.reason);
++        try t.expectEqualStrings(c.stage, a.stage);
++        if (c.error_name) |e| try t.expectEqualStrings(e, a.error_name.?);
++        try t.expectEqualStrings(c.kind, a.program_kind);
++        try t.expectEqualStrings(if (std.mem.eql(u8, c.kind, "none")) "none" else "circuit", a.backend_route);
++        try t.expectEqual(0, a.owned_tokens);
++        // one token a character: the decision is the trigger's end, where the model's own continuation begins
++        try t.expectEqualStrings("content", a.resume_field);
++        try t.expectEqual(a.resume_at, a.resume_token);
++        try t.expect(a.resume_at <= c.lead.len and a.resume_at + 2 >= c.lead.len);
++        try t.expectEqualStrings(c.lead[0..a.resume_at], on.text[0..a.resume_at]);
++        try t.expectEqual(on.text.len + 1, a.reply_tokens); // the EOS is a committed token too
++        try t.expectEqual(a.reply_tokens, a.next_decision_token);
++        try t.expectEqualStrings("content", a.source_field.?);
++        try t.expect(a.source_close_at.? <= a.resume_at);
++        if (c.source) |want| {
++            try t.expectEqualStrings(want, on.text[a.source_at.?..a.source_end.?]);
++            try t.expect(std.mem.eql(u8, want, a.code) or std.mem.eql(u8, want, std.mem.trim(u8, a.code, " ")));
++        }
++        if (a.source_at) |at| try t.expectEqualStrings(std.mem.trim(u8, a.code, " \t\r\n"), std.mem.trim(u8, on.text[at..a.source_end.?], " \t\r\n"));
++        if (std.mem.eql(u8, a.form, "trace")) try t.expect(a.display != null) else try t.expect(a.display == null);
++        // records off: the same tokens, and the receipt is the one before abstain records, byte for byte
++        const off = try run(c, false);
++        defer gpa.free(off.text);
++        defer gpa.free(off.receipt);
++        try t.expectEqualStrings(off.text, on.text);
++        try t.expect(std.mem.indexOf(u8, off.receipt, "\"abstains") == null and std.mem.indexOf(u8, off.receipt, "abstain_") == null);
++        const on_u = try untimed(on.receipt);
++        defer gpa.free(on_u);
++        const off_u = try untimed(off.receipt);
++        defer gpa.free(off_u);
++        try t.expect(std.mem.startsWith(u8, on_u, off_u[0 .. off_u.len - 1]));
++        try t.expect(std.mem.startsWith(u8, on_u[off_u.len - 1 ..], ",\"abstain_schema\":1,\"abstains\":["));
++    }
++}
++
++test "runner abstain records: the reason of every frontend tag, a lost start, and the run's own abstain tag" {
++    const Fake = struct { translation: rapi.Translation, result: ?rapi.Result = null };
++    for (std.enums.values(rapi.Abstain)) |tag| {
++        const why = abstain.reason(Fake{ .translation = .{ .abstain = tag } }, null);
++        try t.expectEqualStrings(@tagName(tag), @tagName(why[0]));
++        try t.expectEqualStrings(@tagName(tag), why[1].?);
++        try t.expectEqualStrings(if (tag == .context) "context" else "frontend", abstain.stage(why[0]));
++    }
++    const prog: rapi.Translation = .{ .program = .{ .kind = .graph, .bytes = "" } };
++    const lost = abstain.reason(Fake{ .translation = prog }, null);
++    try t.expectEqual(abstain.Reason.out_of_memory, lost[0]);
++    try t.expectEqualStrings("dispatch", abstain.stage(lost[0]));
++    const bare = abstain.reason(Fake{ .translation = prog, .result = .{ .status = .abstain } }, null);
++    try t.expectEqual(abstain.Reason.backend_abstain, bare[0]);
++    try t.expect(bare[1] == null);
++    try t.expectEqual(abstain.Reason.token_cap, abstain.reason(Fake{ .translation = prog, .result = .{ .status = .ok, .out = "1" } }, .token_cap)[0]);
++}
++
++/// The fields records.write and abstain.told read off a runner.Session and its cells.
++const FakeCell = struct {
++    form: rapi.Form = .fence,
++    stated: ?scan.Stated = null,
++    told: enum { none, owned, abstained } = .none,
++    abstained: bool = false,
++    owned_tokens: u32 = 0,
++    translation: rapi.Translation = .{ .program = .{ .kind = .graph, .bytes = "" } },
++    result: ?rapi.Result = .{ .status = .fault, .steps = 7 },
++    lang: []const u8 = "python",
++    code: []const u8 = "x = 1\n",
++};
++
++const FakeSession = struct {
++    r: struct { gpa: std.mem.Allocator = gpa } = .{},
++    cells: struct { items: []const *FakeCell },
++    held_ms: u64 = 0,
++    resume_ms: u64 = 0,
++    abstained_n: u32 = 0,
++    rec: records.Log = .{ .abstains_on = true },
++    fn feed(s: *FakeSession, text: []const u8) !void {
++        for (text) |c| try s.rec.token(gpa, c, &[_]u8{c}, false);
++    }
++};
++
++test "runner abstain records: mixed decisions, the source's last copy, a normalized source, the next decision, completeness" {
++    var c0: FakeCell = .{ .code = "y = 2\n" };
++    var c1: FakeCell = .{ .form = .repl, .code = "y\nz\n" };
++    var c2: FakeCell = .{ .code = "y = 2\n", .translation = .{ .abstain = .syntax }, .result = null };
++    var s: FakeSession = .{ .cells = .{ .items = &.{ &c0, &c1, &c2 } } };
++    defer s.rec.deinit(gpa);
++    try s.feed("```python\ny = 2\n```\n");
++    s.rec.closed(gpa, 0);
++    try s.feed("Out:");
++    try s.rec.owned(gpa, 0, &.{ 'O', 'K' });
++    c0.told = .owned;
++    try s.feed("OK\n>>> y\n>>> z\n");
++    s.rec.closed(gpa, 1);
++    abstain.told(&s, &c1, 1, 3, null); // fault: the run's own status
++    try s.feed("5\nAgain:\n```python\ny = 2\n```\n");
++    s.rec.closed(gpa, 2);
++    s.rec.rounds = 4;
++    abstain.told(&s, &c2, 2, 0, null);
++    try s.feed("tail");
++    const got = records.write(&s);
++    const p = try parse(got);
++    defer p.deinit();
++    const r = p.value;
++    try t.expectEqual(2, s.abstained_n);
++    try t.expect(c1.told == .abstained and c1.abstained and c2.told == .abstained);
++    try t.expectEqual(2, r.abstains.len);
++    const a1 = r.abstains[0];
++    try t.expectEqualStrings("fault", a1.reason);
++    try t.expectEqual(7, a1.steps);
++    try t.expectEqual(3, a1.held_ms);
++    try t.expect(a1.source_at == null); // a REPL line's code is not its bytes in the reply (the prompt is cut)
++    try t.expectEqual(1, a1.prior.len);
++    try t.expectEqualStrings("y = 2\n", a1.prior[0]);
++    try t.expectEqual(a1.resume_token, a1.resume_at);
++    try t.expectEqual(r.abstains[1].resume_token, a1.next_decision_token); // the next decision: the later abstain
++    const a2 = r.abstains[1];
++    const text = "```python\ny = 2\n```\nOut:OK\n>>> y\n>>> z\n5\nAgain:\n```python\ny = 2\n```\ntail";
++    try t.expectEqualStrings("syntax", a2.reason);
++    try t.expectEqualStrings("none", a2.program_kind);
++    try t.expectEqual(std.mem.lastIndexOf(u8, text[0..a2.source_close_at.?], "y = 2\n").?, a2.source_at.?); // its own copy
++    try t.expect(a2.source_at.? > 10);
++    try t.expectEqual(4, a2.round);
++    try t.expectEqual(text.len, a2.next_decision_token);
++    try t.expectEqual(text.len, a2.reply_tokens);
++    try t.expectEqual(2, a2.prior.len);
++    try t.expect(r.abstains_complete);
++    // a record lost to memory: the receipt says the census is incomplete
++    s.rec.dropped = 1;
++    const lossy = try parse(records.write(&s));
++    defer lossy.deinit();
++    try t.expect(!lossy.value.abstains_complete);
++    try t.expectEqual(1, lossy.value.abstains_dropped);
++    // abstain records off: nothing kept, nothing written, the receipt as before
++    var c3: FakeCell = .{};
++    var off: FakeSession = .{ .cells = .{ .items = &.{&c3} }, .rec = .{} };
++    defer off.rec.deinit(gpa);
++    try off.feed("abc");
++    off.rec.closed(gpa, 0);
++    abstain.told(&off, &c3, 0, 0, null);
++    try t.expectEqual(0, off.rec.text[1].items.len);
++    try t.expectEqual(0, off.rec.abstains.items.len);
++    try t.expectEqual(1, off.abstained_n);
++    try t.expect(std.mem.endsWith(u8, records.write(&off), "\"cells\":[]}"));
++}
++
++test "runner abstain records: PREFIX_ABSTAINS is off unless 1, and a session records abstains only with cells on" {
++    const K = struct {
++        var set: []const [2][]const u8 = &.{};
++        fn get(name: []const u8) ?[]const u8 {
++            for (set) |kv| if (std.mem.eql(u8, kv[0], name)) return kv[1];
++            return null;
++        }
++    };
++    const runner = @import("runner.zig");
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" } };
++    try t.expect(!(try runner.Config.parse(&K.get, "TF_R")).?.abstains);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_ABSTAINS", "1" } };
++    try t.expect((try runner.Config.parse(&K.get, "TF_R")).?.abstains);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_ABSTAINS", "2" } };
++    try t.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    // cells off: no records of either kind, whatever ABSTAINS says
++    const c: Case = .{ .lead = "```python\nprint(undefined_total)\n```\nResult:\n", .o = .{ .cells = false }, .reason = "name", .stage = "frontend" };
++    const off = try run(c, true);
++    defer gpa.free(off.text);
++    defer gpa.free(off.receipt);
++    try t.expect(std.mem.indexOf(u8, off.receipt, "\"abstains") == null and std.mem.indexOf(u8, off.receipt, "\"cells\"") == null);
++}
+diff --git a/zig/src/core/runner_receipt.zig b/zig/src/core/runner_receipt.zig
+index 68b669a8098294d232854579ef871c2201334357..8aec53130ab5e0744f529b735772598e3ec2fed3 100644
+--- a/zig/src/core/runner_receipt.zig
++++ b/zig/src/core/runner_receipt.zig
+@@ -1,5 +1,6 @@
+ //! A reply's runner receipt (runtime.runner): cell counts, holds and a record per owned cell's span, route and write.
+ const std = @import("std");
++const abstain = @import("runner_abstain.zig");
+ const Allocator = std.mem.Allocator;
+ 
+ /// A span longer than this is recorded as its sha256 and length: the reply holds it in full.
+@@ -35,11 +36,20 @@ pub const Log = struct {
+     out: std.ArrayList(u8) = .empty, // the receipt JSON (write)
+     live: std.ArrayList(u8) = .empty, // the JSON `notes` gave last
+     notes: std.ArrayList(Note) = .empty,
++    abstains_on: bool = false, // PREFIX_ABSTAINS (records on): abstained cells too, with their sources (runner_abstain.zig)
++    text: [2]std.ArrayList(u8) = .{ .empty, .empty }, // abstain records: per field, the reply's bytes (to find sources)
++    closes: std.ArrayList(abstain.Close) = .empty, // abstain records: where each cell's source closed
++    abstains: std.ArrayList(abstain.Abstain) = .empty,
++    dropped: u32 = 0, // abstain records out of memory
++    anchors_lost: bool = false, // a source anchor out of memory: the records stand, the census is incomplete
+ 
+     /// A committed token: counted in its field, and matched against a write still landing.
+     pub fn token(l: *Log, gpa: Allocator, id: u32, bytes: []const u8, think_open: bool) Allocator.Error!void {
+         if (!l.on) return;
+         l.content = !think_open;
++        if (l.abstains_on) l.text[@intFromBool(l.content)].appendSlice(gpa, bytes) catch {
++            l.anchors_lost = true;
++        };
+         defer {
+             l.tokens += 1;
+             l.bytes[@intFromBool(l.content)] += bytes.len;
+@@ -69,6 +79,27 @@ pub const Log = struct {
+         if (l.records.items.len > 0) l.records.items[l.records.items.len - 1].sync = true;
+     }
+ 
++    /// Cell `cell`'s source closed with the token fed last (abstain records: where to find it).
++    pub fn closed(l: *Log, gpa: Allocator, cell: u32) void {
++        if (!l.on or !l.abstains_on) return;
++        l.closes.append(gpa, .{ .cell = cell, .content = l.content, .end = l.bytes[@intFromBool(l.content)] }) catch {
++            l.anchors_lost = true;
++        };
++    }
++
++    /// Cell `a.cell` abstained here: the reply's field, bytes, tokens and rounds at its decision (abstain records).
++    pub fn abstained(l: *Log, gpa: Allocator, a: abstain.Abstain) void {
++        if (!l.on or !l.abstains_on) return;
++        var x = a;
++        x.content = l.content;
++        x.at = l.bytes[@intFromBool(l.content)];
++        x.token = l.tokens;
++        x.round = l.rounds;
++        l.abstains.append(gpa, x) catch {
++            l.dropped += 1;
++        };
++    }
++
+     pub fn deinit(l: *Log, gpa: Allocator) void {
+         for (l.records.items) |*r| {
+             gpa.free(r.want);
+@@ -78,6 +109,9 @@ pub const Log = struct {
+         l.out.deinit(gpa);
+         l.live.deinit(gpa);
+         l.notes.deinit(gpa);
++        for (&l.text) |*t| t.deinit(gpa);
++        l.closes.deinit(gpa);
++        l.abstains.deinit(gpa);
+     }
+ };
+ 
+@@ -85,7 +119,8 @@ pub const Log = struct {
+ pub fn write(s: anytype) []const u8 {
+     const l = &s.rec;
+     l.out.clearRetainingCapacity();
+-    put(s.cells.items, l, s.r.gpa, s.held_ms, s.resume_ms) catch return "";
++    const cfg = if (comptime @typeInfo(@TypeOf(s.r)) == .pointer) &s.r.cfg else null;
++    put(s.cells.items, l, s.r.gpa, s.held_ms, s.resume_ms, cfg) catch return "";
+     return l.out.items;
+ }
+ 
+@@ -113,9 +148,9 @@ fn fresh(cells: anytype, l: *Log, gpa: Allocator) Allocator.Error!void {
+     }
+ }
+ 
+-const form_names = [_][]const u8{ "fence", "repl", "inline", "trace" };
++pub const form_names = [_][]const u8{ "fence", "repl", "inline", "trace" };
+ 
+-fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64) Allocator.Error!void {
++fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64, cfg: anytype) Allocator.Error!void {
+     var forms = std.mem.zeroes([4][4]u32);
+     var kinds = std.mem.zeroes([3]u32);
+     for (cells) |c| {
+@@ -143,6 +178,7 @@ fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64) Al
+             try record(o, gpa, cells, r);
+         }
+         try o.append(gpa, ']');
++        if (l.abstains_on) try abstain.write(o, gpa, cells, l, cfg);
+     }
+     try o.append(gpa, '}');
+ }
+@@ -165,18 +201,30 @@ fn record(o: *std.ArrayList(u8), gpa: Allocator, cells: anytype, r: Record) Allo
+ }
+ 
+ /// `"name":"bytes",` as a JSON string; bytes that are not UTF-8 (a cut mid-character) go as `"name_hex"` instead.
+-fn text(o: *std.ArrayList(u8), gpa: Allocator, name: []const u8, bytes: []const u8) Allocator.Error!void {
++pub fn text(o: *std.ArrayList(u8), gpa: Allocator, name: []const u8, bytes: []const u8) Allocator.Error!void {
+     if (!std.unicode.utf8ValidateSlice(bytes)) {
+         try o.print(gpa, "\"{s}_hex\":\"", .{name});
+         for (bytes) |b| try o.print(gpa, "{x:0>2}", .{b});
+         return o.appendSlice(gpa, "\",");
+     }
+-    try o.print(gpa, "\"{s}\":\"", .{name});
++    try o.print(gpa, "\"{s}\":", .{name});
++    try quoted(o, gpa, bytes);
++    try o.append(gpa, ',');
++}
++
++/// `bytes` as one JSON value: a string, or `{"hex":"…"}` when they are not UTF-8.
++pub fn quoted(o: *std.ArrayList(u8), gpa: Allocator, bytes: []const u8) Allocator.Error!void {
++    if (!std.unicode.utf8ValidateSlice(bytes)) {
++        try o.appendSlice(gpa, "{\"hex\":\"");
++        for (bytes) |b| try o.print(gpa, "{x:0>2}", .{b});
++        return o.appendSlice(gpa, "\"}");
++    }
++    try o.append(gpa, '"');
+     for (bytes) |b| switch (b) {
+         '"' => try o.appendSlice(gpa, "\\\""),
+         '\\' => try o.appendSlice(gpa, "\\\\"),
+         0...0x1f, 0x7f => try o.print(gpa, "\\u{x:0>4}", .{b}),
+         else => try o.append(gpa, b),
+     };
+-    try o.appendSlice(gpa, "\",");
++    try o.append(gpa, '"');
+ }
+diff --git a/zig/src/core/runner_receipt_test.zig b/zig/src/core/runner_receipt_test.zig
+index d060582c91444877d86404c945643201d165c2b2..fb4cf206fafefbdb9394fd88c446ace22ffd0caf 100644
+--- a/zig/src/core/runner_receipt_test.zig
++++ b/zig/src/core/runner_receipt_test.zig
+@@ -7,6 +7,10 @@ const rt = @import("runner_test.zig");
+ 
+ const gpa = std.testing.allocator;
+ 
++test {
++    _ = @import("runner_abstain_test.zig");
++}
++
+ /// The first record of a receipt, parsed.
+ const Rec = struct { cell: u32, form: []const u8, route: []const u8, status: []const u8, lang: []const u8, span: []const u8, value: []const u8, field: []const u8, at: u64, token: u32, ids: u32, landed: u32, drafted: u32, forced: u32, path: []const u8 };
+ 
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 0acb9a9054d171b2069330d387e8dba29b9c2f6f..1f7ec3c8fa51dca6fdb43d12e9a9159fff45d3ba 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -130,7 +130,7 @@ const Box = struct {
+     mutex: std.Io.Mutex = .init,
+     tokens: std.ArrayList(u32) = .empty,
+     done: ?Reason = null,
+-    cells: [8192]u8 = undefined, // the finished event's runner receipt
++    cells: [65536]u8 = undefined, // the finished event's runner receipt
+     cells_len: usize = 0,
+     keep: bool = false, // keep `live` (Opts.live): the caller frees it
+     live: [32][]u8 = @splat(&.{}), // each record's newest Event.cells note (gpa)
+@@ -169,7 +169,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_mark: bool = false, result_tokens: u32 = 512, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null, cells: bool = true, live: ?[][]u8 = null };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_mark: bool = false, result_tokens: u32 = 512, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null, cells: bool = true, live: ?[][]u8 = null, abstains: bool = false };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -184,7 +184,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     defer core.deinit();
+     var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
+     back.delay = o.delay;
+-    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .inline_mark = o.inline_mark, .max_tokens = o.result_tokens, .cells = o.cells, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .inline_mark = o.inline_mark, .max_tokens = o.result_tokens, .cells = o.cells, .abstains = o.abstains, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
+     if (o.runner) host.runner = &run;
+     const boxes = try gpa.alloc(Box, models.len);
+     defer gpa.free(boxes);

@@ -1,0 +1,1001 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 04:18:17 +0700
+Subject: [PATCH 083/207] Merge T2 53d3af04c (per-round runner trace, spec hold
+ fix)
+
+Squashed merge of 2 commits:
+- dsv41: TF_DSV41_RUNNER_TRACE, a per-round trace around runner fires (Jay Leaton)
+- dsv41: TF_DSV41_RUNNER_SPEC_HOLD, speculation that survives a runner fire (Jay Leaton)
+---
+ tools/runner_trace_report.py                  | 126 ++++++++++++
+ zig/src/core/lanes/backend.zig                |   1 +
+ zig/src/core/lanes/engine.zig                 |   2 +
+ zig/src/core/lanes/fire_replay_test.zig       |  51 +++++
+ zig/src/core/lanes/lanes.zig                  |   1 +
+ zig/src/core/lanes/round_trace.zig            | 194 ++++++++++++++++++
+ zig/src/core/lanes/windows.zig                |   2 +-
+ zig/src/families/deepseek_v41/batch.zig       |   4 +
+ .../families/deepseek_v41/batch_gpu_time.zig  |  55 +++++
+ zig/src/families/deepseek_v41/draft/draft.zig |   1 +
+ zig/src/families/deepseek_v41/draft/lanes.zig |  40 +++-
+ zig/src/families/deepseek_v41/draft/spec.zig  |  25 ++-
+ .../deepseek_v41/draft/spec_hold_test.zig     | 141 +++++++++++++
+ .../families/deepseek_v41/runner_trace.zig    |  58 ++++++
+ .../families/deepseek_v41/serve_engine.zig    |   1 +
+ 15 files changed, 693 insertions(+), 9 deletions(-)
+ create mode 100644 tools/runner_trace_report.py
+ create mode 100644 zig/src/core/lanes/round_trace.zig
+ create mode 100644 zig/src/families/deepseek_v41/batch_gpu_time.zig
+ create mode 100644 zig/src/families/deepseek_v41/draft/spec_hold_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/runner_trace.zig
+
+diff --git a/tools/runner_trace_report.py b/tools/runner_trace_report.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbc66ab86dc9a030578b962eb8cc59c66c317a48
+--- /dev/null
++++ b/tools/runner_trace_report.py
+@@ -0,0 +1,126 @@
++"""TF_DSV41_RUNNER_TRACE log -> per-phase round table: baseline, trigger, the rounds after each resume, holds."""
++import argparse
++import json
++import statistics
++import sys
++
++MARK = '{"rt":'
++
++
++def records(paths):
++    """Every trace object in the files (server log lines included: each object starts at its marker)."""
++    for path in paths:
++        with (sys.stdin if path == "-" else open(path, encoding="utf-8", errors="replace")) as f:
++            for line in f:
++                at = line.find(MARK)
++                if at < 0:
++                    continue
++                try:
++                    yield json.loads(line[at:])
++                except json.JSONDecodeError:
++                    continue
++
++
++def phase(r, around, split):
++    """A round's phase: trigger, after+k (k = rounds since the resume, the feeding round is 1), or baseline."""
++    if r["phase"] == "trigger":
++        return "trigger"
++    since = r.get("since", -1)
++    if r["phase"] == "post":
++        return f"after+{since}" if since <= split else f"after+{split + 1}..{around}"
++    # a round before a hold that is still inside an earlier resume's window is not a baseline
++    return "baseline" if since < 0 or since > around else "near-fire"
++
++
++SPEC_WHY = ("commit", "slots", "unused", "pending", "other")
++
++
++def drops(r):
++    """A round's dropped speculative DSpark passes, every reason."""
++    return sum(r.get(f"spec_{w}", 0) for w in SPEC_WHY)
++
++
++def why(g):
++    """The phase's drops by reason (c=commit, s=slots, u=unused, p=pending, o=other)."""
++    return " ".join(f"{w[0]}{n}" for w in SPEC_WHY if (n := sum(r.get(f"spec_{w}", 0) for r in g)))
++
++
++def mean(xs):
++    return statistics.fmean(xs) if xs else float("nan")
++
++
++def median(xs):
++    return statistics.median(xs) if xs else float("nan")
++
++
++def table(rounds, around, split, streams):
++    """The phases' rows: means per round, sums of rare events, wall and GPU change against the baseline."""
++    groups = {}
++    for r in rounds:
++        if streams is not None and r.get("streams") != streams:
++            continue
++        groups.setdefault(phase(r, around, split), []).append(r)
++    order = ["baseline", "near-fire", "trigger"] + [f"after+{k}" for k in range(1, split + 1)] + [f"after+{split + 1}..{around}"]
++    base = groups.get("baseline", [])
++    base_wall = mean([r["wall_us"] for r in base])
++    base_gpu = mean([r.get("gpu_us", 0) for r in base])
++    head = ["phase", "n", "wall ms", "med", "gpu ms", "host ms", "gap ms", "wall %", "gpu %", "rows", "drafted",
++            "kept", "got", "tok/s", "held next", "forced", "spec hit", "spec drop", "drop why", "held", "fed", "engram miss",
++            "captures", "builds", "evicted", "eager", "lost"]
++    out = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
++    for name in order:
++        g = groups.get(name)
++        if not g:
++            continue
++        wall = [r["wall_us"] / 1e3 for r in g]
++        gpu = [r.get("gpu_us", 0) / 1e3 for r in g]
++        gap = [r["gap_us"] / 1e3 for r in g]
++        got = sum(r["got"] for r in g)
++        span = sum(wall) + sum(gap)
++        windows = sum(r.get("windows", 0) for r in g)
++        rows = sum(r.get("rows", 0) for r in g) / windows if windows else float("nan")
++        cells = [name, len(g), f"{mean(wall):.2f}", f"{median(wall):.2f}", f"{mean(gpu):.2f}",
++                 f"{mean(wall) - mean(gpu):.2f}", f"{mean(gap):.2f}",
++                 f"{100 * (mean(wall) * 1e3 / base_wall - 1):+.1f}" if base else "",
++                 f"{100 * (mean(gpu) * 1e3 / base_gpu - 1):+.1f}" if base and base_gpu > 0 else "",
++                 f"{rows:.2f}", f"{mean([r['drafted'] for r in g]):.2f}", f"{mean([r['kept'] for r in g]):.2f}",
++                 f"{got / len(g):.2f}", f"{1e3 * got / span:.1f}" if span else "",
++                 f"{mean([r['held_next'] for r in g]):.2f}", sum(r["kind"] == "forced" for r in g),
++                 f"{mean([r.get('spec_hit', 0) for r in g]):.2f}", f"{mean([drops(r) for r in g]):.2f}", why(g),
++                 sum(r.get("spec_held", 0) for r in g), sum(r.get("spec_fed", 0) for r in g),
++                 f"{mean([r.get('engram_misses', 0) for r in g]):.1f}",
++                 sum(r.get("captures", 0) for r in g), sum(r.get("builds", 0) for r in g),
++                 sum(r.get("evicted", 0) + r.get("dropped", 0) for r in g),
++                 sum(r.get("eager", 0) for r in g), sum(r.get("lost", 0) for r in g)]
++        out.append("| " + " | ".join(str(c) for c in cells) + " |")
++    return out
++
++
++def main():
++    ap = argparse.ArgumentParser(description=__doc__)
++    ap.add_argument("logs", nargs="*", default=["-"], help="trace files or server logs (- for stdin)")
++    ap.add_argument("--split", type=int, default=4, help="rounds after a resume shown one by one")
++    ap.add_argument("--streams", type=int, help="only rounds of steps with this many live streams (1: c=1)")
++    a = ap.parse_args()
++    objs = list(records(a.logs))
++    opens = [o for o in objs if o["rt"] == "open"]
++    around = opens[-1]["rounds"] if opens else 12
++    rounds = [o for o in objs if o["rt"] == "round"]
++    resumes = [o for o in objs if o["rt"] == "resume"]
++    holds = [o for o in objs if o["rt"] == "hold"]
++    if len(opens) > 1:
++        print(f"note: {len(opens)} trace opens (boots) in the input; rounds are pooled")
++    print(f"{len(holds)} holds, {len(resumes)} resumes, {len(rounds)} rounds traced, {around} rounds each side")
++    if resumes:
++        held = [o["held_us"] / 1e3 for o in resumes]
++        forced = [o["forced"] for o in resumes]
++        print(f"held ms: mean {mean(held):.1f}, median {median(held):.1f}, max {max(held):.1f}; "
++              f"forced tokens per resume: mean {mean(forced):.1f}")
++    print("\n".join(table(rounds, around, min(a.split, around), a.streams)))
++    print("wall: step time; gpu: the target windows' GPU time; host = wall - gpu (drafter, sampling, bookkeeping); "
++          "gap: time before the step; spec hit/drop: speculative DSpark passes used / dropped per round (drop why: "
++          "sums by reason); captures/builds/evicted/eager/lost: sums over the phase")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/zig/src/core/lanes/backend.zig b/zig/src/core/lanes/backend.zig
+index 30264371bb117050e84fdbfaf303f6d430b59563..9d1072fcd36f4dbfd4e19c1251b1c82fe65f7cc5 100644
+--- a/zig/src/core/lanes/backend.zig
++++ b/zig/src/core/lanes/backend.zig
+@@ -17,6 +17,7 @@ pub const Window = struct {
+     parents: ?[]const i32, // each row's parent row (row 0: -1) for a tree; null for a chain
+     positions: []const u64, // the absolute position each row's draw is keyed at
+     early: bool = false, // also draft each row's first head draft behind the verify (speculate_early)
++    forced: u32 = 0, // rows after the pending one that are forced (a result's tokens): always kept, never drafts
+     masks: []const u32 = &.{}, // structured output: each row's allowed-token bits (rows x words, lanes/grammar.zig); empty: none
+ 
+     pub fn rows(w: Window) usize {
+diff --git a/zig/src/core/lanes/engine.zig b/zig/src/core/lanes/engine.zig
+index 9419c2347607478ae3960616d0ac17587f95b080..8b27cc578b9dedb91814204369aa8e2dc5dd7627 100644
+--- a/zig/src/core/lanes/engine.zig
++++ b/zig/src/core/lanes/engine.zig
+@@ -122,6 +122,7 @@ pub const Engine = struct {
+     /// One round for every live stream (Python `_family_step`).
+     pub fn step(e: *Engine) !void {
+         _ = e.arena.reset(.retain_capacity);
++        if (@import("round_trace.zig").on()) @import("round_trace.zig").before(e);
+         const a = e.arena.allocator();
+         try trail.event(e, &.{ f("ev", str("step")), f("index", int(e.steps)) });
+         e.steps += 1;
+@@ -160,6 +161,7 @@ pub const Engine = struct {
+             }
+         }
+         try trail.resolve(e);
++        if (@import("round_trace.zig").on()) @import("round_trace.zig").after(e);
+         try e.sweep();
+         try trail.state(e);
+     }
+diff --git a/zig/src/core/lanes/fire_replay_test.zig b/zig/src/core/lanes/fire_replay_test.zig
+index 39c8cf27396f451ef0145cc7bd1edf7b67702b3e..b7211b9e61c7a0173309986380456723dda18344 100644
+--- a/zig/src/core/lanes/fire_replay_test.zig
++++ b/zig/src/core/lanes/fire_replay_test.zig
+@@ -5,6 +5,7 @@ const sm = @import("stream.zig");
+ const fake = @import("fake.zig");
+ const hold = @import("hold.zig");
+ const shared = @import("engine_test.zig");
++const round_trace = @import("round_trace.zig");
+ 
+ const gpa = std.testing.allocator;
+ const fires = [_]usize{ 20, 47, 75 };
+@@ -35,6 +36,15 @@ const Replay = struct {
+ };
+ 
+ fn replay(on: bool, width: ?u32, owned: Owned) !Replay {
++    return replayTraced(on, width, owned, null);
++}
++
++/// The fake target's verify count as a trace's backend counter.
++fn verifies(ctx: *anyopaque, out: []u64) void {
++    out[0] = @as(*fake.Fake, @ptrCast(@alignCast(ctx))).rounds;
++}
++
++fn replayTraced(on: bool, width: ?u32, owned: Owned, trace: ?c_int) !Replay {
+     var cfg = try shared.modelWith(true);
+     defer cfg.deinit(gpa);
+     cfg.forced_drafts = on;
+@@ -44,6 +54,8 @@ fn replay(on: bool, width: ?u32, owned: Owned) !Replay {
+     var clock: fake.FixedClock = .{};
+     var engine = Engine.init(gpa, &cfg, target.backend(), clock.clock());
+     defer engine.deinit();
++    if (trace) |fd| round_trace.open(fd, 4, .{ .ctx = &target, .names = &.{"verifies"}, .read = verifies });
++    defer if (trace != null) round_trace.close();
+     var hook: Hook = .{};
+     var s = try sm.Stream.init(gpa, .{ .id = "s", .prompt = &shared.p1, .max_new = 100, .drafts = true, .runner = .{ .ptr = &hook, .token = Hook.token } });
+     defer s.deinit(gpa);
+@@ -136,3 +148,42 @@ test "fire replay: drafts past forced results keep every token; a guessed result
+         try std.testing.expect(on.trigger_drafts > 0);
+     }
+ }
++
++test "fire replay traced: each fire's rounds before, its trigger, hold, resume and rounds after; the same tokens" {
++    var fds: [2]c_int = undefined;
++    try std.testing.expectEqual(@as(c_int, 0), std.c.pipe(&fds));
++    defer _ = std.c.close(fds[0]);
++    const plain = try replay(true, null, .{ .echo = 2 });
++    defer gpa.free(plain.tokens);
++    const traced = try replayTraced(true, null, .{ .echo = 2 }, fds[1]);
++    defer gpa.free(traced.tokens);
++    _ = std.c.close(fds[1]);
++    try std.testing.expectEqualSlices(u32, plain.tokens, traced.tokens);
++    var text: std.ArrayList(u8) = .empty;
++    defer text.deinit(gpa);
++    var chunk: [4096]u8 = undefined;
++    while (true) {
++        const n = std.c.read(fds[0], &chunk, chunk.len);
++        if (n <= 0) break;
++        try text.appendSlice(gpa, chunk[0..@intCast(n)]);
++    }
++    const names = [_][]const u8{ "open", "hold", "resume", "trigger", "pre", "post" };
++    var counts: [names.len]usize = @splat(0);
++    var lines = std.mem.splitScalar(u8, text.items, '\n');
++    var after_resume = false;
++    while (lines.next()) |line| {
++        if (line.len == 0) continue;
++        const p = try std.json.parseFromSlice(struct { rt: []const u8, phase: []const u8 = "", since: i64 = 0, kind: []const u8 = "", verifies: u64 = 1 }, gpa, line, .{ .ignore_unknown_fields = true });
++        defer p.deinit();
++        const v = p.value;
++        const key = if (std.mem.eql(u8, v.rt, "round")) v.phase else v.rt;
++        for (names, &counts) |n, *c| c.* += @intFromBool(std.mem.eql(u8, n, key));
++        try std.testing.expectEqual(@as(u64, 1), v.verifies); // a lone stream's step: one verify
++        // the first round after a resume feeds the result: since 1, forced
++        if (after_resume) try std.testing.expect(v.since == 1 and std.mem.eql(u8, v.kind, "forced"));
++        after_resume = std.mem.eql(u8, v.rt, "resume");
++    }
++    try std.testing.expectEqualSlices(usize, &.{ 1, fires.len, fires.len, fires.len }, counts[0..4]);
++    try std.testing.expect(counts[4] >= fires.len and counts[4] <= fires.len * 4); // before: up to 4 a fire
++    try std.testing.expect(counts[5] > 0 and counts[5] <= fires.len * 4); // after: up to 4 a fire, while the reply lasts
++}
+diff --git a/zig/src/core/lanes/lanes.zig b/zig/src/core/lanes/lanes.zig
+index de67f55b9510dd84d0d43e5a610e13c698e11dcb..baeba2763ce1bdc9ffb080a64f169c65a52d5122 100644
+--- a/zig/src/core/lanes/lanes.zig
++++ b/zig/src/core/lanes/lanes.zig
+@@ -29,6 +29,7 @@ pub const windows = @import("windows.zig");
+ pub const trail = @import("trail.zig");
+ pub const engine = @import("engine.zig");
+ pub const hold = @import("hold.zig");
++pub const round_trace = @import("round_trace.zig");
+ pub const fake = @import("fake.zig");
+ pub const drafter = @import("drafter.zig");
+ pub const drafted = @import("drafted.zig");
+diff --git a/zig/src/core/lanes/round_trace.zig b/zig/src/core/lanes/round_trace.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..8c2fb2b72c20e4f6a9b9529f779bc771ec9dcae3
+--- /dev/null
++++ b/zig/src/core/lanes/round_trace.zig
+@@ -0,0 +1,194 @@
++//! Rounds around held streams (runner fires), one JSON line each: N before a hold, N after its resume; read-only.
++const std = @import("std");
++const Engine = @import("engine.zig").Engine;
++const Stream = @import("stream.zig").Stream;
++
++/// A backend's counters, read before and after each step; a record carries each one's change over its step.
++pub const Extras = struct { ctx: *anyopaque, names: []const []const u8, read: *const fn (ctx: *anyopaque, out: []u64) void };
++
++const max_extras = 16;
++const max_streams = 64;
++const max_ring = 64;
++
++const Kind = enum { forced, drafted, plain };
++
++/// What the trace last saw of a stream: its counters before the step, and where it stands around its fires.
++const Seen = struct {
++    s: ?*const Stream = null,
++    rounds: u64 = 0,
++    drafted: u64 = 0,
++    accepted: u64 = 0,
++    emitted: usize = 0,
++    forced: bool = false,
++    awaiting: bool = false,
++    hold_ns: u64 = 0,
++    since: i64 = -1, // rounds since its last resume (-1: none yet)
++    post: u32 = 0, // rounds after the resume still to write
++};
++
++const Rec = struct {
++    step: u64,
++    t_ns: u64,
++    stream: u32,
++    since: i64,
++    kind: Kind,
++    drafted: u64,
++    kept: u64,
++    got: usize,
++    held_next: u32,
++    wall_ns: u64,
++    gap_ns: u64,
++    streams: usize,
++    x: [max_extras]u64,
++};
++
++var fd: c_int = -1;
++var around: u32 = 0;
++var extras: ?Extras = null;
++var seen: [max_streams]Seen = @splat(.{});
++var ring: [max_ring]Rec = undefined;
++var ring_len: usize = 0;
++var ring_at: usize = 0;
++var t_open: u64 = 0;
++var step_start: u64 = 0;
++var last_end: u64 = 0;
++var x_before: [max_extras]u64 = @splat(0);
++var buf: [4096]u8 = undefined;
++
++/// Writes to `out` (an open file descriptor): `rounds` rounds before each hold and after each resume (most 64).
++pub fn open(out: c_int, rounds: u32, x: ?Extras) void {
++    fd = out;
++    around = @min(rounds, max_ring);
++    extras = if (x) |v| if (v.names.len <= max_extras) v else null else null;
++    t_open = now();
++    last_end = t_open;
++    var w = std.Io.Writer.fixed(&buf);
++    w.print("{{\"rt\":\"open\",\"rounds\":{d},\"extras\":[", .{around}) catch return;
++    if (extras) |v| for (v.names, 0..) |n, i| w.print("{s}\"{s}\"", .{ if (i > 0) "," else "", n }) catch return;
++    w.writeAll("]}\n") catch return;
++    put(w.buffered());
++}
++
++pub fn on() bool {
++    return fd >= 0;
++}
++
++fn now() u64 {
++    var ts: std.c.timespec = undefined;
++    _ = std.c.clock_gettime(.MONOTONIC, &ts);
++    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
++}
++
++fn put(s: []const u8) void {
++    var at: usize = 0;
++    while (at < s.len) {
++        const n = std.c.write(fd, s[at..].ptr, s.len - at);
++        if (n <= 0) return;
++        at += @intCast(n);
++    }
++}
++
++fn readExtras(out: []u64) void {
++    if (extras) |v| v.read(v.ctx, out[0..v.names.len]);
++}
++
++/// The stream's entry (a new one takes a free or finished entry; null when all are taken by live streams).
++fn entry(s: *const Stream) ?*Seen {
++    var free: ?*Seen = null;
++    for (&seen) |*x| {
++        if (x.s == s) return x;
++        if (free == null and (x.s == null or x.s.?.finished)) free = x;
++    }
++    const x = free orelse return null;
++    x.* = .{ .s = s, .rounds = s.rounds, .drafted = s.drafted, .accepted = s.accepted, .emitted = s.emitted().len };
++    return x;
++}
++
++/// Before a step: the clock, the backend's counters, each live stream's; a stream resumed since its hold is noted.
++pub fn before(e: *const Engine) void {
++    step_start = now();
++    readExtras(&x_before);
++    for (e.live.items) |s| {
++        const x = entry(s) orelse continue;
++        if (x.awaiting and !s.awaiting) {
++            var w = std.Io.Writer.fixed(&buf);
++            w.print("{{\"rt\":\"resume\",\"stream\":{d},\"t_us\":{d},\"held_us\":{d},\"forced\":{d}}}\n", .{ index(x), us(step_start - t_open), us(step_start - x.hold_ns), s.force.items.len }) catch {};
++            put(w.buffered());
++            x.since = 0;
++            x.post = around;
++        }
++        x.awaiting = s.awaiting;
++        x.rounds = s.rounds;
++        x.drafted = s.drafted;
++        x.accepted = s.accepted;
++        x.emitted = s.emitted().len;
++        x.forced = s.force.items.len > 0;
++    }
++}
++
++/// After a step: each stream that ran a round, written when it is near a fire, else kept as the next fire's before.
++pub fn after(e: *const Engine) void {
++    const t = now();
++    var x_after: [max_extras]u64 = @splat(0);
++    readExtras(&x_after);
++    for (e.live.items) |s| {
++        const x = entry(s) orelse continue;
++        if (s.rounds == x.rounds) continue;
++        if (x.since >= 0) x.since += 1;
++        var r: Rec = .{ .step = e.steps, .t_ns = t - t_open, .stream = index(x), .since = x.since, .kind = if (x.forced) .forced else if (s.drafted > x.drafted) .drafted else .plain, .drafted = s.drafted - x.drafted, .kept = s.accepted - x.accepted, .got = s.emitted().len - x.emitted, .held_next = if (s.next) |n| n.count else 0, .wall_ns = t - step_start, .gap_ns = step_start - last_end, .streams = e.live.items.len, .x = undefined };
++        for (&r.x, x_after, x_before) |*d, b, a| d.* = b -% a;
++        x.rounds = s.rounds;
++        if (s.awaiting and !x.awaiting) {
++            flush();
++            write(r, "trigger");
++            var w = std.Io.Writer.fixed(&buf);
++            w.print("{{\"rt\":\"hold\",\"stream\":{d},\"t_us\":{d}}}\n", .{ index(x), us(t - t_open) }) catch {};
++            put(w.buffered());
++            x.awaiting = true;
++            x.hold_ns = t;
++            x.post = 0;
++        } else if (x.post > 0) {
++            write(r, "post");
++            x.post -= 1;
++        } else push(r);
++    }
++    last_end = now();
++}
++
++fn index(x: *const Seen) u32 {
++    return @intCast((@intFromPtr(x) - @intFromPtr(&seen)) / @sizeOf(Seen));
++}
++
++fn us(ns: u64) u64 {
++    return ns / std.time.ns_per_us;
++}
++
++fn push(r: Rec) void {
++    if (around == 0) return;
++    ring[(ring_at + ring_len) % max_ring] = r;
++    if (ring_len < around) ring_len += 1 else ring_at = (ring_at + 1) % max_ring;
++}
++
++/// The rounds kept since the last write, as a hold's before.
++fn flush() void {
++    for (0..ring_len) |i| write(ring[(ring_at + i) % max_ring], "pre");
++    ring_len = 0;
++    ring_at = 0;
++}
++
++fn write(r: Rec, phase: []const u8) void {
++    var w = std.Io.Writer.fixed(&buf);
++    w.print("{{\"rt\":\"round\",\"phase\":\"{s}\",\"step\":{d},\"t_us\":{d},\"stream\":{d},\"since\":{d},\"kind\":\"{s}\",\"drafted\":{d},\"kept\":{d},\"got\":{d},\"held_next\":{d},\"wall_us\":{d},\"gap_us\":{d},\"streams\":{d}", .{ phase, r.step, us(r.t_ns), r.stream, r.since, @tagName(r.kind), r.drafted, r.kept, r.got, r.held_next, us(r.wall_ns), us(r.gap_ns), r.streams }) catch return;
++    if (extras) |v| for (v.names, r.x[0..v.names.len]) |n, d| w.print(",\"{s}\":{d}", .{ n, d }) catch return;
++    w.writeAll("}\n") catch return;
++    put(w.buffered());
++}
++
++/// Closes the trace (tests): the descriptor is the caller's.
++pub fn close() void {
++    fd = -1;
++    extras = null;
++    seen = @splat(.{});
++    ring_len = 0;
++    ring_at = 0;
++}
+diff --git a/zig/src/core/lanes/windows.zig b/zig/src/core/lanes/windows.zig
+index 35113e11a4631059dcf82b658656b5d280fe93f4..bc188c25d14040ea6fde3deef8bbc8b6181a56c6 100644
+--- a/zig/src/core/lanes/windows.zig
++++ b/zig/src/core/lanes/windows.zig
+@@ -525,7 +525,7 @@ pub fn build(e: *Engine, p: Plan, early: bool) !be.Window {
+     const ds = try accept.depths(a, parents);
+     const positions = try a.alloc(u64, rows);
+     for (positions, ds) |*x, d| x.* = p.position + 1 + d;
+-    return .{ .stream = p.stream, .pending = p.stream.pending.?, .held = p.held, .tokens = p.tokens, .parents = if (p.parents != null) parents else null, .positions = positions, .early = early, .masks = p.masks };
++    return .{ .stream = p.stream, .pending = p.stream.pending.?, .held = p.held, .tokens = p.tokens, .parents = if (p.parents != null) parents else null, .positions = positions, .early = early, .forced = @intCast(p.forced.len), .masks = p.masks };
+ }
+ 
+ pub fn rowParents(e: *Engine, w: be.Window) ![]const i32 {
+diff --git a/zig/src/families/deepseek_v41/batch.zig b/zig/src/families/deepseek_v41/batch.zig
+index 2ab1772c18df4a9919784fd12d08f9b2c75507a0..9b19121d2d275d84583f0aaba2772ee9d06c8720 100644
+--- a/zig/src/families/deepseek_v41/batch.zig
++++ b/zig/src/families/deepseek_v41/batch.zig
+@@ -83,6 +83,7 @@ pub const Batch = struct {
+         keep_ns: u64 = 0,
+     } = .{},
+     prof: ?*WinProf = null, // TF_DSV41_WIN_PROF=1: host ns per runRows step, logged at deinit; null: no clock reads
++    gpu: ?*@import("batch_gpu_time.zig").GpuPair = null, // TF_DSV41_RUNNER_TRACE: windows' GPU time; null: no events
+     /// the session store (model.zig): each slot's kept rows are its committed ids
+     sess: ?*sessions_gpu.Sessions = null,
+ 
+@@ -158,6 +159,7 @@ pub const Batch = struct {
+             b.gpa.destroy(p);
+         }
+         if (b.g) |*g| g.deinit();
++        if (b.gpu) |t| t.deinit();
+         for (b.stash.items) |*x| x.buf.free();
+         b.stash.deinit(b.gpa);
+         if (b.taps_stash) |*x| x.free();
+@@ -281,6 +283,8 @@ pub const Batch = struct {
+             m.armed = false;
+         };
+         pt.mark(.bookkeep);
++        if (b.gpu) |t| try t.begin(r.stream);
++        defer if (b.gpu) |t| t.finish(r.stream);
+         if (b.g) |*g| {
+             const fp = b.fingerprint();
+             pt.mark(.fingerprint);
+diff --git a/zig/src/families/deepseek_v41/batch_gpu_time.zig b/zig/src/families/deepseek_v41/batch_gpu_time.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..46348cf77faf482826ba382513400c12ac12d3f5
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/batch_gpu_time.zig
+@@ -0,0 +1,55 @@
++//! TF_DSV41_RUNNER_TRACE: the row windows' GPU time, from a timing event pair around each window's launches.
++const std = @import("std");
++const cuda = @import("cuda");
++
++pub const GpuPair = struct {
++    gpa: std.mem.Allocator,
++    start: cuda.Event,
++    end: cuda.Event,
++    pending: bool = false, // the pair holds a window not yet read
++    ns: u64 = 0, // the windows' GPU time read so far
++    lost: u64 = 0, // windows a later one began before they were done (not read)
++
++    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver) !*GpuPair {
++        const g = try gpa.create(GpuPair);
++        errdefer gpa.destroy(g);
++        var start = try cuda.Event.init(d, true);
++        errdefer start.deinit();
++        g.* = .{ .gpa = gpa, .start = start, .end = try cuda.Event.init(d, true) };
++        return g;
++    }
++
++    pub fn deinit(g: *GpuPair) void {
++        g.start.deinit();
++        g.end.deinit();
++        g.gpa.destroy(g);
++    }
++
++    /// Before a window's launches: the last window read if it is done (never a wait), then the start mark.
++    pub fn begin(g: *GpuPair, stream: cuda.Stream) !void {
++        g.fold();
++        if (g.pending) g.lost += 1;
++        g.pending = false;
++        try g.start.record(stream);
++    }
++
++    /// After a window's launches (outside any capture).
++    pub fn finish(g: *GpuPair, stream: cuda.Stream) void {
++        g.end.record(stream) catch return;
++        g.pending = true;
++    }
++
++    fn fold(g: *GpuPair) void {
++        if (!g.pending) return;
++        if (!(g.end.done() catch false)) return;
++        const ms = cuda.Event.elapsedMs(g.start, g.end) catch return;
++        g.ns += @intFromFloat(@max(0.0, ms) * 1e6);
++        g.pending = false;
++    }
++
++    /// The windows' GPU time so far, the last one included when it is done.
++    pub fn total(g: *GpuPair) u64 {
++        g.fold();
++        return g.ns;
++    }
++};
+diff --git a/zig/src/families/deepseek_v41/draft/draft.zig b/zig/src/families/deepseek_v41/draft/draft.zig
+index 1cb2f6eee430005b54a36c06f65a17698ed427b8..3e34fe84d573801a1b0f39ebb033772a20a71b0c 100644
+--- a/zig/src/families/deepseek_v41/draft/draft.zig
++++ b/zig/src/families/deepseek_v41/draft/draft.zig
+@@ -47,6 +47,7 @@ test {
+     _ = @import("golden_test.zig");
+     _ = spec;
+     _ = @import("spec_test.zig");
++    _ = @import("spec_hold_test.zig");
+     _ = lookup;
+     _ = @import("lookup_test.zig");
+ }
+diff --git a/zig/src/families/deepseek_v41/draft/lanes.zig b/zig/src/families/deepseek_v41/draft/lanes.zig
+index f8dceb71605eb0ce5eb710d7b0a3451959852b64..8a896b4e4e9a375178a1b6f9ae0e0077b9beaa11 100644
+--- a/zig/src/families/deepseek_v41/draft/lanes.zig
++++ b/zig/src/families/deepseek_v41/draft/lanes.zig
+@@ -381,6 +381,11 @@ pub const Lanes = struct {
+         return w.held == 0 and w.parents == null and w.tokens.len <= st.n and std.mem.eql(u32, w.tokens, st.held[0..w.tokens.len]);
+     }
+ 
++    /// A window feeding the last of a forced result (the model draws after it): its next pass can start now.
++    fn fedResult(w: be.Window) bool {
++        return w.forced > 0 and w.held == 0 and w.parents == null and w.stream.force.items.len == 0;
++    }
++
+     /// Collects a speculative pass still running (before any other pass, target or ingest work).
+     pub fn settle(x: *Lanes) !void {
+         if (x.spec) |*sp| try sp.settle(x.pass);
+@@ -398,17 +403,21 @@ pub const Lanes = struct {
+         if (!sp.roundAllowed(tree_round, nucleus)) return sp.clear();
+         const cands = try a.alloc(spec_mod.Candidate, windows.len);
+         var n: usize = 0;
++        var fed: usize = 0;
+         for (windows, segs, choices) |w, g, c| {
+             const st = try x.get(w.stream);
+-            // a DSpark round only (dsparkRound counts chain rounds read back as host tokens)
+-            if (!dsparkRound(st, w)) continue;
+-            var acc: u32 = 0;
++            // a DSpark round (dsparkRound counts chain rounds read back as host tokens), or the hold knob's fed one
++            const feeds = sp.settings.hold and fedResult(w);
++            if (!feeds and !dsparkRound(st, w)) continue;
++            var acc: u32 = if (feeds) w.forced else 0; // forced rows land whole, drafts past them by the choices
+             while (acc + 1 < g.tokens.len and g.tokens[acc + 1] == c[acc]) acc += 1;
+             cands[n] = .{ .slot = st.slot, .start = g.start, .accepted = acc, .bonus = c[acc], .sampling = g.sampling };
+             n += 1;
++            fed += @intFromBool(feeds);
+         }
+         const asks = sp.launch(cands[0..n]);
+         if (asks.len == 0) return;
++        if (fed > 0) sp.stats.fed += 1;
+         const rows = try a.alloc(u32, lanes_max_rows);
+         for (rows, 0..) |*r, i| r.* = @intCast(i);
+         for (asks) |ask| {
+@@ -437,6 +446,7 @@ pub const Lanes = struct {
+         const asks = try a.alloc(iface.Ask, requests.len);
+         const whose = try a.alloc(*St, requests.len);
+         const depths = try a.alloc(u32, requests.len);
++        const holds = try a.alloc(bool, requests.len); // the stream is held (a runner trigger or EOS)
+         const row0 = try a.alloc(iface.Warm, requests.len);
+         const row0_ids = try a.alloc(u32, requests.len);
+         var n_row0: usize = 0;
+@@ -466,6 +476,7 @@ pub const Lanes = struct {
+             asks[n] = .{ .slot = st.slot, .anchor = anchor, .start = at, .params = dspark.Params.of(r.stream.sampling, at) };
+             whose[n] = st;
+             depths[n] = r.depth;
++            holds[n] = r.stream.held;
+             n += 1;
+         }
+         x.target.warm(row0[0..n_row0]);
+@@ -480,8 +491,10 @@ pub const Lanes = struct {
+             .cand = if (markov != null) x.cand[i * b * c ..][0 .. b * c] else null,
+             .base = if (markov != null) x.base[i * b * c ..][0 .. b * c] else null,
+         };
+-        const took = if (x.spec) |*sp| sp.take(asks[0..n], props) else false;
+-        if (!took) try x.pass.propose(asks[0..n], props);
++        // the hold knob: a held stream's slot leaves the speculation unscored; its ask (put last) is drafted apart
++        const live = if (x.spec) |*sp| (if (sp.settings.hold) heldLast(sp, asks[0..n], whose[0..n], depths[0..n], holds[0..n]) else n) else n;
++        const took = live > 0 and (if (x.spec) |*sp| sp.take(asks[0..live], props[0..live]) else false);
++        if (!took) try x.pass.propose(asks[0..n], props) else if (live < n) try x.pass.propose(asks[live..n], props[live..n]);
+         // draft-end warm: the pending row and every drafted one, before the depth cuts them
+         if (x.target.vtable.warm != null) {
+             const ws = try a.alloc(iface.Warm, n);
+@@ -501,6 +514,23 @@ pub const Lanes = struct {
+         }
+     }
+ 
++    /// Releases held streams' slots from the speculation and moves their asks last; returns the asks before them.
++    fn heldLast(sp: *spec_mod.Spec, asks: []iface.Ask, whose: []*St, depths: []u32, holds: []bool) usize {
++        var live: usize = 0;
++        for (0..asks.len) |i| {
++            if (holds[i]) {
++                sp.release(asks[i].slot);
++                continue;
++            }
++            std.mem.swap(iface.Ask, &asks[live], &asks[i]);
++            std.mem.swap(*St, &whose[live], &whose[i]);
++            std.mem.swap(u32, &depths[live], &depths[i]);
++            std.mem.swap(bool, &holds[live], &holds[i]);
++            live += 1;
++        }
++        return live;
++    }
++
+     /// The siblings after the pending token: the draft distribution's next first tokens and their Markov chains.
+     fn siblings(x: *Lanes, a: Allocator, st: *St, m: dspark.Markov, p: iface.Proposal, ask: iface.Ask) !void {
+         const c = x.opts.shape.candidates;
+diff --git a/zig/src/families/deepseek_v41/draft/spec.zig b/zig/src/families/deepseek_v41/draft/spec.zig
+index 8fec257f21f47bee46cf94d2af12d0dfb913f0e8..423ba8cc3df494d5d538ab726c045dfb91bed105 100644
+--- a/zig/src/families/deepseek_v41/draft/spec.zig
++++ b/zig/src/families/deepseek_v41/draft/spec.zig
+@@ -12,9 +12,12 @@ pub const probe = 8;
+ pub const Settings = struct {
+     on: bool = false, // TF_DSV41_SPEC_DRAFT
+     nucleus: bool = false, // TF_DSV41_SPEC_NUCLEUS: rounds with top-p-without-top-k rows speculate too
++    hold: bool = false, // TF_DSV41_RUNNER_SPEC_HOLD: a held slot leaves unscored, a fed result's window speculates
+ 
+     pub fn fromEnv() !Settings {
+-        return parse(env("TF_DSV41_SPEC_DRAFT"), env("TF_DSV41_SPEC_NUCLEUS"));
++        var s = try parse(env("TF_DSV41_SPEC_DRAFT"), env("TF_DSV41_SPEC_NUCLEUS"));
++        s.hold = try flag(env("TF_DSV41_RUNNER_SPEC_HOLD"));
++        return s;
+     }
+ 
+     /// The knob values: 0 | 1 | on | off | true | false (case-insensitive), empty is 0.
+@@ -56,6 +59,8 @@ pub const Stats = struct {
+     ingests_skipped: u64 = 0,
+     /// slots speculated over every launch (each ingested its window's rows once)
+     launched_slots: u64 = 0,
++    held: u64 = 0, // slots a hold took out of the live speculation, unscored (Settings.hold)
++    fed: u64 = 0, // launches after a window that fed a forced result (Settings.hold)
+ 
+     pub fn missed(s: Stats) u64 {
+         var n: u64 = 0;
+@@ -87,6 +92,7 @@ pub const Spec = struct {
+     wins: []?Win,
+     asks: []iface.Ask,
+     n: usize = 0,
++    out: usize = 0, // of the n, slots a hold released (their asks stay, their windows are gone)
+     live: bool = false,
+     /// a pass begun on the device and not collected yet (`Pass.begin`)
+     begun: bool = false,
+@@ -156,15 +162,27 @@ pub const Spec = struct {
+     }
+ 
+     fn score(s: *Spec, hit: bool) void {
+-        for (s.asks[0..s.n]) |a| s.rate[a.slot] = decay * s.rate[a.slot] + (1.0 - decay) * @as(f64, if (hit) 1.0 else 0.0);
++        for (s.asks[0..s.n]) |a| if (s.wins[a.slot] != null) {
++            s.rate[a.slot] = decay * s.rate[a.slot] + (1.0 - decay) * @as(f64, if (hit) 1.0 else 0.0);
++        };
+     }
+ 
+     fn end(s: *Spec) void {
+         for (s.asks[0..s.n]) |a| s.wins[a.slot] = null;
+         s.n = 0;
++        s.out = 0;
+         s.live = false;
+     }
+ 
++    /// A slot held at a trigger (its window's commit was cut): it leaves the live speculation, its rate unscored.
++    pub fn release(s: *Spec, slot: u32) void {
++        if (!s.live or slot >= s.wins.len or s.wins[slot] == null) return;
++        s.wins[slot] = null;
++        s.out += 1;
++        s.stats.held += 1;
++        if (s.out == s.n) s.end();
++    }
++
+     fn drop(s: *Spec, why: Why) void {
+         s.stats.miss.getPtr(why).* += 1;
+         s.score(false);
+@@ -257,7 +275,7 @@ pub const Spec = struct {
+     pub fn take(s: *Spec, asks: []const iface.Ask, out: []iface.Proposal) bool {
+         if (!s.live) return false;
+         const why: ?Why = check: {
+-            if (asks.len != s.n) break :check .slots;
++            if (asks.len != s.n - s.out) break :check .slots;
+             for (asks) |a| if (a.slot >= s.wins.len or s.wins[a.slot] == null) break :check .slots;
+             for (asks) |a| {
+                 const w = s.wins[a.slot].?;
+@@ -302,6 +320,7 @@ pub const Spec = struct {
+         }
+         if (!first) w.writeAll(")") catch return w.buffered();
+         w.print(", {d} commit ingests skipped", .{st.ingests_skipped}) catch {};
++        if (s.settings.hold) w.print(", {d} held, {d} after a fed result", .{ st.held, st.fed }) catch {};
+         return w.buffered();
+     }
+ };
+diff --git a/zig/src/families/deepseek_v41/draft/spec_hold_test.zig b/zig/src/families/deepseek_v41/draft/spec_hold_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3ab6a065e1d7d319aa5666bb501dc0aa795fb91
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/draft/spec_hold_test.zig
+@@ -0,0 +1,141 @@
++//! TF_DSV41_RUNNER_SPEC_HOLD on the CPU twin: runner fires keep every token, and lose fewer speculative passes.
++const std = @import("std");
++const lanes = @import("lanes");
++const twin = @import("twin.zig");
++const ln = @import("lanes.zig");
++const spec = @import("spec.zig");
++
++const gpa = std.testing.allocator;
++const fires = [_]usize{ 20, 45, 70 };
++const result = [_]u32{ 7, 8, 9 };
++const p1 = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4 };
++const p2 = [_]u32{ 2, 7, 1, 8, 2, 8, 1, 8, 2, 8, 4, 5, 9, 0, 4, 5 };
++
++/// A runner hook holding its stream at the given emitted indices.
++const Hook = struct {
++    seen: usize = 0,
++    fn token(ptr: *anyopaque, _: u32, _: bool, can_hold: bool) bool {
++        const h: *Hook = @ptrCast(@alignCast(ptr));
++        defer h.seen += 1;
++        return can_hold and std.mem.indexOfScalar(usize, &fires, h.seen) != null;
++    }
++};
++
++const Mode = enum { off, sync, device };
++
++/// Pass counts: the drafter's passes, and the speculation's launches, uses, drops, held slots and fed launches.
++const Counts = struct {
++    passes: u64 = 0,
++    launched: u64 = 0,
++    hit: u64 = 0,
++    dropped: u64 = 0,
++    held: u64 = 0,
++    fed: u64 = 0,
++
++    fn of(d: *const twin.Drafter, x: *const ln.Lanes) Counts {
++        const st = if (x.spec) |sp| sp.stats else spec.Stats{};
++        return .{ .passes = d.passes, .launched = st.launched, .hit = st.hit, .dropped = st.missed(), .held = st.held, .fed = st.fed };
++    }
++
++    fn since(a: Counts, b: Counts) Counts {
++        return .{ .passes = a.passes - b.passes, .launched = a.launched - b.launched, .hit = a.hit - b.hit, .dropped = a.dropped - b.dropped, .held = a.held - b.held, .fed = a.fed - b.fed };
++    }
++
++    fn add(a: *Counts, b: Counts) void {
++        a.passes += b.passes;
++        a.launched += b.launched;
++        a.hit += b.hit;
++        a.dropped += b.dropped;
++        a.held += b.held;
++        a.fed += b.fed;
++    }
++};
++
++/// The firing reply's tokens (and the peer's), the whole run's counts and the counts over each fire's three rounds.
++const Run = struct {
++    out: []u32,
++    peer: []u32,
++    all: Counts,
++    near: Counts,
++
++    fn deinit(r: Run) void {
++        gpa.free(r.out);
++        gpa.free(r.peer);
++    }
++};
++
++fn run(mode: Mode, hold: bool, peer_on: bool) !Run {
++    const slots: u32 = 4;
++    const t = try twin.Twin.init(gpa, .{}, slots + 1);
++    defer t.deinit();
++    const d = try twin.Drafter.init(gpa, t, slots + 1);
++    defer d.deinit();
++    var c = try @import("lanes_test.zig").servedCosts(gpa);
++    defer c.deinit(gpa);
++    const pass = if (mode == .device) d.passAsync() else d.pass();
++    const x = try ln.Lanes.init(gpa, t.target(), pass, c, .{ .shape = d.shape, .slots = slots, .spec = .{ .on = mode != .off, .hold = hold } });
++    defer x.deinit();
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    var cfg = try lanes.Config.init(gpa, try x.model(arena.allocator(), 64), 16, 15);
++    defer cfg.deinit(gpa);
++    var clock: lanes.fake.FixedClock = .{};
++    var e = lanes.Engine.init(gpa, &cfg, x.backend(), clock.clock());
++    defer e.deinit();
++    x.attach(&e);
++    var hook: Hook = .{};
++    var s = try lanes.Stream.init(gpa, .{ .id = "fires", .prompt = &p1, .max_new = 100, .drafts = true, .runner = .{ .ptr = &hook, .token = Hook.token } });
++    defer s.deinit(gpa);
++    var peer = try lanes.Stream.init(gpa, .{ .id = "peer", .prompt = &p2, .max_new = 100, .drafts = true });
++    defer peer.deinit(gpa);
++    try e.addStream(&s);
++    if (peer_on) try e.addStream(&peer);
++    var near: Counts = .{};
++    var before: Counts = .{};
++    var left: u32 = 0; // rounds of the current fire still counted: its trigger, the feed and the round after
++    while (e.activeCount() > 0) {
++        if (s.awaiting) try std.testing.expect(try lanes.hold.resumeAwaiting(&s, gpa, &result));
++        const pre = Counts.of(d, x);
++        try e.step();
++        if (s.awaiting) {
++            before = pre;
++            left = 3;
++        }
++        if (left > 0) {
++            left -= 1;
++            if (left == 0) near.add(Counts.of(d, x).since(before));
++        }
++    }
++    return .{ .out = try gpa.dupe(u32, s.emitted()), .peer = try gpa.dupe(u32, peer.emitted()), .all = Counts.of(d, x), .near = near };
++}
++
++test "spec hold: fires keep every token; off is the old count, on releases held slots and speculates after the feed" {
++    // the counts without the knob, as the code before it gives them: a lone firing reply, then beside a peer
++    const old = [2][2]Counts{
++        .{ .{ .passes = 52, .launched = 46, .hit = 43, .dropped = 3 }, .{ .passes = 11, .launched = 6, .hit = 4, .dropped = 2 } },
++        .{ .{ .passes = 53, .launched = 46, .hit = 40, .dropped = 6 }, .{ .passes = 13, .launched = 9, .hit = 5, .dropped = 4 } },
++    };
++    for ([_]bool{ false, true }, old) |peer_on, want| {
++        const ref = try run(.off, false, peer_on);
++        defer ref.deinit();
++        for ([_]Mode{ .sync, .device }) |m| {
++            const off = try run(m, false, peer_on);
++            defer off.deinit();
++            const on = try run(m, true, peer_on);
++            defer on.deinit();
++            for ([_]Run{ off, on }) |r| {
++                try std.testing.expectEqualSlices(u32, ref.out, r.out);
++                try std.testing.expectEqualSlices(u32, ref.peer, r.peer);
++            }
++            // off (the negative control): the old counts, nothing held or fed
++            try std.testing.expectEqual(want[0], off.all);
++            try std.testing.expectEqual(want[1], off.near);
++            // on: held slots leave unscored, feeds launch, nothing drops; a fire's one serial pass is the held stream's
++            try std.testing.expectEqual(@as(u64, fires.len), on.near.held);
++            try std.testing.expectEqual(@as(u64, fires.len), on.near.fed);
++            try std.testing.expectEqual(@as(u64, 0), on.near.dropped);
++            try std.testing.expectEqual(@as(u64, fires.len), on.near.passes - on.near.launched);
++            try std.testing.expect(on.all.dropped < off.all.dropped and on.all.hit > off.all.hit);
++        }
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/runner_trace.zig b/zig/src/families/deepseek_v41/runner_trace.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ca16393537334f8e33b59bd9774d802adadc525
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/runner_trace.zig
+@@ -0,0 +1,58 @@
++//! TF_DSV41_RUNNER_TRACE=1 (stderr) or =<path>: rounds around each runner fire (lanes round_trace), with their work.
++const std = @import("std");
++const lanes = @import("lanes");
++const batch = @import("batch.zig");
++const ln = @import("draft/lanes.zig");
++const er = @import("engram_rows.zig");
++const GpuPair = @import("batch_gpu_time.zig").GpuPair;
++
++/// Per step: row windows and graphs, GPU and host time, speculative DSpark passes by outcome, Engram row lookups.
++const names = [_][]const u8{ "windows", "rows", "padded", "builds", "captures", "eager", "replayed", "evicted", "dropped", "gpu_us", "lost", "prep_us", "stage_us", "launch_us", "keep_us", "spec_launched", "spec_hit", "spec_commit", "spec_slots", "spec_unused", "spec_pending", "spec_other", "spec_held", "spec_fed", "engram_hits", "engram_misses" };
++
++/// What the counters are read from (rank 0's): the row batch, the DSpark lanes, Engram's rows.
++const Src = struct { rows: ?*batch.Batch, x: *ln.Lanes, engram: ?*er.Rows };
++
++/// Opens the trace when TF_DSV41_RUNNER_TRACE is set; TF_DSV41_RUNNER_TRACE_ROUNDS: rounds on each side (12).
++pub fn open(gpa: std.mem.Allocator, rows: ?*batch.Batch, x: *ln.Lanes, engram: ?*er.Rows) !void {
++    const v = std.c.getenv("TF_DSV41_RUNNER_TRACE") orelse return;
++    const p = std.mem.span(v);
++    if (p.len == 0 or std.mem.eql(u8, p, "0")) return;
++    const fd: c_int = if (std.mem.eql(u8, p, "1")) 2 else std.c.open(v, .{ .ACCMODE = .WRONLY, .CREAT = true, .APPEND = true }, @as(std.c.mode_t, 0o644));
++    if (fd < 0) return std.log.warn("TF_DSV41_RUNNER_TRACE: cannot open {s}", .{p});
++    var n: u32 = 12;
++    if (std.c.getenv("TF_DSV41_RUNNER_TRACE_ROUNDS")) |r| n = std.fmt.parseInt(u32, std.mem.span(r), 10) catch return error.BadRunnerTraceRounds;
++    if (rows) |b| b.gpu = try GpuPair.init(gpa, b.f.runner.d);
++    const src = try gpa.create(Src); // lives as long as the process's trace
++    src.* = .{ .rows = rows, .x = x, .engram = engram };
++    lanes.round_trace.open(fd, n, .{ .ctx = src, .names = &names, .read = read });
++    std.log.info("dsv41 runner trace: {d} rounds around each fire to {s}", .{ n, if (fd == 2) "stderr" else p });
++}
++
++fn read(ctx: *anyopaque, out: []u64) void {
++    const src: *Src = @ptrCast(@alignCast(ctx));
++    var all: [names.len]u64 = @splat(0);
++    if (src.rows) |b| {
++        const st = b.stats;
++        var g: @TypeOf(b.g.?.cache.stats) = .{};
++        if (b.g) |*gr| g = gr.cache.stats;
++        var gpu_ns: u64 = 0;
++        var lost: u64 = 0;
++        if (b.gpu) |t| {
++            gpu_ns = t.total();
++            lost = t.lost;
++        }
++        const v = [_]u64{ st.windows, st.rows, st.padded, st.builds, st.captures, st.eager, g.replayed, g.evicted, g.dropped, gpu_ns / 1000, lost, st.prep_ns / 1000, st.stage_ns / 1000, st.launch_ns / 1000, st.keep_ns / 1000 };
++        @memcpy(all[0..v.len], &v);
++    }
++    if (src.x.spec) |sp| {
++        const m = sp.stats.miss;
++        const other = m.get(.reset) + m.get(.inputs);
++        const v = [_]u64{ sp.stats.launched, sp.stats.hit, m.get(.commit), m.get(.slots), m.get(.unused), m.get(.pending), other, sp.stats.held, sp.stats.fed };
++        @memcpy(all[15..][0..v.len], &v);
++    }
++    if (src.engram) |r| {
++        all[24] = r.stats.hits;
++        all[25] = r.stats.misses;
++    }
++    @memcpy(out, all[0..out.len]);
++}
+diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
+index 09050772eba8f4c37e2e0e6bc10bcaa6f9966395..83449fa4f8a7ff956e6e77f17623dc42a6830c0c 100644
+--- a/zig/src/families/deepseek_v41/serve_engine.zig
++++ b/zig/src/families/deepseek_v41/serve_engine.zig
+@@ -131,6 +131,7 @@ pub const Served = struct {
+         s.clock = .{ .io = io };
+         s.core = lanes.Engine.init(gpa, &s.cfg, s.x.backend(), s.clock.clock());
+         s.x.attach(&s.core);
++        try @import("runner_trace.zig").open(gpa, m.rows, s.x, m.f.engram_rows);
+         const window: u32 = @intCast(@min(context orelse m.f.opts.limit, m.f.opts.limit));
+         s.host = api.LaneHost.init(gpa, io, &s.core, .{ .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows, .structures = m.grammar_masks != null });
+         // TF_DSV41_COMPUTE_LANE=1: built-in code runs on the CPU while its reply holds at EOS (core/compute_lane.zig)

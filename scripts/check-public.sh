@@ -39,6 +39,10 @@ FLASHNEXT_ROLE_EMAILS='^engine/zig/zig/(src/families/flashnext/(replay|roles_gen
 FLASHNEXT_ROLE_EMAILS+='(lane_qmm_bytes_grouped@(gdn\.(in|out)|att\.(proj|o)|ple\.kv|mtp\.(att(\.proj)?|draft|fc[eh]))'
 FLASHNEXT_ROLE_EMAILS+='|q4_attn_prep@mtp\.att|q4_rms_rows@mtp\.(enorm|hnorm)|q4_router_float@mtp\.moe'
 FLASHNEXT_ROLE_EMAILS+='|qa_expert_down_y@(mtp\.)?moe\.down|qa_expert_gateup@(mtp\.)?moe\.gate|qa_hc_(down|up)@mtp\.(ahc|mhc|mix))$'
+# The engine patch series keeps each commit's author: a patch's From: and Co-authored-by: lines carry the author's
+# public GitHub noreply address. Only those header/trailer lines in patches/NNNN-*.patch pass.
+PATCH_AUTHOR_LINES='^patches/[0-9]{4}-[^:]*\.patch:[0-9]+:(From|Co-authored-by): [^<]*<[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com>$'
+PATCH_AUTHOR_EMAILS='^patches/[0-9]{4}-[^:]*\.patch:[0-9]+:[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com$'
 # Homebrew's version substitution marker inside the fixed archive name is not an address.
 TEMPLATE_EMAILS='^engine/zig/packaging/homebrew/tensorfold\.rb\.in:[0-9]+:VERSION@-macos-arm64\.tar\.gz$'
 
@@ -101,12 +105,24 @@ for entry in "${PATTERNS[@]}"; do
         hits=$(grep -HnIiE -- "$re" "${scan_files[@]}" 2>/dev/null)
     fi
     [[ "$name" == "home directories" && -n "$hits" ]] && hits=$(grep -viE "$HOME_OK" <<< "$hits")
+    [[ -n "$hits" ]] && hits=$(grep -vE "$PATCH_AUTHOR_LINES" <<< "$hits")
     if [[ -n "$hits" ]]; then
         fail=1
         echo "== $name"
         cut -c1-220 <<< "$hits"
     fi
 done
+
+# The engine patch series: internal host names, the benchmark lock path and the development agents' names, on any
+# line (strings and code too, not only comments: a tool's report string once named the test host). Case-sensitive, so
+# ordinary words such as "captain" or "doug" in prose do not match.
+PATCH_PRIVATE='\bnode0[0-9]\b|\bNode0[0-9]\b|\bdgx0[0-9]\b|gpu\.lock\b|\b(Cody|Randy|Doug|Danny|Captain|Advosary|Davit)\b|\bdev-box\b|spark-work/|tensorfold-qwen4'
+patch_files=()
+for f in "${FILES[@]}"; do [[ "$f" =~ ^patches/[0-9]{4}-[^/]*\.patch$ ]] && patch_files+=("$f"); done
+if [[ -n "${patch_files[*]-}" ]]; then
+    hits=$(grep -HnIE -- "$PATCH_PRIVATE" "${patch_files[@]}" 2>/dev/null | grep -vE "$PATCH_AUTHOR_LINES")
+    if [[ -n "$hits" ]]; then fail=1; echo "== internal names in the engine patch series"; cut -c1-220 <<< "$hits"; fi
+fi
 
 # credentials: one pattern set, shared with scripts/redact.py; allowlist in scripts/check-secrets-allow.txt
 secrets=$(python3 scripts/check_secrets.py "${FILES[@]}" 2>&1)
@@ -115,7 +131,7 @@ if [[ $? -ne 0 ]]; then fail=1; echo "== credentials (scripts/check_secrets.py)"
 # e-mail addresses other than placeholder / example domains (model outputs in results/ invent a few)
 emails=$(grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "${FILES[@]}" 2>/dev/null |
          grep -viE '@(([a-z0-9-]+\.)*example(\.(com|org|net))?|company\.com|novatech\.io)$|:noreply@anthropic\.com$' |
-         grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
+         grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$PATCH_AUTHOR_EMAILS" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
 
 # files that should never be published (.claude/ is local agent tooling, #52)

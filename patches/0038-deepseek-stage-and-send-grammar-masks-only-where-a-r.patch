@@ -1,0 +1,283 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:38:21 +0700
+Subject: [PATCH 038/207] deepseek: stage and send grammar masks only where a
+ row is constrained
+
+Every target window and prompt staged its grammar rows through Masks.stage,
+even with none: rank 0 then sent an op_grammar plan frame to the TP peer on
+every forward of every request, and rows that allow every token (a thinking
+prefix, forced rows past a rejection) were copied, shipped whole over the plan
+link, uploaded and masked to no effect. Such rows are now dropped, and a stage
+with nothing to apply and nothing applied before returns at once; a stage that
+clears earlier masks still reaches the followers.
+---
+ zig/src/families/deepseek_v41/grammar_gpu.zig |  22 +++-
+ .../deepseek_v41/grammar_host_test.zig        | 117 ++++++++++++++----
+ .../families/deepseek_v41/grammar_rows.zig    |  18 +++
+ 3 files changed, 126 insertions(+), 31 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/grammar_gpu.zig b/zig/src/families/deepseek_v41/grammar_gpu.zig
+index 6401188612e2bbbe2aacd7166ab64daf50b2e317..3999f2f16728dc74467cdd89acc2453b47483d7f 100644
+--- a/zig/src/families/deepseek_v41/grammar_gpu.zig
++++ b/zig/src/families/deepseek_v41/grammar_gpu.zig
+@@ -20,6 +20,7 @@ pub const Masks = struct {
+     dev: cuda.DeviceBuffer,
+     count: u32 = 0,
+     message: std.ArrayList(i64) = .empty,
++    kept: []Row,
+ 
+     pub fn init(gpa: Allocator, f: *Forward, max_rows: u32) !*Masks {
+         if (f.grammar != null or max_rows == 0) return error.GrammarSetup;
+@@ -34,8 +35,10 @@ pub const Masks = struct {
+         var module = try cuda.Module.loadPtx(f.runner.d, @embedFile("grammar_mask_ptx"), &log);
+         errdefer module.unload();
+         const kernel = try module.function(rows.symbol);
++        const kept = try gpa.alloc(Row, max_rows);
++        errdefer gpa.free(kept);
+         const x = try gpa.create(Masks);
+-        x.* = .{ .gpa = gpa, .f = f, .words = words, .max_rows = max_rows, .lo = part.lo, .width = part.len, .module = module, .kernel = kernel, .host = host, .dev = dev };
++        x.* = .{ .gpa = gpa, .f = f, .words = words, .max_rows = max_rows, .lo = part.lo, .width = part.len, .module = module, .kernel = kernel, .host = host, .dev = dev, .kept = kept };
+         f.grammar = .{ .ptr = x, .follow = follow, .apply = applyFn };
+         return x;
+     }
+@@ -44,6 +47,7 @@ pub const Masks = struct {
+         x.f.runner.stream.synchronize() catch {};
+         x.f.grammar = null;
+         x.message.deinit(x.gpa);
++        x.gpa.free(x.kept);
+         x.module.unload();
+         x.dev.free();
+         x.host.free();
+@@ -59,8 +63,10 @@ pub const Masks = struct {
+         return @alignCast(std.mem.bytesAsSlice(u32, x.host.bytes[off..]));
+     }
+ 
+-    pub fn stage(x: *Masks, list: []const Row) !void {
+-        try rows.validate(list, x.words, x.max_rows);
++    pub fn stage(x: *Masks, all: []const Row) !void {
++        try rows.validate(all, x.words, x.max_rows);
++        // Rows allowing every token are no-ops; with none now or staged there is nothing to wait on, apply or send.
++        const list = rows.constraining(all, x.f.cfg.vocab, x.count, x.kept) orelse return;
+         // The previous async upload must finish before its pinned source is reused.
+         if (x.count != 0) try x.f.runner.stream.synchronize();
+         x.count = @intCast(list.len);
+@@ -140,15 +146,19 @@ pub fn stage(f: *Forward, list: []const Row) !void {
+ pub fn segments(f: *Forward, segs: []const iface.Segment) !void {
+     var arena = std.heap.ArenaAllocator.init(f.gpa);
+     defer arena.deinit();
++    return stage(f, try segmentRows(arena.allocator(), segs, (f.cfg.vocab + 31) / 32));
++}
++
++/// The windows' masked rows, each at its row of the forward's "w.logits" (the segments in window order).
++pub fn segmentRows(a: Allocator, segs: []const iface.Segment, words: u32) ![]Row {
+     var list: std.ArrayList(Row) = .empty;
+     var at: u32 = 0;
+-    const words = (f.cfg.vocab + 31) / 32;
+     for (segs) |s| {
+         if (s.masks.len != 0) {
+             if (s.masks.len != s.tokens.len * words) return error.GrammarWords;
+-            for (0..s.tokens.len) |i| try list.append(arena.allocator(), .{ .index = at + @as(u32, @intCast(i)), .bits = s.masks[i * words ..][0..words] });
++            for (0..s.tokens.len) |i| try list.append(a, .{ .index = at + @as(u32, @intCast(i)), .bits = s.masks[i * words ..][0..words] });
+         }
+         at += @intCast(s.tokens.len);
+     }
+-    return stage(f, list.items);
++    return list.items;
+ }
+diff --git a/zig/src/families/deepseek_v41/grammar_host_test.zig b/zig/src/families/deepseek_v41/grammar_host_test.zig
+index 1ede68bdc4f7465e4b22f553e32f90a2041e0a09..d09cfd2d82044e63f76a44e689c8e52782f26570 100644
+--- a/zig/src/families/deepseek_v41/grammar_host_test.zig
++++ b/zig/src/families/deepseek_v41/grammar_host_test.zig
+@@ -4,17 +4,26 @@ const lanes = @import("lanes");
+ const ln = @import("draft/lanes.zig");
+ const iface = @import("draft/iface.zig");
+ const mask_rows = @import("grammar_rows.zig");
++const grammar_gpu = @import("grammar_gpu.zig");
+ const a = std.testing.allocator;
++const all_ones = [2]u32{ std.math.maxInt(u32), std.math.maxInt(u32) };
+ 
+ const Target = struct {
+     prompt: [2]u32 = @splat(0),
+     masked_rows: usize = 0,
+     seen_drafts: usize = 0,
++    masked: bool = true, // false: a request without a grammar (no prompt or window masks)
++    staged: u32 = 0, // rows Masks.stage keeps, as grammar_gpu.segments hands them over
++    stages: usize = 0, // forwards whose masks Masks.stage would copy, upload and send to the followers
+ 
+     fn self(p: *anyopaque) *Target {
+         return @ptrCast(@alignCast(p));
+     }
+     fn promptMask(p: *anyopaque, _: u32, mask: []const u32) anyerror!void {
++        if (mask.len == 0 and !self(p).masked) {
++            self(p).prompt = all_ones;
++            return;
++        }
+         if (mask.len != 2) return error.MissingPromptMask;
+         @memcpy(&self(p).prompt, mask);
+     }
+@@ -30,11 +39,19 @@ const Target = struct {
+         return choose(&self(p).prompt);
+     }
+     fn window(p: *anyopaque, segs: []const iface.Segment, out: [][]u32) anyerror!void {
++        const t = self(p);
++        var arena = std.heap.ArenaAllocator.init(a);
++        defer arena.deinit();
++        var kept: [64]mask_rows.Row = undefined;
++        if (mask_rows.constraining(try grammar_gpu.segmentRows(arena.allocator(), segs, 2), 64, t.staged, &kept)) |list| {
++            t.staged = @intCast(list.len);
++            t.stages += 1;
++        }
+         for (segs, out) |s, choices| {
+-            if (s.masks.len != s.tokens.len * 2) return error.MissingWindowMasks;
++            if (s.masks.len != s.tokens.len * 2 and (t.masked or s.masks.len != 0)) return error.MissingWindowMasks;
+             self(p).seen_drafts += s.tokens.len - 1;
+             for (choices, 0..) |*choice, i| {
+-                choice.* = try choose(s.masks[i * 2 ..][0..2]);
++                choice.* = try choose(if (s.masks.len == 0) &all_ones else s.masks[i * 2 ..][0..2]);
+                 self(p).masked_rows += 1;
+             }
+         }
+@@ -49,40 +66,90 @@ const Target = struct {
+     }
+ };
+ 
++/// One request through the family lane backend over `target`; its emitted tokens (the caller frees them).
++fn serve(target: *Target, drafts: bool, grammar: ?*lanes.grammar.Constraint) ![]u32 {
++    var pass: @import("draft/drive.zig").Oracle = .{ .serial = &.{ 5, 6, 7, 31 }, .prompt_len = 2, .vocab = 64 };
++    var prices = try @import("draft/costs.zig").defaults(a, 64);
++    defer prices.deinit(a);
++    const x = try ln.Lanes.init(a, target.target(), pass.pass(), prices, .{
++        .shape = .{ .hidden = 1, .block = 3, .candidates = 1, .window = 1 },
++        .slots = 1,
++        .depth = .{ .mode = .static, .cap = 3, .skip = false },
++    });
++    defer x.deinit();
++    var arena = std.heap.ArenaAllocator.init(a);
++    defer arena.deinit();
++    var cfg = try lanes.Config.init(a, try x.model(arena.allocator(), 64), 16, 15);
++    defer cfg.deinit(a);
++    var clock: lanes.fake.FixedClock = .{};
++    var e = lanes.Engine.init(a, &cfg, x.backend(), clock.clock());
++    defer e.deinit();
++    x.attach(&e);
++    var stream = try lanes.Stream.init(a, .{ .id = "grammar", .prompt = &.{ 1, 2 }, .max_new = 8, .drafts = drafts, .sampling = if (drafts) .{ .seed = 11, .temperature = 0.8, .top_k = 8, .top_p = 0.9 } else null, .eos = &.{31}, .grammar = grammar });
++    defer stream.deinit(a);
++    try e.addStream(&stream);
++    while (e.activeCount() > 0) try e.step();
++    try std.testing.expectEqualStrings("", stream.problem);
++    return a.dupe(u32, stream.emitted());
++}
++
+ test "grammar family: first token and drafted prefix masks reach the target" {
+     for ([_]bool{ false, true }) |drafts| {
+         var target: Target = .{};
+-        var pass: @import("draft/drive.zig").Oracle = .{ .serial = &.{ 5, 6, 7, 31 }, .prompt_len = 2, .vocab = 64 };
+-        var prices = try @import("draft/costs.zig").defaults(a, 64);
+-        defer prices.deinit(a);
+-        const x = try ln.Lanes.init(a, target.target(), pass.pass(), prices, .{
+-            .shape = .{ .hidden = 1, .block = 3, .candidates = 1, .window = 1 },
+-            .slots = 1,
+-            .depth = .{ .mode = .static, .cap = 3, .skip = false },
+-        });
+-        defer x.deinit();
+-        var arena = std.heap.ArenaAllocator.init(a);
+-        defer arena.deinit();
+-        var cfg = try lanes.Config.init(a, try x.model(arena.allocator(), 64), 16, 15);
+-        defer cfg.deinit(a);
+-        var clock: lanes.fake.FixedClock = .{};
+-        var e = lanes.Engine.init(a, &cfg, x.backend(), clock.clock());
+-        defer e.deinit();
+-        x.attach(&e);
+         var sequence: lanes.grammar.Sequence = .{ .want = &.{ 5, 6, 7 }, .stop = 31, .gpa = a };
+         var grammar = lanes.grammar.Constraint.init(sequence.rules(), 2, null);
+         defer grammar.rules.vtable.free(grammar.rules.ptr);
+-        var stream = try lanes.Stream.init(a, .{ .id = "grammar", .prompt = &.{ 1, 2 }, .max_new = 8, .drafts = drafts, .sampling = if (drafts) .{ .seed = 11, .temperature = 0.8, .top_k = 8, .top_p = 0.9 } else null, .eos = &.{31}, .grammar = &grammar });
+-        defer stream.deinit(a);
+-        try e.addStream(&stream);
+-        while (e.activeCount() > 0) try e.step();
+-        try std.testing.expectEqualStrings("", stream.problem);
+-        try std.testing.expectEqualSlices(u32, &.{ 5, 6, 7, 31 }, stream.emitted());
++        const got = try serve(&target, drafts, &grammar);
++        defer a.free(got);
++        try std.testing.expectEqualSlices(u32, &.{ 5, 6, 7, 31 }, got);
+         try std.testing.expect(target.masked_rows > 0);
+         try std.testing.expect(lanes.grammar.allows(&target.prompt, 5));
++        // a constraining grammar (required, named, structured) still stages its masks for every rank
++        try std.testing.expect(target.stages > 0);
+     }
+ }
+ 
++test "grammar family: a request with no active mask stages and sends nothing" {
++    for ([_]bool{ false, true }) |drafts| {
++        // no grammar (plain or unconstrained auto tools): no window or prompt masks, nothing staged or sent a step
++        var plain: Target = .{ .masked = false };
++        a.free(try serve(&plain, drafts, null));
++        try std.testing.expect(plain.masked_rows > 0);
++        try std.testing.expectEqual(@as(usize, 0), plain.stages);
++        // a bound grammar whose start token (here a think close, 30) never comes: no row is ever constrained
++        var sequence: lanes.grammar.Sequence = .{ .want = &.{ 5, 6, 7 }, .stop = 31, .gpa = a };
++        var grammar = lanes.grammar.Constraint.init(sequence.rules(), 2, 30);
++        defer grammar.rules.vtable.free(grammar.rules.ptr);
++        var idle: Target = .{ .masked = false };
++        a.free(try serve(&idle, drafts, &grammar));
++        try std.testing.expectEqual(@as(usize, 0), idle.stages);
++    }
++}
++
++test "grammar family: rows allowing every token are not staged; a cleared stage still reaches the followers" {
++    const ones = [2]u32{ std.math.maxInt(u32), std.math.maxInt(u32) };
++    const some = [2]u32{ std.math.maxInt(u32), 0x7fff_ffff }; // token 63 disallowed
++    var out: [4]mask_rows.Row = undefined;
++    try std.testing.expect(mask_rows.free(&ones, 64));
++    try std.testing.expect(!mask_rows.free(&some, 64));
++    // the padding columns past the vocabulary do not count: only tokens below it reach a logit
++    try std.testing.expect(mask_rows.free(&some, 63));
++    try std.testing.expect(mask_rows.free(&.{ std.math.maxInt(u32), 0xff }, 40));
++    try std.testing.expect(!mask_rows.free(&.{ std.math.maxInt(u32), 0x7f }, 40));
++    try std.testing.expect(!mask_rows.free(&.{ 0xffff_fffe, std.math.maxInt(u32) }, 64));
++    const free_rows = [_]mask_rows.Row{ .{ .index = 0, .bits = &ones }, .{ .index = null, .bits = &ones } };
++    try std.testing.expect(mask_rows.constraining(&.{}, 64, 0, &out) == null);
++    try std.testing.expect(mask_rows.constraining(&free_rows, 64, 0, &out) == null);
++    const mixed = [_]mask_rows.Row{ .{ .index = 0, .bits = &ones }, .{ .index = 1, .bits = &some }, .{ .index = 2, .bits = &ones }, .{ .index = null, .bits = &some } };
++    const kept = mask_rows.constraining(&mixed, 64, 0, &out).?;
++    try std.testing.expectEqual(@as(usize, 2), kept.len);
++    try std.testing.expectEqual(@as(?u32, 1), kept[0].index);
++    try std.testing.expectEqual(@as(?u32, null), kept[1].index);
++    // masks staged before: an empty stage clears them on every rank (sent), never skipped
++    try std.testing.expectEqual(@as(usize, 0), mask_rows.constraining(&free_rows, 64, 2, &out).?.len);
++    try std.testing.expectEqual(@as(usize, 0), mask_rows.constraining(&.{}, 64, 1, &out).?.len);
++}
++
+ test "grammar family: rejected draft prefix rolls back and rejects empty or malformed masks" {
+     var arena = std.heap.ArenaAllocator.init(a);
+     defer arena.deinit();
+diff --git a/zig/src/families/deepseek_v41/grammar_rows.zig b/zig/src/families/deepseek_v41/grammar_rows.zig
+index ea1c758f1e566770499e1f6941d9457758519f4d..a19b481d15fa404c3e39d4704977ee6cbce947ca 100644
+--- a/zig/src/families/deepseek_v41/grammar_rows.zig
++++ b/zig/src/families/deepseek_v41/grammar_rows.zig
+@@ -20,6 +20,24 @@ pub fn maskRows(logits: []f32, width: u32, indices: []const u32, bits: []const u
+ 
+ pub const Row = struct { index: ?u32, bits: []const u32 };
+ 
++/// Whether `bits` allows every token below `vocab`: masking a row with it changes no logit on any rank.
++pub fn free(bits: []const u32, vocab: u32) bool {
++    const full = vocab / 32;
++    if (!std.mem.allEqual(u32, bits[0..full], std.math.maxInt(u32))) return false;
++    const tail: u5 = @intCast(vocab % 32);
++    return tail == 0 or (~bits[full] & ((@as(u32, 1) << tail) - 1)) == 0;
++}
++
++/// The rows of `list` that disallow a token, into `out`; null when none do and none are staged (nothing to change).
++pub fn constraining(list: []const Row, vocab: u32, staged: u32, out: []Row) ?[]Row {
++    var n: usize = 0;
++    for (list) |r| if (!free(r.bits, vocab)) {
++        out[n] = r;
++        n += 1;
++    };
++    return if (n == 0 and staged == 0) null else out[0..n];
++}
++
+ pub fn validate(rows: []const Row, words: u32, max_rows: u32) !void {
+     if (words == 0 or rows.len > max_rows) return error.GrammarRows;
+     for (rows) |r| {

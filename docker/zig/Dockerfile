@@ -1,9 +1,12 @@
-# Build the commit in config/tensorfold.rev from the repository in config/tensorfold.repo, supplied by scripts/build-native.sh.
+# Build the commit in config/tensorfold.rev from the repository in config/tensorfold.repo with the recipe's patch series
+# patches/0001..TENSORFOLD_PATCHES applied, which must give TENSORFOLD_TREE; all supplied by scripts/build-native.sh.
 ARG CUDA_DEVEL=nvcr.io/nvidia/cuda:13.0.1-devel-ubuntu24.04
 ARG CUDA_RUNTIME=nvcr.io/nvidia/cuda:13.0.1-base-ubuntu24.04
 FROM ${CUDA_DEVEL} AS build
 ARG TENSORFOLD_REV
 ARG TENSORFOLD_REPO=https://github.com/ashhart/TensorFold.git
+ARG TENSORFOLD_PATCHES=
+ARG TENSORFOLD_TREE=
 ARG ZIG_VERSION=0.17.0
 ARG ZIG_URL=
 ARG ZIG_TARGET=aarch64-linux-gnu
@@ -19,7 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-cer
 COPY docker/zig/fetch-source.sh /ctx/recipe/docker/zig/fetch-source.sh
 COPY scripts/safe_exec.py scripts/safe_quote.py scripts/safe_output.py scripts/redact.py scripts/safe_shell.sh scripts/watchdog_io.py /ctx/recipe/scripts/
 COPY docker/zig/source/ /engine-source/
-RUN bash /ctx/recipe/docker/zig/fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle "$TENSORFOLD_REPO"
+COPY patches/ /ctx/recipe/patches/
+RUN set -eu; if [ -n "$TENSORFOLD_TREE" ]; then set -- /ctx/recipe/patches "$TENSORFOLD_PATCHES" "$TENSORFOLD_TREE"; fi; \
+    bash /ctx/recipe/docker/zig/fetch-source.sh "$TENSORFOLD_REV" /ctx/src /engine-source/engine.bundle "$TENSORFOLD_REPO" "$@"
 RUN set -eu; url="${ZIG_URL:-https://ziglang.org/download/${ZIG_VERSION}/zig-aarch64-linux-${ZIG_VERSION}.tar.xz}"; \
     mkdir -p /opt/zig && curl -fsSL "$url" | tar -xJ -C /opt/zig --strip-components=1; \
     test "$(/opt/zig/zig version)" = "$ZIG_VERSION"
@@ -78,6 +83,7 @@ print("runtime libraries:", {n: len(s) for n, s in need.items()})'
 
 FROM ${CUDA_RUNTIME}
 ARG TENSORFOLD_REV
+ARG TENSORFOLD_TREE=
 # libnccl2 from the CUDA apt repo the nvidia images ship configured; libibverbs + the mlx5 provider for RoCE; cuBLAS /
 # cuBLASLt pinned at 13.6.0.2 (libcublas-13-3, the same repo): the build the vision tower's bit-exact proof ran on, dlopened
 # only with TF_DSV41_IMAGES=native. Its directory goes on the loader path (the base image's points at its own CUDA).
@@ -135,4 +141,5 @@ RUN bash /opt/tensorfold/share/libproof.sh
 ENV PATH=/opt/tensorfold/bin:$PATH \
     TF_TP_KERNEL_IMAGE=/opt/tensorfold/share/tp_mailbox.fatbin
 LABEL org.tensorfold.revision="${TENSORFOLD_REV}"
+LABEL org.tensorfold.tree="${TENSORFOLD_TREE}"
 LABEL org.opencontainers.image.source="https://github.com/ashhart/TensorFold"

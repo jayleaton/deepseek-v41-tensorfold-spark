@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 
 from safe_exec import child_environment
+
+# check-public.sh PATCH_AUTHOR_LINES: a patch's author / co-author line with a public GitHub noreply address.
+PATCH_PATH = re.compile(r'patches/[0-9]{4}-[^/]*\.patch')
+PATCH_AUTHOR = re.compile(rb'(From|Co-authored-by): [^<]*<[0-9]+\+[A-Za-z0-9-]+@users\.noreply\.github\.com>')
 
 
 def git(*args):
@@ -69,6 +74,8 @@ def main() -> int:
                         continue
                     for path, commit in objects[sha].items():
                         if any(fnmatch.fnmatchcase(path, glob) for glob in exclusions.split()):
+                            continue
+                        if PATCH_PATH.fullmatch(path) and PATCH_AUTHOR.fullmatch(text):
                             continue
                         hits.append(f'{commit}:{path}:{number.decode()}:' + text.decode(errors='replace'))
             if hits:

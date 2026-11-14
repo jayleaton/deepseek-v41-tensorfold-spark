@@ -1,0 +1,1178 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 13:41:38 +0700
+Subject: [PATCH 052/207] In-model runner core: cell scanner, result holds and
+ delivery on the lane host
+
+Closed code cells in a reply start circuit runs at once; the model's own result
+header holds the stream until the run settles, then the run's output is forced
+in its place (abstain keeps the model's text). Off unless a request sets
+run_cells on a host with a runner; host tests use a scripted fake model and a
+fake backend.
+---
+ zig/build/lane_halt_host.zig      |   1 +
+ zig/src/core/engine_api.zig       |   2 +-
+ zig/src/core/lane_host.zig        |   2 +
+ zig/src/core/lane_host_lone.zig   |   2 +-
+ zig/src/core/lane_host_runner.zig |  33 +++
+ zig/src/core/lane_host_tests.zig  |   1 +
+ zig/src/core/lane_job.zig         |   1 +
+ zig/src/core/lane_rounds.zig      |   1 +
+ zig/src/core/lane_stream.zig      |   9 +-
+ zig/src/core/lanes/fake.zig       |   5 +
+ zig/src/core/lanes/hold.zig       |  13 +-
+ zig/src/core/lanes/stream.zig     |  17 ++
+ zig/src/core/runner.zig           | 258 +++++++++++++++++++++++
+ zig/src/core/runner_scan.zig      | 245 ++++++++++++++++++++++
+ zig/src/core/runner_test.zig      | 337 ++++++++++++++++++++++++++++++
+ 15 files changed, 923 insertions(+), 4 deletions(-)
+ create mode 100644 zig/src/core/lane_host_runner.zig
+ create mode 100644 zig/src/core/runner.zig
+ create mode 100644 zig/src/core/runner_scan.zig
+ create mode 100644 zig/src/core/runner_test.zig
+
+diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
+index 9220a26ed7196902d09a1cc2fabff49279de5cd2..bc82f8372ea3dd6630210d380d461b5ffeffd86b 100644
+--- a/zig/build/lane_halt_host.zig
++++ b/zig/build/lane_halt_host.zig
+@@ -14,6 +14,7 @@ pub fn steps(b: *std.Build) void {
+     b.step("test-rows-prefetch-host", "Disk states read ahead for queued requests: equality, cancellation, fallbacks").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefetch:"} })).step);
+     b.step("test-embedding-lane-host", "Prompt-only embedding jobs on the actual lane worker without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"embedding lane:"} })).step);
+     b.step("test-prefill-service-host", "The opt-in prompt-row budget beside decoding streams on the lane host with a fake backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"prefill service:"} })).step);
++    b.step("test-runner-host", "The in-model runner: scanner, held results and delivery with a fake circuit backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner"} })).step);
+     const copies = b.step("test-root-copy-host", "Root copy precedence, drafter absorption and real worker checks without GPU");
+     copies.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"root copy:"} })).step);
+     copies.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"root copy:"} })).step);
+diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
+index 9aa0869c0e6fe0bc1c2a4c335c30e5090168f2a8..b3e66d388656aee03cec0eeaefa8ed9b57fa7392 100644
+--- a/zig/src/core/engine_api.zig
++++ b/zig/src/core/engine_api.zig
+@@ -118,6 +118,7 @@ pub const Request = struct {
+     cache_key: []const u32 = &.{},
+     /// At an EOS the stream holds for ``Engine.resumeHeld`` (a built-in tool's result) instead of finishing.
+     hold_eos: bool = false,
++    run_cells: bool = false, // code cells the reply writes run on the host's in-model runner (core/runner.zig)
+ 
+     /// The prompt as the prompt cache matches it: an image request's placeholders stand for their images.
+     pub fn cacheKey(r: *const Request) []const u32 {
+@@ -253,7 +254,6 @@ pub const Info = struct {
+         return out;
+     }
+ };
+-
+ pub const compute_lane = @import("compute_lane.zig");
+ /// A held reply's result tokens (empty: it ends at its EOS), forced after the EOS between rounds.
+ pub const Resume = lanes.hold.Resume;
+diff --git a/zig/src/core/lane_host.zig b/zig/src/core/lane_host.zig
+index 6b8a07273533b2d868da8b317e4f3e9067e47d50..9e6f53ebe70fe0586bd0ab42f317f43ca57f3156 100644
+--- a/zig/src/core/lane_host.zig
++++ b/zig/src/core/lane_host.zig
+@@ -45,6 +45,7 @@ pub const LaneHost = struct {
+     filling: std.ArrayList(*Job) = .empty, // admitted jobs whose prompt is still going in, a chunk a round, oldest first
+     cancels: std.ArrayList(Id) = .empty,
+     resumes: std.ArrayList(holds.Pending) = .empty, // results for held replies (lane_host_hold.zig)
++    runner: ?*@import("runner.zig").Runner = null, // runs the code cells replies write (Request.run_cells)
+     closing: bool = false,
+     stale: bool = false, // the learner's last step: a put-back has not reached the device, so replies are refused
+     /// `halt`'s reason: what is left finishes failed with it (null: a stop cancels what is left)
+@@ -532,6 +533,7 @@ pub const LaneHost = struct {
+             defer activity.end();
+             ends.takeCancels(h);
+             holds.take(h);
++            @import("lane_host_runner.zig").tick(h);
+             pressure.step(h);
+             rows_host.answer(h);
+             scoring.answer(h);
+diff --git a/zig/src/core/lane_host_lone.zig b/zig/src/core/lane_host_lone.zig
+index 0e318b3393ff6a185ca9dd95c545305b133de6f8..d73c45d3ed7c74ab794dedfd1c3584006629e04f 100644
+--- a/zig/src/core/lane_host_lone.zig
++++ b/zig/src/core/lane_host_lone.zig
+@@ -15,7 +15,7 @@ fn takes(h: *LaneHost, job: *Job) bool {
+     const r = job.request;
+     const lone = h.lone orelse return false;
+     const think = lone.min_budget > 0 and (r.think_budget == 0 or r.think_budget > lone.min_budget);
+-    return !((r.sampling != null and !lone.sampled) or !r.drafts or ((r.think_budget > 0 or r.loop_guard) and !think) or r.call != null or r.hold_eos or (r.structure != null and !lone.structures) or (r.images.len > 0 and !lone.images) or (r.logprobs != null and !lone.logprobs) or r.prompt_logprobs != null);
++    return !((r.sampling != null and !lone.sampled) or !r.drafts or ((r.think_budget > 0 or r.loop_guard) and !think) or r.call != null or r.hold_eos or r.run_cells or (r.structure != null and !lone.structures) or (r.images.len > 0 and !lone.images) or (r.logprobs != null and !lone.logprobs) or r.prompt_logprobs != null);
+ }
+ 
+ /// After a round: the lane core's last live stream goes back to the driver when nothing else waits or is due.
+diff --git a/zig/src/core/lane_host_runner.zig b/zig/src/core/lane_host_runner.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..61f526f44efff26959f182273bf0b219e39b1bcc
+--- /dev/null
++++ b/zig/src/core/lane_host_runner.zig
+@@ -0,0 +1,33 @@
++//! The in-model runner on the engine thread: each round advances the reply sessions and continues held streams.
++const std = @import("std");
++const lanes = @import("lanes");
++const LaneHost = @import("lane_host.zig").LaneHost;
++
++/// Advances every started job's runner session; a settled result is forced after the trigger it waited at.
++pub fn tick(h: *LaneHost) void {
++    if (h.runner == null) return;
++    for (h.admitted.items) |job| {
++        if (!job.started) continue;
++        const s = job.runner orelse continue;
++        const tokens = s.tick() catch {
++            fail(job, "out of memory for a runner result");
++            continue;
++        } orelse continue;
++        defer h.gpa.free(tokens);
++        const ok = lanes.hold.resumeAwaiting(&job.stream, h.gpa, tokens) catch {
++            fail(job, "out of memory for a runner result");
++            continue;
++        };
++        if (!ok) std.log.warn("lane host: a runner result for request {d}, which is not held, was dropped", .{job.id});
++    }
++}
++
++fn fail(job: anytype, words: []const u8) void {
++    const st = &job.stream;
++    st.held = false;
++    st.paused = false;
++    st.awaiting = false;
++    st.finished = true;
++    st.reason = .@"error";
++    st.problem = words;
++}
+diff --git a/zig/src/core/lane_host_tests.zig b/zig/src/core/lane_host_tests.zig
+index 996acc1475fc3bd41e515ed47c5d6340cde0c84b..783a8e35460e5384a232d0e5184b60bbde624e67 100644
+--- a/zig/src/core/lane_host_tests.zig
++++ b/zig/src/core/lane_host_tests.zig
+@@ -30,4 +30,5 @@ test {
+ test {
+     _ = @import("lane_activity_test.zig");
+     _ = @import("lane_host_hold_test.zig");
++    _ = @import("runner_test.zig");
+ }
+diff --git a/zig/src/core/lane_job.zig b/zig/src/core/lane_job.zig
+index 15a7540c57f095e5867e15873f4996753aacb0df..867d9b373f98588892d93c2ff5582f573681726f 100644
+--- a/zig/src/core/lane_job.zig
++++ b/zig/src/core/lane_job.zig
+@@ -19,6 +19,7 @@ pub const Job = struct {
+     recall: recalls.Slot = .{}, // its reads of Recall's record (lane_host_recall.zig)
+     /// the family's proposer (LaneHost.proposers), in place of `proposer`
+     custom: ?lanes.proposer.Proposer = null,
++    runner: ?*@import("runner.zig").Session = null, // its in-model runner session (Request.run_cells)
+     delivered: usize = 0,
+     started: bool = false,
+     prefill_sent: bool = false, // a lone driver's prefilled event went out
+diff --git a/zig/src/core/lane_rounds.zig b/zig/src/core/lane_rounds.zig
+index c1add4e6ce09ceea9c8e8561bcedc2b887dbaf5b..78eb331433cea9c0385c96a97c6c5c7ae7bcf4fb 100644
+--- a/zig/src/core/lane_rounds.zig
++++ b/zig/src/core/lane_rounds.zig
+@@ -267,6 +267,7 @@ pub fn run(h: *LaneHost, rd: Rounds) void {
+         defer activity.end();
+         ends.takeCancels(h);
+         @import("lane_host_hold.zig").take(h);
++        @import("lane_host_runner.zig").tick(h);
+         pressure.step(h);
+         rows_host.answer(h);
+         @import("lane_host_score.zig").answer(h);
+diff --git a/zig/src/core/lane_stream.zig b/zig/src/core/lane_stream.zig
+index a820a5cb058fd35c3269a29475c154828e58b7da..d7cf0d80d22b1152296dd5bfd6ff92a000f5e051 100644
+--- a/zig/src/core/lane_stream.zig
++++ b/zig/src/core/lane_stream.zig
+@@ -6,8 +6,10 @@ const recalls = @import("lane_host_recall.zig");
+ const LaneHost = host.LaneHost;
+ const Job = LaneHost.Job;
+ 
+-/// A job's drafter freed: the family's (LaneHost.proposers) or the built-in one.
++/// A job's drafter freed (the family's or the built-in one), and its runner session.
+ pub fn freeProposer(h: *LaneHost, job: *Job) void {
++    if (job.runner) |s| s.destroy();
++    job.runner = null;
+     if (job.custom) |c| h.proposers.?.free(h.proposers.?.ctx, c) else job.proposer.deinit();
+     job.custom = null;
+ }
+@@ -34,6 +36,10 @@ pub fn open(h: *LaneHost, job: *Job) bool {
+         job.custom = ps.make(ps.ctx, h.gpa, r.prompt, r.eos) catch return !h.drop(job, "the drafter could not start");
+     } else job.proposer = lanes.SuffixLookup.init(h.gpa, .{ .min_match = h.min_match }) catch return !h.drop(job, "the drafter could not start");
+     const recall = recalls.reader(h, job);
++    // forced result rows would leave a grammar, and logprob rows would rank tokens the model never drew
++    if (h.runner) |rn| if (r.run_cells and r.structure == null and r.logprobs == null) {
++        job.runner = rn.session() catch return !h.drop(job, "out of memory");
++    };
+     job.stream = lanes.Stream.init(h.gpa, .{
+         .id = "request",
+         .prompt = r.prompt,
+@@ -71,6 +77,7 @@ pub fn open(h: *LaneHost, job: *Job) bool {
+         .images = r.images,
+         .key = r.cache_key,
+         .hold_eos = r.hold_eos and r.structure == null and r.logprobs == null, // forced rows would leave the grammar
++        .runner = if (job.runner) |s| s.hook() else null,
+     }) catch {
+         freeProposer(h, job);
+         recalls.release(job);
+diff --git a/zig/src/core/lanes/fake.zig b/zig/src/core/lanes/fake.zig
+index 418329b8cb851a4c0ef3a7f39fedcd7549300c82..ecb631b857af5e837949f91837cd731c09b59ca5 100644
+--- a/zig/src/core/lanes/fake.zig
++++ b/zig/src/core/lanes/fake.zig
+@@ -50,6 +50,9 @@ pub const Reserve = struct {
+     give: *const fn (ctx: *anyopaque, s: *Stream) void,
+ };
+ 
++/// A scripted target: its draw after `history` (prompt and reply so far).
++pub const Script = struct { ctx: *anyopaque, next: *const fn (ctx: *anyopaque, history: []const u32) u32 };
++
+ pub const Fake = struct {
+     /// A ring slot: the draw it holds (null: free) and whether it still blocks a queued draw.
+     const Slot = struct { handle: ?u64 = null, blocking: bool = false };
+@@ -91,6 +94,7 @@ pub const Fake = struct {
+     image_words: bool = false, // an image row feeds a word of its image's identity, as a tower's row would
+     image_rows: usize = 0, // image rows fed (`image_words`): the rows a tower had to make
+     gpu_charge: ?f64 = null, // each verify and step charges its streams this many GPU seconds, as a timed backend does
++    script: ?Script = null, // the target's draws come from here instead (a scripted model)
+ 
+     pub fn deinit(x: *Fake) void {
+         var it = x.lanes.valueIterator();
+@@ -253,6 +257,7 @@ pub const Fake = struct {
+     }
+ 
+     fn targetNext(x: *Fake, history: []const u32, sampling: ?Sampling, position: u64) u32 {
++        if (x.script) |sc| return sc.next(sc.ctx, history);
+         if (x.cycle_after) |start| if (history.len >= x.probe_prompt) {
+             const reply = history[x.probe_prompt..];
+             if (std.mem.indexOfScalar(u32, reply, 91)) |close| {
+diff --git a/zig/src/core/lanes/hold.zig b/zig/src/core/lanes/hold.zig
+index b9ccef59e3abd06556fa8ead4ebd68e0a5f794e6..2775f422ae5949fa6a17a0ba7ec5b6d326dd7dbd 100644
+--- a/zig/src/core/lanes/hold.zig
++++ b/zig/src/core/lanes/hold.zig
+@@ -19,7 +19,7 @@ pub const Outcome = enum {
+ 
+ /// Applies one resume on the engine thread between rounds; a stream takes at most one per hold.
+ pub fn resumeHeld(s: *Stream, gpa: Allocator, tokens: []const u32, think_open: bool) Allocator.Error!Outcome {
+-    if (!s.held or s.finished) return .not_held;
++    if (!s.held or s.finished or s.awaiting) return .not_held;
+     // the hold's EOS was drawn, so no forced token was waiting before it
+     std.debug.assert(s.force.items.len == 0);
+     const room = tokens.len > 0 and @as(i64, @intCast(tokens.len)) < s.budgetLeft();
+@@ -36,3 +36,14 @@ pub fn resumeHeld(s: *Stream, gpa: Allocator, tokens: []const u32, think_open: b
+     s.think_open = think_open;
+     return .resumed;
+ }
++
++/// Continues a stream held at a runner trigger: `tokens` (cut to the room left) are forced next, then the model draws.
++pub fn resumeAwaiting(s: *Stream, gpa: Allocator, tokens: []const u32) Allocator.Error!bool {
++    if (!s.awaiting or !s.held or s.finished) return false;
++    const room: usize = @intCast(@max(0, s.budgetLeft() - 1));
++    try s.force.appendSlice(gpa, tokens[0..@min(tokens.len, room)]);
++    s.held = false;
++    s.paused = false;
++    s.awaiting = false;
++    return true;
++}
+diff --git a/zig/src/core/lanes/stream.zig b/zig/src/core/lanes/stream.zig
+index fb7853289f26c612b9c3fe853e15f906639fda08..a0798af7c2af0f4c416f82674499689800a63250 100644
+--- a/zig/src/core/lanes/stream.zig
++++ b/zig/src/core/lanes/stream.zig
+@@ -68,6 +68,12 @@ pub fn detectLoop(emitted: []const u32) ?u32 {
+     return cycleAt(emitted, &.{}, emitted.len);
+ }
+ 
++/// The in-model runner's view of each committed token (core/runner.zig): true holds the stream for a result here.
++pub const RunnerHook = struct {
++    ptr: *anyopaque,
++    token: *const fn (ptr: *anyopaque, token: u32, think_open: bool, can_hold: bool) bool,
++};
++
+ /// A stop-string check over the emitted tokens (the server's StopPolicy decodes their tail).
+ pub const StopCheck = struct {
+     ptr: *anyopaque,
+@@ -145,6 +151,7 @@ pub const Spec = struct {
+     images: []const Image = &.{}, // in prompt order; the backend's tower fills their rows
+     key: []const u32 = &.{}, // the prompt as the cache matches it (image rows by their image); empty: the prompt
+     hold_eos: bool = false, // an EOS holds the stream for a server tool's result (hold.zig) instead of ending it
++    runner: ?RunnerHook = null, // committed tokens go to the in-model runner, which may hold the stream at a token
+ };
+ 
+ pub const Stream = struct {
+@@ -229,6 +236,8 @@ pub const Stream = struct {
+     paused: bool = false,
+     hold_eos: bool = false,
+     held: bool = false, // paused at a committed EOS, which stays pending until hold.zig resumes or ends the stream
++    runner: ?RunnerHook = null,
++    awaiting: bool = false, // held at a runner trigger (not an EOS): hold.resumeAwaiting continues it
+     depth: ?State = null,
+     mode: ?Mode = null,
+     next: ?Held = null,
+@@ -274,6 +283,7 @@ pub const Stream = struct {
+             .images = spec.images,
+             .key = spec.key,
+             .hold_eos = spec.hold_eos,
++            .runner = spec.runner,
+         };
+         // under a grammar a forced close ends at the think end: the grammar takes the reply from the next token
+         if (spec.grammar) |g| if (g.after) |end| if (std.mem.indexOfScalar(u32, s.think_close, end)) |at| {
+@@ -471,6 +481,13 @@ pub const Stream = struct {
+             }
+             const guarded = s.loop_guard and s.think_open and s.think_end >= 0 and s.loop_period == null;
+             const fire = if (guarded) detectLoop(s.emitted()) orelse s.longCycle() else null;
++            const can_hold = !s.isEos(t) and s.force.items.len == 0 and s.budgetLeft() > 1;
++            if (s.runner) |r| if (r.token(r.ptr, t, s.think_open, can_hold) and can_hold) {
++                s.held = true;
++                s.awaiting = true;
++                s.paused = true;
++                break;
++            };
+             if (s.isEos(t) and s.hold_eos) {
+                 s.held = true;
+                 s.paused = true;
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..2bb9f40db67a91193daeec6a8433eef3c2729c21
+--- /dev/null
++++ b/zig/src/core/runner.zig
+@@ -0,0 +1,258 @@
++//! The in-model runner: per-reply sessions run closed cells on the circuit and own the model's result positions.
++const std = @import("std");
++const lanes = @import("lanes");
++const api = @import("runner_api.zig");
++const scan = @import("runner_scan.zig");
++const Allocator = std.mem.Allocator;
++const log = std.log.scoped(.runner);
++
++pub const Config = struct {
++    scan: scan.Config = .{},
++    max_steps: u64 = 4_000_000, // per run (a step count: wall time never changes a result)
++    max_tokens: u32 = 512, // owned result tokens before the cut note
++    workers: u8 = 2,
++    device: enum { cpu, cuda } = .cpu,
++    circuit: []const u8 = "",
++
++    /// PREFIX "1" enables (unset, "" or "0": null); PREFIX_* knobs override defaults; a bad value is error.BadKnob.
++    pub fn parse(get: *const fn ([]const u8) ?[]const u8, comptime prefix: []const u8) error{BadKnob}!?Config {
++        const on = get(prefix) orelse return null;
++        if (on.len == 0 or std.mem.eql(u8, on, "0")) return null;
++        if (!std.mem.eql(u8, on, "1")) return bad(prefix, on);
++        var c: Config = .{};
++        if (get(prefix ++ "_BACKEND")) |b| if (b.len > 0 and !std.mem.eql(u8, b, "circuit")) return bad(prefix ++ "_BACKEND", b);
++        c.circuit = get(prefix ++ "_CIRCUIT") orelse "";
++        if (c.circuit.len == 0) return bad(prefix ++ "_CIRCUIT", "(unset)");
++        if (get(prefix ++ "_DEVICE")) |d| if (d.len > 0) {
++            c.device = std.meta.stringToEnum(@TypeOf(c.device), d) orelse return bad(prefix ++ "_DEVICE", d);
++        };
++        c.workers = try knob(u8, get, prefix ++ "_WORKERS", c.workers, 1, 64);
++        c.max_steps = try knob(u64, get, prefix ++ "_MAX_STEPS", c.max_steps, 1, 1 << 40);
++        c.max_tokens = try knob(u32, get, prefix ++ "_MAX_TOKENS", c.max_tokens, 1, 1 << 20);
++        c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
++        if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
++            c.scan.fence = false;
++            c.scan.repl = false;
++            var it = std.mem.splitScalar(u8, f, ',');
++            while (it.next()) |form| {
++                if (std.mem.eql(u8, form, "fence")) c.scan.fence = true else if (std.mem.eql(u8, form, "repl")) c.scan.repl = true else return bad(prefix ++ "_FORMS", f);
++            }
++        };
++        if (get(prefix ++ "_SPANS")) |sp| if (sp.len > 0) {
++            if (std.mem.eql(u8, sp, "reasoning")) c.scan.reasoning_only = true else if (!std.mem.eql(u8, sp, "all")) return bad(prefix ++ "_SPANS", sp);
++        };
++        return c;
++    }
++
++    fn knob(comptime T: type, get: *const fn ([]const u8) ?[]const u8, comptime name: []const u8, default: T, min: T, max: T) error{BadKnob}!T {
++        const text = get(name) orelse return default;
++        if (text.len == 0) return default;
++        const v = std.fmt.parseInt(T, text, 10) catch return bad(name, text);
++        if (v < min or v > max) return bad(name, text);
++        return v;
++    }
++
++    fn bad(name: []const u8, value: []const u8) error{BadKnob} {
++        log.warn("{s}={s} is not a valid value", .{ name, value });
++        return error.BadKnob;
++    }
++};
++
++/// The engine's tokenizer as the runner needs it: one token's bytes, and text to token ids.
++pub const Text = struct {
++    ctx: ?*anyopaque = null,
++    bytes: *const fn (ctx: ?*anyopaque, token: u32) []const u8,
++    encode: *const fn (ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32,
++};
++
++/// The server-wide runner: one frontend, one backend, the tokenizer; sessions are per reply.
++pub const Runner = struct {
++    gpa: Allocator,
++    cfg: Config,
++    frontend: api.Frontend,
++    backend: api.Backend,
++    text: Text,
++    next_id: u64 = 1,
++
++    pub fn session(r: *Runner) Allocator.Error!*Session {
++        const s = try r.gpa.create(Session);
++        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = r.cfg.scan } };
++        r.next_id += 1;
++        return s;
++    }
++};
++
++const Cell = struct {
++    lang: []u8,
++    code: []u8,
++    form: api.Form,
++    arena: std.heap.ArenaAllocator,
++    thread: ?std.Thread = null,
++    translated: std.atomic.Value(bool) = .init(false),
++    translation: api.Translation = .{ .abstain = .unsupported },
++    job: ?api.JobId = null,
++    result: ?api.Result = null, // out copied into the arena
++    abstained: bool = false,
++};
++
++/// One reply's cells, runs and the trigger it waits on; every method runs on the engine thread.
++pub const Session = struct {
++    r: *Runner,
++    id: u64,
++    scan: scan.Scanner,
++    cells: std.ArrayList(*Cell) = .empty,
++    waiting: ?scan.Trigger = null,
++    broken: bool = false, // out of memory once: no more cells, no more holds
++
++    pub fn hook(s: *Session) lanes.stream.RunnerHook {
++        return .{ .ptr = s, .token = onToken };
++    }
++
++    fn onToken(ptr: *anyopaque, token: u32, think_open: bool, can_hold: bool) bool {
++        const s: *Session = @ptrCast(@alignCast(ptr));
++        if (s.broken) return false;
++        return s.feed(token, think_open, can_hold) catch {
++            s.broken = true;
++            return false;
++        };
++    }
++
++    fn feed(s: *Session, token: u32, think_open: bool, can_hold: bool) Allocator.Error!bool {
++        const ev = try s.scan.feed(s.r.gpa, s.r.text.bytes(s.r.text.ctx, token), think_open);
++        if (ev.closed) |c| try s.open(c);
++        const t = ev.trigger orelse return false;
++        if (!can_hold or t.index >= s.cells.items.len) return false;
++        s.waiting = t;
++        return true;
++    }
++
++    fn open(s: *Session, c: scan.Closed) Allocator.Error!void {
++        const gpa = s.r.gpa;
++        const cell = try gpa.create(Cell);
++        errdefer gpa.destroy(cell);
++        cell.* = .{ .lang = try gpa.dupe(u8, c.lang), .code = undefined, .form = c.form, .arena = .init(gpa) };
++        errdefer gpa.free(cell.lang);
++        cell.code = try gpa.dupe(u8, c.code);
++        errdefer gpa.free(cell.code);
++        const prior = try cell.arena.allocator().alloc([]const u8, s.cells.items.len);
++        for (s.cells.items, prior) |p, *dst| dst.* = p.code;
++        try s.cells.append(gpa, cell);
++        const task: Translate = .{ .cell = cell, .fe = s.r.frontend, .prior = prior };
++        cell.thread = std.Thread.spawn(.{}, Translate.run, .{task}) catch blk: {
++            task.run();
++            break :blk null;
++        };
++    }
++
++    /// Advances translations and runs; the tokens to force when the awaited cell is settled (caller frees them).
++    pub fn tick(s: *Session) Allocator.Error!?[]u32 {
++        for (s.cells.items) |c| s.advance(c);
++        const w = s.waiting orelse return null;
++        const c = s.cells.items[w.index];
++        if (!c.abstained and c.result == null) return null;
++        s.waiting = null;
++        if (c.abstained) return try s.r.gpa.alloc(u32, 0);
++        return try s.owned(c.result.?, w.fenced);
++    }
++
++    fn advance(s: *Session, c: *Cell) void {
++        if (c.thread) |th| {
++            if (!c.translated.load(.acquire)) return;
++            th.join();
++            c.thread = null;
++        } else if (!c.translated.load(.acquire)) return;
++        if (c.abstained or c.result != null) return;
++        const prog = switch (c.translation) {
++            .abstain => {
++                c.abstained = true;
++                return;
++            },
++            .program => |p| p,
++        };
++        const job = c.job orelse {
++            c.job = s.r.backend.start(s.id, prog, s.r.cfg.max_steps) catch |e| switch (e) {
++                error.Busy => return, // tried again next round: tokens never depend on it
++                error.OutOfMemory => {
++                    c.abstained = true;
++                    return;
++                },
++            };
++            return;
++        };
++        switch (s.r.backend.poll(job)) {
++            .running => {},
++            .done => |res| {
++                c.job = null;
++                var kept = res;
++                kept.out = c.arena.allocator().dupe(u8, res.out) catch {
++                    c.abstained = true;
++                    return;
++                };
++                c.result = kept;
++                if (res.status == .abstain or (res.status == .ok and res.out.len == 0)) c.abstained = true;
++            },
++        }
++    }
++
++    /// The owned text for a settled run (INTERFACES.md §5), as token ids within the token cap.
++    fn owned(s: *Session, res: api.Result, fenced: bool) Allocator.Error![]u32 {
++        const gpa = s.r.gpa;
++        var body: std.ArrayList(u8) = .empty;
++        defer body.deinit(gpa);
++        const out = if (std.mem.endsWith(u8, res.out, "\n")) res.out[0 .. res.out.len - 1] else res.out;
++        try body.appendSlice(gpa, out);
++        switch (res.status) {
++            .ok, .abstain => {},
++            .budget => try body.print(gpa, "\n[stopped after {d} steps]", .{res.steps}),
++            .fault => try body.appendSlice(gpa, "\n[machine fault]"),
++        }
++        const ids = try s.r.text.encode(s.r.text.ctx, gpa, body.items);
++        defer gpa.free(ids);
++        const tail = try s.r.text.encode(s.r.text.ctx, gpa, if (fenced) "\n```\n" else "\n");
++        defer gpa.free(tail);
++        const note = if (ids.len > s.r.cfg.max_tokens) try s.r.text.encode(s.r.text.ctx, gpa, "\n[output cut]") else try gpa.alloc(u32, 0);
++        defer gpa.free(note);
++        const keep = ids[0..@min(ids.len, s.r.cfg.max_tokens)];
++        return std.mem.concat(gpa, u32, &.{ keep, note, tail });
++    }
++
++    /// Whether the session waits on a run (its stream is held at a trigger).
++    pub fn awaiting(s: *const Session) bool {
++        return s.waiting != null;
++    }
++
++    /// Cancels runs, joins translations and frees the session; the backend drops the stream's machines.
++    pub fn destroy(s: *Session) void {
++        const gpa = s.r.gpa;
++        for (s.cells.items) |c| {
++            if (c.thread) |th| th.join();
++            if (c.job) |j| s.r.backend.cancel(j);
++            gpa.free(c.lang);
++            gpa.free(c.code);
++            c.arena.deinit();
++            gpa.destroy(c);
++        }
++        s.r.backend.release(s.id);
++        s.cells.deinit(gpa);
++        s.scan.deinit(gpa);
++        gpa.destroy(s);
++    }
++};
++
++const Translate = struct {
++    cell: *Cell,
++    fe: api.Frontend,
++    prior: []const []const u8,
++
++    fn run(t: Translate) void {
++        const c = t.cell;
++        const cell: api.Cell = .{ .form = c.form, .lang = c.lang, .code = c.code, .prior = t.prior };
++        c.translation = t.fe.translate(t.fe.ctx, c.arena.allocator(), cell) catch .{ .abstain = .too_big };
++        c.translated.store(true, .release);
++    }
++};
++
++test {
++    _ = @import("runner_scan.zig");
++    _ = @import("runner_api.zig");
++}
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..43cbcb8a910371a546d7d6002f7efe1ae68dfddb
+--- /dev/null
++++ b/zig/src/core/runner_scan.zig
+@@ -0,0 +1,245 @@
++//! The in-model runner's scanner: closed code cells and the model's own result headers, from committed reply bytes.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const Allocator = std.mem.Allocator;
++
++pub const Config = struct {
++    fence: bool = true, // ```lang … ``` blocks
++    repl: bool = true, // `>>> ` lines
++    lookahead: u32 = 64, // tokens after a closed fence in which a result header counts
++    reasoning_only: bool = false, // triggers only while the think block is open
++};
++
++/// A closed cell; `lang` and `code` live in the scanner until the next `feed`.
++pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8 };
++
++/// The model began cell `index`'s result: the runner owns what follows; `fenced`: it opened a fence to close.
++pub const Trigger = struct { index: u32, fenced: bool };
++
++pub const Events = struct { closed: ?Closed = null, trigger: ?Trigger = null };
++
++const State = enum { prose, fence, after };
++
++pub const Scanner = struct {
++    cfg: Config,
++    state: State = .prose,
++    line: std.ArrayList(u8) = .empty,
++    lang: std.ArrayList(u8) = .empty,
++    code: std.ArrayList(u8) = .empty,
++    cells: u32 = 0, // cells closed so far; the next one's index
++    since: u32 = 0, // tokens since the pending cell closed (state .after)
++    armed: ?Trigger = null, // a trigger this token set; later non-blank bytes in the same token spoil it
++
++    pub fn deinit(s: *Scanner, a: Allocator) void {
++        s.line.deinit(a);
++        s.lang.deinit(a);
++        s.code.deinit(a);
++    }
++
++    /// One committed token's bytes; `think_open`: the think block is open at this token.
++    pub fn feed(s: *Scanner, a: Allocator, bytes: []const u8, think_open: bool) Allocator.Error!Events {
++        var ev: Events = .{};
++        s.armed = null;
++        if (s.state == .after) {
++            s.since += 1;
++            if (s.since > s.cfg.lookahead) s.state = .prose;
++        }
++        for (bytes) |b| {
++            if (s.armed != null and b != '\n' and b != ' ' and b != '\t' and b != '\r') s.armed = null;
++            if (b != '\n') {
++                try s.line.append(a, b);
++                continue;
++            }
++            try s.endLine(a, &ev, think_open);
++            s.line.clearRetainingCapacity();
++        }
++        ev.trigger = s.armed;
++        return ev;
++    }
++
++    fn endLine(s: *Scanner, a: Allocator, ev: *Events, think_open: bool) Allocator.Error!void {
++        const raw = std.mem.trimEnd(u8, s.line.items, "\r");
++        const allowed = think_open or !s.cfg.reasoning_only;
++        switch (s.state) {
++            .fence => {
++                if (fenceClose(raw)) {
++                    ev.closed = s.close(.fence);
++                    s.state = .after;
++                    s.since = 0;
++                } else {
++                    try s.code.appendSlice(a, raw);
++                    try s.code.append(a, '\n');
++                }
++            },
++            .prose, .after => {
++                if (s.state == .after and allowed) {
++                    if (header(raw)) return s.fire(false);
++                    if (resultFence(raw)) return s.fire(true);
++                }
++                if (s.cfg.fence) if (fenceOpen(raw)) |lang| {
++                    s.lang.clearRetainingCapacity();
++                    for (lang) |c| try s.lang.append(a, std.ascii.toLower(c));
++                    s.code.clearRetainingCapacity();
++                    s.state = .fence;
++                    return;
++                };
++                if (s.cfg.repl) if (replLine(raw)) |src| {
++                    s.lang.clearRetainingCapacity();
++                    try s.lang.appendSlice(a, "python");
++                    s.code.clearRetainingCapacity();
++                    try s.code.appendSlice(a, src);
++                    ev.closed = s.close(.repl);
++                    s.state = .after;
++                    if (allowed) s.fire(false);
++                    return;
++                };
++            },
++        }
++    }
++
++    fn close(s: *Scanner, form: api.Form) Closed {
++        const c: Closed = .{ .index = s.cells, .form = form, .lang = s.lang.items, .code = s.code.items };
++        s.cells += 1;
++        return c;
++    }
++
++    fn fire(s: *Scanner, fenced: bool) void {
++        s.armed = .{ .index = s.cells - 1, .fenced = fenced };
++        s.state = .prose;
++    }
++};
++
++fn indentOk(line: []const u8) ?[]const u8 {
++    var i: usize = 0;
++    while (i < line.len and line[i] == ' ') i += 1;
++    return if (i <= 3) line[i..] else null;
++}
++
++/// "```lang" (lang may be empty; result-like tags excluded): the lowercase-able tag, else null.
++fn fenceOpen(line: []const u8) ?[]const u8 {
++    const t = indentOk(line) orelse return null;
++    if (!std.mem.startsWith(u8, t, "```")) return null;
++    const tag = std.mem.trim(u8, t[3..], " \t");
++    for (tag) |c| if (!(std.ascii.isAlphanumeric(c) or c == '+' or c == '#' or c == '-' or c == '_' or c == '.')) return null;
++    if (isResultTag(tag)) return null;
++    return tag;
++}
++
++fn fenceClose(line: []const u8) bool {
++    const t = indentOk(line) orelse return false;
++    return std.mem.eql(u8, std.mem.trimEnd(u8, t, " \t"), "```");
++}
++
++const result_tags = [_][]const u8{ "output", "text", "console", "stdout", "plaintext", "txt", "result" };
++
++fn isResultTag(tag: []const u8) bool {
++    for (result_tags) |r| if (std.ascii.eqlIgnoreCase(tag, r)) return true;
++    return false;
++}
++
++/// "```output" / "```text" / …: the model opening a block for the output.
++fn resultFence(line: []const u8) bool {
++    const t = indentOk(line) orelse return false;
++    if (!std.mem.startsWith(u8, t, "```")) return false;
++    return isResultTag(std.mem.trim(u8, t[3..], " \t"));
++}
++
++const header_words = [_][]const u8{
++    "result",      "results",      "output",           "outputs",            "it prints",
++    "this prints", "prints",       "running it gives", "running this gives", "expected output",
++    "the output",  "this outputs", "it outputs",       "the result",         "output is",
++    "running it",  "running this", "executing it",     "executing this",
++};
++
++/// A short line naming the result and ending in ':' ("Result:", "**Output:**", "Running this gives:").
++fn header(line: []const u8) bool {
++    var t = std.mem.trim(u8, line, " \t*#->_");
++    if (t.len < 2 or t.len > 60 or t[t.len - 1] != ':') return false;
++    t = std.mem.trim(u8, t[0 .. t.len - 1], " \t*_");
++    var buf: [64]u8 = undefined;
++    const low = std.ascii.lowerString(&buf, t);
++    for (header_words) |w| if (std.mem.eql(u8, low, w)) return true;
++    return false;
++}
++
++/// ">>> code" (one line, not opening a block): the code, else null.
++fn replLine(line: []const u8) ?[]const u8 {
++    const t = indentOk(line) orelse return null;
++    if (!std.mem.startsWith(u8, t, ">>> ")) return null;
++    const src = std.mem.trim(u8, t[4..], " \t");
++    if (src.len == 0 or src[src.len - 1] == ':') return null;
++    return src;
++}
++
++fn run(a: Allocator, s: *Scanner, tokens: []const []const u8, out: *std.ArrayList(Events)) !void {
++    for (tokens) |t| try out.append(a, try s.feed(a, t, true));
++}
++
++test "runner scan: a fence closes a cell; the header after it triggers that cell, plain" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{} };
++    defer s.deinit(a);
++    var ev: std.ArrayList(Events) = .empty;
++    defer ev.deinit(a);
++    try run(a, &s, &.{ "let me check.\n```", "Python\n", "print(2*3)\n", "```\n", "Result", ":\n", "6" }, &ev);
++    try std.testing.expectEqual(@as(?Closed, null), ev.items[2].closed);
++    const c = ev.items[3].closed.?;
++    try std.testing.expectEqual(@as(u32, 0), c.index);
++    try std.testing.expectEqual(api.Form.fence, c.form);
++    try std.testing.expectEqual(Trigger{ .index = 0, .fenced = false }, ev.items[5].trigger.?);
++    for (ev.items[0..5]) |e| try std.testing.expectEqual(@as(?Trigger, null), e.trigger);
++}
++
++test "runner scan: cell code and lang are kept exactly" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{} };
++    defer s.deinit(a);
++    _ = try s.feed(a, "```py\nx = 3\nprint(x*x)\n", true);
++    const e = try s.feed(a, "```\n", true);
++    try std.testing.expectEqualStrings("py", e.closed.?.lang);
++    try std.testing.expectEqualStrings("x = 3\nprint(x*x)\n", e.closed.?.code);
++}
++
++test "runner scan: a result fence after a cell triggers fenced; a header inside prose without a cell does not" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{} };
++    defer s.deinit(a);
++    try std.testing.expectEqual(@as(?Trigger, null), (try s.feed(a, "Result:\n", true)).trigger);
++    _ = try s.feed(a, "```python\nprint(1)\n```\n", true);
++    try std.testing.expectEqual(Trigger{ .index = 0, .fenced = true }, (try s.feed(a, "```text\n", true)).trigger.?);
++}
++
++test "runner scan: a REPL line is a cell and its own trigger; a block opener is not" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{} };
++    defer s.deinit(a);
++    const e = try s.feed(a, ">>> 2**100\n", true);
++    try std.testing.expectEqualStrings("2**100", e.closed.?.code);
++    try std.testing.expectEqual(api.Form.repl, e.closed.?.form);
++    try std.testing.expectEqual(Trigger{ .index = 0, .fenced = false }, e.trigger.?);
++    const f = try s.feed(a, ">>> for i in range(3):\n", true);
++    try std.testing.expect(f.closed == null and f.trigger == null);
++}
++
++test "runner scan: no trigger past the lookahead, when the model already writes in the trigger's token, or a claim line" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{ .lookahead = 2 } };
++    defer s.deinit(a);
++    _ = try s.feed(a, "```python\nprint(1)\n```\n", true);
++    _ = try s.feed(a, "So", true);
++    _ = try s.feed(a, " then", true);
++    try std.testing.expectEqual(@as(?Trigger, null), (try s.feed(a, "\nOutput:\n", true)).trigger);
++    var t: Scanner = .{ .cfg = .{} };
++    defer t.deinit(a);
++    _ = try t.feed(a, "```python\nprint(1)\n```\n", true);
++    try std.testing.expectEqual(@as(?Trigger, null), (try t.feed(a, "Output:\n1", true)).trigger);
++    try std.testing.expectEqual(@as(?Trigger, null), (try t.feed(a, "Result: we need O(n)\n", true)).trigger);
++}
++
++test "runner scan: reasoning_only ignores headers outside the think block" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{ .reasoning_only = true } };
++    defer s.deinit(a);
++    _ = try s.feed(a, "```python\nprint(1)\n```\n", false);
++    try std.testing.expectEqual(@as(?Trigger, null), (try s.feed(a, "Output:\n", false)).trigger);
++}
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a92e2daf6a166bdb8d64fc63d38836e9a92160f6
+--- /dev/null
++++ b/zig/src/core/runner_test.zig
+@@ -0,0 +1,337 @@
++//! The in-model runner end to end on a lane host: a scripted model writes a cell and its result header; runs own it.
++const std = @import("std");
++const lanes = @import("lanes");
++const api = @import("engine_api.zig");
++const rapi = @import("runner_api.zig");
++const runner = @import("runner.zig");
++const LaneHost = @import("lane_host.zig").LaneHost;
++const Reason = api.Reason;
++
++const gpa = std.testing.allocator;
++const EOS: u32 = 96;
++const prompt = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6, 5, 3 };
++const product = "121932631137021795226185032733622923332237463801111263526900";
++const mul_cell = "Let me check.\n```python\nprint(123456789012345678901234567890 * 987654321098765432109876543210)\n```\nResult:\n";
++
++/// Character tokens: printable ASCII 32..126 are 0..94, newline 95, EOS 96 (the fake's vocab is 97).
++fn id(c: u8) u32 {
++    return if (c == '\n') 95 else c - 32;
++}
++
++fn ids(a: std.mem.Allocator, text: []const u8) ![]u32 {
++    const out = try a.alloc(u32, text.len);
++    for (text, out) |c, *t| t.* = id(c);
++    return out;
++}
++
++const table = blk: {
++    var t: [97][]const u8 = undefined;
++    for (0..95) |i| t[i] = &[_]u8{@intCast(i + 32)};
++    t[95] = "\n";
++    t[96] = "";
++    break :blk t;
++};
++
++fn tokenBytes(_: ?*anyopaque, token: u32) []const u8 {
++    return if (token < table.len) table[token] else "";
++}
++
++fn encode(_: ?*anyopaque, a: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]u32 {
++    return ids(a, text);
++}
++
++fn decode(a: std.mem.Allocator, tokens: []const u32) ![]u8 {
++    var out: std.ArrayList(u8) = .empty;
++    for (tokens) |t| try out.appendSlice(a, tokenBytes(null, t));
++    return out.toOwnedSlice(a);
++}
++
++/// A model that writes `lead`, then its own guess on one line, then `tail` and EOS, whatever the guess line became.
++const Model = struct {
++    lead: []const u8,
++    guess: []const u8 = "42",
++    tail: []const u8 = "Done.",
++
++    fn next(ctx: *anyopaque, history: []const u32) u32 {
++        const m: *Model = @ptrCast(@alignCast(ctx));
++        var buf: [1024]u8 = undefined;
++        const reply = history[prompt.len..];
++        var n: usize = 0;
++        for (reply) |t| for (tokenBytes(null, t)) |c| {
++            buf[n] = c;
++            n += 1;
++        };
++        const r = buf[0..n];
++        if (r.len < m.lead.len) return id(m.lead[r.len]);
++        var rest = r[m.lead.len..];
++        const nl = std.mem.indexOfScalar(u8, rest, '\n') orelse return if (rest.len < m.guess.len) id(m.guess[rest.len]) else id('\n');
++        rest = rest[nl + 1 ..];
++        if (std.mem.startsWith(u8, rest, "```\n")) rest = rest[4..];
++        return if (rest.len < m.tail.len) id(m.tail[rest.len]) else EOS;
++    }
++};
++
++/// `print(X)` and REPL `X` become calc X; code naming `undefined_` abstains.
++fn translate(_: ?*anyopaque, a: std.mem.Allocator, cell: rapi.Cell) std.mem.Allocator.Error!rapi.Translation {
++    if (std.mem.indexOf(u8, cell.code, "undefined_") != null) return .{ .abstain = .name };
++    var code = std.mem.trim(u8, cell.code, " \n");
++    if (std.mem.startsWith(u8, code, "print(") and std.mem.endsWith(u8, code, ")")) code = code[6 .. code.len - 1];
++    return .{ .program = .{ .kind = .calc, .bytes = try a.dupe(u8, code) } };
++}
++
++/// Answers from a table after `delay` polls, or only once `gate` opens.
++const Back = struct {
++    delay: u32 = 0,
++    gate: std.atomic.Value(bool) = .init(true),
++    jobs: std.ArrayList(struct { prog: []u8, polls: u32 }) = .empty,
++    started: u32 = 0,
++
++    const answers = [_][2][]const u8{
++        .{ "123456789012345678901234567890 * 987654321098765432109876543210", product ++ "\n" },
++        .{ "sum(i*i for i in range(10))", "285\n" },
++        .{ "2**100", "1267650600228229401496703205376\n" },
++    };
++
++    fn backend(b: *Back) rapi.Backend {
++        return .{ .ctx = b, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(ctx: *anyopaque, _: u64, p: rapi.Program, _: u64) error{ OutOfMemory, Busy }!rapi.JobId {
++        const b: *Back = @ptrCast(@alignCast(ctx));
++        try b.jobs.append(gpa, .{ .prog = try gpa.dupe(u8, p.bytes), .polls = 0 });
++        b.started += 1;
++        return b.jobs.items.len - 1;
++    }
++    fn poll(ctx: *anyopaque, job: rapi.JobId) rapi.Poll {
++        const b: *Back = @ptrCast(@alignCast(ctx));
++        const j = &b.jobs.items[job];
++        j.polls += 1;
++        if (j.polls <= b.delay or !b.gate.load(.acquire)) return .running;
++        for (answers) |x| if (std.mem.eql(u8, x[0], j.prog)) return .{ .done = .{ .status = .ok, .out = x[1], .steps = 100 } };
++        return .{ .done = .{ .status = .fault, .out = "" } };
++    }
++    fn cancel(_: *anyopaque, _: rapi.JobId) void {}
++    fn release(_: *anyopaque, _: u64) void {}
++    fn deinit(b: *Back) void {
++        for (b.jobs.items) |j| gpa.free(j.prog);
++        b.jobs.deinit(gpa);
++    }
++};
++
++const Box = struct {
++    mutex: std.Io.Mutex = .init,
++    tokens: std.ArrayList(u32) = .empty,
++    done: ?Reason = null,
++    fn event(ctx: *anyopaque, _: api.Id, e: *const api.Event) void {
++        const b: *@This() = @ptrCast(@alignCast(ctx));
++        b.mutex.lockUncancelable(std.testing.io);
++        defer b.mutex.unlock(std.testing.io);
++        switch (e.*) {
++            .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
++            .finished => |f| b.done = f.reason,
++            else => {},
++        }
++    }
++    fn finished(b: *@This()) bool {
++        b.mutex.lockUncancelable(std.testing.io);
++        defer b.mutex.unlock(std.testing.io);
++        return b.done != null;
++    }
++    fn wait(b: *@This()) !Reason {
++        for (0..20_000) |_| {
++            if (b.finished()) return b.done.?;
++            std.Io.sleep(std.testing.io, .fromMilliseconds(1), .awake) catch {};
++        }
++        return error.Timeout;
++    }
++};
++
++const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1 };
++
++/// Runs `models` (one request each, concurrently) on one host; the reply texts.
++fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
++    var cfg = try lanes.Config.init(gpa, .{ .exact_width = 8, .gpu_tokens = true, .hidden_rows = true }, 8, 7);
++    defer cfg.deinit(gpa);
++    var target: lanes.fake.Fake = .{ .gpa = gpa };
++    defer target.deinit();
++    var router: Router = .{ .models = models };
++    target.script = .{ .ctx = &router, .next = Router.next };
++    var clock: lanes.fake.FixedClock = .{};
++    var core = lanes.Engine.init(gpa, &cfg, target.backend(), clock.clock());
++    defer core.deinit();
++    var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
++    back.delay = o.delay;
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test" }, .frontend = .{ .translate = translate }, .backend = back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode } };
++    if (o.runner) host.runner = &run;
++    const boxes = try gpa.alloc(Box, models.len);
++    defer gpa.free(boxes);
++    const prompts = try gpa.alloc([prompt.len + 1]u32, models.len);
++    defer gpa.free(prompts);
++    const requests = try gpa.alloc(api.Request, models.len);
++    defer gpa.free(requests);
++    const e = host.engine();
++    try host.start();
++    defer host.stop();
++    for (models, 0..) |_, i| {
++        boxes[i] = .{};
++        prompts[i] = prompt ++ [_]u32{@intCast(i)}; // the router tells the streams apart by their last prompt token
++        requests[i] = .{ .prompt = &prompts[i], .max_tokens = 400, .eos = &.{EOS}, .run_cells = o.run_cells };
++        try e.submit(@intCast(i + 1), &requests[i], .{ .ctx = &boxes[i], .event = Box.event });
++    }
++    const out = try gpa.alloc([]u8, models.len);
++    for (boxes, out) |*b, *text| {
++        try std.testing.expectEqual(Reason.stop, try b.wait());
++        text.* = try decode(gpa, b.tokens.items);
++        b.tokens.deinit(gpa);
++    }
++    return out;
++}
++
++/// Each stream's script by the extra prompt token.
++const Router = struct {
++    models: []Model,
++    fn next(ctx: *anyopaque, history: []const u32) u32 {
++        const r: *Router = @ptrCast(@alignCast(ctx));
++        return Model.next(&r.models[history[prompt.len]], history[1..]);
++    }
++};
++
++fn freeAll(texts: [][]u8) void {
++    for (texts) |t| gpa.free(t);
++    gpa.free(texts);
++}
++
++fn one(lead: []const u8, o: Opts) ![]u8 {
++    var back: Back = .{};
++    defer back.deinit();
++    var m = [_]Model{.{ .lead = lead }};
++    const texts = try replies(&m, o, &back);
++    defer gpa.free(texts);
++    return texts[0];
++}
++
++test "runner: the model's own Result: after a multiply cell is the exact product, in one reply" {
++    const got = try one(mul_cell, .{});
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(mul_cell ++ product ++ "\nDone.", got);
++}
++
++test "runner: a loop cell's result is 285; a REPL line's next line is its value" {
++    const lead = "```python\nprint(sum(i*i for i in range(10)))\n```\nOutput:\n";
++    const got = try one(lead, .{});
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(lead ++ "285\nDone.", got);
++    const repl = "Check:\n>>> 2**100\n";
++    const r = try one(repl, .{});
++    defer gpa.free(r);
++    try std.testing.expectEqualStrings(repl ++ "1267650600228229401496703205376\nDone.", r);
++}
++
++test "runner: a fenced result block is filled and closed" {
++    const lead = "```python\nprint(2**100)\n```\n```text\n";
++    const got = try one(lead, .{});
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(lead ++ "1267650600228229401496703205376\n```\nDone.", got);
++}
++
++test "runner: a run that ends late gives the same reply as one that ends early" {
++    const early = try one(mul_cell, .{ .delay = 0 });
++    defer gpa.free(early);
++    const late = try one(mul_cell, .{ .delay = 8 });
++    defer gpa.free(late);
++    try std.testing.expectEqualStrings(early, late);
++}
++
++test "runner: a held stream waits while another stream decodes to its end" {
++    var back: Back = .{};
++    defer back.deinit();
++    back.gate.store(false, .release);
++    var cfg = try lanes.Config.init(gpa, .{ .exact_width = 8, .gpu_tokens = true, .hidden_rows = true }, 8, 7);
++    defer cfg.deinit(gpa);
++    var target: lanes.fake.Fake = .{ .gpa = gpa };
++    defer target.deinit();
++    var models = [_]Model{ .{ .lead = mul_cell }, .{ .lead = "No code here.\n", .guess = "", .tail = "" } };
++    var router: Router = .{ .models = &models };
++    target.script = .{ .ctx = &router, .next = Router.next };
++    var clock: lanes.fake.FixedClock = .{};
++    var core = lanes.Engine.init(gpa, &cfg, target.backend(), clock.clock());
++    defer core.deinit();
++    var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test" }, .frontend = .{ .translate = translate }, .backend = back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode } };
++    host.runner = &run;
++    var boxes = [_]Box{ .{}, .{} };
++    const p0 = prompt ++ [_]u32{0};
++    const p1 = prompt ++ [_]u32{1};
++    const r0: api.Request = .{ .prompt = &p0, .max_tokens = 400, .eos = &.{EOS}, .run_cells = true };
++    const r1: api.Request = .{ .prompt = &p1, .max_tokens = 400, .eos = &.{EOS}, .run_cells = true };
++    const e = host.engine();
++    try host.start();
++    defer host.stop();
++    try e.submit(1, &r0, .{ .ctx = &boxes[0], .event = Box.event });
++    try e.submit(2, &r1, .{ .ctx = &boxes[1], .event = Box.event });
++    try std.testing.expectEqual(Reason.stop, try boxes[1].wait());
++    std.Io.sleep(std.testing.io, .fromMilliseconds(50), .awake) catch {};
++    try std.testing.expect(!boxes[0].finished());
++    const held = try decode(gpa, boxes[0].tokens.items);
++    defer gpa.free(held);
++    try std.testing.expectEqualStrings(mul_cell, held); // it stopped exactly at its trigger
++    back.gate.store(true, .release);
++    try std.testing.expectEqual(Reason.stop, try boxes[0].wait());
++    const got = try decode(gpa, boxes[0].tokens.items);
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(mul_cell ++ product ++ "\nDone.", got);
++    for (&boxes) |*b| b.tokens.deinit(gpa);
++}
++
++test "runner: four concurrent replies equal their solo runs" {
++    const leads = [_][]const u8{ mul_cell, "```python\nprint(sum(i*i for i in range(10)))\n```\nResult:\n", "Check:\n>>> 2**100\n", "Plain prose.\n" };
++    var models: [4]Model = undefined;
++    for (&models, leads) |*m, l| m.* = .{ .lead = l };
++    var back: Back = .{ .delay = 3 };
++    defer back.deinit();
++    const together = try replies(&models, .{ .delay = 3 }, &back);
++    defer freeAll(together);
++    for (leads, together) |l, t| {
++        const solo = try one(l, .{ .delay = 0 });
++        defer gpa.free(solo);
++        try std.testing.expectEqualStrings(solo, t);
++    }
++}
++
++test "runner: an abstained cell, a cell with no header, and the runner off all keep the model's own text" {
++    const pseudo = "```python\nprint(undefined_total)\n```\nResult:\n";
++    const a = try one(pseudo, .{});
++    defer gpa.free(a);
++    try std.testing.expectEqualStrings(pseudo ++ "42\nDone.", a);
++    const quiet = "```python\nprint(2**100)\n```\nSo that works.\n";
++    const b = try one(quiet, .{});
++    defer gpa.free(b);
++    try std.testing.expectEqualStrings(quiet ++ "42\nDone.", b);
++    inline for (.{ Opts{ .runner = false }, Opts{ .run_cells = false } }) |o| {
++        const c = try one(mul_cell, o);
++        defer gpa.free(c);
++        try std.testing.expectEqualStrings(mul_cell ++ "42\nDone.", c);
++    }
++}
++
++test "runner: knobs parse; off unless the flag is 1 with a circuit" {
++    const K = struct {
++        var set: []const [2][]const u8 = &.{};
++        fn get(name: []const u8) ?[]const u8 {
++            for (set) |k| if (std.mem.eql(u8, k[0], name)) return k[1];
++            return null;
++        }
++    };
++    K.set = &.{};
++    try std.testing.expectEqual(null, try runner.Config.parse(&K.get, "TF_R"));
++    K.set = &.{.{ "TF_R", "1" }};
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_FORMS", "repl" }, .{ "TF_R_SPANS", "reasoning" }, .{ "TF_R_MAX_STEPS", "99" } };
++    const c = (try runner.Config.parse(&K.get, "TF_R")).?;
++    try std.testing.expect(!c.scan.fence and c.scan.repl and c.scan.reasoning_only and c.max_steps == 99);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_BACKEND", "sandbox" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++}
++
++test {
++    _ = @import("runner.zig");
++}

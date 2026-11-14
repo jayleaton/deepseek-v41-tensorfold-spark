@@ -1,0 +1,672 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 11:21:12 +0700
+Subject: [PATCH 103/207] Merge T1 1b3fc88a8 (direct integer source binding to
+ prepared graphs)
+
+Squashed merge of 2 commits:
+- Bind exact integer source directly to prepared graphs (Jay Leaton)
+- Keep graph route patch applicable after table integration (Jay Leaton)
+---
+ tools/runner-graph-bind-goldens.jsonl  |  94 +++++++
+ tools/runner-graph-binding.md          |  59 ++++
+ tools/runner-graph-probe.zig           |  24 +-
+ tools/runner_graph_bind_route.patch    |   8 +
+ tools/runner_graph_verify.py           |   2 +-
+ zig/src/core/runner_graph.zig          |   4 +
+ zig/src/core/runner_graph_bind.zig     | 363 +++++++++++++++++++++++++
+ zig/src/core/runner_graph_frontend.zig |  15 +
+ 8 files changed, 566 insertions(+), 3 deletions(-)
+ create mode 100644 tools/runner-graph-bind-goldens.jsonl
+ create mode 100644 tools/runner-graph-binding.md
+ create mode 100644 tools/runner_graph_bind_route.patch
+ create mode 100644 zig/src/core/runner_graph_bind.zig
+ create mode 100644 zig/src/core/runner_graph_frontend.zig
+
+diff --git a/tools/runner-graph-bind-goldens.jsonl b/tools/runner-graph-bind-goldens.jsonl
+new file mode 100644
+index 0000000000000000000000000000000000000000..498e9bf1adbb42595c59ee6f666a4e2af2bb7848
+--- /dev/null
++++ b/tools/runner-graph-bind-goldens.jsonl
+@@ -0,0 +1,94 @@
++{"id":"s2-pow7","expression":"7**123%1000000007","expected_output":"937329259\n","reference_code_sha256":"cc86a17da246651d56767e887542359e5fe538b3c084c0b683c4b05e807e8486"}
++{"id":"s2-pow3","expression":"3**400%10**18","expected_output":"192443283334088001\n","reference_code_sha256":"24b311d99ee6aa2a183a84d551aa95aae1151137cbde5fb62a70cb6dd8a0012e"}
++{"id":"s2-hex","expression":"0xFEDCBA9876543210*2**64+0x0123456789ABCDEF","expected_output":"338770000845734292516042252062085074415\n","reference_code_sha256":"d2b7a5ff33d9d70a9c3dd5f5b166b26c0c748b9b3028c5051f411e418d1a4f22"}
++{"id":"math-modpow","expression":"7^123 mod 1000000007","expected_output":"937329259\n","reference_code_sha256":"f497fbdd99193aa90c25a2edf22a68c71e134cb3c8a143681674b0718132a833"}
++{"id":"math-power-modulus","expression":"3^400 mod 10^18","expected_output":"192443283334088001\n","reference_code_sha256":"24723c40516de664feb2dfee743cd65ecda36e61d8c21da278485a2c3ff21e81"}
++{"id":"math-gcd","expression":"gcd(12345678901234567890,98765432109876543210)","expected_output":"900000000090\n","reference_code_sha256":"5d09b0dd5dd30a7252eb9580c28d11280f4cea966a0a51e668104b2934bb2a33"}
++{"id":"math-isqrt","expression":"isqrt(123456789012345678901234)","expected_output":"351364182882\n","reference_code_sha256":"d0b51626ad1fbf6641635a758234b463fba2794cc0e98649acc11261e44bebec"}
++{"id":"python-pow","expression":"pow(7,123,1000000007)","syntax":"python","expected_output":"937329259\n","reference_code_sha256":"d78063bca6dd82abca434111f07333ba92b8f042e752970177d72ef30afe32c1"}
++{"id":"python-signed-mod","expression":"-7%3","syntax":"python","expected_output":"2\n","reference_code_sha256":"a254672d5873591e20d530b668b340b67a01f826324f17f471ad0c56e2da4b8b"}
++{"id":"python-signed-div","expression":"7//-3","syntax":"python","expected_output":"-3\n","reference_code_sha256":"0cfd23e4ed8aa89b69fccc02ccf31fb3ef4929538ae97a4e2114088be36a27eb"}
++{"id":"unary-binding","expression":"-2**2","syntax":"python","expected_output":"-4\n","reference_code_sha256":"819fb4bb6f208d45469a2bc9ba4981535ee4bd3bf9e7a36fdbcd48a10f7ac4ba"}
++{"id":"minus-base","expression":"(-2)**3%5","syntax":"python","expected_output":"2\n","reference_code_sha256":"00ccaf00e842d37278ef1e954699d33b8ed045cfd33f513328d5c209d5ef7daa"}
++{"id":"repl-prefix","cell":{"form":"repl","code":">>> 7**123%1000000007","lang":"python"},"expected_output":"937329259\n","reference_code_sha256":"cc86a17da246651d56767e887542359e5fe538b3c084c0b683c4b05e807e8486"}
++{"id":"assignments","script":"x=12\nx=x+1\nprint(x,x*x)\n","expected_output":"13 169\n","reference_code_sha256":"5ed3b2cb3044ecd987a7cdfffef7294d3ba1cd374967dc2efed9067124570750"}
++{"id":"math-imports","script":"from math import gcd, isqrt\nprint(gcd(48,18),isqrt(99))","expected_output":"6 9\n","reference_code_sha256":"5bd4239eb920f773e485471f9d37b59c24a1ae2acf53067678e64eb66557baf5"}
++{"id":"s1-modpow","cell":{"form":"fence","code":"print(pow(7, 83, 1000000007))\n","lang":"python"},"origin":"d_mirror-c1-g2-modpow.json","origin_sha256":"f39e11b3e10fefd7972b5afe76496c0f5f2847dc8cd981a0f0219ec6d0b3cfa5","source_sha256":"938c38d934299c6ae6b26db186703b5f02e1356b4a498a901ff1f4960ec76b51","oracle_output":"269823221\n","oracle_sha256":"45a865ee4d70510620042823c9fd8bf1cb74ff523f2b35b847067d7bc94e33f6","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"269823221\n","reference_code_sha256":"938c38d934299c6ae6b26db186703b5f02e1356b4a498a901ff1f4960ec76b51"}
++{"id":"s1-gcd","cell":{"form":"fence","code":"import math\na=12345678901234567890\nb=98765432109876543210\nprint(math.gcd(a,b))\n","lang":"python"},"origin":"d_mirror-c1-g2-gcd.json","origin_sha256":"272876c53eb529bd2bbc761a0e5169ec6b50da5fca695b2d50aa517a26cf12b9","source_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed","oracle_output":"900000000090\n","oracle_sha256":"f576577de92635f2c71a5708b748980a9216c73e59dee8c29c12a0cbedbdc112","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"900000000090\n","reference_code_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed"}
++{"id":"s1-isqrt","cell":{"form":"fence","code":"import math\nn = 123456789012345678901234\nr = math.isqrt(n)\nprint(r)\nprint(r*r)\nprint((r+1)*(r+1))\nprint(n - r*r)\n","lang":"python"},"origin":"d_mirror-c1-g2-isqrt.json","origin_sha256":"2aab61f88dacd6bc51312ed40bcd8ad5aae3b27940688105bb74b516a85cdc72","source_sha256":"5999d4659c3f14059e3550319a9b982192ee4840cd2b32666909ebd99f31e58f","oracle_output":"351364182882\n123456789012335541825924\n123456789013038270191689\n10137075310\n","oracle_sha256":"e6ae004db8b724cf9b5e159de0b60d43642672596d5079aecd58ec354bb4f949","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"351364182882\n123456789012335541825924\n123456789013038270191689\n10137075310\n","reference_code_sha256":"5999d4659c3f14059e3550319a9b982192ee4840cd2b32666909ebd99f31e58f"}
++{"id":"general-0","expression":"1+2*3","syntax":"python","expected_output":"7\n","reference_code_sha256":"478c340a8fb67bb8860906cd37c9320c4882431bd23ece4360d8905c1e58dabc"}
++{"id":"general-1","expression":"(1+2)*3","syntax":"python","expected_output":"9\n","reference_code_sha256":"ca7ed3c94371f88a974efe710bf3eb6f71d16f8de5d0e63d4450a41ff6956ef6"}
++{"id":"general-2","expression":"0**0","syntax":"python","expected_output":"1\n","reference_code_sha256":"d5cc7a686b5744c1282e26c0c9b773949ea9f5a2fd23dba301f79c191b79eaa5"}
++{"id":"general-3","expression":"0x0","syntax":"python","expected_output":"0\n","reference_code_sha256":"af8801b60849a544427e6ae2569ee520fe586bc0b2f662039756286e6c63eb20"}
++{"id":"general-4","expression":"0XFF+1","syntax":"python","expected_output":"256\n","reference_code_sha256":"4469f2bd729f941893964cafd4f3fd2153799f24ab9739a5e207171c6a7d39dc"}
++{"id":"general-5","expression":"-0x10*3","syntax":"python","expected_output":"-48\n","reference_code_sha256":"7be7bbe46bd051f4150021956260707f37c21d55d01f67133123d4d471f82e95"}
++{"id":"general-6","expression":"pow(0,0,1)","syntax":"python","expected_output":"0\n","reference_code_sha256":"b5181f73cb5e1bfa852a8b5aa026319ca9683639fe8e7b8313a23ce370b41d52"}
++{"id":"general-7","expression":"pow(2,100,17)","syntax":"python","expected_output":"16\n","reference_code_sha256":"beee550dd2e3f1045b4a5479b4b647c0a442f2ca250276bcc713c39dcfff35a8"}
++{"id":"general-8","expression":"pow(7,0,1000000007)","syntax":"python","expected_output":"1\n","reference_code_sha256":"2c742ef9ce8e9b8f13c5a5913588925e9b5650d73c8d9d52c457c75e194e3512"}
++{"id":"general-9","expression":"(7**3)%5","syntax":"python","expected_output":"3\n","reference_code_sha256":"efedcbdb5049851159b525b1d1c469e19ecbd0f79ac4237ae256d67e2dc09be2"}
++{"id":"general-10","expression":"(7**3)*2%5","syntax":"python","expected_output":"1\n","reference_code_sha256":"8538c23fafbe57bc81dd25bd133a73d683c870e81b581b4e7348bef4073cc80f"}
++{"id":"general-11","expression":"-7**3%5","syntax":"python","expected_output":"2\n","reference_code_sha256":"354f21c3e8b41118e6cfd0c8f7405d8cb5e1647c65d726123861223fbf45918b"}
++{"id":"general-12","expression":"1%3","syntax":"python","expected_output":"1\n","reference_code_sha256":"479498bcbabd5d7ce9106d5d1e8650212c433ca038b2bd801a85c4f4997fa5cd"}
++{"id":"general-13","expression":"0//2","syntax":"python","expected_output":"0\n","reference_code_sha256":"287c89c36aedbc4b82bba813294b4e967af68f97f082d4c715d4af8c6934390e"}
++{"id":"semicolon-valid-0","script":"x=12; print(x);","expected_output":"12\n","reference_code_sha256":"741f1fe542dbd79dd7c1154d80987f0415ad3963cd45fb927826641d0fa0dfad"}
++{"id":"semicolon-valid-1","script":"print(1);\nprint(2)","expected_output":"1\n2\n","reference_code_sha256":"9784abef798ff318818b8dc034edf1602da071803acde101bcfb15fd57f35eb7"}
++{"id":"inline-caret","cell":{"form":"inline_expr","code":"2^3","lang":"python"},"expected_output":"8\n","reference_code_sha256":"55b3a0c5db911ddcdde9ea483749bdda01645065e9a0131a558f808d5a567f50"}
++{"id":"python-percent-sign","cell":{"form":"repl","code":"50%+2","lang":"python"},"expected_output":"0\n","reference_code_sha256":"df3d9230eef7ace20a6e7dda2a78c45c6311997837781940ca1f8d8e1233dc3b"}
++{"id":"script-percent-sign","cell":{"form":"fence","code":"print(50%+2)","lang":"python"},"expected_output":"0\n","reference_code_sha256":"09e1b81bb50a27a3e9a5c34b81113c92cf8bacac4f6932c47f6659f79767ab11"}
++{"id":"refuse-expression-0","expression":"7^123%1000000007","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-1","expression":"1/2","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-2","expression":"1.0+2","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-3","expression":"1e3","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-4","expression":"True+1","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-5","expression":"7%","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-6","expression":"2***3","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-7","expression":"pow(7,123)","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-8","expression":"pow(7,123,5,2)","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-9","expression":"0x","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-10","expression":"0xG","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-11","expression":"00x1","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-12","expression":"09","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-13","expression":"1_000","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-14","expression":"a+1","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-15","expression":"print(1)","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-16","expression":"__import__(1)","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-17","expression":"2 << 3","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-18","expression":"2**-1","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-19","expression":"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-expression-20","expression":"((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-0","script":"math.gcd(2,4)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-1","script":"gcd(2,4)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-2","script":"import os\nprint(1)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-3","script":"pow=1\nprint(pow)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-4","script":"print=1\nprint(1)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-5","script":"if=1\nprint(if)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-6","script":" print(1)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-7","script":"x=unknown(1)\nprint(2)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-8","script":"import math\nmath=1\nprint(1)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-9","script":"print(1)\nraise ValueError","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-11","script":"def f():\n return 1","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-12","script":"x=1","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-13","script":"import math\nprint(math.pi)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-script-14","script":"print(1,sep=2)","expected_status":"unsupported","expected_output":""}
++{"id":"refuse-cell-0","cell":{"form":"inline_expr","code":"pow(7,83,1000000007)","prior":["pow=lambda *x:10"],"lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"refuse-cell-1","cell":{"form":"fence","lang":"c","code":"print(42)"},"expected_status":"unsupported","expected_output":""}
++{"id":"refuse-cell-2","cell":{"form":"fence","code":"print(pow(7,83,1000000007))","prior":["pow=0"],"lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"review-refuse-0","script":";print(1)","expected_status":"unsupported","expected_output":""}
++{"id":"review-refuse-1","script":"print(1);;print(2)","expected_status":"unsupported","expected_output":""}
++{"id":"review-refuse-2","script":"print(1);;","expected_status":"unsupported","expected_output":""}
++{"id":"review-refuse-3","script":"__debug__=1\nprint(__debug__)","expected_status":"unsupported","expected_output":""}
++{"id":"repl-caret","cell":{"form":"repl","code":"2^3","lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"fence-caret","cell":{"form":"fence","code":"print(2^3)","lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"right-assoc","expression":"2**3**2","syntax":"python","expected_status":"unsupported","expected_output":""}
++{"id":"percentage-ambiguous-0","cell":{"form":"inline_expr","code":"50%+2","lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"percentage-ambiguous-1","cell":{"form":"inline_expr","code":"50% - 2","lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"percentage-ambiguous-2","cell":{"form":"inline_expr","code":"(50)% +2","lang":"python"},"expected_status":"unsupported","expected_output":""}
++{"id":"unused-division-error","script":"x=1//0\nprint(42)","expected_status":"error:GraphArithmetic","expected_output":""}
++{"id":"later-division-error","script":"print(42)\nx=1//0","expected_status":"error:GraphArithmetic","expected_output":""}
++{"id":"negative-isqrt","script":"import math\nprint(math.isqrt(-1))","expected_status":"error:GraphArithmetic","expected_output":""}
++{"id":"negative-exponent","expression":"pow(2,-1,7)","syntax":"python","expected_status":"error:GraphArithmetic","expected_output":""}
++{"id":"wrong-model-s1-modpow","cell":{"form":"fence","code":"print(pow(7, 83, 1000000007))\n","lang":"python"},"origin":"d_mirror-c1-g2-modpow.json","origin_sha256":"f39e11b3e10fefd7972b5afe76496c0f5f2847dc8cd981a0f0219ec6d0b3cfa5","source_sha256":"938c38d934299c6ae6b26db186703b5f02e1356b4a498a901ff1f4960ec76b51","oracle_output":"269823221\n","oracle_sha256":"45a865ee4d70510620042823c9fd8bf1cb74ff523f2b35b847067d7bc94e33f6","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"640025692\n","reference_code_sha256":"938c38d934299c6ae6b26db186703b5f02e1356b4a498a901ff1f4960ec76b51","expect_mismatch":true}
++{"id":"wrong-model-s1-gcd","cell":{"form":"fence","code":"import math\na=12345678901234567890\nb=98765432109876543210\nprint(math.gcd(a,b))\n","lang":"python"},"origin":"d_mirror-c1-g2-gcd.json","origin_sha256":"272876c53eb529bd2bbc761a0e5169ec6b50da5fca695b2d50aa517a26cf12b9","source_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed","oracle_output":"900000000090\n","oracle_sha256":"f576577de92635f2c71a5708b748980a9216c73e59dee8c29c12a0cbedbdc112","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"10\n","reference_code_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed","expect_mismatch":true}
++{"id":"operand-s2-pow7","expression":"7**124%1000000007","expected_output":"937329259\n","reference_code_sha256":"cc86a17da246651d56767e887542359e5fe538b3c084c0b683c4b05e807e8486","expect_mismatch":true}
++{"id":"operand-s2-hex","expression":"0xFEDCBA9876543210*2**64+0x0123456789ABCDEE","expected_output":"338770000845734292516042252062085074415\n","reference_code_sha256":"d2b7a5ff33d9d70a9c3dd5f5b166b26c0c748b9b3028c5051f411e418d1a4f22","expect_mismatch":true}
++{"id":"operand-s1-gcd","cell":{"form":"fence","code":"import math\na=12345678901234567891\nb=98765432109876543210\nprint(math.gcd(a,b))\n","lang":"python"},"origin":"d_mirror-c1-g2-gcd.json","origin_sha256":"272876c53eb529bd2bbc761a0e5169ec6b50da5fca695b2d50aa517a26cf12b9","source_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed","oracle_output":"900000000090\n","oracle_sha256":"f576577de92635f2c71a5708b748980a9216c73e59dee8c29c12a0cbedbdc112","source_receipt":"S1-UNOWNED-CELLS.md","source_receipt_sha256":"b68baaa1e8561fe18ebe1585652e8923af6d534a1a98c2d1aed0f53f65a77c58","expected_output":"900000000090\n","reference_code_sha256":"854380acefd2eeb6d5cddcf06a882f3df4aba61f37ff489036ba7110624d21ed","expect_mismatch":true}
+diff --git a/tools/runner-graph-binding.md b/tools/runner-graph-binding.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec4647930af4f21caaf0e9a7665e873ea7ac0f0b
+--- /dev/null
++++ b/tools/runner-graph-binding.md
+@@ -0,0 +1,59 @@
++# Direct integer graph binding
++
++`runner_graph.directFrontend(&bank)` implements the runner Frontend contract
++without importing or invoking the Python/RV32 frontend or a host compiler.
++`runner_graph.bindCell(allocator, &bank, cell)` returns owned graph packet bytes,
++or null for an unsupported cell. The bank must outlive the frontend.
++T3 can apply `tools/runner_graph_bind_route.patch` to try this binder before
++its existing routed frontend. The route file belongs to integration and is
++absent from the exporter branch; the patch requires explicit application.
++
++Binding parses source, converts integer literal notation, and selects existing
++prepared kernels. It never evaluates an expression answer or compiles weights.
++Every arithmetic operation is checked; all output bytes come from the compiled
++formatters. The graph-v4 bank remains unchanged, with manifest SHA
++`ec0f284687d499e812cc72a6c3d61611e32ad436df9048c8d5430ca26e69587c`.
++
++The direct frontend accepts empty-context Python inline, REPL and fenced cells.
++Inline math interprets caret as power and a separate `mod` word as remainder;
++Python REPL/fences preserve Python syntax and refuse unsupported XOR. Inline
++percent followed by a sign, such as `50%+2`, defers to the ordinary percentage
++route; explicit `mod` remains unambiguous. Literal
++radix conversion accepts decimal and hexadecimal integers up to 128 decimal
++digits. Underscores, floats, booleans, true division and unknown names refuse.
++The source limit is 4096 bytes, the AST limit 256 nodes, nesting 32, and the
++emitted operation limit 1024. Conservative decimal-width bounds can refuse a
++valid expression whose intermediate bound exceeds 128 digits.
++
++Expressions support integer addition, subtraction, multiplication, floor
++division, remainder, unary signs and literal-exponent powers through 999.
++Computed ordinary exponents, including `2**3**2`, conservatively refuse;
++computed exponents inside three-argument modular power remain graph values.
++`pow(a,b,m)` and a power immediately under remainder select `powmod` before
++materializing the power. Computed moduli such as `10**18` stay graph operations.
++Unsupported or out-of-domain arithmetic never owns a result.
++
++Fenced cells support straight-line assignments and numeric prints, including
++multiple print arguments. Declared `import math` or `from math import gcd,
++isqrt` enables those exact integer intrinsics. Assignments retain SSA bindings;
++unused computations are still checked. Notebook state, builtin shadowing,
++other imports, functions, loops, containers, formatting strings and effects
++refuse and remain available to the ordinary frontend. Arithmetic failures
++abstain for the entire cell, with no owned partial output; Python exception
++and partial-stdout behavior is outside this successful-cell contract.
++
++The source goldens include the three saved S2 statements and S1's modpow,
++gcd and four-output integer-square-root cells. The proof corpus also includes
++precedence, signs, radix and semicolon neighbors, context/shadowing refusals,
++checked arithmetic failures, changed operands and incorrect historical Result
++claims. Fresh isolated CPython supplies successful-cell stdout. The native
++probe retains the bound packets and checks actual BYTE/HALT traces against
++those values, with fresh/reused State and fixed/adaptive widths. Replaying the
++packets on the accepted graph-v4 evaluator checks the same raw token digests.
++These are admission/arithmetic proofs, not evidence that the live scanner fires
++or that an image owns a same-line `Result: value` claim.
++
++The latest T5 abstain audit needs no additional integer weights beyond v4:
++Fraction/exact integral division, Decimal coefficients, digit reversal and
++sorting already have kernels; remaining text/container/I/O and binary64 cases
++need their frontend/environment contracts. No bank rebake is required here.
+diff --git a/tools/runner-graph-probe.zig b/tools/runner-graph-probe.zig
+index 6e0a729d64373ad6bf73ea6a7cb17cb989bc5244..ce0d7fddd96d8b5f8285e24aa4bf7c6872d7aec2 100644
+--- a/tools/runner-graph-probe.zig
++++ b/tools/runner-graph-probe.zig
+@@ -11,7 +11,11 @@ const halt: u32 = byte_base + 512 + 8 + 16 + 16 + 128 + 256 + 5;
+ 
+ const Case = struct {
+     id: []const u8,
+-    packet: std.json.Value,
++    packet: std.json.Value = .null,
++    expression: ?[]const u8 = null,
++    script: ?[]const u8 = null,
++    cell: ?api.Cell = null,
++    syntax: @import("runner_graph_bind.zig").Syntax = .math,
+     expected_output: []const u8,
+     expected_status: []const u8 = "halted",
+     expect_mismatch: bool = false,
+@@ -29,6 +33,8 @@ const Row = struct {
+     output_equal: bool = false,
+     detected_mismatch: bool = false,
+     machine_boot_ns: u64 = 0,
++    binding_ns: u64 = 0,
++    bound_packet: []const u8 = "",
+     run_ns: u64 = 0,
+     cpu_ns: u64 = 0,
+     actual_output: []const u8 = "",
+@@ -198,8 +204,22 @@ fn audit(a: Allocator, row: *Row, trace: []const u32, out: []const u8, halted: b
+ fn runCase(a: Allocator, keep: Allocator, bank: *const graph.Bank, c: Case, budget: u64, fresh_states: bool, fixed_widths: bool, all_raw: *Hash, all_visible: *Hash, seeds: *std.ArrayList(Seed)) !Row {
+     var row: Row = .{ .id = try keep.dupe(u8, c.id) };
+     row.expected_canonical_sha256 = try expectedHash(keep, c.expected_output, std.mem.eql(u8, c.expected_status, "halted"));
+-    const bytes = try std.json.Stringify.valueAlloc(a, c.packet, .{});
++    const bind_start = now();
++    const bound = if (c.expression) |source| try graph.bindExpression(a, bank, source, c.syntax) else if (c.script) |source| try graph.bindScript(a, bank, source) else if (c.cell) |request| blk: {
++        const front = graph.directFrontend(bank);
++        const translation = try front.translate(front.ctx, a, request);
++        break :blk if (translation == .program) translation.program.bytes else null;
++    } else null;
++    const bytes = if (c.expression != null or c.script != null or c.cell != null) bound orelse {
++        row.binding_ns = now() - bind_start;
++        row.status = "unsupported";
++        row.pass = !c.expect_mismatch and std.mem.eql(u8, c.expected_status, row.status) and c.expected_output.len == 0;
++        if (!row.pass) row.reason = "source binding refused";
++        return row;
++    } else try std.json.Stringify.valueAlloc(a, c.packet, .{});
+     defer a.free(bytes);
++    row.binding_ns = now() - bind_start;
++    if (c.expression != null or c.script != null or c.cell != null) row.bound_packet = try keep.dupe(u8, bytes);
+     const boot_start = now();
+     var m = graph.Machine.boot(a, bank, bytes) catch |err| {
+         row.machine_boot_ns = now() - boot_start;
+diff --git a/tools/runner_graph_bind_route.patch b/tools/runner_graph_bind_route.patch
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffce9b0d80640383f490507178b4a624f5bb21d2
+--- /dev/null
++++ b/tools/runner_graph_bind_route.patch
+@@ -0,0 +1,8 @@
++--- a/zig/src/core/runner_graph_route.zig
+++++ b/zig/src/core/runner_graph_route.zig
++@@ -351,3 +351,5 @@
++     fn translate(ctx: ?*anyopaque, a: Allocator, cell: api.Cell) Allocator.Error!api.Translation {
++         const r: *Routed = @ptrCast(@alignCast(ctx.?));
+++        if (try graph.bindCell(a, r.bank, cell)) |bytes|
+++            return .{ .program = .{ .kind = .graph, .bytes = bytes } };
++         if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and !prog.shadowed(cell.prior))
+diff --git a/tools/runner_graph_verify.py b/tools/runner_graph_verify.py
+index 72179471b25c6374dbfcc9f79cb97dbd0600f428..f6fbd345c0dd4b6c0b1245cc05c9580ec3ded196 100644
+--- a/tools/runner_graph_verify.py
++++ b/tools/runner_graph_verify.py
+@@ -20,7 +20,7 @@ LAYOUT = (("V", 32768), ("F0", 32768), ("F1", 32768), ("F2", 4),
+           ("ST1", 1), ("SS0", 1), ("SS1", 1), ("HALT", 1), ("GO", 1), ("SC", 1))
+ BYTE = sum(size for _, size in LAYOUT[:6])
+ HALT = sum(size for _, size in LAYOUT[:17])
+-RUNTIME_FILES = ("runner_graph.zig", "runner_graph_bank.zig", "runner_graph_machine.zig",
++RUNTIME_FILES = ("runner_graph_bind.zig", "runner_graph_frontend.zig", "runner_graph.zig", "runner_graph_bank.zig", "runner_graph_machine.zig",
+                  "runner_graph_binary.zig", "runner_graph_packet.zig", "runner_graph_algorithms.zig",
+                  "runner_graph_state_cache.zig", "runner_graph_print.zig",
+                  "runner_graph_factor.zig", "runner_graph_lazy.zig", "runner_graph_f64.zig",
+diff --git a/zig/src/core/runner_graph.zig b/zig/src/core/runner_graph.zig
+index c62b81d7345dc91aa191928771c21dd036a1a746..47de22389b9ed4964070aa2de47387ac8d8dae23 100644
+--- a/zig/src/core/runner_graph.zig
++++ b/zig/src/core/runner_graph.zig
+@@ -12,6 +12,10 @@ pub const PrintStyle = @import("runner_graph_packet.zig").Style;
+ pub const PrintEnding = @import("runner_graph_packet.zig").Ending;
+ pub const Builder = @import("runner_graph_packet.zig").Builder;
+ pub const id = "graph";
++pub const bindCell = @import("runner_graph_bind.zig").cell;
++pub const bindExpression = @import("runner_graph_bind.zig").expression;
++pub const bindScript = @import("runner_graph_bind.zig").script;
++pub const directFrontend = @import("runner_graph_frontend.zig").frontend;
+ 
+ const Allocator = std.mem.Allocator;
+ 
+diff --git a/zig/src/core/runner_graph_bind.zig b/zig/src/core/runner_graph_bind.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..967c7268694d7926a2e22e4c91fbfe15e5ab5d0d
+--- /dev/null
++++ b/zig/src/core/runner_graph_bind.zig
+@@ -0,0 +1,363 @@
++//! Exact integer source binding onto prepared graph kernels, independent of the Python/RV32 frontend.
++const std = @import("std");
++const packet = @import("runner_graph_packet.zig");
++const Bank = @import("runner_graph_bank.zig").Bank;
++const Allocator = std.mem.Allocator;
++const Failure = error{ OutOfMemory, Unsupported };
++
++pub const Syntax = enum { math, python };
++const Kind = enum { literal, add, sub, mul, div, mod, pow, powmod, gcd, isqrt, neg };
++const Node = struct { kind: Kind, a: u32 = 0, b: u32 = 0, c: u32 = 0, text: []const u8 = "" };
++const Bound = struct { ref: u32, digits: usize };
++
++/// Only empty-context Python inline/REPL cells qualify; callers retain their ordinary refusal path.
++pub fn cell(a: Allocator, bank: *const Bank, request: anytype) Allocator.Error!?[]u8 {
++    if (request.prior.len != 0 or !std.mem.eql(u8, request.lang, "python")) return null;
++    if (request.form == .fence) return script(a, bank, request.code);
++    const syntax: Syntax = if (request.form == .inline_expr) .math else if (request.form == .repl) .python else return null;
++    var source = std.mem.trim(u8, request.code, " \t");
++    if (request.form == .repl and std.mem.startsWith(u8, source, ">>>")) source = std.mem.trim(u8, source[3..], " \t");
++    return expression(a, bank, source, syntax);
++}
++
++/// Parses literals and selects schedules; no expression answer, circuit weights or executable IR is built here.
++pub fn expression(a: Allocator, bank: *const Bank, source: []const u8, syntax: Syntax) Allocator.Error!?[]u8 {
++    if (source.len == 0 or source.len > 4096 or std.mem.indexOfAny(u8, source, "\x00\r\n") != null) return null;
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    var p: Parser = .{ .a = arena, .source = source, .syntax = syntax };
++    const root = p.sum() catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++    p.space();
++    if (p.at != source.len) return null;
++    var lower: Lower = .{ .a = arena, .bank = bank, .nodes = p.nodes.items };
++    const result = lower.build(root) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++    _ = bank.validate(lower.values.items.len, lower.ops.items, result.ref) catch return null;
++    return packet.Builder.program(a, lower.values.items, lower.ops.items, &.{.{ .ref = result.ref }}) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++}
++
++/// Straight-line integer cells retain original operands, assignments, declared math intrinsics and print order.
++pub fn script(a: Allocator, bank: *const Bank, source: []const u8) Allocator.Error!?[]u8 {
++    if (source.len == 0 or source.len > 4096 or std.mem.indexOfAny(u8, source, "\x00\r") != null) return null;
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    var p: Parser = .{ .a = arena, .source = "", .syntax = .python };
++    var roots: std.ArrayList(struct { node: u32, ending: packet.Ending }) = .empty;
++    var schedule: std.ArrayList(u32) = .empty;
++    const statements = splitStatements(arena, source) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++    for (statements) |raw| {
++        const text = std.mem.trim(u8, raw, " \t");
++        if (text.len == 0) continue;
++        if (std.mem.eql(u8, text, "import math")) {
++            if (p.names.contains("math")) return null;
++            p.math_module = true;
++            continue;
++        }
++        if (std.mem.startsWith(u8, text, "from math import ")) {
++            var names = std.mem.splitScalar(u8, text[17..], ',');
++            while (names.next()) |name| {
++                const n = std.mem.trim(u8, name, " \t");
++                if (p.names.contains(n)) return null;
++                if (std.mem.eql(u8, n, "gcd")) p.gcd_import = true else if (std.mem.eql(u8, n, "isqrt")) p.isqrt_import = true else return null;
++            }
++            continue;
++        }
++        p.at = 0;
++        if (std.mem.startsWith(u8, text, "print(") and text[text.len - 1] == ')') {
++            p.source = text[6 .. text.len - 1];
++            while (true) {
++                const root = p.sum() catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++                try schedule.append(arena, root);
++                const more = p.take(",");
++                if (roots.items.len >= 128) return null;
++                try roots.append(arena, .{ .node = root, .ending = if (more) .space else .newline });
++                if (!more) break;
++            }
++        } else {
++            const equal = std.mem.indexOfScalar(u8, text, '=') orelse return null;
++            const name = std.mem.trim(u8, text[0..equal], " \t");
++            if (!identifier(name) or reserved(name)) return null;
++            p.source = text[equal + 1 ..];
++            const root = p.sum() catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++            try schedule.append(arena, root);
++            try p.names.put(arena, name, root);
++        }
++        p.space();
++        if (p.at != p.source.len) return null;
++    }
++    if (roots.items.len == 0) return null;
++    var lower: Lower = .{ .a = arena, .bank = bank, .nodes = p.nodes.items };
++    lower.initialize() catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++    for (schedule.items) |root| _ = lower.emit(root) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++    var prints: std.ArrayList(packet.Print) = .empty;
++    for (roots.items) |root| {
++        const value = lower.emit(root.node) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++        try prints.append(arena, .{ .ref = value.ref, .ending = root.ending });
++    }
++    _ = bank.validate(lower.values.items.len, lower.ops.items, prints.items[0].ref) catch return null;
++    return packet.Builder.program(a, lower.values.items, lower.ops.items, prints.items) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++}
++
++fn identifier(text: []const u8) bool {
++    if (text.len == 0 or !(std.ascii.isAlphabetic(text[0]) or text[0] == '_')) return false;
++    for (text) |ch| if (!(std.ascii.isAlphanumeric(ch) or ch == '_')) return false;
++    return true;
++}
++
++fn splitStatements(a: Allocator, source: []const u8) Failure![]const []const u8 {
++    var statements: std.ArrayList([]const u8) = .empty;
++    var lines = std.mem.splitScalar(u8, source, '\n');
++    while (lines.next()) |line| {
++        if (std.mem.trim(u8, line, " \t").len == 0) continue;
++        if (line[0] == ' ' or line[0] == '\t') return error.Unsupported;
++        var pieces = std.mem.splitScalar(u8, line, ';');
++        var seen = false;
++        var trailing = false;
++        while (pieces.next()) |piece| {
++            const text = std.mem.trim(u8, piece, " \t");
++            if (text.len == 0) {
++                if (!seen or trailing) return error.Unsupported;
++                trailing = true;
++                continue;
++            }
++            if (trailing) return error.Unsupported;
++            try statements.append(a, text);
++            seen = true;
++        }
++    }
++    return statements.items;
++}
++
++fn reserved(text: []const u8) bool {
++    for ([_][]const u8{ "__debug__", "math", "pow", "print", "gcd", "isqrt", "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with", "yield" }) |name|
++        if (std.mem.eql(u8, text, name)) return true;
++    return false;
++}
++
++const Parser = struct {
++    a: Allocator,
++    source: []const u8,
++    syntax: Syntax,
++    at: usize = 0,
++    depth: usize = 0,
++    nodes: std.ArrayList(Node) = .empty,
++    names: std.StringHashMapUnmanaged(u32) = .empty,
++    math_module: bool = false,
++    gcd_import: bool = false,
++    isqrt_import: bool = false,
++
++    fn space(p: *Parser) void {
++        while (p.at < p.source.len and (p.source[p.at] == ' ' or p.source[p.at] == '\t')) p.at += 1;
++    }
++
++    fn take(p: *Parser, text: []const u8) bool {
++        p.space();
++        if (!std.mem.startsWith(u8, p.source[p.at..], text)) return false;
++        p.at += text.len;
++        return true;
++    }
++
++    fn push(p: *Parser, node: Node) Failure!u32 {
++        if (p.nodes.items.len >= 256) return error.Unsupported;
++        try p.nodes.append(p.a, node);
++        return @intCast(p.nodes.items.len - 1);
++    }
++
++    fn sum(p: *Parser) Failure!u32 {
++        var lhs = try p.product();
++        while (true) {
++            const op: Kind = if (p.take("+")) .add else if (p.take("-")) .sub else break;
++            lhs = try p.push(.{ .kind = op, .a = lhs, .b = try p.product() });
++        }
++        return lhs;
++    }
++
++    fn product(p: *Parser) Failure!u32 {
++        var lhs = try p.unary();
++        while (true) {
++            p.space();
++            const word_mod = p.syntax == .math and p.at > 0 and
++                std.ascii.isWhitespace(p.source[p.at - 1]) and
++                std.mem.startsWith(u8, p.source[p.at..], "mod") and
++                p.at + 3 < p.source.len and std.ascii.isWhitespace(p.source[p.at + 3]);
++            const op: Kind = if (p.take("//")) .div else if (p.take("%")) blk: {
++                p.space();
++                if (p.syntax == .math and p.at < p.source.len and
++                    (p.source[p.at] == '+' or p.source[p.at] == '-')) return error.Unsupported;
++                break :blk .mod;
++            } else if (word_mod) blk: {
++                p.at += 3;
++                break :blk .mod;
++            } else if (p.take("*")) .mul else break;
++            lhs = try p.push(.{ .kind = op, .a = lhs, .b = try p.unary() });
++        }
++        return lhs;
++    }
++
++    fn unary(p: *Parser) Failure!u32 {
++        if (p.depth >= 32) return error.Unsupported;
++        p.depth += 1;
++        defer p.depth -= 1;
++        if (p.take("+")) return p.unary();
++        if (p.take("-")) return p.push(.{ .kind = .neg, .a = try p.unary() });
++        const lhs = try p.atom();
++        if (p.take("**") or (p.syntax == .math and p.take("^")))
++            return p.push(.{ .kind = .pow, .a = lhs, .b = try p.unary() });
++        return lhs;
++    }
++
++    fn atom(p: *Parser) Failure!u32 {
++        if (p.take("(")) {
++            const result = try p.sum();
++            if (!p.take(")")) return error.Unsupported;
++            return result;
++        }
++        if (p.take("pow(")) {
++            const a = try p.sum();
++            if (!p.take(",")) return error.Unsupported;
++            const b = try p.sum();
++            if (!p.take(",")) return error.Unsupported;
++            const c = try p.sum();
++            if (!p.take(")")) return error.Unsupported;
++            return p.push(.{ .kind = .powmod, .a = a, .b = b, .c = c });
++        }
++        p.space();
++        if (p.at < p.source.len and (std.ascii.isAlphabetic(p.source[p.at]) or p.source[p.at] == '_')) {
++            const start = p.at;
++            while (p.at < p.source.len and (std.ascii.isAlphanumeric(p.source[p.at]) or p.source[p.at] == '_' or p.source[p.at] == '.')) p.at += 1;
++            const name = p.source[start..p.at];
++            if (p.names.get(name)) |ref| return ref;
++            const qualified = std.mem.startsWith(u8, name, "math.");
++            if (qualified and !p.math_module) return error.Unsupported;
++            const bare = if (qualified) name[5..] else name;
++            const kind: Kind = if (std.mem.eql(u8, bare, "gcd") and (qualified or p.gcd_import or p.syntax == .math)) .gcd else if (std.mem.eql(u8, bare, "isqrt") and (qualified or p.isqrt_import or p.syntax == .math)) .isqrt else return error.Unsupported;
++            if (!p.take("(")) return error.Unsupported;
++            const a = try p.sum();
++            var b: u32 = 0;
++            if (kind == .gcd) {
++                if (!p.take(",")) return error.Unsupported;
++                b = try p.sum();
++            }
++            if (!p.take(")")) return error.Unsupported;
++            return p.push(.{ .kind = kind, .a = a, .b = b });
++        }
++        p.space();
++        const start = p.at;
++        const hex = std.mem.startsWith(u8, p.source[start..], "0x") or std.mem.startsWith(u8, p.source[start..], "0X");
++        if (hex) p.at += 2;
++        const digits = p.at;
++        while (p.at < p.source.len and (if (hex) std.ascii.isHex(p.source[p.at]) else std.ascii.isDigit(p.source[p.at]))) p.at += 1;
++        if (p.at == digits or p.at - start > 512) return error.Unsupported;
++        const text = p.source[start..p.at];
++        if (!hex and text.len > 1 and text[0] == '0')
++            for (text) |ch| if (ch != '0') return error.Unsupported;
++        const value = std.fmt.parseInt(u512, if (hex) text[2..] else text, if (hex) 16 else 10) catch return error.Unsupported;
++        const decimal = try std.fmt.allocPrint(p.a, "{d}", .{value});
++        if (decimal.len > packet.max_digits) return error.Unsupported;
++        return p.push(.{ .kind = .literal, .text = decimal });
++    }
++};
++
++const Lower = struct {
++    a: Allocator,
++    bank: *const Bank,
++    nodes: []const Node,
++    values: std.ArrayList([]const u8) = .empty,
++    ops: std.ArrayList(packet.Op) = .empty,
++    literals: [256]u32 = @splat(0),
++    emitted: [256]?Bound = @splat(null),
++    produced: usize = 0,
++
++    fn build(l: *Lower, root: u32) Failure!Bound {
++        try l.initialize();
++        return l.emit(root);
++    }
++
++    fn initialize(l: *Lower) Failure!void {
++        try l.values.appendSlice(l.a, &.{ "0", "1" });
++        for (l.nodes, 0..) |node, i| if (node.kind == .literal) {
++            l.literals[i] = @intCast(l.values.items.len);
++            try l.values.append(l.a, node.text);
++        };
++    }
++
++    fn width(digits: usize) Failure!u8 {
++        for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |w| if (digits <= w) return w;
++        return error.Unsupported;
++    }
++
++    fn operation(l: *Lower, name: []const u8, args: []const u32, digits: usize) Failure!Bound {
++        const w = try width(digits);
++        if (l.ops.items.len >= 1024) return error.Unsupported;
++        if (std.mem.eql(u8, name, "powmod") or std.mem.eql(u8, name, "gcd") or std.mem.eql(u8, name, "isqrt")) {
++            const plan = try std.fmt.allocPrint(l.a, "{s}-{d}", .{ name, w });
++            if (l.bank.plan(plan) == null) return error.Unsupported;
++        } else if (l.bank.find(name, w) == null) return error.Unsupported;
++        const refs = try l.a.dupe(u32, args);
++        const ref: u32 = @intCast(l.values.items.len + l.produced);
++        try l.ops.append(l.a, .{ .op = name, .width = w, .args = refs, .checked = true });
++        l.produced += 1;
++        return .{ .ref = ref, .digits = digits };
++    }
++
++    fn modular(l: *Lower, a: u32, b: u32, c: u32) Failure!Bound {
++        const base = try l.emit(a);
++        const exponent = try l.emit(b);
++        const modulus = try l.emit(c);
++        return l.operation("powmod", &.{ base.ref, exponent.ref, modulus.ref }, @max(base.digits, @max(exponent.digits, modulus.digits)));
++    }
++
++    fn emit(l: *Lower, index: u32) Failure!Bound {
++        if (l.emitted[index]) |value| return value;
++        const value = try l.emitFresh(index);
++        l.emitted[index] = value;
++        return value;
++    }
++
++    fn emitFresh(l: *Lower, index: u32) Failure!Bound {
++        const node = l.nodes[index];
++        if (node.kind == .literal) return .{ .ref = l.literals[index], .digits = node.text.len };
++        if (node.kind == .mod and l.nodes[node.a].kind == .pow) {
++            const power = l.nodes[node.a];
++            return l.modular(power.a, power.b, node.b);
++        }
++        if (node.kind == .powmod) return l.modular(node.a, node.b, node.c);
++        const lhs = try l.emit(node.a);
++        if (node.kind == .neg) return l.operation("sub", &.{ 0, lhs.ref }, lhs.digits);
++        if (node.kind == .isqrt) return l.operation("isqrt", &.{lhs.ref}, lhs.digits);
++        if (node.kind == .pow) {
++            const exponent = l.nodes[node.b];
++            if (exponent.kind != .literal) return error.Unsupported;
++            var n = std.fmt.parseInt(u16, exponent.text, 10) catch return error.Unsupported;
++            if (n > 999) return error.Unsupported;
++            var result: Bound = .{ .ref = 1, .digits = 1 };
++            var factor = lhs;
++            while (n != 0) {
++                if (n & 1 != 0) result = try l.operation("mul", &.{ result.ref, factor.ref }, result.digits + factor.digits);
++                n >>= 1;
++                if (n != 0) factor = try l.operation("mul", &.{ factor.ref, factor.ref }, 2 * factor.digits);
++            }
++            return result;
++        }
++        const rhs = try l.emit(node.b);
++        if (node.kind == .gcd) return l.operation("gcd", &.{ lhs.ref, rhs.ref }, @max(lhs.digits, rhs.digits));
++        if (node.kind == .div or node.kind == .mod) {
++            const w = try width(@max(lhs.digits, rhs.digits));
++            const plan = try std.fmt.allocPrint(l.a, "divmod-{d}", .{w});
++            if (l.bank.plan(plan) == null or l.ops.items.len >= 1024) return error.Unsupported;
++            const refs = try l.a.dupe(u32, &.{ lhs.ref, rhs.ref });
++            const ref: u32 = @intCast(l.values.items.len + l.produced);
++            try l.ops.append(l.a, .{ .op = "divmod", .args = refs, .outputs = 2, .width = w, .checked = true });
++            l.produced += 2;
++            return .{ .ref = ref + @intFromBool(node.kind == .mod), .digits = @max(lhs.digits, rhs.digits) };
++        }
++        const digits = switch (node.kind) {
++            .add, .sub => @max(lhs.digits, rhs.digits) + 1,
++            .mul => lhs.digits + rhs.digits,
++            .div, .mod => @max(lhs.digits, rhs.digits),
++            else => unreachable,
++        };
++        return l.operation(@tagName(node.kind), &.{ lhs.ref, rhs.ref }, digits);
++    }
++};
+diff --git a/zig/src/core/runner_graph_frontend.zig b/zig/src/core/runner_graph_frontend.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..671806d5d3e685b84174ebba0dbeeb4493e1a714
+--- /dev/null
++++ b/zig/src/core/runner_graph_frontend.zig
+@@ -0,0 +1,15 @@
++//! A graph-only frontend that binds exact integer cells without invoking the Python/RV32 frontend.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const Bank = @import("runner_graph_bank.zig").Bank;
++const bind = @import("runner_graph_bind.zig");
++
++pub fn frontend(bank: *const Bank) api.Frontend {
++    return .{ .ctx = @constCast(bank), .translate = translate };
++}
++
++fn translate(ctx: ?*anyopaque, a: std.mem.Allocator, cell: api.Cell) std.mem.Allocator.Error!api.Translation {
++    const bank: *const Bank = @ptrCast(@alignCast(ctx.?));
++    const bytes = try bind.cell(a, bank, cell) orelse return .{ .abstain = .unsupported };
++    return .{ .program = .{ .kind = .graph, .bytes = bytes } };
++}

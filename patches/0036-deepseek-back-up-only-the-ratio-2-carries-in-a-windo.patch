@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:48:20 +0700
+Subject: [PATCH 036/207] deepseek: back up only the ratio-2 carries in a
+ window's KV transaction
+
+Transaction.begin copied every layer's SWA ring and scales aside before each window and slot (89 device copies, 6.4 MB), and keep restored each rejected row ring by ring. A window of n <= window rows writes ring slots pos % (2 window); a later row q reads positions (q - window, q], whose slots are either rewritten before the read or hold positions outside every later window, the same overwrite rule the pool's compressed rows and index keys already follow without a backup. Restoring them never changes a read, so begin now registers the carries alone and refuses a window wider than the ring rule. The host test binds rings and a carry and checks that only the carry is backed up.
+---
+ .../deepseek_v41/cuda_transaction.zig         | 24 ++++++++--------
+ .../deepseek_v41/slot_transactions_test.zig   | 28 +++++++++++++++++++
+ 2 files changed, 39 insertions(+), 13 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/cuda_transaction.zig b/zig/src/families/deepseek_v41/cuda_transaction.zig
+index 17ec39a0cfa84b02b69e4c1d169d55bc50dfb0f3..6f95a4c99e3badd144c0beedc675891c3bb4ec20 100644
+--- a/zig/src/families/deepseek_v41/cuda_transaction.zig
++++ b/zig/src/families/deepseek_v41/cuda_transaction.zig
+@@ -16,21 +16,19 @@ pub const Transaction = struct {
+         var nb: [64]u8 = undefined;
+         var la = std.heap.ArenaAllocator.init(f.gpa);
+         defer la.deinit();
++        // Carries only: rows past the kept ones sit in SWA ring slots (pos % 2 window) rewritten before any read.
++        if (n > f.cfg.window) return error.BadWindow;
+         for (try f.backbone(la.allocator())) |L| {
+-            for ([_][]const u8{ "swa.v", "swa.s", "carry" }) |part| {
+-                const role = try std.fmt.bufPrint(&nb, "s.L{d}.{s}", .{ L, part });
+-                const ptr = f.runner.addressOf(role) orelse continue;
+-                const carry = std.mem.eql(u8, part, "carry");
+-                const row: usize = if (carry) 8 * @as(usize, f.cfg.head_dim) else if (std.mem.endsWith(u8, part, ".v")) 576 else 8;
+-                const rows: u32 = if (carry) 1 else 2 * f.cfg.window;
+-                const i = t.regions.items.len;
+-                if (i == t.owned.items.len) {
+-                    try t.owned.ensureUnusedCapacity(f.gpa, 1);
+-                    t.owned.appendAssumeCapacity(try cuda.DeviceBuffer.alloc(f.runner.d, row * rows));
+-                }
+-                if (t.owned.items[i].len < row * rows) return error.TransactionShapeChanged;
+-                try t.regions.append(f.gpa, .{ .live = ptr, .backup = t.owned.items[i].ptr, .row_bytes = row, .rows = rows, .kind = if (carry) .carry else .ring, .encoding = if (carry) .f32 else .cuda_fp8_584 });
++            const role = try std.fmt.bufPrint(&nb, "s.L{d}.carry", .{L});
++            const ptr = f.runner.addressOf(role) orelse continue;
++            const row = 8 * @as(usize, f.cfg.head_dim);
++            const i = t.regions.items.len;
++            if (i == t.owned.items.len) {
++                try t.owned.ensureUnusedCapacity(f.gpa, 1);
++                t.owned.appendAssumeCapacity(try cuda.DeviceBuffer.alloc(f.runner.d, row));
+             }
++            if (t.owned.items[i].len < row) return error.TransactionShapeChanged;
++            try t.regions.append(f.gpa, .{ .live = ptr, .backup = t.owned.items[i].ptr, .row_bytes = row, .rows = 1, .kind = .carry, .encoding = .f32 });
+         }
+         t.state.position = f.slot.pos;
+         try t.state.begin(t.regions.items, t.copier(), n);
+diff --git a/zig/src/families/deepseek_v41/slot_transactions_test.zig b/zig/src/families/deepseek_v41/slot_transactions_test.zig
+index 06ac52b2080c17c5df2a306bd9c6269806e3ca0f..6f9c040f8497261946bbdb688ba0eb1f4c6e924f 100644
+--- a/zig/src/families/deepseek_v41/slot_transactions_test.zig
++++ b/zig/src/families/deepseek_v41/slot_transactions_test.zig
+@@ -4,6 +4,8 @@ const slots = @import("slots.zig");
+ const kvs = @import("cuda_kv.zig");
+ const kv = @import("kv");
+ const logical = @import("kv_state.zig");
++const mock = @import("load_mock.zig");
++const run = @import("run.zig");
+ fn copy(_: *anyopaque, dst: u64, src: u64, n: usize) !void {
+     @memcpy(@as([*]u8, @ptrFromInt(dst))[0..n], @as([*]const u8, @ptrFromInt(src))[0..n]);
+ }
+@@ -41,3 +43,29 @@ test "Draft state: switching slots preserves independent pending transactions an
+     try std.testing.expectEqual(@as(u64, 0), ss.transaction(0).state.position);
+     try std.testing.expectEqual(@as(u64, 1), ss.transaction(1).state.position);
+ }
++test "Draft state: a window's transaction backs up only the ratio-2 carries, never the SWA rings" {
++    const a = std.testing.allocator;
++    var d = mock.init();
++    var runner: run.Runner = .{ .gpa = a, .d = &d, .stream = .{ .d = &d, .handle = null }, .kernels = undefined, .triton = undefined, .weights = undefined };
++    defer runner.deinit();
++    var cfg: @import("config.zig").Config = .{};
++    cfg.layers = 2;
++    var widths: @import("block.zig").Widths = .{};
++    var f = fwd.Forward.init(a, &cfg, &widths, .{}, &runner, undefined);
++    defer {
++        f.transaction.deinit(a);
++        f.arena.deinit();
++    }
++    const roles = [_][]const u8{ "s.L0.swa.v", "s.L0.swa.s", "s.L1.swa.v", "s.L1.swa.s", "s.L1.carry" };
++    for (roles, 1..) |role, i| try runner.external(role, 256 * i);
++    f.slot = .{ .pos = 9 };
++    try f.transaction.begin(&f, 4);
++    try std.testing.expectEqual(@as(usize, 1), f.transaction.regions.items.len);
++    const r = f.transaction.regions.items[0];
++    try std.testing.expectEqual(@as(u64, 256 * 5), r.live);
++    try std.testing.expect(r.kind == .carry);
++    try std.testing.expectEqual(8 * @as(usize, cfg.head_dim), r.row_bytes);
++    try f.transaction.keep(2);
++    try std.testing.expectEqual(@as(u64, 11), f.transaction.state.position);
++    try std.testing.expectEqual(@as(?u32, null), f.transaction.state.pending);
++}

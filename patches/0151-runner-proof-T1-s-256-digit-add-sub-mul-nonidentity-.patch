@@ -1,0 +1,107 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 05:10:02 +0700
+Subject: [PATCH 151/207] runner proof: T1's 256-digit add/sub/mul nonidentity
+ and overflow test (tools/runner-graph-wide-proof.patch; its last hunk
+ appended after the grown comptime block)
+
+---
+ zig/src/core/runner_proof_test.zig | 57 ++++++++++++++++++++++++++----
+ 1 file changed, 51 insertions(+), 6 deletions(-)
+
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index cc106be588418099bd358da59f571518579307ba..0b7c1fc2aac465740cfc3ba818cddddee2ec01f6 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -273,14 +273,14 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+     if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
+     var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
+     const front = routed.frontend();
+-    const Case = struct { form: rapi.Form, code: []const u8, graph: bool };
++    const Case = struct { form: rapi.Form, code: []const u8, graph: bool, want: ?[]const u8 = null };
+     for ([_]Case{
+         .{ .form = .inline_expr, .code = "(10^80 + 123456789)^2 − 10^160", .graph = true },
+         .{ .form = .inline_expr, .code = "(10^80+123456789)^2-10^160", .graph = true },
+         .{ .form = .repl, .code = "(10**80 + 123456789)**2 - 10**160", .graph = true },
+         .{ .form = .repl, .code = "(10^80+123456789)^2-10^160", .graph = false }, // XOR in Python
+         .{ .form = .inline_expr, .code = "(10^80+123456789)^2 % 7", .graph = false },
+-        .{ .form = .inline_expr, .code = "10^200 + 1", .graph = false },
++        .{ .form = .inline_expr, .code = "10^200 + 1", .graph = both.bank.find("add", 256) != null, .want = "100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001\n" },
+     }) |c| {
+         var arena = std.heap.ArenaAllocator.init(gpa);
+         defer arena.deinit();
+@@ -292,12 +292,12 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+         }
+         if (!on_graph) continue;
+         const r = finish(both.graph, try both.graph.start(1, t.program, 4_000_000));
+-        try std.testing.expectEqualStrings("24691357800000000000000000000000000000000000000000000000000000000000000015241578750190521\n", r.out);
++        try std.testing.expectEqualStrings(c.want orelse "24691357800000000000000000000000000000000000000000000000000000000000000015241578750190521\n", r.out);
+     }
+     both.graph.release(1);
+ }
+ 
+-test "runner proof: bn-011's inline cells (smoke r0-583d0cd875f6): powers to 3^256 own CPython's value, 3^400 abstains" {
++test "runner proof: bn-011's inline cells (smoke r0-583d0cd875f6): powers through 3^400 own CPython's value" {
+     var both: Both = undefined;
+     try both.open();
+     defer both.close();
+@@ -312,8 +312,8 @@ test "runner proof: bn-011's inline cells (smoke r0-583d0cd875f6): powers to 3^2
+         .{ "3^256", "139008452377144732764939786789661303114218850808529137991604824430036072629766435941001769154109609521811665540548899435521" },
+         .{ "1000^6", "1000000000000000000" },
+         .{ "262144*707", "185335808" },
+-        // 191 digits: past the bank's 128-digit width and the frontend's 62, so `unsupported` (all six abstains)
+-        .{ "3^400", null },
++        // The optional 256-digit bank owns all six 191-digit smoke occurrences.
++        .{ "3^400", if (both.bank.find("mul", 256) != null) "70550791086553325712464271575934796216507949612787315762871223209262085551582934156579298529447134158154952334825355911866929793071824566694145084454535257027960285323760313192443283334088001" else null },
+     }) |c| {
+         var arena = std.heap.ArenaAllocator.init(gpa);
+         defer arena.deinit();
+@@ -430,3 +430,48 @@ comptime {
+     _ = @import("runner_trace_divmod_test.zig");
+     _ = @import("runner_trace_named_test.zig");
+ }
++
++test "runner proof: 256-digit add sub mul own nonidentity boundaries and refuse overflow" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    if (both.bank.find("mul", 256) == null) return error.SkipZigTest;
++    const packets = @import("runner_graph_packet.zig");
++    const threes: [256]u8 = @splat('3');
++    const nines: [256]u8 = @splat('9');
++    for ([_]usize{ 129, 191, 256 }) |digits| {
++        for ([_]packets.Family{ .add, .sub, .mul }) |op| {
++            var lhs: [256]u8 = @splat(if (op == .add) '4' else if (op == .sub) '8' else '9');
++            var want: [256]u8 = @splat(if (op == .add) '7' else if (op == .sub) '5' else '9');
++            if (op == .mul) {
++                want[0] = '8';
++                want[digits - 1] = '1';
++            }
++            const left = lhs[0..(if (op == .mul) digits - 1 else digits)];
++            const right = if (op == .mul) "9" else threes[0..digits];
++            const bytes = try packets.Builder.binaryWidth(gpa, op, left, right, 256);
++            defer gpa.free(bytes);
++            const r = finish(both.graph, try both.graph.start(1, .{ .kind = .graph, .bytes = bytes }, 4_000_000));
++            try std.testing.expectEqual(rapi.Status.ok, r.status);
++            try std.testing.expectEqualStrings(want[0..digits], std.mem.trimEnd(u8, r.out, "\n"));
++            both.graph.release(1);
++            if (op != .add) continue;
++            lhs[digits - 1] = '3';
++            const changed = try packets.Builder.binaryWidth(gpa, .add, lhs[0..digits], right, 256);
++            defer gpa.free(changed);
++            const mutated = finish(both.graph, try both.graph.start(1, .{ .kind = .graph, .bytes = changed }, 4_000_000));
++            try std.testing.expectEqual(rapi.Status.ok, mutated.status);
++            try std.testing.expect(!std.mem.eql(u8, want[0..digits], std.mem.trimEnd(u8, mutated.out, "\n")));
++            want[digits - 1] = '6';
++            try std.testing.expectEqualStrings(want[0..digits], std.mem.trimEnd(u8, mutated.out, "\n"));
++            both.graph.release(1);
++        }
++    }
++    const bytes = try packets.Builder.binaryWidth(gpa, .add, &nines, "1", 256);
++    defer gpa.free(bytes);
++    const overflow = finish(both.graph, try both.graph.start(1, .{ .kind = .graph, .bytes = bytes }, 4_000_000));
++    try std.testing.expectEqual(rapi.Status.abstain, overflow.status);
++    try std.testing.expectEqual(rapi.Abstain.unsupported, overflow.abstain.?);
++    try std.testing.expectEqualStrings("", overflow.out);
++    both.graph.release(1);
++}

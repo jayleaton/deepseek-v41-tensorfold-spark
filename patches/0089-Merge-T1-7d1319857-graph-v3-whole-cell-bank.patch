@@ -1,0 +1,1678 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 05:54:14 +0700
+Subject: [PATCH 089/207] Merge T1 7d1319857 (graph-v3 whole-cell bank)
+
+Squashed merge of 1 commits:
+- feat(runner): compose exact whole-cell arithmetic graphs (Jay Leaton)
+---
+ tools/runner-graph-algorithms.md         |  77 +++++
+ tools/runner-graph-probe.zig             |  25 +-
+ tools/runner_graph_algorithms.py         |   9 +-
+ tools/runner_graph_export.py             |  12 +-
+ tools/runner_graph_format.py             | 139 +++++++++
+ tools/runner_graph_ir.py                 |  35 ++-
+ tools/runner_graph_program.py            | 369 +++++++++++++++++++++++
+ tools/runner_graph_verify.py             |   4 +-
+ tools/runner_graph_whole.py              |  87 ++++++
+ zig/src/core/runner_graph.zig            |   3 +
+ zig/src/core/runner_graph_algorithms.zig | 134 ++++++--
+ zig/src/core/runner_graph_bank.zig       |  91 ++++--
+ zig/src/core/runner_graph_machine.zig    |  35 ++-
+ zig/src/core/runner_graph_packet.zig     | 110 ++++++-
+ zig/src/core/runner_graph_print.zig      |  77 +++++
+ 15 files changed, 1105 insertions(+), 102 deletions(-)
+ create mode 100644 tools/runner_graph_format.py
+ create mode 100644 tools/runner_graph_program.py
+ create mode 100644 tools/runner_graph_whole.py
+ create mode 100644 zig/src/core/runner_graph_print.zig
+
+diff --git a/tools/runner-graph-algorithms.md b/tools/runner-graph-algorithms.md
+index 3b6cd445822e2ff41735f6255fb28c5faa938c96..4e85f94c00a4b5275ced1e0bd035e47622990dd8 100644
+--- a/tools/runner-graph-algorithms.md
++++ b/tools/runner-graph-algorithms.md
+@@ -95,3 +95,80 @@ ceiling. This classifies storage shape without assembling a native integer or
+ calculating an answer. Missing smaller templates fall back to the plan bucket.
+ `--fixed-widths` in the probe is the token-exact comparison control. Digit sum
+ uses one parallel compiled reduction tree rather than one ALU call per digit.
++
++## Whole-cell packets and exact formatting
++
++`Builder.program(allocator, values, ops, prints)` binds a complete arithmetic
++SSA program to the boot-loaded bank. It compiles no graph at request time.
++The packet retains version1 and adds `prints`; a named plan may not override
++its schedule or output. Generic operations may invoke the existing integer
++algorithms, including multiple output slots. All operations run before output.
++Set `checked=true` on a frontend's operations to turn an FFN error flag into
++`GraphArithmetic` before any printing; the backend abstains and clears output.
++Unchecked arithmetic retains its existing `error\n` convention.
++
++`Print` selects a value reference, optional second reference, style, precision,
++ending and optional opening parenthesis. Styles are `integer`, `fixed`, `comma`,
++`integral_float`, `boolean`, `fraction` and `tuple`. Precision0..18 applies only
++to `fixed`. Multi-field prints use `space` between arguments and `newline` at
++line end. Other endings are `empty`, `comma_space`, `close`, `slash`,
++`close_space`, `close_empty`, `close_comma_space`. Tuple fields accept newline,
++space, empty or comma-space; they supply their own parentheses. Fraction fields
++consume reduced numerator/positive-denominator outputs of the fraction algorithm.
++The formatter elides `/1`; zero/negative denominators are refused. Output is
++bounded to4096bytes and128Print descriptors per packet.
++
++All ASCII, signs, decimal points, grouping commas, parentheses and separators
++come from the two-input prepared `format-62`/`format-128` circuits. Native code
++binds the formatting controls and follows compiled predicates; it never decodes
++an operand into a host integer or renders an answer. Raw control BCD digits are:
++precision at0/1, mode at2 (integer0/fixed1/comma2/integral-float3/bool4), ending
++at3 (newline0,space1,empty2,comma-space3,close4,slash5,close-space6,
++close-empty7,close-comma-space8), and prefix0/1 at4. Other digits must be zero. Boolean
++values must be0/1. Integer/comma zero is unsigned; fixed/integral-float preserve
++an explicitly encoded negative zero. Cursor segments stay within the existing
++FP32-exact64/65 boundary, including128digit grouped outputs.
++
++New integer algorithm families:
++
++| Name | Inputs | Outputs | Contract |
++|---|---:|---:|---|
++| `fraction` |2|2|Reduced signed numerator and positive denominator; named result prints like Fraction.|
++| `divexact` |2|1|Exact integral quotient, preserving numerator-XOR-denominator sign at zero; error if remainder is nonzero.|
++| `fixed_div` |2|1|Coefficient for a rational rounded half-even at precision0..18; signed zero retained.|
++
++`Builder.integer(.fraction, operands)` selects a named fraction plan.
++`Builder.fixedDivision(allocator, lhs, rhs, places)` selects
++`fixed_div-PLACES-WIDTH`. Generic operations carry the same `precision` metadata
++for `fixed_div`; other operations require zero precision. New kernels are
++`decimal_mul`, `round_div`, `scale10`, `float_exact`, `compare`, `min`, `max`.
++`decimal_mul` preserves zero's XOR sign. `round_div` consumes unsigned quotient
++and remainder plus original signed numerator/denominator. `float_exact` rejects
++coefficients with more than15digits; it performs no binary floating arithmetic.
++
++For a Python true-division bridge, use checked `divexact` then checked
++`float_exact`, and style `integral_float`. Only exact integral quotients within
++15digits are accepted; this bounded domain is exactly representable and uses
++ordinary decimal `.0` spelling in CPython, including `0/-1 -> -0.0`. Fractional
++or wider true division must abstain. This is not general IEEE float emulation.
++Likewise Decimal multiplication is exact only when the frontend proves a finite
++coefficient/scale domain within the selected Decimal context. The development
++binder conservatively requires product coefficient bounds≤28digits and total
++scale≤6, matching fixed-notation output in the unchanged default context. It
++abstains on larger scales, general Decimal contexts, exponents or rounding. Literal integer `-0` is bound as0;
++Decimal's signed zero is retained.
++
++`Builder.sortedDistance(allocator, values)` selects an offline compare-exchange
++plan `loop-sorted_distance-N-WIDTH` for0..16inputs. It computes
++`sum(abs(a[i]-a[j]) for i<j)` using prepared signed min/max followed by a sorted
++prefix reduction. The width selector uses only operand storage widths and the
++bounded pair count. Every operation checks overflow. The existing sum, square,
++factorial, Fibonacci and list-sum plans remain available. Width128 is the hard
++coefficient limit; unsupported or overflowing intermediate values abstain when
++checked, rather than invoking native bignum arithmetic.
++
++`runner_graph_program.compile_program` is an offline development binder for
++whole-cell qualification. It parses a bounded numeric AST into operand bindings,
++checked operations and print descriptors without evaluating answers. Production
++source admission remains owned by the native frontend. Bank capability, offline
++source binding, frontend admission and live ownership are separate measurements.
+diff --git a/tools/runner-graph-probe.zig b/tools/runner-graph-probe.zig
+index 739e8166c9e6ec13df171d24719844f63ae44d71..5edd143a0cfa3be29642f1e6dc152ac0502b0b40 100644
+--- a/tools/runner-graph-probe.zig
++++ b/tools/runner-graph-probe.zig
+@@ -1,6 +1,7 @@
+ //! Native graph evidence: evaluator tokens, exact stdout, prepared-bank boot and backend lifecycle.
+ const std = @import("std");
+ const graph = @import("runner_graph.zig");
++const packet = @import("runner_graph_packet.zig");
+ const state_cache = @import("runner_graph_state_cache.zig");
+ const api = @import("runner_api.zig");
+ const Allocator = std.mem.Allocator;
+@@ -228,9 +229,7 @@ fn runCase(a: Allocator, keep: Allocator, bank: *const graph.Bank, c: Case, budg
+     row.steps = m.steps;
+     if (end) |e| row.status = @tagName(e.end);
+     const halted = std.mem.eql(u8, row.status, "halted");
+-    if (m.algorithm != null) {
+-        row.alu_halts = std.mem.count(u32, trace.items, &.{halt}) - @as(usize, @intFromBool(halted));
+-    }
++    row.alu_halts = std.mem.count(u32, trace.items, &.{halt}) - @as(usize, @intFromBool(halted));
+     try audit(keep, &row, trace.items, out.items, halted, all_raw, all_visible);
+     row.actual_output = try keep.dupe(u8, out.items);
+     row.output_equal = std.mem.eql(u8, out.items, c.expected_output);
+@@ -240,7 +239,9 @@ fn runCase(a: Allocator, keep: Allocator, bank: *const graph.Bank, c: Case, budg
+     if (!row.pass) row.reason = "status, output or generated token trace differs";
+     if (row.pass and halted and !c.expect_mismatch and seeds.items.len < 4) {
+         const op = m.algorithm orelse if (m.ops.len > 0) m.ops[0].op else "identity";
+-        const eligible = if (seeds.items.len < 2) m.algorithm == null else m.algorithm != null;
++        const simple_output = m.prints.len == 0 or (m.prints.len == 1 and m.prints[0].style == .integer and
++            m.prints[0].ending == .newline and !m.prints[0].prefix and m.prints[0].precision == 0);
++        const eligible = if (seeds.items.len < 2) m.algorithm == null and simple_output else m.algorithm != null;
+         const distinct = for (seeds.items) |seed| {
+             if (std.mem.eql(u8, op, seed.op)) break false;
+         } else true;
+@@ -394,18 +395,26 @@ fn lifecycle(a: Allocator, bank: *const graph.Bank, seeds: []const Seed, budget:
+     try require((try complete.run(budget, &out, null)).end == .halted);
+     const entries = complete.states.entries.items;
+     var template = entries[entries.len - 1].template.*;
+-    try require(std.mem.eql(u8, template.name, "emit") and out.items.len > 0);
++    const formatted = std.mem.eql(u8, template.name, "format");
++    try require((formatted or std.mem.eql(u8, template.name, "emit")) and out.items.len > 0);
++    const result_ref = if (complete.prints.len == 1) complete.prints[0].ref else complete.result;
++    var replay = [2]packet.Value{ complete.values[result_ref], try packet.literal("0") };
++    const original_values = complete.values;
++    complete.values = &replay;
++    defer complete.values = original_values;
++    const emitter_args = [_]u32{ 0, 1 };
++    const emitter_refs = emitter_args[0..(if (formatted) @as(usize, 2) else 1)];
+     template.circuit.fault_family = template.circuit.byte_family;
+     out.clearRetainingCapacity();
+-    const fault_end = try complete.invoke(&template, &.{complete.result}, 0, std.math.maxInt(u64), &out, null, true);
++    const fault_end = try complete.invoke(&template, emitter_refs, 0, std.math.maxInt(u64), &out, null, true);
+     try require(fault_end == .fault and cacheClean(&complete.states));
+     template.circuit.fault_family = null;
+-    if (complete.invoke(&template, &.{complete.result}, 0, std.math.maxInt(u64), &out, null, false)) |_|
++    if (complete.invoke(&template, emitter_refs, 0, std.math.maxInt(u64), &out, null, false)) |_|
+         return error.MissingUnexpectedByte
+     else |err|
+         try require(err == error.GraphUnexpectedByte);
+     try require(cacheClean(&complete.states));
+-    try require((try complete.invoke(&template, &.{complete.result}, 0, std.math.maxInt(u64), &out, null, true)) == .halted);
++    try require((try complete.invoke(&template, emitter_refs, 0, std.math.maxInt(u64), &out, null, true)) == .halted);
+     try require(std.mem.eql(u8, out.items, seeds[0].output) and cacheClean(&complete.states));
+     checks.* += 1;
+     if (seeds.len == 4) {
+diff --git a/tools/runner_graph_algorithms.py b/tools/runner_graph_algorithms.py
+index f35a1f3e505e7bb90d0ed2d6b28d33c4b219dce6..ab04f8760b1803cba232ca2e0dfadb4fd98a95e1 100644
+--- a/tools/runner_graph_algorithms.py
++++ b/tools/runner_graph_algorithms.py
+@@ -5,7 +5,8 @@ from runner_graph_ir import Value
+ 
+ OPERATIONS = ("meta", "half", "digit_sum", "mulmodstep")
+ ALGORITHMS = {"powmod": 3, "gcd": 2, "isqrt": 1, "range_product": 2,
+-              "factorial": 1, "digit_sum": 1, "divmod": 2, "square_offset": 2}
++              "factorial": 1, "digit_sum": 1, "divmod": 2, "square_offset": 2,
++              "fraction": 2, "divexact": 2}
+ 
+ 
+ def build(b, op):
+@@ -68,6 +69,10 @@ def build(b, op):
+ 
+ 
+ def catalog(widths):
+-    return [{"name": f"{name}-{width}", "inputs": arity, "literals": [], "ops": [],
++    plans = [{"name": f"{name}-{width}", "inputs": arity, "literals": [], "ops": [],
+              "result": 0, "algorithm": name, "width": width}
+             for name, arity in ALGORITHMS.items() for width in widths]
++    plans += [{"name": f"fixed_div-{places}-{width}", "inputs": 2, "literals": [], "ops": [],
++               "result": 0, "algorithm": "fixed_div", "width": width, "precision": places}
++              for width in widths for places in range(19)]
++    return plans
+diff --git a/tools/runner_graph_export.py b/tools/runner_graph_export.py
+index 929a1709802c800d9eed35d714352f8f4ae0fb5d..a18dd1fbe3613c07669c359b1e26bea2abfa93c6 100644
+--- a/tools/runner_graph_export.py
++++ b/tools/runner_graph_export.py
+@@ -18,9 +18,10 @@ from runner_export import write_circuit
+ from runner_graph_ir import BUCKETS, build_template
+ from runner_graph_plans import plan_catalog
+ from runner_graph_algorithms import OPERATIONS as INTEGER_KERNELS, catalog
++from runner_graph_whole import OPERATIONS as WHOLE_KERNELS, plans as whole_plans
+ 
+ 
+-OPERATIONS = ("add", "sub", "mul", "divstep", "divfinal", *INTEGER_KERNELS)
++OPERATIONS = ("add", "sub", "mul", "divstep", "divfinal", *INTEGER_KERNELS, *WHOLE_KERNELS)
+ 
+ 
+ def bridge(doc, baseline):
+@@ -34,7 +35,7 @@ def bridge(doc, baseline):
+ def export(args):
+     args.output.mkdir(parents=True, exist_ok=args.resume)
+     sources = ("runner_graph_ir.py", "runner_graph_algorithms.py", "runner_graph_div.py",
+-               "runner_graph_export.py", "runner_graph_plans.py")
++               "runner_graph_export.py", "runner_graph_plans.py", "runner_graph_whole.py", "runner_graph_format.py")
+     identity = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in sources}
+     identity["widths"] = args.widths
+     legacy = json.loads(Path(__file__).with_name("runner-graph-legacy.json").read_text())
+@@ -52,9 +53,9 @@ def export(args):
+     selections = [(op, width) for op in OPERATIONS for width in args.widths if op != "meta" or width >= 8]
+     if any(width < 8 for width in args.widths) and 8 not in args.widths:
+         selections.append(("meta", 8))
+-    selections += [("emit", 62)]
+-    if 128 in args.widths:
+-        selections.append(("emit", 128))
++    if ("meta", 128) not in selections:
++        selections.append(("meta", 128))
++    selections += [(op, width) for op in ("emit", "format") for width in (62, 128)]
+     selections += [(op, width) for op in ("emit_first", "emit_last") for width in (62, 128)
+                    if width == 62 or width in args.widths]
+     for op, width in selections:
+@@ -109,6 +110,7 @@ def export(args):
+     plans = [plan for plan in plans if all(call["op"] == "bind" or (call["op"], call["width"]) in allowed
+                                          for call in plan["ops"])]
+     plans += catalog(args.widths)
++    plans += whole_plans(args.widths)
+     manifest = {"version": 1, "templates": descriptors, "plans": plans}
+     (args.output / "bank.json").write_text(json.dumps(manifest, separators=(",", ":")) + "\n")
+     (args.output / "Qwenputer-MIT.txt").write_text(baseline["source"]["license_text"])
+diff --git a/tools/runner_graph_format.py b/tools/runner_graph_format.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..97f3c119be766b3222db64491717a53b990e1a7a
+--- /dev/null
++++ b/tools/runner_graph_format.py
+@@ -0,0 +1,139 @@
++"""Generic runtime-controlled decimal ASCII formatting compiled entirely into FFN weights."""
++
++ENDINGS = (b"\n", b" ", b"", b", ", b")\n", b"/", b") ", b")", b"), ")
++
++
++def _length(b, digits):
++    occupied = [b.ge(digit, 1, 0, 9) for digit in digits]
++    lengths = [(flag, (i + 1) * b.one) for i, flag in enumerate(occupied)]
++    while len(lengths) > 1:
++        merged = []
++        for i in range(0, len(lengths), 2):
++            if i + 1 == len(lengths):
++                merged.append(lengths[i])
++            else:
++                low, high = lengths[i:i + 2]
++                merged.append((b.any([low[0], high[0]]), b.choose(high[0], high[1], low[1])))
++        lengths = merged
++    return b.choose(lengths[0][0], lengths[0][1], b.one)
++
++
++def _cursor(b, limit):
++    """Keep each counter's thermometer within the exact FP32 64/65 split used by the emitter."""
++    c = b.c
++    reset, step = c.fam["GO"], c.fam["BYTE"]
++    pieces = []
++    for offset in range(0, limit, 64):
++        name = f"format.cursor.{offset}"
++        count = c.counter(name, reset, step)
++        size = min(65, limit - offset)
++        flags = c.thermo(count, reset, size, name)
++        pieces.extend(flags[:64])
++        if offset + 64 < limit:
++            reset = b.one - flags[-1]
++            step = b.node([(1, c.fam["BYTE"], flags[-1])], "format.cursor.step")
++    return b.node([(1, sum(pieces, b.zero), b.one)], "format.cursor")
++
++
++def _controls(b, value, control):
++    digits = control.digits
++    precision = b.node([(1, digits[0] + 10 * digits[1], b.one)], "format.precision")
++    modes = [b.eq(digits[2], mode, 0, 9) for mode in range(5)]
++    endings = [b.eq(digits[3], ending, 0, 9) for ending in range(len(ENDINGS))]
++    prefix = digits[4]
++    precision_nz = b.ge(precision, 1, 0, 99)
++    fixed = b.node([(1, modes[1], precision_nz)], "format.fixed")
++    invalid_precision = b.node([(1, b.one - modes[1], precision_nz)], "format.precision.invalid")
++    invalid_bool = b.node([(1, modes[4], b.any([b.nz(value.digits[1:]),
++                           b.ge(value.digits[0], 2, 0, 9),
++                           b.node([(1, value.sign, b.nz(value.digits))], "format.bool.negative")]))],
++                          "format.bool.invalid")
++    error = b.any([value.error, control.error, control.sign, b.nz(digits[5:]),
++                   b.ge(precision, 19, 0, 99), b.ge(digits[2], 5, 0, 9),
++                   b.ge(digits[3], len(ENDINGS), 0, 9), b.ge(prefix, 2, 0, 9), invalid_precision, invalid_bool])
++    return precision, modes, endings, prefix, fixed, error
++
++
++def _layout(b, value, precision, modes, fixed):
++    width = b.width
++    length = _length(b, value.digits)
++    padded = b.choose(b.ge(precision - length, 0, -width, 98), precision + b.one, length)
++    coefficient_length = b.choose(modes[1], padded, length)
++    groups = b.node([(1, b.ge(length, 3 * i + 1, 1, width), b.one)
++                     for i in range(1, (width - 1) // 3 + 1)], "format.groups")
++    numeric_length = b.choose(modes[2], length + groups, coefficient_length + fixed)
++    numeric_length = b.choose(modes[3], length + 2 * b.one, numeric_length)
++    truth = b.ge(value.digits[0], 1, 0, 9)
++    body_length = b.choose(modes[4], 5 * b.one - truth, numeric_length)
++    preserve = b.any([b.nz(value.digits), modes[1], modes[3]])
++    sign = b.node([(1, value.sign, preserve)], "format.sign.nonzero")
++    sign = b.node([(1, sign, b.one - modes[4])], "format.sign")
++    return length, coefficient_length, groups, truth, body_length, sign
++
++
++def _numeric(b, value, n, precision, modes, fixed, layout, prefix, limit):
++    length, coefficient_length, groups, truth, body_length, sign = layout
++    position = n - prefix - sign
++    point = coefficient_length - precision
++    after_point = b.ge(position - point, 1, -limit, limit)
++    index = coefficient_length - b.one - position
++    index = b.choose(fixed, index + after_point, index)
++    reverse = length + groups - b.one - position
++    digits = []
++    for i, digit in enumerate(value.digits):
++        normal = b.eq(index, i, -limit, limit)
++        grouped = b.eq(reverse, i + i // 3, -limit, limit)
++        digits.append((1, digit, b.choose(modes[2], grouped, normal)))
++    digit = b.node(digits, "format.digit")
++    comma = b.node([(1, modes[2], b.any(b.eq(reverse, 4 * i - 1, -limit, limit)
++                                       for i in range(1, (b.width - 1) // 3 + 1)))], "format.comma")
++    dot = b.node([(1, fixed, b.eq(position - point, 0, -limit, limit)),
++                  (1, modes[3], b.eq(position - length, 0, -limit, limit))], "format.dot")
++    float_zero = b.node([(1, modes[3], b.eq(position - length, 1, -limit, limit))], "format.float.zero")
++    minus = b.node([(1, sign, b.eq(n - prefix, 0, -limit, limit))], "format.minus")
++    return digit, comma, dot, float_zero, minus, position
++
++
++def _emit(b, value, control):
++    precision, modes, endings, prefix, fixed, error = _controls(b, value, control)
++    layout = _layout(b, value, precision, modes, fixed)
++    length, coefficient_length, groups, truth, body_length, sign = layout
++    limit = b.width + (b.width - 1) // 3 + 8
++    n = _cursor(b, limit)
++    digit, comma, dot, float_zero, minus, position = _numeric(
++        b, value, n, precision, modes, fixed, layout, prefix, limit)
++    tail = n - prefix - sign - body_length
++    suffix_length = b.node([(len(suffix), flag, b.one) for suffix, flag in zip(ENDINGS, endings)],
++                           "format.ending.length")
++    done = b.ge(tail - suffix_length, 0, -limit, limit)
++    halt = b.choose(error, b.ge(n, 6, 0, limit), done)
++    opening = b.node([(1, b.eq(prefix, 1, 0, 9), b.eq(n, 0, 0, limit))], "format.opening")
++    ascii_bits = b.c.fn_bits(digit, 0, 9, lambda d: 48 + d, 8, "format.ascii")
++    payload = []
++    for bit, terms in enumerate(ascii_bits):
++        normal = b.node(terms, "format.ascii")
++        for flag, byte in ((comma, 44), (dot, 46), (float_zero, 48), (minus, 45)):
++            normal = b.choose(flag, ((byte >> bit) & 1) * b.one, normal)
++        boolean = b.node([(1, flag, b.eq(position, i, -limit, limit))
++                          for text, flag in ((b"True", truth), (b"False", b.one - truth))
++                          for i, byte in enumerate(text) if (byte >> bit) & 1], "format.bool")
++        normal = b.choose(modes[4], boolean, normal)
++        normal = b.choose(opening, ((40 >> bit) & 1) * b.one, normal)
++        for suffix, flag in zip(ENDINGS, endings):
++            for i, byte in enumerate(suffix):
++                at = b.node([(1, flag, b.eq(tail, i, -limit, limit))], "format.ending.at")
++                normal = b.choose(at, ((byte >> bit) & 1) * b.one, normal)
++        err = b.node([term for i, byte in enumerate(b"error\n") if (byte >> bit) & 1
++                      for term in b.c.t_eq(n, i, 0, limit)], "format.error")
++        payload.append(b.choose(error, err, normal))
++    b._exit(halt, payload)
++
++
++def finish(builder, inputs):
++    """Latch coefficient and control as two output Values before emitting any BYTE steps."""
++    if builder.width not in (62, 128) or len(inputs) != 2:
++        raise ValueError("format requires width 62 or 128 and two input Values")
++    latched = [builder._latch(i, value, preserve_sign=True) for i, value in enumerate(inputs)]
++    _emit(builder, *latched)
++    builder.c.nodes.sort(key=lambda node: node.level)
++    return {"width": builder.width, "input_slots": builder.input_slots, "output_slots": builder.output_slots}
+diff --git a/tools/runner_graph_ir.py b/tools/runner_graph_ir.py
+index 764773f0337f4cc3ff84fd1c56f65324099ad441..524346d2c9b5946f7e07ff53dbd780c94eaf497c 100644
+--- a/tools/runner_graph_ir.py
++++ b/tools/runner_graph_ir.py
+@@ -165,7 +165,7 @@ class Builder:
+                 "order": "lsd_first", "sign_col": 126 if offset == 0 else None,
+                 "error_col": 127 if offset == 0 else None}
+ 
+-    def input(self, index):
++    def input(self, index, preserve_sign=False):
+         if index in self.inputs:
+             return self.inputs[index]
+         digits, sign, error = [], self.zero, self.zero
+@@ -189,16 +189,19 @@ class Builder:
+                 digits.append(self.choose(bad, self.zero, digit))
+             if offset == 0:
+                 sign, error = bits[-2:]
+-        value = self.normalize(Value(digits, sign, self.any([error, *invalid])))
++        value = Value(digits, sign, self.any([error, *invalid]))
++        if not preserve_sign:
++            value = self.normalize(value)
+         self.inputs[index] = value
+         return value
+ 
+-    def _latch(self, index, value):
++    def _latch(self, index, value, preserve_sign=False):
+         from chipformer.q35.prims import thead
+ 
+         overflow = self.nz(value.digits[self.width:])
+-        value = self.normalize(Value(self._pad(value.digits, self.width), value.sign,
+-                                     self.any([value.error, overflow])))
++        value = Value(self._pad(value.digits, self.width), value.sign, self.any([value.error, overflow]))
++        if not preserve_sign:
++            value = self.normalize(value)
+         stored, sign, error = [], self.zero, self.zero
+         for offset in range(0, self.width, 31):
+             group = value.digits[offset:offset + 31]
+@@ -277,12 +280,12 @@ class Builder:
+             payload.append(self.choose(value.error, error, normal))
+         self._exit(halt, payload)
+ 
+-    def finish(self, outputs, emit=False, prefix=b"", suffix=b"\n"):
++    def finish(self, outputs, emit=False, prefix=b"", suffix=b"\n", preserve_sign=False):
+         if isinstance(outputs, Value):
+             outputs = [outputs]
+         if not outputs or (emit and len(outputs) != 1):
+             raise ValueError("finish requires outputs; emit requires exactly one Value")
+-        latched = [self._latch(index, value) for index, value in enumerate(outputs)]
++        latched = [self._latch(index, value, preserve_sign=preserve_sign) for index, value in enumerate(outputs)]
+         if emit:
+             self._emit(latched[0], prefix, suffix)
+         else:
+@@ -294,10 +297,13 @@ class Builder:
+ def build_template(root, op, width):
+     if width not in BUCKETS:
+         raise ValueError(f"template width must be one of {BUCKETS}")
+-    if op not in ("add", "sub", "mul", "select", "emit", "emit_first", "emit_last", "divstep", "divfinal", "meta", "half", "digit_sum", "mulmodstep"):
++    whole = ("format", "round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact")
++    if op not in ("add", "sub", "mul", "select", "emit", "emit_first", "emit_last", "divstep", "divfinal", "meta", "half", "digit_sum", "mulmodstep", *whole):
+         raise ValueError(f"unsupported ALU operation: {op}")
+     if op == "meta" and width < 8:
+         raise ValueError("meta template requires at least 8 digits")
++    if op == "format" and width not in (62, 128):
++        raise ValueError("format template requires width 62 or 128")
+     root = Path(root).resolve()
+     load_upstream(root)
+     dirty = subprocess.check_output(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+@@ -309,7 +315,12 @@ def build_template(root, op, width):
+     from chipformer.rv import core, spec
+ 
+     builder = Builder(width, core, ir, np)
+-    if op in ("meta", "half", "digit_sum", "mulmodstep"):
++    if op == "format":
++        outputs = [builder.input(i, preserve_sign=True) for i in range(2)]
++    elif op in whole:
++        module = importlib.import_module("runner_graph_whole")
++        outputs = module.build(builder, op)
++    elif op in ("meta", "half", "digit_sum", "mulmodstep"):
+         module = importlib.import_module("runner_graph_algorithms")
+         outputs = module.build(builder, op)
+     elif op.startswith("div"):
+@@ -327,7 +338,11 @@ def build_template(root, op, width):
+         else:
+             outputs = getattr(builder, f"signed_{op}")(a, b)
+     prefix, suffix = {"emit_first": (b"(", b", "), "emit_last": (b"", b")\n")}.get(op, (b"", b"\n"))
+-    metadata = builder.finish(outputs, emit=op.startswith("emit"), prefix=prefix, suffix=suffix)
++    if op == "format":
++        metadata = importlib.import_module("runner_graph_format").finish(builder, outputs)
++    else:
++        metadata = builder.finish(outputs, emit=op.startswith("emit"), prefix=prefix, suffix=suffix,
++                                  preserve_sign=op in ("round_div", "decimal_mul", "scale10", "float_exact"))
+     metadata.update(op=op, input_arity=len(builder.inputs))
+     c = builder.c
+     families = [{"name": name, "base": int(spec.FAMILIES[name][0]), "size": int(spec.FAMILIES[name][1])}
+diff --git a/tools/runner_graph_program.py b/tools/runner_graph_program.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..14ac169429cc857109b6e0cd95f7150aea809f85
+--- /dev/null
++++ b/tools/runner_graph_program.py
+@@ -0,0 +1,369 @@
++"""Offline qualification only: 4096 source chars, 2048 AST nodes, 4096 FFN ops, 8192 values, 128 prints; no runtime."""
++
++import ast
++import re
++from dataclasses import dataclass
++
++try:
++    from .runner_graph_plans import Unsupported, bucket, power_schedule, signed_literal
++except ImportError:
++    from runner_graph_plans import Unsupported, bucket, power_schedule, signed_literal
++
++
++RESERVED = frozenset(("print", "abs", "float", "divmod", "min", "max", "round", "format",
++                      "math", "Fraction", "Decimal", "range", "sum"))
++DECIMAL = re.compile(r"([+-]?)([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
++
++
++@dataclass(frozen=True)
++class Number:
++    ref: int
++    digits: int
++    kind: str = "integer"
++    scale: int = 0
++    second: object = None
++
++
++class Binder:
++    """Keep constants and produced slots separate until the entire literal pool is known."""
++
++    def __init__(self):
++        self.values = []
++        self.ids = {}
++        self.ops = []
++        self.produced = 0
++        self.prints = []
++        self.names = {}
++        self.imports = set()
++        self.calls = {}
++
++    def limits(self):
++        if len(self.ops) > 4096 or len(self.values) + self.produced > 8192 or len(self.prints) > 128:
++            raise Unsupported("program exceeds native packet bounds")
++
++    def literal(self, text, kind="integer", scale=0):
++        negative = text.startswith("-")
++        digits = text.lstrip("+-").lstrip("0") or "0"
++        if not digits.isascii() or not digits.isdigit() or len(digits) > 128:
++            raise Unsupported("literal exceeds 128 decimal digits")
++        text = ("-" if negative and (digits != "0" or kind == "fixed") else "") + digits
++        if text not in self.ids:
++            self.ids[text] = len(self.values)
++            self.values.append(text)
++            self.limits()
++        return Number(self.ids[text], len(digits), kind, scale)
++
++    @staticmethod
++    def integer(value):
++        if not isinstance(value, Number) or value.kind != "integer":
++            raise Unsupported("operation requires integer operands")
++        return value
++
++    def call(self, op, a, b=None, outputs=1, precision=0):
++        storage = max(a.digits, b.digits if b is not None else 1)
++        needed = storage
++        if op in ("mul", "decimal_mul"):
++            needed = a.digits + b.digits
++        elif op in ("add", "sub"):
++            needed += 1
++        elif op == "fixed_div":
++            needed = max(a.digits + precision + 1, b.digits)
++        elif op == "scale10":
++            needed += 1
++        width = bucket(min(128, needed))
++        key = (op, a.ref, b.ref if b is not None else None, width, outputs, precision, min(128, needed))
++        if key in self.calls:
++            return self.calls[key]
++        row = {"op": op, "width": width, "a": a.ref, "outputs": outputs,
++               "precision": precision, "checked": True}
++        if b is not None:
++            row["b"] = b.ref
++        self.ops.append(row)
++        result = tuple(Number(-(self.produced + i + 1), min(128, needed)) for i in range(outputs))
++        self.produced += outputs
++        self.limits()
++        value = result[0] if outputs == 1 else result
++        self.calls[key] = value
++        return value
++
++    def fraction(self, a, b):
++        a, b = self.integer(a), self.integer(b)
++        n, d = self.call("fraction", a, b, outputs=2)
++        return Number(n.ref, n.digits, "fraction", second=d)
++
++    def ratio(self, value):
++        if value.kind == "fraction":
++            return Number(value.ref, value.digits), value.second
++        return self.integer(value), self.literal("1")
++
++    def floating(self, a, b=None):
++        """Abstain dynamically on fractional division or over 15 digits; do not emulate IEEE arithmetic."""
++        value = self.call("divexact", a, b) if b is not None else a
++        value = self.call("float_exact", value)
++        return Number(value.ref, value.digits, "integral_float")
++
++    def decimal(self, node):
++        """Bind fixed-notation Decimal coefficients with scale at most 6 and default precision at most 28."""
++        if not isinstance(node, ast.Constant) or type(node.value) is not str:
++            raise Unsupported("Decimal requires a lexical decimal string")
++        match = DECIMAL.fullmatch(node.value)
++        if match is None:
++            raise Unsupported("Decimal string is outside fixed decimal grammar")
++        sign, body = match.groups()
++        whole, dot, fraction = body.partition(".")
++        scale = len(fraction) if dot else 0
++        if scale > 6:
++            raise Unsupported("Decimal scale may require exponent notation")
++        return self.literal(sign + whole + fraction, "fixed", scale)
++
++    def binary(self, node):
++        if isinstance(node.op, ast.Pow):
++            exponent = signed_literal(node.right)
++            if exponent is None or exponent.startswith("-") or len(exponent) > 3:
++                raise Unsupported("power requires a literal exponent in [0,999]")
++            schedule = power_schedule(int(exponent))
++            a = self.integer(self.expression(node.left))
++            bindings = {"base": a, "one": self.literal("1")}
++            if exponent == "0":
++                return self.call("add", self.call("mul", a, self.literal("0")), bindings["one"])
++            for i, step in enumerate(schedule["calls"]):
++                bindings[i] = self.call("mul", bindings[step["a"]], bindings[step["b"]])
++            return bindings[schedule["result"]]
++        a, b = self.expression(node.left), self.expression(node.right)
++        if not isinstance(a, Number) or not isinstance(b, Number):
++            raise Unsupported("arithmetic requires numeric scalars")
++        if a.kind == "fixed" or b.kind == "fixed":
++            if a.kind != "fixed" or b.kind != "fixed" or not isinstance(node.op, ast.Mult):
++                raise Unsupported("Decimal supports Decimal multiplication only")
++            if a.digits + b.digits > 28 or a.scale + b.scale > 6:
++                raise Unsupported("Decimal product exceeds exact default precision or scale")
++            result = self.call("decimal_mul", a, b)
++            return Number(result.ref, result.digits, "fixed", a.scale + b.scale)
++        if a.kind == "fraction" or b.kind == "fraction":
++            an, ad = self.ratio(a)
++            bn, bd = self.ratio(b)
++            if isinstance(node.op, (ast.Add, ast.Sub)):
++                numerator = self.call("add" if isinstance(node.op, ast.Add) else "sub",
++                                      self.call("mul", an, bd), self.call("mul", bn, ad))
++                denominator = self.call("mul", ad, bd)
++            elif isinstance(node.op, (ast.Mult, ast.Div)):
++                numerator = self.call("mul", an, bd if isinstance(node.op, ast.Div) else bn)
++                denominator = self.call("mul", ad, bn if isinstance(node.op, ast.Div) else bd)
++            else:
++                raise Unsupported("unsupported Fraction arithmetic")
++            return self.fraction(numerator, denominator)
++        a, b = self.integer(a), self.integer(b)
++        op = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}.get(type(node.op))
++        if op:
++            return self.call(op, a, b)
++        if isinstance(node.op, (ast.FloorDiv, ast.Mod)):
++            pair = self.call("divmod", a, b, outputs=2)
++            return pair[isinstance(node.op, ast.Mod)]
++        if isinstance(node.op, ast.Div):
++            return self.floating(a, b)
++        raise Unsupported("unsupported arithmetic operator")
++
++    def comparison(self, node):
++        if len(node.ops) != 1 or len(node.comparators) != 1:
++            raise Unsupported("chained comparisons are unsupported")
++        a = self.integer(self.expression(node.left))
++        b = self.integer(self.expression(node.comparators[0]))
++        order = self.call("compare", a, b)
++        zero, one = self.literal("0"), self.literal("1")
++        operator = node.ops[0]
++        if isinstance(operator, (ast.Lt, ast.GtE)):
++            result = self.call("sub", zero, self.call("min", order, zero))
++        elif isinstance(operator, (ast.Gt, ast.LtE)):
++            result = self.call("max", order, zero)
++        elif isinstance(operator, (ast.Eq, ast.NotEq)):
++            result = self.call("max", order, self.call("sub", zero, order))
++        else:
++            raise Unsupported("unsupported comparison")
++        if isinstance(operator, (ast.GtE, ast.LtE, ast.Eq)):
++            result = self.call("sub", one, result)
++        return Number(result.ref, result.digits, "boolean")
++
++    def invocation(self, node):
++        if node.keywords:
++            raise Unsupported("numeric calls do not accept keywords")
++        func = node.func
++        if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
++                and func.value.id == "math" and "math" in self.imports and func.attr == "gcd"):
++            name = "gcd"
++        elif isinstance(func, ast.Name):
++            name = func.id
++        else:
++            raise Unsupported("call is outside the numeric allowlist")
++        if name == "Decimal" and name in self.imports and len(node.args) == 1:
++            return self.decimal(node.args[0])
++        if name == "Fraction" and name in self.imports and 1 <= len(node.args) <= 2:
++            values = [self.expression(arg) for arg in node.args]
++            if any(not isinstance(value, Number) for value in values):
++                raise Unsupported("Fraction requires numeric scalars")
++            if len(values) == 1:
++                if values[0].kind == "fraction":
++                    return values[0]
++                values.append(self.literal("1"))
++            return self.fraction(*values)
++        if name in ("abs", "float") and len(node.args) == 1:
++            value = self.expression(node.args[0])
++            if not isinstance(value, Number):
++                raise Unsupported("numeric conversion requires a scalar")
++            if name == "float":
++                if value.kind == "fraction":
++                    return self.floating(*self.ratio(value))
++                return self.floating(self.integer(value))
++            value = self.integer(value)
++            return self.call("max", value, self.call("sub", self.literal("0"), value))
++        if name in ("divmod", "gcd", "min", "max") and len(node.args) == 2:
++            if name == "gcd" and not isinstance(func, ast.Attribute):
++                raise Unsupported("gcd requires imported math.gcd")
++            a, b = (self.integer(self.expression(arg)) for arg in node.args)
++            return self.call(name, a, b, outputs=2 if name == "divmod" else 1)
++        raise Unsupported("call is outside the numeric allowlist")
++
++    def expression(self, node):
++        text = signed_literal(node)
++        if text is not None:
++            return self.literal(text)
++        if isinstance(node, ast.Name) and node.id in self.names:
++            return self.names[node.id]
++        if isinstance(node, ast.BinOp):
++            return self.binary(node)
++        if isinstance(node, ast.Compare):
++            return self.comparison(node)
++        if isinstance(node, ast.Call):
++            return self.invocation(node)
++        if isinstance(node, ast.Attribute) and node.attr in ("numerator", "denominator"):
++            value = self.expression(node.value)
++            if isinstance(value, Number) and value.kind == "fraction":
++                return Number(value.ref, value.digits) if node.attr == "numerator" else value.second
++            raise Unsupported("attributes require a Fraction")
++        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
++            value = self.integer(self.expression(node.operand))
++            return value if isinstance(node.op, ast.UAdd) else self.call("sub", self.literal("0"), value)
++        if isinstance(node, ast.Tuple) and len(node.elts) == 2:
++            return tuple(self.integer(self.expression(item)) for item in node.elts)
++        raise Unsupported("expression is outside the numeric allowlist")
++
++    def formatted(self, node):
++        if not isinstance(node, ast.JoinedStr) or len(node.values) != 1:
++            return self.expression(node), None, 0
++        field = node.values[0]
++        if not isinstance(field, ast.FormattedValue) or field.conversion != -1:
++            raise Unsupported("formatted output requires one numeric field without conversion")
++        spec = field.format_spec
++        if (not isinstance(spec, ast.JoinedStr) or len(spec.values) != 1
++                or not isinstance(spec.values[0], ast.Constant) or type(spec.values[0].value) is not str):
++            raise Unsupported("format specification must be literal")
++        text = spec.values[0].value
++        if text in (",", ",d", "d"):
++            return self.integer(self.expression(field.value)), "comma" if text != "d" else "integer", 0
++        match = re.fullmatch(r"\.([0-9]{1,2})f", text)
++        if match is None or int(match[1]) > 18:
++            raise Unsupported("unsupported numeric format")
++        places = int(match[1])
++        value = self.expression(field.value)
++        if not isinstance(value, Number) or value.kind not in ("integer", "integral_float"):
++            raise Unsupported("fixed formatting requires an integer or guarded exact float")
++        if value.kind == "integer":
++            value = self.call("float_exact", value)
++        for _ in range(places):
++            value = self.call("scale10", value)
++        return value, "fixed", places
++
++    def output(self, node):
++        if not node.args:
++            raise Unsupported("print requires numeric arguments")
++        if len(node.keywords) > 1:
++            raise Unsupported("print accepts only one end keyword")
++        ending = "newline"
++        for keyword in node.keywords:
++            if (keyword.arg != "end" or not isinstance(keyword.value, ast.Constant)
++                    or type(keyword.value.value) is not str or keyword.value.value not in ("\n", " ", "", ", ")):
++                raise Unsupported("print supports only a bounded literal end")
++            ending = {"\n": "newline", " ": "space", "": "empty", ", ": "comma_space"}[keyword.value.value]
++        for i, node_arg in enumerate(node.args):
++            value, style, precision = self.formatted(node_arg)
++            row = {"ending": ending if i + 1 == len(node.args) else "space", "prefix": False}
++            if isinstance(value, tuple):
++                row.update(ref=value[0].ref, second=value[1].ref, style="tuple", precision=0)
++            else:
++                row.update(ref=value.ref, style=style or value.kind, precision=precision if style else value.scale)
++                if value.kind == "fraction":
++                    row["second"] = value.second.ref
++            self.prints.append(row)
++            self.limits()
++
++    def assign(self, target, value):
++        if isinstance(target, ast.Name) and target.id not in RESERVED and not target.id.startswith("__"):
++            self.names[target.id] = value
++        elif isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, tuple) and len(target.elts) == len(value):
++            for item, part in zip(target.elts, value):
++                self.assign(item, part)
++        else:
++            raise Unsupported("assignment target is reserved or unsupported")
++
++    def statement(self, node):
++        if isinstance(node, ast.Import):
++            if len(node.names) != 1 or node.names[0].name != "math" or node.names[0].asname is not None:
++                raise Unsupported("only import math is allowed")
++            self.imports.add("math")
++        elif isinstance(node, ast.ImportFrom):
++            allowed = {"fractions": "Fraction", "decimal": "Decimal"}
++            if (node.level or node.module not in allowed or len(node.names) != 1
++                    or node.names[0].name != allowed[node.module] or node.names[0].asname is not None):
++                raise Unsupported("only Fraction and Decimal imports are allowed")
++            self.imports.add(node.names[0].name)
++        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
++            self.assign(node.targets[0], self.expression(node.value))
++        elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
++            expression = ast.BinOp(left=ast.Name(id=node.target.id), op=node.op, right=node.value)
++            self.assign(node.target, self.expression(expression))
++        elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
++              and isinstance(node.value.func, ast.Name) and node.value.func.id == "print"):
++            self.output(node.value)
++        else:
++            raise Unsupported("statement is outside the offline numeric grammar")
++
++    def finish(self):
++        if not self.prints:
++            raise Unsupported("program requires numeric output")
++        offset = len(self.values)
++
++        def reference(ref):
++            return ref if ref >= 0 else offset - ref - 1
++
++        ops = []
++        for original in self.ops:
++            row = dict(original)
++            for key in ("a", "b"):
++                if key in row:
++                    row[key] = reference(row[key])
++            ops.append(row)
++        prints = []
++        for original in self.prints:
++            row = dict(original)
++            for key in ("ref", "second"):
++                if key in row:
++                    row[key] = reference(row[key])
++            prints.append(row)
++        return {"version": 1, "values": self.values, "ops": ops, "prints": prints}
++
++
++def compile_program(source):
++    """Compile fresh source into a native v1 packet; unsupported syntax raises Unsupported without execution."""
++    if not isinstance(source, str) or not source or len(source) > 4096:
++        raise Unsupported("program length is outside [1,4096]")
++    try:
++        tree = ast.parse(source, mode="exec")
++        if sum(1 for _ in ast.walk(tree)) > 2048:
++            raise Unsupported("program exceeds 2048 syntax nodes")
++        binder = Binder()
++        for statement in tree.body:
++            binder.statement(statement)
++        return binder.finish()
++    except (SyntaxError, ValueError, TypeError, RecursionError) as exc:
++        if isinstance(exc, Unsupported):
++            raise
++        raise Unsupported("invalid or unsupported numeric program") from exc
+diff --git a/tools/runner_graph_verify.py b/tools/runner_graph_verify.py
+index e7c91565561dbfb2e266a69adff6e1ddddaab4f2..0caa17aa31095fa2b82b69f1263522b539043b6b 100644
+--- a/tools/runner_graph_verify.py
++++ b/tools/runner_graph_verify.py
+@@ -22,7 +22,7 @@ BYTE = sum(size for _, size in LAYOUT[:6])
+ HALT = sum(size for _, size in LAYOUT[:17])
+ RUNTIME_FILES = ("runner_graph.zig", "runner_graph_bank.zig", "runner_graph_machine.zig",
+                  "runner_graph_binary.zig", "runner_graph_packet.zig", "runner_graph_algorithms.zig",
+-                 "runner_graph_state_cache.zig")
++                 "runner_graph_state_cache.zig", "runner_graph_print.zig")
+ 
+ 
+ def require(condition, message):
+@@ -135,7 +135,7 @@ def negative_controls(cases, manifest):
+     require(text and text[-1] in "0123456789", "control seed is not signed decimal")
+     bad_operand["values"][0] = text[:-1] + ("1" if text[-1] == "0" else "0")
+     bad_literal = copy.deepcopy(seed["packet"])
+-    bad_literal["values"][0] = "0" * 63
++    bad_literal["values"][0] = "0" * 129
+     override = copy.deepcopy(seed["packet"])
+     override["ops"] = [{"op": "add", "width": 4, "a": 0, "b": 1}]
+     missing = "__graph_verify_missing_plan__"
+diff --git a/tools/runner_graph_whole.py b/tools/runner_graph_whole.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b407ac5ff9c9a16d24f5106d816339cd5101891
+--- /dev/null
++++ b/tools/runner_graph_whole.py
+@@ -0,0 +1,87 @@
++"""Whole-cell decimal kernels compiled exclusively from Builder FFN operations."""
++
++from runner_graph_ir import Value
++
++
++OPERATIONS = ("round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact")
++
++
++def build(b, op):
++    arity = 4 if op == "round_div" else 1 if op in ("scale10", "float_exact") else 2
++    inputs = [b.input(i, preserve_sign=True) for i in range(arity)]
++    error = b.any(value.error for value in inputs)
++    if op == "float_exact":
++        a = inputs[0]
++        return Value(a.digits, a.sign, b.any([error, b.nz(a.digits[15:])]))
++    if op == "scale10":
++        a = inputs[0]
++        return Value([b.zero] + a.digits[:-1], a.sign, b.any([error, b.nz(a.digits[-1:])]))
++    if op == "round_div":
++        return round_div(b, inputs)
++    a, c = inputs
++    if op == "decimal_mul":
++        digits, overflow = b.mul(a.digits, c.digits, b.width)
++        sign = b.one - b.eq(a.sign - c.sign, 0, -1, 1)
++        return Value(digits, sign, b.any([error, overflow]))
++    a, c = b.normalize(a), b.normalize(c)
++    _, magnitude_less = b.sub(a.digits, c.digits)
++    equal = b.one - b.any(b.one - b.eq(x - y, 0, -9, 9) for x, y in zip(a.digits, c.digits))
++    same_sign = b.eq(a.sign - c.sign, 0, -1, 1)
++    negative_less = b.one - b.any([magnitude_less, equal])
++    less = b.choose(same_sign, b.choose(a.sign, negative_less, magnitude_less), a.sign)
++    if op == "compare":
++        same = b.node([(1, equal, same_sign)], "compare.equal")
++        return Value([b.one - same] + [b.zero] * (b.width - 1), less, error)
++    if op in ("min", "max"):
++        return b.select(less if op == "min" else b.one - less, a, c)
++    raise ValueError(f"unsupported whole-cell kernel: {op}")
++
++
++def round_div(b, inputs):
++    """Round unsigned Q/R half-even and preserve numerator XOR denominator sign, including zero."""
++    quotient, remainder, numerator, denominator = inputs
++    twice, high = b.add(remainder.digits, remainder.digits)
++    twice.append(high)
++    divisor = denominator.digits + [b.zero]
++    _, below = b.sub(twice, divisor)
++    _, above = b.sub(divisor, twice)
++    tie = b.one - b.any([below, above])
++    odd = b.any(b.eq(quotient.digits[0], digit, 0, 9) for digit in (1, 3, 5, 7, 9))
++    increment = b.any([above, b.node([(1, tie, odd)], "round.tie.odd")])
++    digits, overflow = b.add(quotient.digits, [increment] + [b.zero] * (b.width - 1))
++    _, valid_remainder = b.sub(remainder.digits, denominator.digits)
++    error = b.any([*(value.error for value in inputs), quotient.sign, remainder.sign,
++                   b.one - b.nz(denominator.digits), b.one - valid_remainder, overflow])
++    sign = b.one - b.eq(numerator.sign - denominator.sign, 0, -1, 1)
++    return Value(digits, sign, error)
++
++
++def plans(widths):
++    """Offline compare-exchange schedules compute sum(abs(a[i]-a[j])) for lists of up to 16 integers."""
++    result = []
++    for width in widths:
++        for size in range(17):
++            literals = [str(i) for i in range(max(1, size))]
++            zero = size
++            values = list(range(size))
++            ops = []
++
++            def call(op, a, c):
++                ref = size + len(literals) + len(ops)
++                ops.append({"op": op, "a": a, "b": c, "width": width, "checked": True})
++                return ref
++
++            for i in range(1, size):
++                for j in range(i, 0, -1):
++                    a, c = values[j - 1:j + 1]
++                    values[j - 1] = call("min", a, c)
++                    values[j] = call("max", a, c)
++            prefix = answer = zero
++            for i, value in enumerate(values):
++                product = call("mul", value, size + i)
++                difference = call("sub", product, prefix)
++                answer = call("add", answer, difference)
++                prefix = call("add", prefix, value)
++            result.append({"name": f"loop-sorted_distance-{size}-{width}", "inputs": size,
++                           "literals": literals, "ops": ops, "result": answer})
++    return result
+diff --git a/zig/src/core/runner_graph.zig b/zig/src/core/runner_graph.zig
+index 404670362935c5e2c8c878ab0e064926d47d5940..c62b81d7345dc91aa191928771c21dd036a1a746 100644
+--- a/zig/src/core/runner_graph.zig
++++ b/zig/src/core/runner_graph.zig
+@@ -7,6 +7,9 @@ pub const Machine = @import("runner_graph_machine.zig").Machine;
+ pub const Packet = @import("runner_graph_packet.zig").Packet;
+ pub const Op = @import("runner_graph_packet.zig").Op;
+ pub const Plan = @import("runner_graph_packet.zig").Plan;
++pub const Print = @import("runner_graph_packet.zig").Print;
++pub const PrintStyle = @import("runner_graph_packet.zig").Style;
++pub const PrintEnding = @import("runner_graph_packet.zig").Ending;
+ pub const Builder = @import("runner_graph_packet.zig").Builder;
+ pub const id = "graph";
+ 
+diff --git a/zig/src/core/runner_graph_algorithms.zig b/zig/src/core/runner_graph_algorithms.zig
+index 5ad6008d05a8b34165630962e21fad8066df7311..eca2b68a500b4233646bcd183f57a264b4d6747d 100644
+--- a/zig/src/core/runner_graph_algorithms.zig
++++ b/zig/src/core/runner_graph_algorithms.zig
+@@ -5,32 +5,68 @@ const packet = @import("runner_graph_packet.zig");
+ const End = @FieldType(api.RunEnd, "end");
+ const Cancel = ?*const std.atomic.Value(bool);
+ 
+-/// Emits one result line; divmod emits the Python tuple (quotient, remainder) through prepared emitters.
+-pub fn run(m: anytype, kind: []const u8, width: u8, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !api.RunEnd {
+-    if (!packet.widthValid(width) or m.values.len < 32) return error.GraphAlgorithmScratch;
+-    const arity: usize = if (std.mem.eql(u8, kind, "powmod")) 3 else if (std.mem.eql(u8, kind, "gcd") or std.mem.eql(u8, kind, "range_product") or
+-        std.mem.eql(u8, kind, "divmod") or std.mem.eql(u8, kind, "square_offset")) 2 else if (std.mem.eql(u8, kind, "isqrt") or std.mem.eql(u8, kind, "factorial") or
+-        std.mem.eql(u8, kind, "digit_sum")) 1 else return error.GraphAlgorithm;
+-    var inputs: [3]packet.Value = undefined;
+-    @memcpy(inputs[0..arity], m.values[0..arity]);
++/// Executes an algorithm in request-local scratch and copies only its typed outputs back to the caller.
++pub fn compute(m: anytype, kind: []const u8, width: u8, precision: u8, refs: []const u32, dest: usize, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !End {
++    const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
++    const outputs = packet.algorithmOutputs(family);
++    if (!packet.widthValid(width) or refs.len != packet.algorithmArity(family) or dest + outputs > m.values.len)
++        return error.GraphAlgorithmScratch;
++    if (precision > 18 or (family != .fixed_div and precision != 0)) return error.GraphPrecision;
++    const original = m.values;
+     const zero = try packet.literal("0");
+-    for (m.values[0..32]) |*value| value.* = zero;
+-    m.values[1] = try packet.literal("1");
+-    @memcpy(m.values[2 .. 2 + arity], inputs[0..arity]);
+-    const input_digits = @max(1, std.mem.trimStart(u8, m.parsed.value.values[0], "+-0").len);
+-    var c: Context(@TypeOf(m)) = .{ .m = m, .width = width, .budget = budget, .out = out, .cancel = cancel, .input_digits = input_digits };
+-    c.execute(kind) catch |err| switch (err) {
+-        error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
+-        error.GraphAlgorithmLimit => return .{ .end = .budget, .steps = m.steps },
+-        error.GraphAlgorithmArithmetic => {
+-            m.values[0][0][127] = packet.bit_scale;
+-            c.emit(0) catch |emit_err| switch (emit_err) {
+-                error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
+-                else => return emit_err,
+-            };
++    var scratch: [32]packet.Value = @splat(zero);
++    scratch[1] = try packet.literal("1");
++    for (refs, 0..) |ref, i| {
++        if (ref >= original.len) return error.GraphReference;
++        for (width..packet.max_digits) |digit| {
++            const bits = original[ref][digit / 31][2 + digit % 31 * 4 ..][0..4];
++            for (bits) |bit| if (bit != 0) return error.GraphNarrowBinding;
++        }
++        scratch[2 + i] = original[ref];
++    }
++    m.values = &scratch;
++    defer m.values = original;
++    var c: Context(@TypeOf(m)) = .{ .m = m, .width = width, .precision = precision, .budget = budget, .out = out, .cancel = cancel, .input_digits = occupiedDigits(&scratch[2]) };
++    const result = c.calculate(kind) catch |err| switch (err) {
++        error.GraphAlgorithmStopped => return c.end,
++        error.GraphAlgorithmLimit => return .budget,
++        error.GraphAlgorithmArithmetic => blk: {
++            scratch[0][0][127] = packet.bit_scale;
++            break :blk [2]u32{ 0, 0 };
+         },
+         else => return err,
+     };
++    const values = [2]packet.Value{ scratch[result[0]], scratch[result[1]] };
++    @memcpy(original[dest .. dest + outputs], values[0..outputs]);
++    return .halted;
++}
++
++/// Named legacy algorithms retain their token schedules; new fractional formats use the compiled formatter.
++pub fn run(m: anytype, kind: []const u8, width: u8, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !api.RunEnd {
++    const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
++    const refs = [_]u32{ 0, 1, 2 };
++    var end = try compute(m, kind, width, m.precision, refs[0..packet.algorithmArity(family)], 0, budget, out, cancel);
++    if (end != .halted) return .{ .end = end, .steps = m.steps };
++    if (family == .fraction or family == .fixed_div) {
++        end = try @import("runner_graph_print.zig").emit(m, .{ .ref = 0, .second = if (family == .fraction) 1 else null, .style = if (family == .fraction) .fraction else .fixed, .precision = m.precision }, budget, out, cancel);
++        return .{ .end = end, .steps = m.steps };
++    }
++    var c: Context(@TypeOf(m)) = .{ .m = m, .width = width, .budget = budget, .out = out, .cancel = cancel, .input_digits = 1 };
++    const failed = m.values[0][0][127];
++    if (failed != 0 and failed != packet.bit_scale) return error.GraphPredicate;
++    if (family == .divmod and failed == 0) {
++        c.emitNamed("emit_first", 0) catch |err| switch (err) {
++            error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
++            else => return err,
++        };
++        c.emitNamed("emit_last", 1) catch |err| switch (err) {
++            error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
++            else => return err,
++        };
++    } else c.emit(0) catch |err| switch (err) {
++        error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
++        else => return err,
++    };
+     return .{ .end = .halted, .steps = m.steps };
+ }
+ 
+@@ -42,6 +78,7 @@ fn Context(comptime M: type) type {
+         out: *std.ArrayList(u8),
+         cancel: Cancel,
+         input_digits: usize,
++        precision: u8 = 0,
+         end: End = .halted,
+ 
+         const Self = @This();
+@@ -52,7 +89,7 @@ fn Context(comptime M: type) type {
+             for (refs) |ref| needed = @max(needed, occupiedDigits(&c.m.values[ref]));
+             if (std.mem.eql(u8, name, "mul")) {
+                 needed = occupiedDigits(&c.m.values[refs[0]]) + occupiedDigits(&c.m.values[refs[1]]);
+-            } else if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub")) {
++            } else if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or std.mem.eql(u8, name, "scale10")) {
+                 needed += 1;
+             } else if (std.mem.eql(u8, name, "meta")) needed = @max(needed, 8);
+             const selected = bucket(@min(needed, width));
+@@ -119,16 +156,53 @@ fn Context(comptime M: type) type {
+             c.move(r, 27);
+         }
+ 
+-        fn execute(c: *Self, kind: []const u8) !void {
+-            if (std.mem.eql(u8, kind, "divmod")) {
++        fn calculate(c: *Self, kind: []const u8) ![2]u32 {
++            if (std.mem.eql(u8, kind, "divmod") or std.mem.eql(u8, kind, "divexact")) {
+                 try c.meta(2, 3);
+-                try c.unsigned(20, 21, 5, 6);
+-                try c.call("divfinal", &.{ 5, 6, 2, 3 }, 10);
+-                try c.emitNamed("emit_first", 10);
+-                return c.emitNamed("emit_last", 11);
++                c.move(5, 20);
++                c.move(6, 21);
++                try c.unsigned(5, 6, 7, 8);
++                if (std.mem.eql(u8, kind, "divexact")) {
++                    if (try c.nonzero(8)) return error.GraphAlgorithmArithmetic;
++                    try c.call("round_div", &.{ 7, 8, 2, 3 }, 10);
++                    return .{ 10, 0 };
++                }
++                try c.call("divfinal", &.{ 7, 8, 2, 3 }, 10);
++                return .{ 10, 11 };
+             }
++            if (std.mem.eql(u8, kind, "fraction")) return c.fraction();
++            if (std.mem.eql(u8, kind, "fixed_div")) return .{ try c.fixedDivision(), 0 };
+             const result: u32 = if (std.mem.eql(u8, kind, "gcd")) try c.gcd() else if (std.mem.eql(u8, kind, "isqrt")) try c.isqrt() else if (std.mem.eql(u8, kind, "digit_sum")) try c.digitSum() else if (std.mem.eql(u8, kind, "powmod")) try c.powmod() else if (std.mem.eql(u8, kind, "square_offset")) try c.squareOffset() else try c.product(std.mem.eql(u8, kind, "factorial"));
+-            try c.emit(result);
++            return .{ result, 0 };
++        }
++
++        fn fraction(c: *Self) ![2]u32 {
++            const divisor = try c.gcd();
++            c.move(15, divisor);
++            try c.meta(2, 3);
++            if (!try c.flag(1)) return error.GraphAlgorithmArithmetic;
++            c.move(5, 20);
++            c.move(6, 21);
++            try c.unsigned(5, 15, 7, 8);
++            try c.unsigned(6, 15, 9, 10);
++            try c.call("divfinal", &.{ 7, 0, 2, 3 }, 10);
++            return .{ 10, 9 };
++        }
++
++        fn fixedDivision(c: *Self) !u32 {
++            try c.meta(2, 3);
++            if (!try c.flag(1)) return error.GraphAlgorithmArithmetic;
++            c.move(5, 20);
++            c.move(6, 21);
++            try c.unsigned(5, 6, 7, 8);
++            for (0..c.precision) |_| {
++                try c.call("scale10", &.{7}, 7);
++                try c.call("divstep", &.{ 8, 6, 0 }, 10);
++                c.move(8, 10);
++                try c.call("add", &.{ 7, 11 }, 7);
++            }
++            try c.call("round_div", &.{ 7, 8, 2, 3 }, 10);
++            return 10;
+         }
+ 
+         fn gcd(c: *Self) !u32 {
+diff --git a/zig/src/core/runner_graph_bank.zig b/zig/src/core/runner_graph_bank.zig
+index b2b8e6e39c62489f581ae50a0272b56e1ced26a0..1b5dca1af7825dcda5061982c360425bd66d5216 100644
+--- a/zig/src/core/runner_graph_bank.zig
++++ b/zig/src/core/runner_graph_bank.zig
+@@ -33,6 +33,7 @@ pub const PreparedPlan = struct {
+     total_values: usize,
+     algorithm: ?[]const u8,
+     width: u8,
++    precision: u8,
+ };
+ 
+ const Manifest = struct {
+@@ -81,29 +82,13 @@ pub const Bank = struct {
+             for (p.literals, constants) |text, *v| v.* = try packet.literal(text);
+             if (p.algorithm) |kind| {
+                 const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
+-                const arity: u32 = switch (family) {
+-                    .powmod => 3,
+-                    .gcd, .range_product, .divmod, .square_offset => 2,
+-                    .isqrt, .factorial, .digit_sum => 1,
+-                };
+-                if (p.inputs != arity or p.ops.len != 0 or constants.len != 0 or p.result != 0 or
+-                    !packet.widthValid(p.width)) return error.GraphAlgorithm;
+-                const kernels = [_]struct { []const u8, u8, u8 }{
+-                    .{ "add", 2, 1 },        .{ "sub", 2, 1 },      .{ "mul", 2, 1 },  .{ "half", 1, 2 },
+-                    .{ "divstep", 3, 2 },    .{ "divfinal", 4, 2 }, .{ "meta", 2, 3 }, .{ "digit_sum", 1, 1 },
+-                    .{ "mulmodstep", 4, 1 },
+-                };
+-                for (kernels) |k| {
+-                    const t = bank.find(k[0], if (std.mem.eql(u8, k[0], "meta")) @max(p.width, 8) else p.width) orelse
+-                        return error.GraphTemplate;
+-                    if (t.inputs != k[1] or t.outputs != k[2]) return error.GraphSlotArity;
+-                }
+-                if (family == .divmod) for ([_][]const u8{ "emit_first", "emit_last" }) |op| {
+-                    const t = bank.find(op, @max(p.width, 62)) orelse return error.GraphEmitMissing;
+-                    if (t.inputs != 1 or t.outputs != 1) return error.GraphSlotArity;
+-                };
++                if (p.inputs != packet.algorithmArity(family) or p.ops.len != 0 or constants.len != 0 or p.result != 0)
++                    return error.GraphAlgorithm;
++                try bank.validateAlgorithm(family, p.width, p.precision);
++            } else if (p.precision != 0) {
++                return error.GraphPrecision;
+             }
+-            plans[i] = .{ .name = p.name, .inputs = p.inputs, .ops = p.ops, .result = p.result, .constants = constants, .total_values = if (p.algorithm != null) 32 else try bank.validate(p.inputs + p.literals.len, p.ops, p.result), .algorithm = p.algorithm, .width = p.width };
++            plans[i] = .{ .name = p.name, .inputs = p.inputs, .ops = p.ops, .result = p.result, .constants = constants, .total_values = if (p.algorithm != null) 32 else try bank.validate(p.inputs + p.literals.len, p.ops, p.result), .algorithm = p.algorithm, .width = p.width, .precision = p.precision };
+         }
+         const emitter = bank.find("emit", 62) orelse return error.GraphEmitMissing;
+         if (emitter.inputs != 1 or emitter.outputs != 1) return error.GraphSlotArity;
+@@ -139,22 +124,30 @@ pub const Bank = struct {
+             if (op.outputs == 0 or op.outputs > packet.max_arity or count + op.outputs > packet.max_values)
+                 return error.GraphPlanSize;
+             if (std.mem.eql(u8, op.op, "bind")) {
+-                if (op.outputs != 1 or op.copies.len > 128 or op.args != null or op.b != null)
++                if (op.outputs != 1 or op.copies.len > 128 or op.args != null or op.b != null or op.precision != 0)
+                     return error.GraphBinding;
+                 for (op.copies) |c| if (c.ref >= count or c.from > packet.max_digits or c.to > packet.max_digits or
+                     c.digits > packet.max_digits - c.from or c.digits > packet.max_digits - c.to)
+                     return error.GraphBinding;
+                 if (op.flags) |r| if (r >= count) return error.GraphReference;
+             } else {
+-                if (std.mem.startsWith(u8, op.op, "emit") or op.copies.len != 0 or op.flags != null)
++                if (std.mem.startsWith(u8, op.op, "emit") or std.mem.eql(u8, op.op, "format") or op.copies.len != 0 or op.flags != null)
+                     return error.GraphTemplate;
+-                const t = b.find(op.op, op.width) orelse return error.GraphTemplate;
+-                if (t.outputs != op.outputs) return error.GraphSlotArity;
++                const arity: u8 = if (std.meta.stringToEnum(packet.Algorithm, op.op)) |family| blk: {
++                    try b.validateAlgorithm(family, op.width, op.precision);
++                    if (op.outputs != packet.algorithmOutputs(family)) return error.GraphSlotArity;
++                    break :blk packet.algorithmArity(family);
++                } else blk: {
++                    if (op.precision != 0) return error.GraphPrecision;
++                    const t = b.find(op.op, op.width) orelse return error.GraphTemplate;
++                    if (t.outputs != op.outputs) return error.GraphSlotArity;
++                    break :blk t.inputs;
++                };
+                 if (op.args) |args| {
+-                    if (args.len != t.inputs) return error.GraphSlotArity;
++                    if (args.len != arity) return error.GraphSlotArity;
+                     for (args) |r| if (r >= count) return error.GraphReference;
+                 } else {
+-                    if (t.inputs != 1 + @as(usize, @intFromBool(op.b != null)) or op.a >= count)
++                    if (arity != 1 + @as(usize, @intFromBool(op.b != null)) or op.a >= count)
+                         return error.GraphSlotArity;
+                     if (op.b) |r| if (r >= count) return error.GraphReference;
+                 }
+@@ -164,6 +157,48 @@ pub const Bank = struct {
+         if (result >= count) return error.GraphReference;
+         return count;
+     }
++
++    pub fn validatePrints(b: *const Bank, prints: []const packet.Print, count: usize) !void {
++        if (prints.len > packet.max_prints) return error.GraphPrint;
++        if (prints.len == 0) return;
++        try b.require("format", 62, 2, 2);
++        try b.require("format", 128, 2, 2);
++        for (prints) |p| {
++            if (p.ref >= count or p.precision > 18 or (p.style != .fixed and p.precision != 0)) return error.GraphPrint;
++            if ((p.style == .fraction or p.style == .tuple) != (p.second != null)) return error.GraphPrint;
++            if (p.second) |ref| if (ref >= count) return error.GraphReference;
++            if (p.style == .fraction) try b.require("meta", 128, 2, 3);
++            if (p.style == .tuple and (p.prefix or (p.ending != .newline and p.ending != .space and p.ending != .empty and p.ending != .comma_space)))
++                return error.GraphPrint;
++        }
++    }
++
++    fn require(b: *const Bank, name: []const u8, width: u8, inputs: u8, outputs: u8) !void {
++        const t = b.find(name, width) orelse return error.GraphTemplate;
++        if (t.inputs != inputs or t.outputs != outputs) return error.GraphSlotArity;
++    }
++
++    fn validateAlgorithm(b: *const Bank, family: packet.Algorithm, width: u8, precision: u8) !void {
++        if (!packet.widthValid(width) or precision > 18 or (family != .fixed_div and precision != 0))
++            return error.GraphAlgorithm;
++        const kernels = [_]struct { []const u8, u8, u8 }{
++            .{ "add", 2, 1 },        .{ "sub", 2, 1 },      .{ "mul", 2, 1 },  .{ "half", 1, 2 },
++            .{ "divstep", 3, 2 },    .{ "divfinal", 4, 2 }, .{ "meta", 2, 3 }, .{ "digit_sum", 1, 1 },
++            .{ "mulmodstep", 4, 1 },
++        };
++        for (kernels) |k| try b.require(k[0], if (std.mem.eql(u8, k[0], "meta")) @max(width, 8) else width, k[1], k[2]);
++        if (family == .fixed_div) {
++            try b.require("scale10", width, 1, 1);
++        }
++        if (family == .fixed_div or family == .divexact) try b.require("round_div", width, 4, 1);
++        if (family == .fraction or family == .fixed_div) {
++            try b.require("format", 62, 2, 2);
++            try b.require("format", 128, 2, 2);
++        }
++        if (family == .fraction) try b.require("meta", 128, 2, 3);
++        if (family == .divmod) for ([_][]const u8{ "emit_first", "emit_last" }) |name|
++            try b.require(name, @max(width, 62), 1, 1);
++    }
+ };
+ 
+ fn slots(t: *Template) !void {
+diff --git a/zig/src/core/runner_graph_machine.zig b/zig/src/core/runner_graph_machine.zig
+index 71104c153a36a9067dc2fac60b8477f0de6828d6..42ea9d0121354e74208a577244f1430fcd4f7c23 100644
+--- a/zig/src/core/runner_graph_machine.zig
++++ b/zig/src/core/runner_graph_machine.zig
+@@ -6,6 +6,8 @@ const state_cache = @import("runner_graph_state_cache.zig");
+ const eval = @import("steps_v1/runner_circuit_eval.zig");
+ const bank_mod = @import("runner_graph_bank.zig");
+ const packet = @import("runner_graph_packet.zig");
++const algorithms = @import("runner_graph_algorithms.zig");
++const printing = @import("runner_graph_print.zig");
+ const Allocator = std.mem.Allocator;
+ 
+ pub const Machine = struct {
+@@ -24,6 +26,8 @@ pub const Machine = struct {
+     adaptive_widths: bool = true,
+     algorithm: ?[]const u8 = null,
+     width: u8 = 62,
++    precision: u8 = 0,
++    prints: []const packet.Print = &.{},
+ 
+     pub fn boot(a: Allocator, bank: *const bank_mod.Bank, bytes: []const u8) !Machine {
+         if (bytes.len > packet.max_packet) return error.GraphPacketSize;
+@@ -37,8 +41,9 @@ pub const Machine = struct {
+         var prepared_count: ?usize = null;
+         var algorithm: ?[]const u8 = null;
+         var width: u8 = 62;
++        var precision: u8 = 0;
+         if (p.plan) |name| {
+-            if (p.ops.len != 0 or p.result != 0) return error.GraphNamedPlanOverride;
++            if (p.ops.len != 0 or p.result != 0 or p.prints.len != 0) return error.GraphNamedPlanOverride;
+             const plan = bank.plan(name) orelse return error.GraphPlan;
+             if (p.values.len != plan.inputs) return error.GraphSlotArity;
+             ops = plan.ops;
+@@ -47,16 +52,18 @@ pub const Machine = struct {
+             prepared_count = plan.total_values;
+             algorithm = plan.algorithm;
+             width = plan.width;
++            precision = plan.precision;
+         }
+         if (constants.len > packet.max_values - p.values.len) return error.GraphPlanSize;
+         const initial = p.values.len + constants.len;
+         const count = prepared_count orelse try bank.validate(initial, ops, result);
++        try bank.validatePrints(p.prints, count);
+         const values = try a.alloc(packet.Value, count);
+         errdefer a.free(values);
+         for (p.values, values[0..p.values.len]) |text, *v| v.* = try packet.literal(text);
+         if (algorithm != null) for (values[0..p.values.len]) |*v| try fits(v, width);
+         @memcpy(values[p.values.len..initial], constants);
+-        return .{ .gpa = a, .bank = bank, .parsed = parsed, .values = values, .ops = ops, .result = result, .initial = initial, .algorithm = algorithm, .width = width };
++        return .{ .gpa = a, .bank = bank, .parsed = parsed, .values = values, .ops = ops, .result = result, .initial = initial, .algorithm = algorithm, .width = width, .precision = precision, .prints = p.prints };
+     }
+ 
+     pub fn deinit(m: *Machine) void {
+@@ -69,7 +76,7 @@ pub const Machine = struct {
+     pub fn run(m: *Machine, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !api.RunEnd {
+         if (m.used) return error.GraphMachineAlreadyRun;
+         m.used = true;
+-        if (m.algorithm) |kind| return @import("runner_graph_algorithms.zig").run(m, kind, m.width, budget, out, cancel);
++        if (m.algorithm) |kind| return algorithms.run(m, kind, m.width, budget, out, cancel);
+         var count = m.initial;
+         for (m.ops) |op| {
+             if (cancelled(cancel)) return .{ .end = .cancelled, .steps = m.steps };
+@@ -79,18 +86,32 @@ pub const Machine = struct {
+                 if (op.flags) |ref| @memcpy(v[0][126..128], m.values[ref][0][126..128]);
+                 m.values[count] = v;
+             } else {
+-                const t = m.bank.find(op.op, op.width).?;
++                const family = std.meta.stringToEnum(packet.Algorithm, op.op);
++                const t = if (family == null) m.bank.find(op.op, op.width).? else null;
++                const arity = if (family) |f| packet.algorithmArity(f) else t.?.inputs;
+                 var refs: [packet.max_arity]u32 = undefined;
+                 const args = if (op.args) |args| args else blk: {
+                     refs[0] = op.a;
+                     if (op.b) |b| refs[1] = b;
+-                    break :blk refs[0..t.inputs];
++                    break :blk refs[0..arity];
+                 };
+-                const end = try m.invoke(t, args, count, budget, out, cancel, false);
++                const end = if (family != null) try algorithms.compute(m, op.op, op.width, op.precision, args, count, budget, out, cancel) else try m.invoke(t.?, args, count, budget, out, cancel, false);
+                 if (end != .halted) return .{ .end = end, .steps = m.steps };
+             }
++            if (op.checked) for (m.values[count .. count + op.outputs]) |value| {
++                const flag = value[0][127];
++                if (flag == packet.bit_scale) return error.GraphArithmetic;
++                if (flag != 0) return error.GraphPredicate;
++            };
+             count += op.outputs;
+         }
++        if (m.prints.len != 0) {
++            for (m.prints) |p| {
++                const end = try printing.emit(m, p, budget, out, cancel);
++                if (end != .halted) return .{ .end = end, .steps = m.steps };
++            }
++            return .{ .end = .halted, .steps = m.steps };
++        }
+         const width: u8 = blk: {
+             fits(&m.values[m.result], 62) catch break :blk 128;
+             break :blk 62;
+@@ -131,7 +152,7 @@ pub const Machine = struct {
+             if (t.circuit.fault_family) |fault| if (fam == fault) return .fault;
+             if (fam == t.circuit.byte_family) {
+                 if (!emit or payload > 255) return error.GraphUnexpectedByte;
+-                if (out.items.len >= 256) return error.GraphOutputSize;
++                if (out.items.len >= packet.max_output) return error.GraphOutputSize;
+                 try out.append(m.gpa, @intCast(payload));
+             }
+         }
+diff --git a/zig/src/core/runner_graph_packet.zig b/zig/src/core/runner_graph_packet.zig
+index f832d943a9aef7d454e6ed73adefddcc7ab6f165..3b2a12c7f450d67ea2cded1065b5e9fe5aa60a65 100644
+--- a/zig/src/core/runner_graph_packet.zig
++++ b/zig/src/core/runner_graph_packet.zig
+@@ -5,6 +5,8 @@ pub const max_packet = 1 << 20;
+ pub const max_ops = 4096;
+ pub const max_values = 8192;
+ pub const max_arity = 16;
++pub const max_prints = 128;
++pub const max_output = 4096;
+ pub const max_digits: usize = 128;
+ pub const max_groups = (max_digits + 30) / 31;
+ pub const Value = [max_groups][128]f32;
+@@ -27,6 +29,19 @@ pub const Op = struct {
+     outputs: u8 = 1,
+     copies: []const Copy = &.{},
+     flags: ?u32 = null,
++    precision: u8 = 0,
++    checked: bool = false,
++};
++
++pub const Style = enum { integer, fixed, comma, integral_float, boolean, fraction, tuple };
++pub const Ending = enum { newline, space, empty, comma_space, close, slash, close_space, close_empty, close_comma_space };
++pub const Print = struct {
++    ref: u32,
++    second: ?u32 = null,
++    style: Style = .integer,
++    precision: u8 = 0,
++    ending: Ending = .newline,
++    prefix: bool = false,
+ };
+ 
+ pub const Packet = struct {
+@@ -35,6 +50,7 @@ pub const Packet = struct {
+     plan: ?[]const u8 = null,
+     ops: []const Op = &.{},
+     result: u32 = 0,
++    prints: []const Print = &.{},
+ };
+ 
+ pub const Plan = struct {
+@@ -45,15 +61,16 @@ pub const Plan = struct {
+     result: u32,
+     algorithm: ?[]const u8 = null,
+     width: u8 = 62,
++    precision: u8 = 0,
+ };
+ 
+ pub const Family = enum { add, sub, mul, div, mod, pow };
+-pub const Algorithm = enum { powmod, gcd, isqrt, range_product, factorial, digit_sum, divmod, square_offset };
+-pub const Shape = enum { sum, squares, factorial, fib, list_sum };
++pub const Algorithm = enum { powmod, gcd, isqrt, range_product, factorial, digit_sum, divmod, square_offset, fraction, fixed_div, divexact };
++pub const Shape = enum { sum, squares, factorial, fib, list_sum, sorted_distance };
+ 
+ pub const Builder = struct {
+     pub fn encode(a: Allocator, packet: Packet) ![]u8 {
+-        if (packet.version != 1 or packet.values.len > max_values or packet.ops.len > max_ops)
++        if (packet.version != 1 or packet.values.len > max_values or packet.ops.len > max_ops or packet.prints.len > max_prints)
+             return error.GraphPacketSize;
+         const bytes = try std.json.Stringify.valueAlloc(a, packet, .{});
+         errdefer a.free(bytes);
+@@ -61,6 +78,13 @@ pub const Builder = struct {
+         return bytes;
+     }
+ 
++    /// Binds a complete SSA program to preloaded kernels and compiled output formatters.
++    pub fn program(a: Allocator, values: []const []const u8, ops: []const Op, prints: []const Print) ![]u8 {
++        if (prints.len == 0) return error.GraphPrint;
++        for (values) |value| _ = try literal(value);
++        return encode(a, .{ .values = values, .ops = ops, .prints = prints });
++    }
++
+     pub fn named(a: Allocator, name: []const u8, values: []const []const u8) ![]u8 {
+         return encode(a, .{ .values = values, .plan = name });
+     }
+@@ -96,11 +120,8 @@ pub const Builder = struct {
+ 
+     /// Selects an offline integer algorithm using operand widths without evaluating the result.
+     pub fn integer(a: Allocator, family: Algorithm, operands: []const []const u8) ![]u8 {
+-        const arity: usize = switch (family) {
+-            .powmod => 3,
+-            .gcd, .range_product, .divmod, .square_offset => 2,
+-            .isqrt, .factorial, .digit_sum => 1,
+-        };
++        if (family == .fixed_div) return error.GraphPrecision;
++        const arity = algorithmArity(family);
+         if (operands.len != arity) return error.GraphSlotArity;
+         var needed: usize = 1;
+         for (operands) |operand| {
+@@ -117,22 +138,67 @@ pub const Builder = struct {
+         return named(a, name, operands);
+     }
+ 
++    /// Precision is bounded schedule metadata; all quotient and rounding work stays in prepared FFNs.
++    pub fn fixedDivision(a: Allocator, lhs: []const u8, rhs: []const u8, places: u8) ![]u8 {
++        if (places > 18) return error.GraphPrecision;
++        _ = try literal(lhs);
++        _ = try literal(rhs);
++        const needed = @max(lhs.len - @intFromBool(lhs[0] == '-' or lhs[0] == '+') + places + 1, rhs.len - @intFromBool(rhs[0] == '-' or rhs[0] == '+'));
++        const width = for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |n| {
++            if (n >= @min(max_digits, needed)) break n;
++        } else unreachable;
++        const name = try std.fmt.allocPrint(a, "fixed_div-{d}-{d}", .{ places, width });
++        defer a.free(name);
++        return named(a, name, &.{ lhs, rhs });
++    }
++
+     /// Binds a recognized bounded-loop shape to its offline control schedule.
+     pub fn loop(a: Allocator, shape: Shape, bound: u16, values: []const []const u8) ![]u8 {
+         return loopWidth(a, shape, bound, values, 62);
+     }
+ 
+     pub fn loopWidth(a: Allocator, shape: Shape, bound: u16, values: []const []const u8, width: u8) ![]u8 {
+-        if (width != 62 and width != 128) return error.GraphLoop;
+-        if (bound > 128 or values.len != (if (shape == .list_sum) @as(usize, bound) else 0))
++        if (shape == .sorted_distance) {
++            if (!widthValid(width) or bound > 16) return error.GraphLoop;
++        } else if (width != 62 and width != 128) return error.GraphLoop;
++        if (bound > 128 or values.len != (if (shape == .list_sum or shape == .sorted_distance) @as(usize, bound) else 0))
+             return error.GraphLoop;
+         for (values) |value| _ = try literal(value);
+         const name = try std.fmt.allocPrint(a, "loop-{s}-{d}-{d}", .{ @tagName(shape), bound, width });
+         defer a.free(name);
+         return named(a, name, values);
+     }
++
++    /// Selects a bounded compare-exchange schedule; pair count is control metadata, never operand arithmetic.
++    pub fn sortedDistance(a: Allocator, values: []const []const u8) ![]u8 {
++        if (values.len > 16) return error.GraphLoop;
++        var digits: usize = 1;
++        for (values) |value| {
++            _ = try literal(value);
++            digits = @max(digits, value.len - @intFromBool(value[0] == '-' or value[0] == '+'));
++        }
++        var text: [8]u8 = undefined;
++        const pairs = values.len * (values.len -| 1);
++        const overhead = (try std.fmt.bufPrint(&text, "{d}", .{pairs})).len;
++        const width = for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |n| {
++            if (n >= @min(max_digits, digits + overhead)) break n;
++        } else unreachable;
++        return loopWidth(a, .sorted_distance, @intCast(values.len), values, width);
++    }
+ };
+ 
++pub fn algorithmArity(family: Algorithm) u8 {
++    return switch (family) {
++        .powmod => 3,
++        .gcd, .range_product, .divmod, .square_offset, .fraction, .fixed_div, .divexact => 2,
++        .isqrt, .factorial, .digit_sum => 1,
++    };
++}
++
++pub fn algorithmOutputs(family: Algorithm) u8 {
++    return if (family == .divmod or family == .fraction) 2 else 1;
++}
++
+ pub fn widthValid(n: u8) bool {
+     return switch (n) {
+         1, 2, 4, 8, 16, 32, 62, 128 => true,
+@@ -227,3 +293,27 @@ test "integer algorithms bind arity and maximum operand width" {
+     try t.expectError(error.GraphLiteral, Builder.integer(t.allocator, .isqrt, &.{"x"}));
+     try t.expectError(error.GraphLiteral, Builder.integer(t.allocator, .factorial, &.{&too_wide}));
+ }
++
++test "whole-cell bindings retain operands and bound formatting and schedule controls" {
++    const t = std.testing;
++    const whole = try Builder.program(t.allocator, &.{ "-7", "3" }, &.{.{ .op = "divmod", .width = 1, .a = 0, .b = 1, .outputs = 2, .checked = true }}, &.{.{ .ref = 2, .second = 3, .style = .tuple }});
++    defer t.allocator.free(whole);
++    var parsed = try std.json.parseFromSlice(Packet, t.allocator, whole, .{});
++    defer parsed.deinit();
++    try t.expectEqualStrings("-7", parsed.value.values[0]);
++    try t.expectEqualStrings("3", parsed.value.values[1]);
++    try t.expect(parsed.value.ops[0].checked);
++    try t.expectEqual(Style.tuple, parsed.value.prints[0].style);
++    try t.expectEqual(@as(?u32, 3), parsed.value.prints[0].second);
++    const fixed = try Builder.fixedDivision(t.allocator, "1", "8", 3);
++    defer t.allocator.free(fixed);
++    try t.expect(std.mem.indexOf(u8, fixed, "fixed_div-3-") != null);
++    try t.expectError(error.GraphPrecision, Builder.fixedDivision(t.allocator, "1", "8", 19));
++    const sorted = try Builder.sortedDistance(t.allocator, &.{ "-2", "1", "5" });
++    defer t.allocator.free(sorted);
++    try t.expect(std.mem.indexOf(u8, sorted, "loop-sorted_distance-3-") != null);
++    const too_many: [17][]const u8 = @splat("0");
++    try t.expectError(error.GraphLoop, Builder.sortedDistance(t.allocator, &too_many));
++    const too_many_prints: [max_prints + 1]Print = @splat(.{ .ref = 0 });
++    try t.expectError(error.GraphPacketSize, Builder.program(t.allocator, &.{"1"}, &.{}, &too_many_prints));
++}
+diff --git a/zig/src/core/runner_graph_print.zig b/zig/src/core/runner_graph_print.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..e626d2dc6b5381a220b45619aca89fdcbdcfec59
+--- /dev/null
++++ b/zig/src/core/runner_graph_print.zig
+@@ -0,0 +1,77 @@
++//! Whole-program output invokes prepared ASCII weights; native code handles only format controls and FFN predicates.
++const std = @import("std");
++const packet = @import("runner_graph_packet.zig");
++const api = @import("runner_api.zig");
++const End = @FieldType(api.RunEnd, "end");
++
++pub fn emit(m: anytype, p: packet.Print, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !End {
++    const original = m.values;
++    if (p.ref >= original.len) return error.GraphReference;
++    const zero = try packet.literal("0");
++    var scratch: [32]packet.Value = @splat(zero);
++    scratch[1] = try packet.literal("1");
++    scratch[2] = original[p.ref];
++    if (p.second) |ref| {
++        if (ref >= original.len) return error.GraphReference;
++        scratch[3] = original[ref];
++    }
++    m.values = &scratch;
++    defer m.values = original;
++    for (2..(if (p.second == null) @as(usize, 3) else 4)) |i| {
++        if (scratch[i][0][127] == 0) continue;
++        if (scratch[i][0][127] != packet.bit_scale) return error.GraphPredicate;
++        scratch[2][0][127] = packet.bit_scale;
++        return part(m, 2, .integer, 0, .newline, false, budget, out, cancel);
++    }
++    if (p.style == .fraction) {
++        const t = m.bank.find("meta", 128) orelse return error.GraphTemplate;
++        const end = try m.invoke(t, &.{ 3, 1 }, 20, budget, out, cancel, false);
++        if (end != .halted) return end;
++        const flags = scratch[22];
++        if (flags[0][127] != 0) return error.GraphPredicate;
++        if (flags[0][2] != packet.bit_scale or flags[0][10] != 0) return error.GraphPrint;
++        const bits = flags[0][22..26];
++        for (bits[1..]) |bit| if (bit != 0) return error.GraphPredicate;
++        if (bits[0] == packet.bit_scale) return part(m, 2, .integer, 0, p.ending, p.prefix, budget, out, cancel);
++        if (bits[0] != 0) return error.GraphPredicate;
++        const first = try part(m, 2, .integer, 0, .slash, p.prefix, budget, out, cancel);
++        if (first != .halted) return first;
++        return part(m, 3, .integer, 0, p.ending, false, budget, out, cancel);
++    }
++    if (p.style == .tuple) {
++        const first = try part(m, 2, .integer, 0, .comma_space, true, budget, out, cancel);
++        if (first != .halted) return first;
++        const ending: packet.Ending = switch (p.ending) {
++            .newline => .close,
++            .space => .close_space,
++            .empty => .close_empty,
++            .comma_space => .close_comma_space,
++            else => return error.GraphPrint,
++        };
++        return part(m, 3, .integer, 0, ending, false, budget, out, cancel);
++    }
++    return part(m, 2, p.style, p.precision, p.ending, p.prefix, budget, out, cancel);
++}
++
++fn part(m: anytype, ref: u32, style: packet.Style, precision: u8, ending: packet.Ending, prefix: bool, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !End {
++    if (style == .fraction or style == .tuple or precision > 18 or (style != .fixed and precision != 0))
++        return error.GraphPrint;
++    const mode: u32 = switch (style) {
++        .integer => 0,
++        .fixed => 1,
++        .comma => 2,
++        .integral_float => 3,
++        .boolean => 4,
++        else => unreachable,
++    };
++    const control = @as(u32, precision) + mode * 100 + @as(u32, @backingInt(ending)) * 1000 + @as(u32, @intFromBool(prefix)) * 10000;
++    var text: [16]u8 = undefined;
++    m.values[0] = try packet.literal(try std.fmt.bufPrint(&text, "{d}", .{control}));
++    var wide = false;
++    for (62..packet.max_digits) |digit| {
++        const bits = m.values[ref][digit / 31][2 + digit % 31 * 4 ..][0..4];
++        for (bits) |bit| wide = wide or bit != 0;
++    }
++    const t = m.bank.find("format", if (wide) 128 else 62) orelse return error.GraphEmitMissing;
++    return m.invoke(t, &.{ ref, 0 }, 0, budget, out, cancel, true);
++}

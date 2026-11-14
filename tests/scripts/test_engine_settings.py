@@ -18,6 +18,7 @@ PROFILES = ["prod-zig.env.example", "prod-zig-flash17.env.example"]
 def test_manifest_is_for_the_pinned_engine():
     revision, settings = engine_settings.manifest()
     assert revision == (ROOT / "config/tensorfold.rev").read_text().strip()
+    assert engine_settings.manifest_tree() == (ROOT / "config/tensorfold.tree").read_text().strip()
     assert len(settings) > 100 and all(engine_settings.ENGINE_NAME.fullmatch(n) for n in settings)
     assert not set(engine_settings.LEGACY) & settings
 
@@ -77,6 +78,7 @@ def test_every_transport_setting_is_classified_common_or_rank_local():
                     reason="TENSORFOLD_SOURCE (an engine git checkout) not provided")
 def test_rank_local_split_follows_the_engine_transport_digest():
     revision, _ = engine_settings.manifest()
+    revision = engine_settings.manifest_tree() or revision  # the patched engine tree, when the recipe has a series
     source = subprocess.run(["git", "-C", os.environ["TENSORFOLD_SOURCE"], "show",
                              f"{revision}:zig/src/fabric/tp/config.zig"],
                             capture_output=True, text=True, timeout=60, check=True).stdout
@@ -90,6 +92,7 @@ def test_rank_local_split_follows_the_engine_transport_digest():
 
 def engine_file(path):
     revision, _ = engine_settings.manifest()
+    revision = engine_settings.manifest_tree() or revision  # the patched engine tree, when the recipe has a series
     return subprocess.run(["git", "-C", os.environ["TENSORFOLD_SOURCE"], "show", f"{revision}:{path}"],
                           capture_output=True, text=True, timeout=60, check=True).stdout
 

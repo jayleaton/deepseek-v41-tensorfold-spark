@@ -1,0 +1,1987 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 09:02:09 +0700
+Subject: [PATCH 044/207] Merge dsv41/the Bert port (d75c2e0bf) into candidate
+ E: P5 depth overhead, P2 index iota, P3a rotation fold
+
+Ports of Bertholomus's dsv41 decode mechanisms (credits in docs/credits.md):
+TF_DSV41_DEPTH_OVERHEAD_MS, TF_DSV41_IDX_IOTA, TF_DSV41_ROT_FOLD.
+Conflict: serve_knobs_apply.zig applies and logs D's IDX_SPLIT alongside IDX_IOTA and ROT_FOLD
+(iota engages only where an index top-k takes every entry, the split only on long prefill segments).
+
+Co-authored-by: bertholomus <311723197+bertholomus@users.noreply.github.com>
+
+Squashed merge of 4 commits:
+- deepseek: price a fixed round overhead into draft depth (TF_DSV41_DEPTH_OVERHEAD_MS) (Jay Leaton)
+- docs: credit Bertholomus's dsv41 decode mechanisms (Jay Leaton)
+- deepseek: skip index scores whose top-k takes every entry (TF_DSV41_IDX_IOTA) (Jay Leaton)
+- deepseek: fold wo_b's input rotation into wo_a's epilogue (TF_DSV41_ROT_FOLD=1) (Jay Leaton)
+---
+ docs/credits.md                               |  18 +
+ zig/kernels/cuda/exl3_block/dense3.cu         |  23 +
+ zig/kernels/cuda/exl3_block/dense3_rot.cuh    | 185 ++++++++
+ zig/src/core/contract/dsv41_pending_1.zig     |  10 +
+ zig/src/cuda/exl3_block.zig                   |   1 +
+ zig/src/cuda/exl3_block_dense.zig             |  12 +
+ zig/src/cuda/exl3_block_rot.zig               | 133 ++++++
+ zig/src/cuda/root.zig                         |   1 +
+ zig/src/families/deepseek_v41/block.zig       |  26 +-
+ zig/src/families/deepseek_v41/block_attn.zig  |  16 +-
+ zig/src/families/deepseek_v41/block_index.zig |  39 +-
+ zig/src/families/deepseek_v41/catalog.zig     |   1 +
+ .../deepseek_v41/catalog_geometry.zig         |   6 +
+ .../families/deepseek_v41/draft/calib_env.zig |   3 +-
+ .../deepseek_v41/draft/calib_env_test.zig     |  12 +
+ zig/src/families/deepseek_v41/draft/depth.zig |  34 +-
+ .../families/deepseek_v41/idx_iota_test.zig   | 381 ++++++++++++++++
+ zig/src/families/deepseek_v41/kernels.zig     |   2 +
+ .../deepseek_v41/kernels_replay_experts.zig   |  13 +-
+ .../families/deepseek_v41/rot_fold_test.zig   | 422 ++++++++++++++++++
+ zig/src/families/deepseek_v41/serve_knobs.zig |  21 +
+ .../deepseek_v41/serve_knobs_apply.zig        |   6 +
+ .../deepseek_v41/serve_knobs_test.zig         |   2 +
+ .../cuda/deepseek_v41/rot_fold_check.zig      | 171 +++++++
+ zig/tests/cuda/dsv41_main.zig                 |   3 +
+ 25 files changed, 1527 insertions(+), 14 deletions(-)
+ create mode 100644 zig/kernels/cuda/exl3_block/dense3_rot.cuh
+ create mode 100644 zig/src/cuda/exl3_block_rot.zig
+ create mode 100644 zig/src/families/deepseek_v41/idx_iota_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/rot_fold_test.zig
+ create mode 100644 zig/tests/cuda/deepseek_v41/rot_fold_check.zig
+
+diff --git a/docs/credits.md b/docs/credits.md
+index 6b373d688240506dfabe51713cb46556d4582c6c..b7bbb169179dd39022567295fbef20a85e0032a6 100644
+--- a/docs/credits.md
++++ b/docs/credits.md
+@@ -232,3 +232,21 @@ credited here.
+ ## Fluid Subgraph Residency
+ 
+ TensorFold's exact residency implementation follows published techniques: EdgeMoE's storage-backed weights and memory index, MoE-Infinity and Fiddler's expert locality/popularity caching and prefetch, and Fate's cross-layer gate prefetch. These are re-implementations of proven techniques, with no novelty claim. The frozen TensorFold Python engine provides the implementation ancestry for native expert slots and PLE row streaming. Slotstream is an outside comparison for published SSD streaming memory/speed trade-offs, not the design or code source. See [the exact residency design](design/fluid-subgraph-residency.md) for scope and qualification.
++
++## DeepSeek-V4.1 decode
++
++Some opt-in DeepSeek-V4.1 decode settings follow mechanisms in Bertholomus's (Albert Lee, @bertholomus) native
++`families/dsv41` family on [bertholomus/TensorFold](https://github.com/bertholomus/TensorFold) branch
++`deepseek-v41-zig-tp2` at [a57deb9d4][bert-dsv41] (Apache-2.0). They are re-implemented in
++`zig/src/families/deepseek_v41`, off unless set, and their commits name him as co-author.
++
++- `TF_DSV41_DEPTH_OVERHEAD_MS` prices a fixed round overhead into the draft depth's rate, as his lane allocator
++  divides expected tokens by a round's table cost plus its observed overhead (`zig/src/core/lanes/allocate.zig`).
++- `TF_DSV41_IDX_IOTA` skips an index layer's query and scores when its top-k must take every entry it reads, as
++  his round selects all visible entries without scoring them (`idx_all` and `iotaVis` in
++  `zig/src/families/dsv41/round.zig`). Here the existing top-k launch stays, so its output bytes are unchanged.
++- `TF_DSV41_ROT_FOLD=1` has wo_a's linear epilogue write wo_b's rotated input rows, so wo_b needs no rotation
++  launch, as his grouped linear's `RotOut` fold does (`zig/src/families/dsv41/exl3_linear.zig`, `round.zig`).
++  Here it is a new dense3 kernel beside the existing one, and its rows equal the rotation launch's bytes.
++
++[bert-dsv41]: https://github.com/bertholomus/TensorFold/tree/a57deb9d470b27e1e3fab2a9494915a0049415aa
+diff --git a/zig/kernels/cuda/exl3_block/dense3.cu b/zig/kernels/cuda/exl3_block/dense3.cu
+index 7afcbf4e457aa34a94dba37afba29d92f8067c64..6dc5075c9a206e4dbfbdeb8cce8de174e6531ab9 100644
+--- a/zig/kernels/cuda/exl3_block/dense3.cu
++++ b/zig/kernels/cuda/exl3_block/dense3.cu
+@@ -281,6 +281,8 @@ __global__ void __launch_bounds__(32) lanes_unpack_kernel(const uint32_t* __rest
+ 
+ }  // namespace dsv41_dense3
+ 
++#include "dense3_rot.cuh"
++
+ #ifndef DSV41_DENSE3_NO_TORCH
+ 
+ using namespace dsv41_dense3;
+@@ -405,3 +407,24 @@ template __global__ void dsv41_dense3::lanes_linear_kernel<12, 2, 8, 1>(const ds
+ template __global__ void dsv41_dense3::lanes_linear_kernel<12, 2, 8, 2>(const dsv41_x3seg::LinTable, int, int);
+ template __global__ void dsv41_dense3::lanes_unpack_kernel<12, 2>(const uint32_t* __restrict__, half* __restrict__, int,
+     int64_t, int64_t);
++// TF_DSV41_ROT_FOLD's instances (exl3_block_rot.zig rot_cfgs): block.fusedNorm's two (WK, MINB) pairs a width.
++template __global__ void dsv41_dense3::lanes_rot_kernel<4, 2, 4, 3>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<4, 2, 8, 1>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<6, 2, 4, 3>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<6, 2, 8, 1>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<8, 2, 4, 3>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<8, 2, 8, 1>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<10, 2, 4, 3>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<10, 2, 8, 1>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<12, 2, 4, 3>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
++template __global__ void dsv41_dense3::lanes_rot_kernel<12, 2, 8, 1>(const dsv41_x3seg::LinTable, int, int,
++    const dsv41_dense3::RotOut);
+diff --git a/zig/kernels/cuda/exl3_block/dense3_rot.cuh b/zig/kernels/cuda/exl3_block/dense3_rot.cuh
+new file mode 100644
+index 0000000000000000000000000000000000000000..eab272762dbc2e5564ce0f9bb96ac9dd0d90a95f
+--- /dev/null
++++ b/zig/kernels/cuda/exl3_block/dense3_rot.cuh
+@@ -0,0 +1,185 @@
++// TF_DSV41_ROT_FOLD (dense3.cu includes this): lanes_linear_kernel whose epilogue also writes the next rot_in's rows.
++
++namespace dsv41_dense3 {
++
++using namespace tf_exl3;
++
++// The next rot_in's output: segment s's fp16 rows (stride ld) and suh, each at its first column (y's = next k)
++struct RotOut {
++    half* xh[MAXSEG];
++    const half* suh[MAXSEG];
++    int ld;
++};
++
++// One row's 128 columns of y (a warp, 4 a lane) as seg_rot_in_kernel would rotate them after reading y back.
++__device__ __forceinline__ void rot_out(const float (&y)[4], int y_dtype, const half* suh, half* xh, int lane) {
++    float v[4], sc[4];
++    if (y_dtype == dsv41_x3seg::BF16) {                     // store4's rounding, then load4's widening
++        const __nv_bfloat162 a = __floats2bfloat162_rn(y[0], y[1]), b = __floats2bfloat162_rn(y[2], y[3]);
++        const float2 fa = __bfloat1622float2(a), fb = __bfloat1622float2(b);
++        v[0] = fa.x; v[1] = fa.y; v[2] = fb.x; v[3] = fb.y;
++    } else if (y_dtype == dsv41_x3seg::F16) {
++        const half2 a = __floats2half2_rn(y[0], y[1]), b = __floats2half2_rn(y[2], y[3]);
++        const float2 fa = __half22float2(a), fb = __half22float2(b);
++        v[0] = fa.x; v[1] = fa.y; v[2] = fb.x; v[3] = fb.y;
++    } else {
++        v[0] = y[0]; v[1] = y[1]; v[2] = y[2]; v[3] = y[3];
++    }
++    // -- seg_rot_in_kernel's statements from here on (suh, the 128-point transform, the scale, the fp16 store) --
++    dsv41_x3seg::load4(suh, dsv41_x3seg::F16, 4 * lane, sc);
++#pragma unroll
++    for (int j = 0; j < 4; ++j) v[j] *= sc[j];
++    fwht128(v, lane);
++#pragma unroll
++    for (int j = 0; j < 4; ++j) v[j] *= HAD_SCALE;
++    dsv41_x3seg::store4(xh, dsv41_x3seg::F16, 4 * lane, v);
++}
++
++// lanes_linear_kernel's statements verbatim, plus the segment's RotOut entry and a rot_out after each final store
++template <int K2, int CB, int WK, int MINB>
++__global__ void __launch_bounds__(WK * 32, MINB) lanes_rot_kernel(const LinTable tab, int y_dtype, int M,
++                                                                  const RotOut ro) {
++    constexpr int G = group_steps(K2), GW = gwords<K2>();
++    extern __shared__ __align__(16) float red[];              // WK * RH * 128 floats
++    __shared__ int last;
++    const int RH = min(M, 8);
++
++    LinSeg s = tab.s[0];
++    half* rxh = ro.xh[0];
++    const half* rsuh = ro.suh[0];
++#pragma unroll
++    for (int i = 1; i < MAXSEG; ++i)
++        if (i < tab.n && (int)blockIdx.x >= tab.s[i].p0) {
++            s = tab.s[i];
++            rxh = ro.xh[i];
++            rsuh = ro.suh[i];
++        }
++    const half* __restrict__ xh = s.xh;
++    const half* __restrict__ svh = s.svh;
++    void* __restrict__ y = s.y;
++    float* __restrict__ Z = s.Z;
++    int* __restrict__ counters = s.counters;
++    const int K = s.K, N = s.N, SK = s.SK, wk = s.wk, ld = s.ld;
++
++    const int NB = N >> 7, q = (int)blockIdx.x - s.p0, nb = q % NB, split = q / NB;
++    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
++    const int g = lane >> 2, t = lane & 3;
++    const bool on = warp < wk;                                // a WK = 4 segment in an 8-warp launch: warps 4-7 idle
++    const int per_warp = (K >> 4) / SK / wk;
++    const int kt0 = split * (per_warp * wk) + warp * per_warp;
++    const int steps = on ? per_warp : 0, groups = steps / G;
++    const uint32_t* base = s.T + nb * s.stride_nb + (size_t)kt0 * s.stride_k + 4 * lane;
++    const size_t gstride = (size_t)G * s.stride_k;
++    const int col0 = nb * 128;
++
++    for (int m0 = 0, pass = 0; m0 < M; m0 += 16, ++pass) {
++        const int R = min(16, M - m0);
++
++        float acc[8][2][4];
++#pragma unroll
++        for (int i = 0; i < 8; ++i)
++#pragma unroll
++            for (int h = 0; h < 2; ++h)
++#pragma unroll
++                for (int c = 0; c < 4; ++c) acc[i][h][c] = 0.f;
++
++        const int r0 = m0 + (g < R ? g : R - 1), r1 = m0 + (g + 8 < R ? g + 8 : R - 1);
++        const half* x0 = xh + (size_t)r0 * K;
++        const half* x1 = xh + (size_t)r1 * K;
++        uint32_t cur[GW], nxt[GW];
++        if (groups > 0) load_group(base, cur);
++        if (pass == 0) pdl_wait();                            // weights above, xh / Z / counters below
++        uint32_t a[4], an[4];
++        if (steps > 0) load_a(x0, x1, kt0, t, a);
++#pragma unroll 1
++        for (int gi = 0; gi < groups; ++gi) {
++            if (gi + 1 < groups) load_group(base + (size_t)(gi + 1) * gstride, nxt);
++#pragma unroll
++            for (int st = 0; st < G; ++st) {
++                const int i = gi * G + st;
++                if (i + 1 < steps) load_a(x0, x1, kt0 + i + 1, t, an);   // the next step's input, one step early
++#pragma unroll
++                for (int j = 0; j < 8; j += 2) {
++                    uint32_t b[2][2][2];
++                    pair_frags<K2, CB>(cur, st, j, lane, b);
++                    mma16816(acc[j][0], a, b[0][0]);
++                    mma16816(acc[j][1], a, b[0][1]);
++                    mma16816(acc[j + 1][0], a, b[1][0]);
++                    mma16816(acc[j + 1][1], a, b[1][1]);
++                }
++#pragma unroll
++                for (int c = 0; c < 4; ++c) a[c] = an[c];
++            }
++#pragma unroll
++            for (int c = 0; c < GW; ++c) cur[c] = nxt[c];
++        }
++
++        if (m0 + 16 >= M) pdl_trigger();                     // the last pass's weights are read
++
++        for (int rlo = 0; rlo < R; rlo += 8) {
++            const int rn = min(R - rlo, 8);
++            __syncthreads();
++            if (on && g < RH) {
++#pragma unroll
++                for (int i = 0; i < 8; ++i)
++#pragma unroll
++                    for (int h = 0; h < 2; ++h) {
++                        const int col = i * 16 + h * 8 + 2 * t;
++                        *reinterpret_cast<float2*>(red + (warp * RH + g) * 128 + col) =
++                            rlo ? make_float2(acc[i][h][2], acc[i][h][3]) : make_float2(acc[i][h][0], acc[i][h][1]);
++                    }
++            }
++            __syncthreads();
++
++            if (SK == 1) {
++                for (int r = warp; r < rn; r += WK) {
++                    float v[4];
++                    const float4 u = *reinterpret_cast<const float4*>(red + r * 128 + 4 * lane);
++                    v[0] = u.x; v[1] = u.y; v[2] = u.z; v[3] = u.w;
++                    for (int w = 1; w < wk; ++w) {
++                        const float4 qv = *reinterpret_cast<const float4*>(red + (w * RH + r) * 128 + 4 * lane);
++                        v[0] += qv.x; v[1] += qv.y; v[2] += qv.z; v[3] += qv.w;
++                    }
++                    dsv41_x3seg::finish(v, lane, svh, nullptr, col0 + 4 * lane);
++                    dsv41_x3seg::store4(y, y_dtype, (size_t)(m0 + rlo + r) * ld + col0 + 4 * lane, v);
++                    rot_out(v, y_dtype, rsuh + col0, rxh + (size_t)(m0 + rlo + r) * ro.ld + col0, lane);
++                }
++            } else {
++                for (int idx = threadIdx.x; idx < rn * 32; idx += WK * 32) {
++                    const int r = idx >> 5, c = 4 * (idx & 31);
++                    float4 sm = *reinterpret_cast<const float4*>(red + r * 128 + c);
++                    for (int w = 1; w < wk; ++w) {
++                        const float4 qv = *reinterpret_cast<const float4*>(red + (w * RH + r) * 128 + c);
++                        sm.x += qv.x; sm.y += qv.y; sm.z += qv.z; sm.w += qv.w;
++                    }
++                    *reinterpret_cast<float4*>(Z + ((size_t)split * M + m0 + rlo + r) * N + col0 + c) = sm;
++                }
++            }
++        }
++        if (SK > 1) {
++            __threadfence();
++            __syncthreads();
++            if (threadIdx.x == 0) last = atomicAdd(counters + pass * NB + nb, 1) == SK - 1;
++            __syncthreads();
++            if (last) {
++                __threadfence();
++                for (int r = warp; r < R; r += WK) {
++                    const size_t at = ((size_t)m0 + r) * N + col0 + 4 * lane;
++                    float4 sm = __ldcg(reinterpret_cast<const float4*>(Z + at));
++                    for (int qq = 1; qq < SK; ++qq) {
++                        const float4 u = __ldcg(reinterpret_cast<const float4*>(Z + (size_t)qq * M * N + at));
++                        sm.x += u.x; sm.y += u.y; sm.z += u.z; sm.w += u.w;
++                    }
++                    float v[4] = {sm.x, sm.y, sm.z, sm.w};
++                    dsv41_x3seg::finish(v, lane, svh, nullptr, col0 + 4 * lane);
++                    dsv41_x3seg::store4(y, y_dtype, (size_t)(m0 + r) * ld + col0 + 4 * lane, v);
++                    rot_out(v, y_dtype, rsuh + col0, rxh + (size_t)(m0 + r) * ro.ld + col0, lane);
++                }
++                if (threadIdx.x == 0) counters[pass * NB + nb] = 0;
++            }
++        }
++        __syncthreads();
++    }
++}
++
++}  // namespace dsv41_dense3
+diff --git a/zig/src/core/contract/dsv41_pending_1.zig b/zig/src/core/contract/dsv41_pending_1.zig
+index 7506406e27e53fa013bd306450a1deae8e23b46e..126af51e5f8d26049f902e264c0a80d2627fce30 100644
+--- a/zig/src/core/contract/dsv41_pending_1.zig
++++ b/zig/src/core/contract/dsv41_pending_1.zig
+@@ -285,6 +285,16 @@ pub const records = [_]registry.CudaRecord{
+     .{ .launch = .{ .name = "dsv41_x3seg _ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi4ELi3EEEvNS_8LinTableEii", .image = "dsv41_x3seg", .symbol = "_ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi4ELi3EEEvNS_8LinTableEii", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 16, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3seg _ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi4ELi2EEEvNS_8LinTableEii", .image = "dsv41_x3seg", .symbol = "_ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi4ELi2EEEvNS_8LinTableEii", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 174, .static = 16, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3seg _ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi8ELi1EEEvNS_8LinTableEii", .image = "dsv41_x3seg", .symbol = "_ZN11dsv41_x3seg17seg_linear_kernelILi16ELi2ELi8ELi1EEEvNS_8LinTableEii", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 16, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi4ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi4ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi4ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi4ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi6ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi6ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi6ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi6ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi8ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi8ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi8ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi8ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi10ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi10ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi10ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi10ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi12ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi12ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense316lanes_rot_kernelILi12ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense316lanes_rot_kernelILi12ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEii", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi4ELi3EEEvN11dsv41_x3seg8LinTableEii", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 16, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi4ELi4EEEvN11dsv41_x3seg8LinTableEii", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi4ELi4EEEvN11dsv41_x3seg8LinTableEii", .threads = 128, .dynamic = 16384, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 16, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_dense3 _ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEii", .image = "dsv41_dense3", .symbol = "_ZN12dsv41_dense319lanes_linear_kernelILi4ELi2ELi8ELi1EEEvN11dsv41_x3seg8LinTableEii", .threads = 256, .dynamic = 32768, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 193, .static = 16, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+diff --git a/zig/src/cuda/exl3_block.zig b/zig/src/cuda/exl3_block.zig
+index 2f74e50ce1358ab2ed7f85bb7be8b68a851634ff..9bc7e3e8089ea7c32137f52d5e894bfb8b8294ba 100644
+--- a/zig/src/cuda/exl3_block.zig
++++ b/zig/src/cuda/exl3_block.zig
+@@ -2,4 +2,5 @@
+ pub const dense = @import("exl3_block_dense.zig");
+ pub const experts = @import("exl3_block_exl3.zig");
+ pub const lin2 = @import("exl3_block_lin2.zig");
++pub const rot = @import("exl3_block_rot.zig");
+ pub const x3gm = @import("exl3_block_x3gm.zig");
+diff --git a/zig/src/cuda/exl3_block_dense.zig b/zig/src/cuda/exl3_block_dense.zig
+index ace38fa6ad92be2b2f60f5a4c61cf2d50cae597d..d2cc8eb094bb8972b35e6955e9cf1c6501f3a10e 100644
+--- a/zig/src/cuda/exl3_block_dense.zig
++++ b/zig/src/cuda/exl3_block_dense.zig
+@@ -3,6 +3,7 @@
+ const std = @import("std");
+ const cuda = @import("root.zig");
+ const lin2 = @import("exl3_block_lin2.zig");
++const rot = @import("exl3_block_rot.zig");
+ 
+ pub const DType = enum(c_int) { f16 = 0, bf16 = 1, f32 = 2 };
+ 
+@@ -246,6 +247,12 @@ pub const lin2Mode = lin2.lin2Mode;
+ pub const lin2ModeWk = lin2.lin2ModeWk;
+ pub const twoTile = lin2.twoTile;
+ pub const Lin2 = lin2.Lin2;
++pub const Rot = rot.Rot;
++pub const RotOut = rot.RotOut;
++pub const rot_cfgs = rot.rot_cfgs;
++pub const rotFoldMask = rot.rotFoldMask;
++pub const rotOut = rot.rotOut;
++pub const launchCols = rot.launchCols;
+ 
+ /// x3seg's (WK, MINB) instances (TF_SEG_WIDTH: WK 8 takes any minb) and dense3's (TF_D3_WIDTH).
+ pub const seg_cfgs = [_][2]u32{ .{ 4, 3 }, .{ 4, 2 }, .{ 8, 1 } };
+@@ -263,10 +270,13 @@ pub const Functions = struct {
+     to_strips: cuda.Function,
+     /// TF_DSV41_LIN2: the two-tile variants, set by Kernels.load when the knob asks for them
+     lin2: ?Lin2 = null,
++    /// TF_DSV41_ROT_FOLD: dense3's rotated-output variants, set by Kernels.load when the knob asks for them
++    rot: ?Rot = null,
+ 
+     pub fn resolveBase(linear: cuda.Module) !Functions {
+         var f: Functions = undefined;
+         f.lin2 = null;
++        f.rot = null;
+         f.rot_in = try linear.function("_ZN14tf_exl3_linear13rot_in_kernelEPKviPK6__halfPS2_i");
+         inline for (linear_k2s, 0..) |k2, i| {
+             inline for (.{ 2, 4, 8 }, 0..) |wk, j| f.linear[i][j] = try linear.function(linearSymbol(k2, wk));
+@@ -429,6 +439,8 @@ pub const Ops = struct {
+         try o.tableLaunch(f, tab, y_dtype, M, programs, wk, pdl);
+     }
+ 
++    pub const lanesRotLinear = rot.lanesRotLinear;
++
+     fn tableLaunch(o: Ops, f: cuda.Function, tab: LinTable, y_dtype: DType, M: usize, programs: usize, wk: usize, pdl: bool) !void {
+         if (M < 1 or M > rows_max or tab.n < 1 or tab.n > max_seg) return error.Shape;
+         var a: cuda.Args = .{};
+diff --git a/zig/src/cuda/exl3_block_rot.zig b/zig/src/cuda/exl3_block_rot.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..ed0f61eac30bd6063a81c1bcaad68e5c0b132a15
+--- /dev/null
++++ b/zig/src/cuda/exl3_block_rot.zig
+@@ -0,0 +1,133 @@
++//! TF_DSV41_ROT_FOLD (dense3_rot.cuh): dense3 linears whose epilogue also writes the next projection's rot_in rows.
++
++const std = @import("std");
++const cuda = @import("root.zig");
++const dense = @import("exl3_block_dense.zig");
++
++const dense3_k2s = dense.dense3_k2s;
++const max_seg = dense.max_seg;
++
++/// dense3_rot.cuh RotOut: each segment's rotated rows (fp16, row stride `ld`) and suh, at its first output column.
++pub const RotOut = extern struct { xh: [max_seg]u64 = @splat(0), suh: [max_seg]u64 = @splat(0), ld: c_int = 0 };
++
++comptime {
++    std.debug.assert(@sizeOf(RotOut) == 136 and @offsetOf(RotOut, "ld") == 128);
++}
++
++/// lanes_rot_kernel's (WK, MINB) instances: the two block.fusedNorm launches (WK 4 at MINB 3, WK 8 at MINB 1).
++pub const rot_cfgs = [_][2]u32{ .{ 4, 3 }, .{ 8, 1 } };
++
++fn rotSymbol(comptime k2: u32, comptime wk: u32, comptime mb: u32) [:0]const u8 {
++    return std.fmt.comptimePrint("_ZN12dsv41_dense316lanes_rot_kernelILi{d}ELi2ELi{d}ELi{d}EEEvN11dsv41_x3seg8LinTableEiiNS_6RotOutE", .{ k2, wk, mb });
++}
++
++/// The fold's instances in the dense3 image (resolved only with the knob: an older dense3 fatbin still loads).
++pub const Rot = struct {
++    lanes: [dense3_k2s.len][rot_cfgs.len]cuda.Function,
++
++    pub fn resolve(dense3: cuda.Module) !Rot {
++        var r: Rot = undefined;
++        inline for (dense3_k2s, 0..) |k2, i| inline for (rot_cfgs, 0..) |c, j| {
++            r.lanes[i][j] = try dense3.function(rotSymbol(k2, c[0], c[1]));
++        };
++        return r;
++    }
++};
++
++/// TF_DSV41_ROT_FOLD's mask: unset / empty / 0 none, 1-7 (bit 0 wo_a -> wo_b, bits 1-2 later stages); else refused
++pub fn rotFoldMask(v: ?[]const u8) !u3 {
++    const t = std.mem.trim(u8, v orelse "", " \t\r\n");
++    if (t.len == 0) return 0;
++    if (t.len != 1 or t[0] < '0' or t[0] > '7') return error.BadRotFold;
++    return @intCast(t[0] - '0');
++}
++
++/// One launch's RotOut: segment j's rows at column `cols[j]` of `xh` (fp16, row stride `ld`) and of `suh`.
++pub fn rotOut(cols: []const usize, xh: u64, suh: u64, ld: usize) !RotOut {
++    // whole Hadamard blocks: rot_in transforms 128-column blocks of the row, a linear warp 128 output columns
++    if (cols.len < 1 or cols.len > max_seg or ld == 0 or ld % 128 != 0 or ld > std.math.maxInt(c_int)) return error.Unsupported;
++    var r: RotOut = .{ .ld = @intCast(ld) };
++    for (cols, 0..) |c, j| {
++        if (c % 128 != 0 or c >= ld) return error.Unsupported;
++        r.xh[j] = xh + 2 * c;
++        r.suh[j] = suh + 2 * c;
++    }
++    return r;
++}
++
++/// The output columns of a layout launch's segments, in its table's order.
++pub fn launchCols(l: dense.Launch, segs: []const dense.Seg) [max_seg]usize {
++    var out: [max_seg]usize = @splat(0);
++    for (l.segs[0..l.count], 0..) |i, j| out[j] = segs[i].col;
++    return out;
++}
++
++/// A launch the fold admits: whole 128-column blocks, every segment's rows set, a built width and (WK, MINB).
++pub fn admits(tab: dense.LinTable, ro: RotOut, k2: u32, wk: usize, minb: u32) bool {
++    if (std.mem.indexOfScalar(u32, &dense3_k2s, k2) == null or ro.ld <= 0 or @mod(ro.ld, 128) != 0) return false;
++    const cfg_ok = for (rot_cfgs) |c| {
++        if (c[0] == wk and c[1] == minb) break true;
++    } else false;
++    if (!cfg_ok or tab.n < 1 or tab.n > max_seg) return false;
++    for (tab.s[0..@intCast(tab.n)], 0..) |s, j| {
++        if (ro.xh[j] == 0 or ro.suh[j] == 0 or @mod(s.N, 128) != 0) return false;
++    }
++    return true;
++}
++
++/// dense3's lanes program plus the rotated rows `ro` (never lin2's variants: the fold has only this program).
++pub fn lanesRotLinear(o: dense.Ops, tab: dense.LinTable, ro: RotOut, y_dtype: dense.DType, M: usize, programs: usize, k2: u32, wk: usize, minb: u32, pdl: bool) !void {
++    const f = o.f.rot orelse return error.RotFoldNotLoaded;
++    if (!admits(tab, ro, k2, wk, minb)) return error.Unsupported;
++    if (M < 1 or M > dense.rows_max) return error.Shape;
++    for (tab.s[0..@intCast(tab.n)]) |s| {
++        const per_warp: usize = @intCast(@divTrunc(@divTrunc(@divTrunc(s.K, 16), s.SK), s.wk));
++        if (per_warp % dense.groupSteps(k2) != 0) return error.Shape;
++    }
++    const ki = std.mem.indexOfScalar(u32, &dense3_k2s, k2).?;
++    const ci: usize = if (wk == 8) 1 else 0;
++    var a: cuda.Args = .{};
++    a.add(tab);
++    a.add(@backingInt(y_dtype));
++    a.add(@as(c_int, @intCast(M)));
++    a.add(ro);
++    const shared = wk * @min(M, 8) * 128 * 4;
++    try cuda.launch.launch(f.lanes[ki][ci], .{ .grid = .{ .x = @intCast(programs), .y = 1, .z = 1 }, .block = .{ .x = @intCast(wk * 32) }, .shared = @intCast(shared), .pdl = pdl }, o.s, &a);
++}
++
++test "TF_DSV41_ROT_FOLD mask: unset / empty / 0 none, 1-7 a mask, anything else refused" {
++    const t = std.testing;
++    for ([_]?[]const u8{ null, "", " 0 " }) |v| try t.expectEqual(@as(u3, 0), try rotFoldMask(v));
++    try t.expectEqual(@as(u3, 1), try rotFoldMask(" 1\n"));
++    try t.expectEqual(@as(u3, 7), try rotFoldMask("7"));
++    for ([_][]const u8{ "8", "-1", "01", "on", "0x1", "1,2" }) |v| try t.expectError(error.BadRotFold, rotFoldMask(v));
++}
++
++test "rot tables: each segment's rows and suh at its output column; misaligned segments refused" {
++    const t = std.testing;
++    const segs = [_]dense.Seg{
++        .{ .k = 4096, .n = 1024, .k2 = 10, .sk = 8, .wk = 4, .col = 0 },
++        .{ .k = 4096, .n = 1024, .k2 = 12, .sk = 8, .wk = 4, .col = 1024 },
++        .{ .k = 4096, .n = 1024, .k2 = 10, .sk = 8, .wk = 4, .col = 2048 },
++    };
++    const lay = try dense.layout(&segs, 3);
++    const l0 = lay.launches[0];
++    const cols = launchCols(l0, &segs);
++    try t.expectEqualSlices(usize, &.{ 0, 2048 }, cols[0..l0.count]);
++    const ro = try rotOut(cols[0..l0.count], 0x10000, 0x20000, 3072);
++    try t.expectEqual(@as(u64, 0x10000 + 2 * 2048), ro.xh[1]);
++    try t.expectEqual(@as(u64, 0x20000 + 2 * 2048), ro.suh[1]);
++    try t.expectEqual(@as(u64, 0), ro.xh[2]);
++    const bufs = [_]dense.SegBufs{ .{ .T = 1, .svh = 2, .y = 0x30000, .ld = 3072 }, .{ .T = 3, .svh = 4, .y = 0x30000, .ld = 3072 }, .{ .T = 5, .svh = 6, .y = 0x30000, .ld = 3072 } };
++    const tab = dense.linTable(lay, l0, &segs, &bufs, .bf16, 0x40000, 0x50000, 0x60000);
++    try t.expect(admits(tab, ro, 10, 4, 3));
++    try t.expect(!admits(tab, ro, 16, 4, 3)); // no dense3 width 16
++    try t.expect(!admits(tab, ro, 10, 4, 4)); // a (WK, MINB) the emitter never asks for
++    // a segment starting mid-block, rows not a whole number of blocks, a column past the row: refused
++    try t.expectError(error.Unsupported, rotOut(&.{ 0, 1088 }, 0x10000, 0x20000, 3072));
++    try t.expectError(error.Unsupported, rotOut(&.{0}, 0x10000, 0x20000, 3008));
++    try t.expectError(error.Unsupported, rotOut(&.{ 0, 3072 }, 0x10000, 0x20000, 3072));
++    var unset = ro;
++    unset.suh[1] = 0;
++    try t.expect(!admits(tab, unset, 10, 4, 3));
++}
+diff --git a/zig/src/cuda/root.zig b/zig/src/cuda/root.zig
+index 4c2d1d8f525f9f3f3646af5246c712cb7bc17fbd..516f986f0d96846f9f70a0ab215c0c53f02806d4 100644
+--- a/zig/src/cuda/root.zig
++++ b/zig/src/cuda/root.zig
+@@ -154,6 +154,7 @@ test {
+     _ = exl3.block.dense;
+     _ = exl3.block.experts;
+     _ = exl3.block.lin2;
++    _ = exl3.block.rot;
+     _ = exl3.block.x3gm;
+ }
+ 
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 29a3930145cfe52b273e60e9ebbccb16e0de029e..58b504c5c96a2214365734be39b128397b427944 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -83,6 +83,10 @@ pub const Options = struct {
+     stream_rb: i64 = 0,
+     /// TF_DSV41_INDEX_BOUND: decode index scores and top-k as row-bounded twins that stop at each row's visible end
+     index_bound: bool = false,
++    /// TF_DSV41_IDX_IOTA: an index layer whose top-k takes every entry it reads skips its query and scores (same bits)
++    idx_iota: bool = false,
++    /// TF_DSV41_ROT_FOLD mask (same bits): bit 0 wo_a's epilogue writes wo_b's rotated rows (block_attn.woFold)
++    rot_fold: u3 = 0,
+     /// decode knob set (same bits): ATTN_SPLIT, ATTN_ROPE, MHC_TAIL, MHC_DEFER, RG_PRUNE, PRUNE_KIT, MOE_BF16, RMS_FOLD
+     r1: bool = false,
+     /// TF_DSV41_ROUTER_GROUP_ROT: wide grouping and expert input rotation in one launch (default off).
+@@ -319,6 +323,16 @@ pub const Emitter = struct {
+     }
+ 
+     pub fn fusedNorm(e: *Emitter, tag: []const u8, ps: []const Proj, norm: ?Norm) !void {
++        return e.fusedRot(tag, ps, norm, .{});
++    }
++
++    /// TF_DSV41_ROT_FOLD: the next group's rot_in rows (its suh, xh of row stride `ld`) a linear epilogue writes.
++    pub const RotOut = struct { suh: Arg, xh: Arg, ld: i64 };
++
++    /// `out`: this group's linears also write the next group's rotated rows; `in`: this group's are already written.
++    pub const Rot = struct { out: ?RotOut = null, in: bool = false };
++
++    pub fn fusedRot(e: *Emitter, tag: []const u8, ps: []const Proj, norm: ?Norm, rot: Rot) !void {
+         const m: usize = @intCast(e.n);
+         const segs = try e.a.alloc(dense.Seg, ps.len);
+         for (ps, segs, 0..) |p, *s, i| {
+@@ -335,7 +349,9 @@ pub const Emitter = struct {
+             o.* = @intCast(lay.xh_off[i]);
+         }
+         const xh = try e.buf("L.{s}.xh", .{tag}, .f16, &.{@intCast(lay.xh_total)});
+-        if (norm) |nm| {
++        if (rot.in) {
++            if (norm != null or rot.out != null) return error.Unsupported; // the rows were rotated without a norm
++        } else if (norm) |nm| {
+             const ws = try e.a.alloc(Arg, ps.len);
+             @memset(ws, nm.w);
+             try e.ext("tf_dsv41_x3seg_v3.rot_in", &.{ .{ .list = xs }, .{ .list = suh }, xh, try e.ints(offs), .{ .b = false }, .{ .list = ws }, .{ .f = nm.eps } });
+@@ -356,11 +372,15 @@ pub const Emitter = struct {
+                 const st = dense.strides(s.k, s.k2);
+                 try meta.appendSlice(e.a, &.{ @intCast(s.k), @intCast(s.n), @intCast(s.sk), @intCast(s.wk), st[0], st[1], @intCast(lay.xh_off[si]), @intCast(lay.z_off[si]), @intCast(lay.c_off[si]), @intCast(s.col), @intCast(l.p0[j]) });
+             }
+-            try e.ext("tf_dsv41_dense3_v1.linear", &.{
++            const args = [_]Arg{
+                 xh,             .{ .list = T },           .{ .list = svh },                  .{ .list = ys },
+                 z,              counters,                 try e.ints(meta.items),            .{ .i = @intCast(l.programs) },
+                 .{ .i = l.k2 }, .{ .i = @intCast(l.wk) }, .{ .i = if (l.wk == 8) 1 else 3 }, .{ .b = false },
+-            });
++            };
++            if (rot.out) |r|
++                try e.ext("tf_dsv41_dense3_v1.linear", &(args ++ [_]Arg{ r.xh, r.suh, .{ .i = r.ld } }))
++            else
++                try e.ext("tf_dsv41_dense3_v1.linear", &args);
+         }
+     }
+ 
+diff --git a/zig/src/families/deepseek_v41/block_attn.zig b/zig/src/families/deepseek_v41/block_attn.zig
+index 24b828879f8b8d09be66ad9e9c4352456021fd07..b54e16ea65550e37913b2e0b343703277f955617 100644
+--- a/zig/src/families/deepseek_v41/block_attn.zig
++++ b/zig/src/families/deepseek_v41/block_attn.zig
+@@ -339,6 +339,18 @@ pub fn attention(e: *Emitter, L: u32) !void {
+         .k = @intCast(gk),
+         .n = e.cfg.o_lora,
+     };
+-    try e.fused("o", po[0..g]);
+-    try e.fused("wo_b", &.{.{ .w = try e.fmt("L{d}.attn.wo_b", .{L}), .x = oa, .y = try e.buf("L.part", .{}, .bf16, &.{ n, D }), .k = g * e.cfg.o_lora, .n = @intCast(D) }});
++    // TF_DSV41_ROT_FOLD bit 0: wo_a's epilogue writes wo_b's rot_in rows (L.wo_b.xh), so wo_b has no rot_in launch
++    const wo_b = try e.fmt("L{d}.attn.wo_b", .{L});
++    const kb: i64 = @intCast(g * e.cfg.o_lora);
++    const fold = woFold(e, po[0..g]);
++    const rot: block.Emitter.Rot = if (fold) .{ .out = .{ .suh = try e.weight("{s}.suh", .{wo_b}, .f16, &.{kb}), .xh = try e.buf("L.wo_b.xh", .{}, .f16, &.{n * kb}), .ld = kb } } else .{};
++    try e.fusedRot("o", po[0..g], null, rot);
++    try e.fusedRot("wo_b", &.{.{ .w = wo_b, .x = oa, .y = try e.buf("L.part", .{}, .bf16, &.{ n, D }), .k = @intCast(kb), .n = @intCast(D) }}, null, .{ .in = fold });
++}
++
++/// TF_DSV41_ROT_FOLD bit 0 (3a): wo_a's groups on whole 128-column blocks, so the epilogue rotates as rot_in does
++pub fn woFold(e: *const Emitter, po: []const Proj) bool {
++    if (e.o.rot_fold & 1 == 0) return false;
++    for (po) |p| if (p.col % 128 != 0 or p.n % 128 != 0) return false;
++    return true;
+ }
+diff --git a/zig/src/families/deepseek_v41/block_index.zig b/zig/src/families/deepseek_v41/block_index.zig
+index 3e5019c2827d3386be1c8885ad3fe0575db6bef3..af854f93ae9fdc24d200f2c21c0f8d7eb8b660bf 100644
+--- a/zig/src/families/deepseek_v41/block_index.zig
++++ b/zig/src/families/deepseek_v41/block_index.zig
+@@ -45,8 +45,12 @@ pub fn index(e: *Emitter, L: u32, qn: Arg, iw: Arg, qnorm: ?Norm) !void {
+     const IH: i64 = e.cfg.index_heads;
+     const ID: i64 = e.cfg.index_dim;
+     const qi = try e.buf("L.qi", .{}, .bf16, &.{ n, IH * ID });
+-    try e.fusedNorm("qi", &.{.{ .w = try e.fmt("L{d}.attn.ix_wq_b", .{L}), .x = qn, .y = qi, .k = e.cfg.q_lora, .n = @intCast(IH * ID) }}, qnorm);
+-    try e.rope(qi, IH, ID, ID - 64);
++    // TF_DSV41_IDX_IOTA: no query, rope or scores where the top-k's bytes cannot depend on them (iotaSelects)
++    const iota = iotaSelects(e, L);
++    if (!iota) {
++        try e.fusedNorm("qi", &.{.{ .w = try e.fmt("L{d}.attn.ix_wq_b", .{L}), .x = qn, .y = qi, .k = e.cfg.q_lora, .n = @intCast(IH * ID) }}, qnorm);
++        try e.rope(qi, IH, ID, ID - 64);
++    }
+     const reindex = e.cfg.mode(L) == .reindex;
+     const src = if (reindex) e.cfg.kvSource(L).? else L;
+     const ratio: i64 = e.cfg.compressRatio(src);
+@@ -62,10 +66,39 @@ pub fn index(e: *Emitter, L: u32, qn: Arg, iw: Arg, qnorm: ?Norm) !void {
+         if (n * nvis * 12 > e.o.index_budget) return e.blocked(L, qi, iw, src, ratio, nvis);
+     }
+     const sc = try e.buf("L.scores", .{}, .f32, &.{ n, nk });
+-    try e.scoreRows(qi, iw, src, ratio, 0, n, try e.pos(), nk, sc, if (reindex) cand else null);
++    if (!iota) try e.scoreRows(qi, iw, src, ratio, 0, n, try e.pos(), nk, sc, if (reindex) cand else null);
+     try e.topkOf(L, sc, cand, nk, ratio, e.o.index_bound);
+ }
+ 
++/// Layer L's dense top-k (`topkOf`, not row blocks) reads at most K entries, and its candidate blocks fit their K.
++fn denseAll(e: *const Emitter, L: u32) bool {
++    if (e.cfg.mode(L) != .full) return false;
++    const k: i64 = e.cfg.index_topk;
++    const nk = @divFloor(e.end(), @as(i64, e.cfg.compressRatio(L)));
++    if (nk > k or e.n * @max(nk, 1) * 12 > e.o.index_budget or topkPlan(nk, null)[1] > topk_max_ept) return false;
++    if (!e.cfg.isCandidateSource(L)) return true;
++    const nb = std.math.divCeil(i64, nk, e.cfg.candidate_block_size) catch return false;
++    return nb <= @as(i64, e.cfg.candidate_blocks) and topkPlan(nb, null)[1] <= topk_max_ept;
++}
++
++/// TF_DSV41_IDX_IOTA: L's top-k selects every valid entry, so its output is the same for any score values.
++pub fn iotaSelects(e: *const Emitter, L: u32) bool {
++    if (!e.o.idx_iota) return false;
++    return switch (e.cfg.mode(L)) {
++        .full => denseAll(e, L),
++        .reindex => blk: {
++            // mode 3's valid entries: the candidate source's blocks, all its visible ones under denseAll, x block size
++            if (!e.cfg.usesCandidates(L)) break :blk false;
++            const c: u32 = @intCast(e.cfg.candidate_source);
++            if (!denseAll(e, c)) break :blk false;
++            const cbs: i64 = e.cfg.candidate_block_size;
++            const nkc = @divFloor(e.end(), @as(i64, e.cfg.compressRatio(c)));
++            break :blk cbs * (std.math.divCeil(i64, nkc, cbs) catch break :blk false) <= @as(i64, e.cfg.index_topk);
++        },
++        else => false,
++    };
++}
++
+ /// index.scores over rows [a, a + rows) into `out` [rows, nk]: dense, or over candidate blocks `cand` (Reindex).
+ pub fn scoreRows(e: *Emitter, qi: Arg, iw: Arg, src: u32, ratio: i64, a: i64, rows: i64, p: Arg, nk: i64, out: Arg, cand: ?Arg) !void {
+     const IH: i64 = e.cfg.index_heads;
+diff --git a/zig/src/families/deepseek_v41/catalog.zig b/zig/src/families/deepseek_v41/catalog.zig
+index 2a363f1aafa148a111e3af8df00e250a0d15c091..e73d99714cc6ba8a640b5d6d3a974a9c2afc9400 100644
+--- a/zig/src/families/deepseek_v41/catalog.zig
++++ b/zig/src/families/deepseek_v41/catalog.zig
+@@ -63,6 +63,7 @@ pub fn collectWithLimit(optin: u32) !void {
+     for (&m, 0..) |*mod, i| mod.* = .{ .d = &driver, .handle = @ptrFromInt(i + 1) };
+     @import("catalog_geometry.zig").experts(try dk.exl3.Functions.resolve(m[0], m[1], m[2], m[3], m[19], m[24], m[26], m[28], optin));
+     @import("catalog_geometry.zig").dense(try dk.dense.Functions.resolve(m[4], m[5], m[6]));
++    @import("catalog_geometry.zig").rot(try dk.dense.Rot.resolve(m[6]));
+     @import("catalog_geometry.zig").lin2(try dk.dense.Lin2.resolve(m[30], .{ .lanes = true, .linear = true, .cluster = true }));
+     @import("catalog_geometry.zig").lin2(try dk.dense.Lin2.resolve(m[30], .{ .lanes = true, .linear = true, .cluster = true, .pf = false }));
+     @import("catalog_geometry.zig").operators(try dk.ops.Functions.resolve(m[7], m[8], m[9], m[10], m[11], .{ m[12], m[13], m[14], m[15] }, m[16], m[17], m[18], m[20], m[21], m[22], m[23], m[25], m[29], 262144));
+diff --git a/zig/src/families/deepseek_v41/catalog_geometry.zig b/zig/src/families/deepseek_v41/catalog_geometry.zig
+index 2b18cdf836f93f43b2d5bac741897c305a4bd9f0..d59a6143eafce41dab03b416e6b9990877298c99 100644
+--- a/zig/src/families/deepseek_v41/catalog_geometry.zig
++++ b/zig/src/families/deepseek_v41/catalog_geometry.zig
+@@ -97,6 +97,12 @@ pub fn dense(f: dk.dense.Functions) void {
+     note(f.to_lanes, 256, 0, 1);
+     note(f.to_strips, 256, 0, 1);
+ }
++pub fn rot(f: dk.dense.Rot) void {
++    for (f.lanes) |row| for (row, 0..) |fun, i| {
++        const wk = dk.dense.rot_cfgs[i][0];
++        note(fun, wk * 32, wk * 4096, 1);
++    };
++}
+ pub fn lin2(f: dk.dense.Lin2) void {
+     for (f.lanes) |row| for (row, 0..) |fun, i| {
+         const wk: u32 = if (i == 0) 4 else 8;
+diff --git a/zig/src/families/deepseek_v41/draft/calib_env.zig b/zig/src/families/deepseek_v41/draft/calib_env.zig
+index 9505e344ac346a58cbab3290f2c3b62958746149..8dea35a67f9a7df8b8ec5a71dfec94dfae196447 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_env.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_env.zig
+@@ -206,7 +206,7 @@ pub fn store(gpa: Allocator, io: std.Io, dir: []const u8, want: Shape, c: Costs,
+     return path;
+ }
+ 
+-/// The depth's knobs (TF_DSV41_DEPTH, _DRAFT_DEPTH, _DRAFT_SKIP, _DEPTH_JOINT, _DEPTH_FAIR, _DEPTH_HOST_MS, rows cap).
++/// The depth's knobs (TF_DSV41_DEPTH, _DRAFT_DEPTH, _DRAFT_SKIP, _DEPTH_JOINT/_FAIR/_HOST_MS/_OVERHEAD_MS, rows cap).
+ pub fn depthSettings(get: *const fn ([*:0]const u8) ?[]const u8) !depth.Settings {
+     var s: depth.Settings = .{};
+     if (trimmed(get("TF_DSV41_CODE_ACCEPT"))) |v| s.code_accept = try flag(v, error.CodeAccept);
+@@ -224,6 +224,7 @@ pub fn depthSettings(get: *const fn ([*:0]const u8) ?[]const u8) !depth.Settings
+     if (trimmed(get("TF_DSV41_DEPTH_JOINT"))) |v| s.joint = if (std.mem.eql(u8, v, "2")) 2 else @intFromBool(try flag(v, error.DepthJoint));
+     s.fair = try float(get("TF_DSV41_DEPTH_FAIR"), joint.fair, 0.0, 4.0);
+     s.host_ms = try float(get("TF_DSV41_DEPTH_HOST_MS"), joint.host_ms, 0.0, 100.0);
++    s.overhead_ms = try float(get("TF_DSV41_DEPTH_OVERHEAD_MS"), 0.0, 0.0, 100.0);
+     if (trimmed(get("TF_DSV41_GRAPH_ROWS_MAX"))) |v| s.max_rows = @max(1, @min(try std.fmt.parseInt(u64, v, 10), costs_mod.max_rows));
+     return s;
+ }
+diff --git a/zig/src/families/deepseek_v41/draft/calib_env_test.zig b/zig/src/families/deepseek_v41/draft/calib_env_test.zig
+index 97cf7eae874c9cce6a76ee17f1b44aea0e4f18fb..afb46ec9870be0a1fe4ff9e57307d8c170f855ec 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_env_test.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_env_test.zig
+@@ -126,6 +126,18 @@ test "the depth's knobs read as Python's" {
+     try std.testing.expectError(error.DepthJoint, calib_env.depthSettings(&Env.get));
+ }
+ 
++test "the round overhead is off unless set and rejects out-of-range values" {
++    Env.pairs = &.{};
++    try std.testing.expectEqual(@as(f64, 0.0), (try calib_env.depthSettings(&Env.get)).overhead_ms);
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "8" }};
++    try std.testing.expectEqual(@as(f64, 8.0), (try calib_env.depthSettings(&Env.get)).overhead_ms);
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "-1" }};
++    try std.testing.expectError(error.DepthKnob, calib_env.depthSettings(&Env.get));
++    Env.pairs = &.{.{ "TF_DSV41_DEPTH_OVERHEAD_MS", "101" }};
++    try std.testing.expectError(error.DepthKnob, calib_env.depthSettings(&Env.get));
++    Env.pairs = &.{};
++}
++
+ test "TF_DSV41_CALIB=measure / zig: the engine measures; a stored Zig table is read back by zig only" {
+     var tmp = std.testing.tmpDir(.{});
+     defer tmp.cleanup();
+diff --git a/zig/src/families/deepseek_v41/draft/depth.zig b/zig/src/families/deepseek_v41/draft/depth.zig
+index f1953f6cfa27d3213520690127c0508c218d1768..caa93a3feccc9c3a8b06c15d64bad6e7bf8e962b 100644
+--- a/zig/src/families/deepseek_v41/draft/depth.zig
++++ b/zig/src/families/deepseek_v41/draft/depth.zig
+@@ -22,6 +22,7 @@ pub const Settings = struct {
+     max_rows: u64 = 64,
+     code_accept: bool = false, // TF_DSV41_CODE_ACCEPT: expand high-acceptance short-context chains
+     context_bucket: u64 = 2048, // TF_DSV41_GRAPH_BUCKET; short contexts only use its linear buckets
++    overhead_ms: f64 = 0.0, // TF_DSV41_DEPTH_OVERHEAD_MS: a round's unmodelled ms in its rate (bertholomus dsv41)
+ };
+ 
+ /// [E(0) .. E(len)]: tokens a round verifying k drafts commits on average, into `out` (len + 1).
+@@ -146,7 +147,12 @@ pub const Depth = struct {
+             const s = st.rounds.sums();
+             return s.tokens / s.ms;
+         }
+-        return 2.0 / (d.costs.windowMs(2) + d.costs.draft);
++        return 2.0 / d.overhead(d.costs.windowMs(2) + d.costs.draft);
++    }
++
++    /// `ms` with the fixed round overhead added (off: `ms` itself, the same bits).
++    fn overhead(d: *const Depth, ms: f64) f64 {
++        return if (d.set.overhead_ms > 0.0) ms + d.set.overhead_ms else ms;
+     }
+ 
+     fn least(d: *const Depth, alone: bool, first: ?u32) usize {
+@@ -182,8 +188,8 @@ pub const Depth = struct {
+ 
+     /// Modelled ms of a round: its window of `rows` total rows, each further window's overhead, the pass.
+     pub fn roundMs(d: *const Depth, rows: u64, windows: u64, drafted: bool) f64 {
+-        return d.costs.rowsMs(@intCast(rows)) + d.costs.slot * @as(f64, @floatFromInt(windows -| 1)) +
+-            (if (drafted) d.costs.draft else 0.0) + (if (d.set.joint == 2) d.set.host_ms else 0.0);
++        return d.overhead(d.costs.rowsMs(@intCast(rows)) + d.costs.slot * @as(f64, @floatFromInt(windows -| 1)) +
++            (if (drafted) d.costs.draft else 0.0) + (if (d.set.joint == 2) d.set.host_ms else 0.0));
+     }
+ 
+     /// The open round's commits -> one (tokens, modelled ms) of the aggregate rate by its windows.
+@@ -372,7 +378,7 @@ pub const Depth = struct {
+         }
+         var ms = d.costs.windowMs(@intCast(rows)) + (if (st.drafted) d.costs.draft else 0.0);
+         if (st.ms) |m| ms = m;
+-        st.rounds.push(.{ .tokens = got, .ms = ms });
++        st.rounds.push(.{ .tokens = got, .ms = d.overhead(ms) });
+         st.used_len = 0;
+         st.drafted = false;
+         st.ms = null;
+@@ -447,3 +453,23 @@ test "high acceptance fills paid padding and preserves cold, prose, context and
+         }
+     }
+ }
++
++test "a fixed round overhead in the rate verifies deeper, as Bert's E/(table ms + overhead) does" {
++    const gpa = std.testing.allocator;
++    var verify: [16]f64 = undefined;
++    for (&verify, 0..) |*v, r| v.* = 21.4 + 4.6 * @as(f64, @floatFromInt(r));
++    const c: Costs = .{ .verify = &verify, .draft = 3.52, .slot = 0.65 };
++    const conf = [_]f64{ 0.65, 0.65, 0.65, 0.65, 0.65 };
++    var off = try Depth.init(gpa, c, 5, .{});
++    defer off.deinit();
++    var on = try Depth.init(gpa, c, 5, .{ .overhead_ms = 8.0 });
++    defer on.deinit();
++    // the third draft's 0.27 survival misses the modelled rate's bar and clears the overhead's lower one
++    try std.testing.expectEqual(@as(usize, 2), try off.choose(0, &conf, 5, false, null));
++    try std.testing.expectEqual(@as(usize, 3), try on.choose(0, &conf, 5, false, null));
++    try off.record(0, 3, 3, null);
++    try on.record(0, 4, 3, null);
++    try std.testing.expectEqual(3.0 / (verify[2] + 3.52), try off.rate(0));
++    try std.testing.expectEqual(3.0 / (verify[3] + 3.52 + 8.0), try on.rate(0));
++    try std.testing.expectEqual(off.roundMs(6, 1, true) + 8.0, on.roundMs(6, 1, true));
++}
+diff --git a/zig/src/families/deepseek_v41/idx_iota_test.zig b/zig/src/families/deepseek_v41/idx_iota_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..4bc2d69720650520e8981566a61f9b66f3078d94
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/idx_iota_test.zig
+@@ -0,0 +1,381 @@
++//! TF_DSV41_IDX_IOTA: the knob, the emitted windows on and off, and the top-k's score independence on a host twin.
++
++const std = @import("std");
++const testing = std.testing;
++const block = @import("block.zig");
++const calls = @import("block_calls.zig");
++const check = @import("calls_check.zig");
++const pk = @import("serve_knobs.zig");
++const Config = @import("config.zig").Config;
++
++const Fake = struct {
++    var pairs: []const [2][]const u8 = &.{};
++    fn get(name: []const u8) ?[]const u8 {
++        for (pairs) |p| if (std.mem.eql(u8, p[0], name)) return p[1];
++        return null;
++    }
++};
++
++test "TF_DSV41_IDX_IOTA: unset and 0 off, 1 on, anything else refused" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expect(!try pk.idxIota(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", "0" }};
++    try testing.expect(!try pk.idxIota(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", " 1 " }};
++    try testing.expect(try pk.idxIota(&Fake.get));
++    for ([_][]const u8{ "2", "on", "true", "yes", "-1" }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", v }};
++        try testing.expectError(error.BadKnob, pk.idxIota(&Fake.get));
++    }
++    try testing.expect(!(block.Options{}).idx_iota);
++}
++
++// -- the emitted windows ---------------------------------------------------------------------------------------
++
++fn argKey(a: std.mem.Allocator, out: *std.ArrayList(u8), x: calls.Arg) !void {
++    switch (x) {
++        .t, .opaque_table => |t| {
++            try out.print(a, " {s}:{t}@{d}[", .{ switch (t.role) {
++                .weight, .buf => |r| r,
++                .empty => "-",
++            }, t.dt, t.offset });
++            for (t.shape, t.stride) |n, s| try out.print(a, "{d}/{d},", .{ n, s });
++            try out.append(a, ']');
++        },
++        .list => |l| {
++            try out.appendSlice(a, " (");
++            for (l) |y| try argKey(a, out, y);
++            try out.append(a, ')');
++        },
++        .i => |v| try out.print(a, " {d}", .{v}),
++        .f => |v| try out.print(a, " {e}", .{v}),
++        .b => |v| try out.print(a, " {any}", .{v}),
++        .none => try out.appendSlice(a, " none"),
++    }
++}
++
++/// A call as compared here: name, grid, begin, stream, every argument (roles, views, scalars); not the fork mark.
++fn key(a: std.mem.Allocator, c: calls.Call) ![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    try out.print(a, "{s} {any} {t} side={any} join={any} dside={any} djoin={any}", .{ c.name, c.grid, c.begin, c.side, c.join, c.defer_side, c.defer_join });
++    for (c.args) |x| {
++        try out.print(a, " {s}=", .{x.name});
++        try argKey(a, &out, x.arg);
++    }
++    return out.items;
++}
++
++fn readsQi(x: calls.Arg) bool {
++    return switch (x) {
++        .t => |t| t.role == .buf and std.mem.startsWith(u8, t.role.buf, "L.qi"),
++        .list => |l| for (l) |y| {
++            if (readsQi(y)) break true;
++        } else false,
++        else => false,
++    };
++}
++
++/// The calls the knob drops on an eligible layer: the index query (rot_in, linear), its rope and the scores.
++fn dropped(c: calls.Call) bool {
++    if (scores(c)) return true;
++    for (c.args) |x| if (readsQi(x.arg)) return true;
++    return false;
++}
++
++fn isTopk(c: calls.Call) bool {
++    return std.mem.endsWith(u8, c.name, ".topk") and !c.glue;
++}
++
++/// The window's calls a layer each (a layer starts at its `begin`; the head stays with the last).
++fn layersOf(a: std.mem.Allocator, cs: []const calls.Call) ![]const []const calls.Call {
++    var out: std.ArrayList([]const calls.Call) = .empty;
++    var from: usize = 0;
++    for (cs, 0..) |c, i| if (i > 0 and c.begin == .layer) {
++        try out.append(a, cs[from..i]);
++        from = i;
++    };
++    try out.append(a, cs[from..]);
++    return out.items;
++}
++
++fn count(cs: []const calls.Call, comptime f: fn (calls.Call) bool) usize {
++    var k: usize = 0;
++    for (cs) |c| k += @intFromBool(f(c));
++    return k;
++}
++
++fn scores(c: calls.Call) bool {
++    return std.mem.startsWith(u8, c.name, "_scores");
++}
++
++fn forks(c: calls.Call) bool {
++    return c.fork;
++}
++
++/// Index layers whose window ending at `end` qualifies (flash1017: ratio 2 at 2 / 8 / 14, ratio 1 from 20 on).
++fn expected(end: i64, L: u32) bool {
++    const ratio2 = L == 2 or L == 8 or L == 14;
++    const ratio1 = L == 20 or L == 24 or L == 28 or L == 32 or L == 36;
++    return (ratio2 and @divFloor(end, 2) <= 512) or (ratio1 and end <= 512);
++}
++
++test "TF_DSV41_IDX_IOTA: eligible index layers drop query and scores, keep one top-k; the rest is unchanged" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    const cfg: Config = .{};
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const limit: i64 = 8192;
++    const pages = @divExact(limit, block.Pool.page);
++    var served: block.Options = .{ .limit = limit, .r1 = true, .index_bound = true, .expert_topp = 0.85, .branches = true, .mhc_defer = true, .kv_norm_store = true };
++    served.pool = .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages, .split = true };
++    var rows = served;
++    rows.rows = true;
++    const sets = [_]block.Options{ .{ .limit = limit }, served, rows };
++    // window ends: inside both thresholds, at 512 / 513 (ratio 1), 1025 / 1026 (ratio 2), the 2048 bucket's end
++    const ends = [_]i64{ 4, 300, 512, 513, 1000, 1025, 1026, 2048, 4096 };
++    var hits: usize = 0;
++    for (sets) |o| for (ends) |end| for ([_]i64{ 1, 5, 16 }) |n| {
++        if (end < n) continue;
++        var on = o;
++        on.idx_iota = true;
++        const off_cs = try block.emit(a, &cfg, &w, o, &backbone, n, end - n, true);
++        const on_cs = try block.emit(a, &cfg, &w, on, &backbone, n, end - n, true);
++        const off_l = try layersOf(a, off_cs);
++        const on_l = try layersOf(a, on_cs);
++        try testing.expectEqual(backbone.len, off_l.len);
++        try testing.expectEqual(off_l.len, on_l.len);
++        // stream marks: a dropped first side call hands its fork to the next side call (the top-k)
++        try testing.expectEqual(count(off_cs, forks), count(on_cs, forks));
++        for (backbone, off_l, on_l) |L, x, y| {
++            const index_layer = cfg.mode(L) == .full or cfg.mode(L) == .reindex;
++            // flag off: every index layer still scores (the H chain)
++            if (index_layer) try testing.expectEqual(@as(usize, 1), count(x, scores));
++            const want = index_layer and expected(end, L);
++            var kept: std.ArrayList([]const u8) = .empty;
++            for (x) |c| if (!(want and dropped(c))) try kept.append(a, try key(a, c));
++            try testing.expectEqual(kept.items.len, y.len);
++            for (kept.items, y) |k, c| try testing.expectEqualStrings(k, try key(a, c));
++            if (!want) continue;
++            hits += 1;
++            // the query projection (rot_in + linear), its rope and the scores: gone; the one top-k launch stays
++            try testing.expect(x.len - y.len >= 4);
++            try testing.expectEqual(@as(usize, 0), count(y, dropped));
++            try testing.expectEqual(@as(usize, 1), count(y, isTopk));
++        }
++    };
++    try testing.expect(hits > 0);
++}
++
++test "TF_DSV41_IDX_IOTA: a window past the index budget keeps its row blocks (no layer qualifies)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    const cfg: Config = .{};
++    var backbone: [20]u32 = undefined; // up to the candidate source: reindex layers would refuse this budget
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const o: block.Options = .{ .index_budget = 1 << 10 };
++    var on = o;
++    on.idx_iota = true;
++    const off_cs = try block.emit(a, &cfg, &w, o, &backbone, 16, 300, true);
++    const on_cs = try block.emit(a, &cfg, &w, on, &backbone, 16, 300, true);
++    try testing.expectEqual(off_cs.len, on_cs.len);
++    for (off_cs, on_cs) |x, y| try testing.expectEqualStrings(try key(a, x), try key(a, y));
++}
++
++// -- the top-k's selection on the host (topk_cuda.cu topk_kernel / topk_b.cu topk_b_kernel, one row) ----------
++
++/// topk_cuda.cu image(): 0 marks a missing entry, so a read entry's image is never 0.
++fn image(s: f32) u32 {
++    var b: i32 = @bitCast(s);
++    if (s == 0) b = 0;
++    if (std.math.isNan(s)) b = 0x7FC00000;
++    if (b < 0) b ^= 0x7FFFFFFF;
++    return @as(u32, @bitCast(b)) ^ 0x80000000;
++}
++
++fn fmaxf(x: f32, y: f32) f32 {
++    if (std.math.isNan(x)) return y;
++    if (std.math.isNan(y)) return x;
++    return if (x > y) x else y;
++}
++
++const Job = struct { s: []const f32, cand: []const i32 = &.{}, nk: usize, k: usize, mode: u2, bs: i64, nvis: i64, bound: bool };
++
++/// One row's selection into `out` [k]: every image above the K-th, ties in scan order, -1 after; the visible count.
++fn topkRow(a: std.mem.Allocator, j: Job, out: []i32) !i64 {
++    const nk: i64 = @intCast(j.nk);
++    const k: i64 = @intCast(j.k);
++    const B: i64 = if (!j.bound) nk else switch (j.mode) {
++        0 => @min(nk, @max(j.nvis, k)),
++        2 => @min(nk, @max(0, @divTrunc(j.nvis + j.bs - 1, j.bs))),
++        else => nk,
++    };
++    const img = try a.alloc(u32, j.nk);
++    defer a.free(img);
++    for (img, 0..) |*u, ei| {
++        const e: i64 = @intCast(ei);
++        u.* = 0;
++        if (e >= B) continue;
++        switch (j.mode) {
++            2 => {
++                var m: f32 = 0;
++                var q: i64 = 0;
++                while (q < j.bs) : (q += 1) {
++                    const p = e * j.bs + q;
++                    const v = if (p < j.nvis) j.s[@intCast(p)] else -std.math.inf(f32);
++                    m = if (q > 0) fmaxf(m, v) else v;
++                }
++                if (e == @divTrunc(j.nvis - 1, j.bs)) m = std.math.inf(f32);
++                if (e * j.bs < j.nvis) u.* = image(m);
++            },
++            3 => if (j.cand[@intCast(@divTrunc(e, j.bs))] >= 0) {
++                u.* = image(j.s[ei]);
++            },
++            else => u.* = image(j.s[ei]),
++        }
++    }
++    var prefix: u32 = 0;
++    var pmask: u32 = 0;
++    var above: i64 = 0;
++    var quota = false;
++    for (0..4) |p| {
++        const shift: u5 = @intCast(24 - 8 * p);
++        var hist: [256]i64 = @splat(0);
++        for (img) |v| if (v != 0 and (v & pmask) == prefix) {
++            hist[(v >> shift) & 255] += 1;
++        };
++        var all: i64 = 0;
++        for (hist) |h| all += h;
++        if (p == 0 and all <= k) break;
++        // the highest digit whose suffix reaches K (the kernel's lane scan)
++        var dg: usize = 256;
++        var ge: i64 = 0;
++        var suf: i64 = 0;
++        var d: usize = 256;
++        while (d > 0) {
++            d -= 1;
++            suf += hist[d];
++            if (above + suf >= k) {
++                dg = d;
++                ge = suf;
++                break;
++            }
++        }
++        try testing.expect(dg < 256);
++        const hd = hist[dg];
++        above += ge - hd;
++        prefix |= @as(u32, @intCast(dg)) << shift;
++        pmask |= @as(u32, 255) << shift;
++        if (above + hd == k) break;
++        if (p == 3) quota = true;
++    }
++    const need = k - above;
++    var eq: i64 = 0;
++    var o: usize = 0;
++    var vis: i64 = 0;
++    for (img, 0..) |v, ei| {
++        if (v == 0) continue;
++        const mv = v & pmask;
++        var s = mv > prefix;
++        if (!s and mv == prefix) {
++            s = !quota or eq < need;
++            eq += 1;
++        }
++        if (!s) continue;
++        const e: i64 = @intCast(ei);
++        const pp: i64 = if (j.mode == 3) j.cand[@intCast(@divTrunc(e, j.bs))] * j.bs + @rem(e, j.bs) else e;
++        out[o] = @intCast(pp);
++        o += 1;
++        vis += @intFromBool(pp < j.nvis);
++    }
++    for (out[o..]) |*x| x.* = -1;
++    return vis;
++}
++
++/// Ascending 0 .. m - 1, then -1.
++fn isIota(out: []const i32, m: i64) bool {
++    for (out, 0..) |x, i| if (x != (if (@as(i64, @intCast(i)) < m) @as(i32, @intCast(i)) else -1)) return false;
++    return true;
++}
++
++fn garbage(r: std.Random, s: []f32) void {
++    for (s) |*x| x.* = @bitCast(r.int(u32));
++}
++
++test "top-k twin: up to K entries the selection is every entry ascending, whatever the scores; K + 1 is not" {
++    const a = testing.allocator;
++    const K = 512;
++    var prng = std.Random.DefaultPrng.init(0x1d07a);
++    const r = prng.random();
++    const s = try a.alloc(f32, K + 1);
++    defer a.free(s);
++    const out = try a.alloc(i32, K);
++    defer a.free(out);
++    for ([_]bool{ false, true }) |bound| {
++        // every program NK up to K at a few visible counts, then every visible count at NK = K (a bucket's rows)
++        for (0..K + 1) |nk| for ([_]usize{ 0, 1, nk / 2, nk }) |nv| for (0..2) |_| {
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .nk = nk, .k = K, .mode = 0, .bs = 1, .nvis = @intCast(nv), .bound = bound }, out);
++            try testing.expect(isIota(out, @intCast(nk)));
++            try testing.expectEqual(@as(i64, @intCast(@min(nk, nv))), c);
++        };
++        for (1..K + 1) |nv| {
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .nk = K, .k = K, .mode = 0, .bs = 1, .nvis = @intCast(nv), .bound = bound }, out);
++            try testing.expect(isIota(out, K));
++            try testing.expectEqual(@as(i64, @intCast(nv)), c);
++        }
++        // NK = K + 1 with every row visible: the lowest score is left out, so the scores matter
++        for (s, 0..) |*x, i| x.* = @floatFromInt(i);
++        _ = try topkRow(a, .{ .s = s, .nk = K + 1, .k = K, .mode = 0, .bs = 1, .nvis = K + 1, .bound = bound }, out);
++        try testing.expect(!isIota(out, K));
++        try testing.expectEqual(@as(i32, 1), out[0]);
++    }
++}
++
++test "top-k twin: candidate blocks, then reindex over them, are score independent up to K gathered entries" {
++    const a = testing.allocator;
++    const K = 512;
++    const cfg: Config = .{};
++    const cb: usize = cfg.candidate_blocks;
++    const bs: i64 = cfg.candidate_block_size;
++    var prng = std.Random.DefaultPrng.init(0xb10c5);
++    const r = prng.random();
++    const s = try a.alloc(f32, cb * @as(usize, @intCast(bs)));
++    defer a.free(s);
++    const cand = try a.alloc(i32, cb);
++    defer a.free(cand);
++    const out = try a.alloc(i32, K);
++    defer a.free(out);
++    for ([_]bool{ false, true }) |bound| {
++        var nv: i64 = 0;
++        while (nv <= K + 1) : (nv += if (nv < 24 or nv > K - 24) 1 else 7) {
++            const nkc: usize = @max(K, @as(usize, @intCast(nv))); // the candidate source's NK (ratio 1)
++            const nb = std.math.divCeil(usize, nkc, @intCast(bs)) catch unreachable;
++            garbage(r, s);
++            _ = try topkRow(a, .{ .s = s, .nk = nb, .k = cb, .mode = 2, .bs = bs, .nvis = nv, .bound = bound }, cand);
++            const blocks = @divTrunc(nv + bs - 1, bs);
++            try testing.expect(isIota(cand, blocks));
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .cand = cand, .nk = s.len, .k = K, .mode = 3, .bs = bs, .nvis = nv, .bound = false }, out);
++            if (nv <= K) {
++                try testing.expect(isIota(out, blocks * bs));
++                try testing.expectEqual(nv, c);
++            } else {
++                // 520 gathered entries past K: increasing scores leave the first ones out
++                for (s, 0..) |*x, i| x.* = @floatFromInt(i);
++                _ = try topkRow(a, .{ .s = s, .cand = cand, .nk = s.len, .k = K, .mode = 3, .bs = bs, .nvis = nv, .bound = false }, out);
++                try testing.expect(!isIota(out, K));
++            }
++        }
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/kernels.zig b/zig/src/families/deepseek_v41/kernels.zig
+index e5d3ba81f810924b6c768b6a689fb03a9642db5a..5430de678beccd3550f1a8371e4b3b61e830ed1c 100644
+--- a/zig/src/families/deepseek_v41/kernels.zig
++++ b/zig/src/families/deepseek_v41/kernels.zig
+@@ -102,6 +102,8 @@ pub const Kernels = struct {
+             lm.cluster = try dense.lin2Cluster(env("TF_DSV41_LIN2_CLUSTER"));
+             break :blk lm;
+         });
++        // TF_DSV41_ROT_FOLD bit 0: dense3's rotated-output instances, resolved only then (an older image still loads)
++        if ((try dense.rotFoldMask(env("TF_DSV41_ROT_FOLD"))) & 1 != 0) k.dense.rot = try dense.Rot.resolve(k.mods[6]);
+         return k;
+     }
+ 
+diff --git a/zig/src/families/deepseek_v41/kernels_replay_experts.zig b/zig/src/families/deepseek_v41/kernels_replay_experts.zig
+index 8ef49199d880dc90f3069b9d2ea6202d2a2fade6..20e09320d7878f19e5d7901c5b19c5ee77c4a241 100644
+--- a/zig/src/families/deepseek_v41/kernels_replay_experts.zig
++++ b/zig/src/families/deepseek_v41/kernels_replay_experts.zig
+@@ -81,7 +81,7 @@ pub fn segExt(o: dense.Ops, func: []const u8, args: []const Arg, kwargs: []const
+         return true;
+     }
+     if (is(func, "linear")) {
+-        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "xh", "T", "svh", "ys", "Z", "counters", "meta", "programs", "K2", "WK", "minb", "pdl" } };
++        const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "xh", "T", "svh", "ys", "Z", "counters", "meta", "programs", "K2", "WK", "minb", "pdl", "rxh", "rsuh", "rld" } };
+         const T = try c.list(1);
+         const svh = try c.list(2);
+         const ys = try c.list(3);
+@@ -97,6 +97,7 @@ pub fn segExt(o: dense.Ops, func: []const u8, args: []const Arg, kwargs: []const
+         const y_dtype = try ioType(y0.dtype);
+         var tab = std.mem.zeroes(dense.LinTable);
+         tab.n = @intCast(n);
++        var cols: [dense.max_seg]usize = undefined;
+         for (0..n) |i| {
+             var m: [11]i64 = undefined;
+             for (&m, meta[11 * i ..][0..11]) |*v, a| v.* = switch (a) {
+@@ -105,6 +106,7 @@ pub fn segExt(o: dense.Ops, func: []const u8, args: []const Arg, kwargs: []const
+             };
+             if (T[i] != .tensor or svh[i] != .tensor or ys[i] != .tensor) return error.WrongArgument;
+             const y = ys[i].tensor;
++            cols[i] = @intCast(m[9]);
+             tab.s[i] = .{
+                 .xh = xh + 2 * @as(u64, @intCast(m[6])),
+                 .T = T[i].tensor.ptr,
+@@ -127,6 +129,15 @@ pub fn segExt(o: dense.Ops, func: []const u8, args: []const Arg, kwargs: []const
+         const wk = try c.usz(9);
+         const minb = try c.u(10);
+         const pdl = try c.boolean(11, false);
++        // TF_DSV41_ROT_FOLD: each segment's rows also rotated into rxh at its own column (y's row is rxh's k)
++        if ((try c.opt(12)) != null) {
++            const rld = try c.usz(14);
++            if (!lanes) return error.WrongArgument;
++            for (ys) |ya| if (ya.tensor.stride[0] != @as(i64, @intCast(rld))) return error.WrongArgument;
++            const ro = dense.rotOut(cols[0..n], try c.ptr(12), try c.ptr(13), rld) catch return error.Unsupported;
++            try o.lanesRotLinear(tab, ro, y_dtype, M, programs, k2, wk, minb, pdl);
++            return true;
++        }
+         if (lanes) try o.lanesLinearRaw(tab, y_dtype, M, programs, k2, wk, minb, pdl) else try o.segLinearRaw(tab, y_dtype, M, programs, k2, wk, minb, pdl);
+         return true;
+     }
+diff --git a/zig/src/families/deepseek_v41/rot_fold_test.zig b/zig/src/families/deepseek_v41/rot_fold_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..4e19676e6af52a0ed688d080f288c154723898c3
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/rot_fold_test.zig
+@@ -0,0 +1,422 @@
++//! TF_DSV41_ROT_FOLD (3a): the knob, the decode windows on and off, and the epilogue's rotation against rot_in's.
++
++const std = @import("std");
++const testing = std.testing;
++const block = @import("block.zig");
++const block_attn = @import("block_attn.zig");
++const calls = @import("block_calls.zig");
++const check = @import("calls_check.zig");
++const pk = @import("serve_knobs.zig");
++const dense = @import("dsv41_kernels").dense;
++const Config = @import("config.zig").Config;
++
++const Fake = struct {
++    var pairs: []const [2][]const u8 = &.{};
++    fn get(name: []const u8) ?[]const u8 {
++        for (pairs) |p| if (std.mem.eql(u8, p[0], name)) return p[1];
++        return null;
++    }
++};
++
++test "TF_DSV41_ROT_FOLD: unset and 0 off, 1 bit 0, the reserved bits and anything else refused" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expectEqual(@as(u3, 0), try pk.rotFold(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", "0" }};
++    try testing.expectEqual(@as(u3, 0), try pk.rotFold(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", " 1 " }};
++    try testing.expectEqual(@as(u3, 1), try pk.rotFold(&Fake.get));
++    // 3b (bit 1) and 3c (bit 2) are reserved: a mask naming them is refused until they are built
++    for ([_][]const u8{ "2", "3", "4", "5", "7", "8", "-1", "on", "0x1", "1,2" }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_ROT_FOLD", v }};
++        try testing.expectError(error.BadKnob, pk.rotFold(&Fake.get));
++    }
++    try testing.expectEqual(@as(u3, 0), (block.Options{}).rot_fold);
++}
++
++// -- the emitted windows ---------------------------------------------------------------------------------------
++
++fn argKey(a: std.mem.Allocator, out: *std.ArrayList(u8), x: calls.Arg) !void {
++    switch (x) {
++        .t, .opaque_table => |t| {
++            try out.print(a, " {s}:{t}@{d}[", .{ switch (t.role) {
++                .weight, .buf => |r| r,
++                .empty => "-",
++            }, t.dt, t.offset });
++            for (t.shape, t.stride) |n, s| try out.print(a, "{d}/{d},", .{ n, s });
++            try out.append(a, ']');
++        },
++        .list => |l| {
++            try out.appendSlice(a, " (");
++            for (l) |y| try argKey(a, out, y);
++            try out.append(a, ')');
++        },
++        .i => |v| try out.print(a, " {d}", .{v}),
++        .f => |v| try out.print(a, " {e}", .{v}),
++        .b => |v| try out.print(a, " {any}", .{v}),
++        .none => try out.appendSlice(a, " none"),
++    }
++}
++
++fn oneKey(a: std.mem.Allocator, x: calls.Arg) ![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    try argKey(a, &out, x);
++    return out.items;
++}
++
++/// A call as compared here: name, grid, scope, streams and marks, and its first `upto` arguments.
++fn key(a: std.mem.Allocator, c: calls.Call, upto: usize) ![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    try out.print(a, "{s} {any} {t} side={any} fork={any} join={any} mark={d} wait={d} dside={any} djoin={any}", .{ c.name, c.grid, c.begin, c.side, c.fork, c.join, c.mark, c.wait, c.defer_side, c.defer_join });
++    for (c.args[0..@min(upto, c.args.len)]) |x| {
++        try out.print(a, " {s}=", .{x.name});
++        try argKey(a, &out, x.arg);
++    }
++    return out.items;
++}
++
++fn firstRole(x: calls.Arg) ?[]const u8 {
++    return switch (x) {
++        .t => |t| switch (t.role) {
++            .buf => |r| r,
++            else => null,
++        },
++        .list => |l| if (l.len > 0) firstRole(l[0]) else null,
++        else => null,
++    };
++}
++
++/// wo_b's rot_in: the x3seg rotation whose input rows are L.oa.
++fn woBRotIn(c: calls.Call) bool {
++    if (!std.mem.eql(u8, c.name, "tf_dsv41_x3seg_v3.rot_in")) return false;
++    const r = firstRole(c.args[0].arg) orelse return false;
++    return std.mem.eql(u8, r, "L.oa");
++}
++
++/// A dense3 linear writing `role` (its first output).
++fn writes(c: calls.Call, role: []const u8) bool {
++    if (!std.mem.eql(u8, c.name, "tf_dsv41_dense3_v1.linear")) return false;
++    const r = firstRole(c.args[3].arg) orelse return false;
++    return std.mem.eql(u8, r, role);
++}
++
++fn isLinear(c: calls.Call) bool {
++    return std.mem.eql(u8, c.name, "tf_dsv41_dense3_v1.linear");
++}
++
++/// The layer whose calls start at a `begin` (the window's first layer from the window's start).
++fn layerOf(cs: []const calls.Call, i: usize, layers: []const u32) u32 {
++    var l: usize = 0;
++    for (cs[1 .. i + 1]) |c| l += @intFromBool(c.begin == .layer);
++    return layers[l];
++}
++
++const Counts = struct { dropped: usize = 0, folded: usize = 0, wo_b: usize = 0 };
++
++/// `on` is `off` less wo_b's rot_in, wo_a's linears carrying wo_b's rows, suh and stride; nothing else moves.
++fn compareWindows(a: std.mem.Allocator, cfg: *const Config, layers: []const u32, n: i64, off: []const calls.Call, on: []const calls.Call) !Counts {
++    var k: Counts = .{};
++    var j: usize = 0;
++    var rows: ?[]const u8 = null; // the rotated rows wo_a's epilogue wrote, for the wo_b linear that reads them
++    for (off, 0..) |c, i| {
++        if (woBRotIn(c)) {
++            k.dropped += 1;
++            continue;
++        }
++        try testing.expect(j < on.len);
++        const d = on[j];
++        j += 1;
++        if (writes(c, "L.oa")) {
++            k.folded += 1;
++            try testing.expectEqual(@as(usize, 12), c.args.len);
++            try testing.expectEqual(@as(usize, 15), d.args.len);
++            try testing.expectEqualStrings(try key(a, c, 12), try key(a, d, 12));
++            const L = layerOf(off, i, layers);
++            const kb: i64 = @as(i64, cfg.o_groups / 2) * cfg.o_lora;
++            var want: std.ArrayList(u8) = .empty;
++            try want.print(a, " L.wo_b.xh:f16@0[{d}/1,]", .{n * kb});
++            try testing.expectEqualStrings(want.items, try oneKey(a, d.args[12].arg));
++            want = .empty;
++            try want.print(a, " L{d}.attn.wo_b.suh:f16@0[{d}/1,]", .{ L, kb });
++            try testing.expectEqualStrings(want.items, try oneKey(a, d.args[13].arg));
++            try testing.expectEqual(kb, d.args[14].arg.i);
++            rows = try oneKey(a, d.args[12].arg);
++            continue;
++        }
++        try testing.expectEqualStrings(try key(a, c, c.args.len), try key(a, d, d.args.len));
++        if (writes(c, "L.part")) {
++            // wo_b's linear reads the very rows wo_a's epilogue wrote (role, dtype, extent)
++            k.wo_b += 1;
++            try testing.expectEqualStrings(rows.?, try oneKey(a, d.args[0].arg));
++            rows = null;
++        }
++    }
++    try testing.expectEqual(on.len, j);
++    return k;
++}
++
++fn widths(a: std.mem.Allocator) !block.Widths {
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    // a layer whose wo_a groups take two widths: two linear launches, each with its own segments' columns
++    try w.dense.put(a, "L5.attn.wo_a.2", 12);
++    return w;
++}
++
++test "TF_DSV41_ROT_FOLD: bit 0 drops each layer's wo_b rot_in and only adds wo_a's rotated-row arguments" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    const cfg: Config = .{};
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const limit: i64 = 8192;
++    const pages = @divExact(limit, block.Pool.page);
++    var served: block.Options = .{ .limit = limit, .r1 = true, .index_bound = true, .expert_topp = 0.85, .branches = true, .mhc_defer = true, .kv_norm_store = true };
++    served.pool = .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages, .split = true };
++    var rows = served;
++    rows.rows = true;
++    for ([_]block.Options{ .{ .limit = limit }, served, rows }) |o| for ([_]i64{ 1, 5, 16, 17, 64 }) |n| {
++        var on = o;
++        on.rot_fold = 1;
++        const off_cs = try block.emit(a, &cfg, &w, o, &backbone, n, 300, true);
++        const on_cs = try block.emit(a, &cfg, &w, on, &backbone, n, 300, true);
++        // flag off: H's calls (every layer's wo_b rot_in, every linear at its 12 arguments)
++        var rot_ins: usize = 0;
++        for (off_cs) |c| {
++            rot_ins += @intFromBool(woBRotIn(c));
++            if (isLinear(c)) try testing.expectEqual(@as(usize, 12), c.args.len);
++        }
++        try testing.expectEqual(backbone.len, rot_ins);
++        const k = try compareWindows(a, &cfg, &backbone, n, off_cs, on_cs);
++        try testing.expectEqual(backbone.len, k.dropped);
++        try testing.expectEqual(backbone.len, k.wo_b);
++        try testing.expectEqual(backbone.len + 1, k.folded); // L5's wo_a in two launches
++        try testing.expectEqual(off_cs.len - backbone.len, on_cs.len);
++    };
++}
++
++test "TF_DSV41_ROT_FOLD: woFold takes only whole 128-column groups; the knob's other bits do not fold wo_a" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    const cfg: Config = .{};
++    var e: block.Emitter = .{ .a = a, .cfg = &cfg, .w = &w, .o = .{ .rot_fold = 1 }, .n = 4, .start = 0 };
++    const x = try e.empty(.bf16);
++    var po = [_]block.Emitter.Proj{
++        .{ .w = "L0.attn.wo_a.0", .x = x, .y = x, .col = 0, .k = 4096, .n = 1024 },
++        .{ .w = "L0.attn.wo_a.1", .x = x, .y = x, .col = 1024, .k = 4096, .n = 1024 },
++    };
++    try testing.expect(block_attn.woFold(&e, &po));
++    po[1].col = 1088; // a group starting mid-block: its warps' columns straddle two rot_in blocks
++    try testing.expect(!block_attn.woFold(&e, &po));
++    po[1].col = 1024;
++    po[1].n = 960;
++    try testing.expect(!block_attn.woFold(&e, &po));
++    po[1].n = 1024;
++    for ([_]u3{ 0, 2, 4, 6 }) |m| {
++        e.o.rot_fold = m;
++        try testing.expect(!block_attn.woFold(&e, &po));
++    }
++}
++
++// -- the epilogue's rotation against rot_in's, on the host --------------------------------------------------------
++
++const had: f32 = 0.08838834764831845; // exl3_decode.cuh HAD_SCALE
++
++/// __float2bfloat16_rn (cvt.rn.bf16.f32): nearest even, a NaN as the canonical 0x7fff.
++fn bf16Bits(x: f32) u16 {
++    if (std.math.isNan(x)) return 0x7fff;
++    const u: u32 = @bitCast(x);
++    return @truncate((u +% 0x7fff +% ((u >> 16) & 1)) >> 16);
++}
++
++fn widenBf16(b: u16) f32 {
++    return @bitCast(@as(u32, b) << 16);
++}
++
++fn widenF16(b: u16) f32 {
++    return @as(f16, @bitCast(b));
++}
++
++fn f16Bits(x: f32) u16 {
++    return @bitCast(@as(f16, @floatCast(x)));
++}
++
++/// exl3_decode.cuh fwht128: each lane's 4-point transform, then the xor-shuffle butterflies (lane bit m: o - v).
++fn fwht128(v: *[32][4]f32) void {
++    for (v) |*l| {
++        const a = l[0] + l[1];
++        const b = l[0] - l[1];
++        const c = l[2] + l[3];
++        const d = l[2] - l[3];
++        l.* = .{ a + c, b + d, a - c, b - d };
++    }
++    var m: usize = 1;
++    while (m < 32) : (m <<= 1) {
++        const old = v.*;
++        for (0..32) |lane| for (0..4) |j| {
++            const o = old[lane ^ m][j];
++            v[lane][j] = if (lane & m != 0) o - old[lane][j] else old[lane][j] + o;
++        };
++    }
++}
++
++/// x3seg.cu seg_rot_in_kernel (no norm): every 128-column block of `rows` bf16 rows x [rows, K] into fp16 xh.
++fn rotIn(x: []const u16, suh: []const u16, xh: []u16, rows: usize, K: usize) void {
++    for (0..rows) |row| for (0..K / 128) |blk| {
++        var v: [32][4]f32 = undefined;
++        for (0..32) |lane| for (0..4) |j| {
++            const k = blk * 128 + 4 * lane + j;
++            v[lane][j] = widenBf16(x[row * K + k]);
++            v[lane][j] *= widenF16(suh[k]);
++        };
++        fwht128(&v);
++        for (0..32) |lane| for (0..4) |j| {
++            xh[row * K + blk * 128 + 4 * lane + j] = f16Bits(v[lane][j] * had);
++        };
++    };
++}
++
++const Trip = enum { bf16, none, f16 };
++
++/// dense3_rot.cuh rot_out on one warp's 128 columns: y's floats rounded as store4 rounds them, widened as load4 does.
++fn rotOut(y: []const f32, trip: Trip, suh: []const u16, xh: []u16) void {
++    var v: [32][4]f32 = undefined;
++    for (0..32) |lane| for (0..4) |j| {
++        const f = y[4 * lane + j];
++        v[lane][j] = switch (trip) {
++            .bf16 => widenBf16(bf16Bits(f)),
++            .f16 => widenF16(f16Bits(f)),
++            .none => f,
++        };
++        v[lane][j] *= widenF16(suh[4 * lane + j]);
++    };
++    fwht128(&v);
++    for (0..32) |lane| for (0..4) |j| {
++        xh[4 * lane + j] = f16Bits(v[lane][j] * had);
++    };
++}
++
++/// The fold over `segs`' launches: each segment's blocks at the columns its linTable y and rotOut entry name.
++fn foldAll(a: std.mem.Allocator, segs: []const dense.Seg, y: []const f32, suh: []const u16, xh: []u16, rows: usize, ld: usize, trip: Trip) !void {
++    const base: u64 = 0x100000;
++    const lay = try dense.layout(segs, rows);
++    const bufs = try a.alloc(dense.SegBufs, segs.len);
++    defer a.free(bufs);
++    for (bufs) |*b| b.* = .{ .T = 1, .svh = 1, .y = base, .ld = ld };
++    for (lay.launches[0..lay.n_launches]) |l| {
++        const tab = dense.linTable(lay, l, segs, bufs, .bf16, base, base, base);
++        const cols = dense.launchCols(l, segs);
++        const ro = try dense.rotOut(cols[0..l.count], base, base, ld);
++        for (l.segs[0..l.count], 0..) |si, j| {
++            const yc: usize = @intCast((tab.s[j].y - base) / 2);
++            const xc: usize = @intCast((ro.xh[j] - base) / 2);
++            const sc: usize = @intCast((ro.suh[j] - base) / 2);
++            for (0..segs[si].n / 128) |nb| for (0..rows) |r| {
++                const c0 = nb * 128;
++                rotOut(y[r * ld + yc + c0 ..][0..128], trip, suh[sc + c0 ..][0..128], xh[r * @as(usize, @intCast(ro.ld)) + xc + c0 ..][0..128]);
++            };
++        }
++    }
++}
++
++/// y's edge classes: signed zeros, infinities, NaNs, f32's largest, subnormals, bf16 ties, fp16 overflow.
++const y_edges = [_]u32{ 0x00000000, 0x80000000, 0x7f800000, 0xff800000, 0x7fc00000, 0xffc00123, 0x7f7fffff, 0xff7fffff, 0x00000001, 0x807fffff, 0x3f808000, 0x3f818000, 0x3f80ffff, 0x477fe000, 0x47800000, 0xc7801000 };
++const suh_edges = [_]u16{ 0x3c00, 0xbc00, 0x0000, 0x8000, 0x7bff, 0xfbff, 0x0001, 0x8001, 0x3555 };
++
++fn randomY(r: std.Random, y: []f32) void {
++    for (y) |*v| v.* = switch (r.uintLessThan(u8, 8)) {
++        0 => @bitCast(y_edges[r.uintLessThan(usize, y_edges.len)]),
++        1 => @bitCast(r.int(u32)), // any bit pattern
++        2 => @floatCast(@as(f64, @floatFromInt(r.int(i16))) * 64.0), // past fp16 after the transform
++        else => @floatCast(r.floatNorm(f64) * 0.25),
++    };
++}
++
++fn randomSuh(r: std.Random, suh: []u16) void {
++    for (suh) |*s| s.* = switch (r.uintLessThan(u8, 6)) {
++        0 => suh_edges[r.uintLessThan(usize, suh_edges.len)],
++        1, 2 => 0x3c00,
++        3 => 0xbc00,
++        else => f16Bits(@floatCast(r.floatNorm(f64))),
++    };
++}
++
++/// wo_a-shaped groups at a small K: widths 10 / 12 / 10 / 4 (three launches), uneven column counts.
++fn twinSegs() [4]dense.Seg {
++    var segs: [4]dense.Seg = undefined;
++    const ns = [_]usize{ 256, 128, 384, 256 };
++    const k2s = [_]u32{ 10, 12, 10, 4 };
++    var col: usize = 0;
++    for (&segs, ns, k2s, 0..) |*s, n, k2, i| {
++        const pl = dense.plan(512, n);
++        s.* = .{ .k = 512, .n = n, .k2 = k2, .sk = pl[0], .wk = pl[1], .out = i, .col = col };
++        col += n;
++    }
++    return segs;
++}
++
++test "rotation twin: wo_a's epilogue writes rot_in's exact fp16 rows (random and edge bf16 / fp16 values)" {
++    const a = testing.allocator;
++    const segs = twinSegs();
++    const ld: usize = 1024;
++    var prng = std.Random.DefaultPrng.init(0x3a_f01d);
++    const r = prng.random();
++    for ([_]usize{ 1, 3, 17 }) |rows| for (0..6) |_| {
++        const y = try a.alloc(f32, rows * ld);
++        defer a.free(y);
++        const suh = try a.alloc(u16, ld);
++        defer a.free(suh);
++        randomY(r, y);
++        randomSuh(r, suh);
++        // H: the linear stores bf16 rows (L.oa), then rot_in reads them whole into L.wo_b.xh
++        const oa = try a.alloc(u16, rows * ld);
++        defer a.free(oa);
++        for (oa, y) |*o, f| o.* = bf16Bits(f);
++        const want = try a.alloc(u16, rows * ld);
++        defer a.free(want);
++        rotIn(oa, suh, want, rows, ld);
++        // the fold: each launch's segments rotate their own blocks from the floats they store
++        const got = try a.alloc(u16, rows * ld);
++        defer a.free(got);
++        @memset(got, 0xdead);
++        try foldAll(a, &segs, y, suh, got, rows, ld, .bf16);
++        try testing.expectEqualSlices(u16, want, got);
++    };
++}
++
++test "rotation twin controls: no bf16 rounding, fp16 rounding or a mid-block group each change the bits" {
++    const a = testing.allocator;
++    const segs = twinSegs();
++    const ld: usize = 1024;
++    const rows: usize = 2;
++    var prng = std.Random.DefaultPrng.init(0xc0_47e1);
++    const r = prng.random();
++    const y = try a.alloc(f32, rows * ld);
++    defer a.free(y);
++    const suh = try a.alloc(u16, ld);
++    defer a.free(suh);
++    for (y) |*v| v.* = @floatCast(r.floatNorm(f64)); // finite, rarely representable in bf16
++    randomSuh(r, suh);
++    const oa = try a.alloc(u16, rows * ld);
++    defer a.free(oa);
++    for (oa, y) |*o, f| o.* = bf16Bits(f);
++    const want = try a.alloc(u16, rows * ld);
++    defer a.free(want);
++    rotIn(oa, suh, want, rows, ld);
++    const got = try a.alloc(u16, rows * ld);
++    defer a.free(got);
++    for ([_]Trip{ .none, .f16 }) |trip| {
++        try foldAll(a, &segs, y, suh, got, rows, ld, trip);
++        try testing.expect(!std.mem.eql(u16, want, got));
++    }
++    // a group starting 64 columns into a block: its warp's 128 columns are not one rot_in block
++    var block_got: [128]u16 = undefined;
++    rotOut(y[64..192], .bf16, suh[64..192], &block_got);
++    try testing.expect(!std.mem.eql(u16, want[64..192], &block_got));
++    try testing.expectError(error.Unsupported, dense.rotOut(&.{ 0, 64 }, 0x1000, 0x2000, ld));
++}
+diff --git a/zig/src/families/deepseek_v41/serve_knobs.zig b/zig/src/families/deepseek_v41/serve_knobs.zig
+index 169a3570a563150123a7542cf97f5a19445c71f4..57e24517bc8ffa275495d1af4289704fa01be6a6 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs.zig
+@@ -163,6 +163,27 @@ pub fn indexBound(get: Get) !bool {
+     return error.BadKnob;
+ }
+ 
++/// TF_DSV41_IDX_IOTA (unset / 0 off, 1 on, else refused): block_index.iotaSelects' layers skip their index scores.
++pub fn idxIota(get: Get) !bool {
++    const raw = std.mem.trim(u8, get("TF_DSV41_IDX_IOTA") orelse "0", " ");
++    if (std.mem.eql(u8, raw, "0")) return false;
++    if (std.mem.eql(u8, raw, "1")) return true;
++    if (!quiet) std.log.warn("TF_DSV41_IDX_IOTA={s}: 0 or 1", .{raw});
++    return error.BadKnob;
++}
++
++/// TF_DSV41_ROT_FOLD (unset / 0 off; 1 = bit 0, wo_a -> wo_b): bits 1-2 are reserved for 3b / 3c, refused until built
++pub fn rotFold(get: Get) !u3 {
++    const raw = std.mem.trim(u8, get("TF_DSV41_ROT_FOLD") orelse "0", " ");
++    const m = dk.dense.rotFoldMask(raw) catch null;
++    if (m) |v| if (v & ~rot_fold_built == 0) return v;
++    if (!quiet) std.log.warn("TF_DSV41_ROT_FOLD={s}: 0 or 1 (bit 0 wo_a -> wo_b; bits 1-2 reserved)", .{raw});
++    return error.BadKnob;
++}
++
++/// The TF_DSV41_ROT_FOLD bits this build implements: 3a (wo_a -> wo_b) alone.
++pub const rot_fold_built: u3 = 0b001;
++
+ /// TF_DSV41_PREFETCH_AHEAD (0 by default): the next prompt segment's Engram reads before this one runs.
+ pub fn prefetchAhead(get: Get) bool {
+     const v = get("TF_DSV41_PREFETCH_AHEAD") orelse return false;
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_apply.zig b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+index 76a0eea23e8e051e021f300cf881d263dc287f9d..7dfed3a55e2be8831d41b0168c51bbdf04fc8614 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_apply.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+@@ -8,6 +8,7 @@ const env = pk.env;
+ const gmGu2 = pk.gmGu2;
+ const indexBound = pk.indexBound;
+ const indexBudget = pk.indexBudget;
++const idxIota = pk.idxIota;
+ const kvNormStore = pk.kvNormStore;
+ const mhcPfRows = pk.mhcPfRows;
+ const mhcSiteRows = pk.mhcSiteRows;
+@@ -22,6 +23,7 @@ const prefetchAhead = pk.prefetchAhead;
+ const prefillMode = pk.prefillMode;
+ const prefillRows = pk.prefillRows;
+ const routerGroupRot = pk.routerGroupRot;
++const rotFold = pk.rotFold;
+ const streamRb = pk.streamRb;
+ const x3ldEpi = pk.x3ldEpi;
+ const idx_split = @import("idx_split.zig");
+@@ -53,6 +55,8 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     f.opts.index_bound = try indexBound(&env);
+     // TF_DSV41_IDX_SPLIT: the ranks agreed on it at the TP bootstrap (cuda_model.zig: tp.Config.family)
+     f.opts.idx_split = try idx_split.mode(&env);
++    f.opts.idx_iota = try idxIota(&env);
++    f.opts.rot_fold = try rotFold(&env);
+     // TF_DSV41_BRANCHES: the side stream exists before any capture
+     if (f.branches == null) f.branches = try @import("branches.zig").install(f.gpa, f, rank);
+     // TF_DSV41_PF_OVERLAP: the pieces' exchanges go on the branches' side stream (one peer: TP=2)
+@@ -97,7 +101,9 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     const log = std.log.scoped(.dsv41);
+     log.info("KV norm/store fusion: {s}", .{if (f.opts.kv_norm_store) "on" else "off"});
+     log.info("router grouping/rotation fusion: {s}", .{if (f.opts.router_group_rot) "on" else "off"});
++    if (f.opts.rot_fold & 1 != 0) log.info("rot fold: wo_a's epilogue writes wo_b's rotated rows (no wo_b rot_in launch)", .{});
+     if (f.opts.index_bound) log.info("index bound: decode index scores stop at each row's own keys (_scores_b)", .{});
++    if (f.opts.idx_iota) log.info("index iota: an index layer whose top-k takes all its entries skips its query and scores", .{});
+     if (f.opts.x3ld_epi) log.info("x3ld epilogues: gateup_epilogue / down_combine fused into the decode expert streamer (TF_DSV41_X3LD_EPI)", .{});
+     if (f.opts.idx_split != .off) log.info("index split: prefill selections split by rows over the two ranks ({t}: {s}), int32 rows gathered", .{ f.opts.idx_split, if (f.opts.idx_split == .auto) "rows x keys past 4,096 x 65,536" else "every segment of 256 rows or more" });
+     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_test.zig b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+index 1bb7ce955d49f8884a7bd14d8eafaf35f26440f6..a0c2cf5b13650d1d330c40fb2d8cd7d48a78138d 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_test.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+@@ -17,6 +17,8 @@ test {
+     _ = @import("pfovl_test.zig");
+     _ = @import("pftbo_test.zig");
+     _ = @import("streamrb_test.zig");
++    _ = @import("idx_iota_test.zig"); // TF_DSV41_IDX_IOTA on the decode emitter and the top-k twin
++    _ = @import("rot_fold_test.zig"); // TF_DSV41_ROT_FOLD on the decode emitter and the rotation twin
+ }
+ 
+ const Fake = struct {
+diff --git a/zig/tests/cuda/deepseek_v41/rot_fold_check.zig b/zig/tests/cuda/deepseek_v41/rot_fold_check.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1e6c81a2c7ffec9c122b69a221c570d28e896c3
+--- /dev/null
++++ b/zig/tests/cuda/deepseek_v41/rot_fold_check.zig
+@@ -0,0 +1,171 @@
++//! TF_DSV41_ROT_FOLD: lanes_rot_kernel against lanes_linear_kernel + seg_rot_in, byte for byte (synthetic data).
++
++const std = @import("std");
++const cuda = @import("cuda");
++const dsv41 = @import("dsv41_kernels");
++const check = @import("../check.zig");
++
++const dense = dsv41.dense;
++const Gpu = check.Gpu;
++
++const Rng = struct {
++    s: u64,
++    fn next(r: *Rng) u64 {
++        r.s ^= r.s << 13;
++        r.s ^= r.s >> 7;
++        r.s ^= r.s << 17;
++        return r.s;
++    }
++    fn unit(r: *Rng) f32 {
++        return @as(f32, @floatFromInt(r.next() >> 40)) / @as(f32, 1 << 24);
++    }
++};
++
++/// fp16 values in [lo, hi); `hot`: one in 97 an infinity of either sign (NaN and overflow paths downstream).
++fn halves(gpa: std.mem.Allocator, d: *const cuda.Driver, rng: *Rng, n: usize, lo: f32, hi: f32, hot: bool) !cuda.DeviceBuffer {
++    const h = try gpa.alloc(f16, n);
++    defer gpa.free(h);
++    for (h) |*v| {
++        v.* = @floatCast(lo + (hi - lo) * rng.unit());
++        if (hot and rng.next() % 97 == 0) v.* = if (rng.next() & 1 == 0) std.math.inf(f16) else -std.math.inf(f16);
++    }
++    return cuda.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(h));
++}
++
++fn words(gpa: std.mem.Allocator, d: *const cuda.Driver, rng: *Rng, n: usize) !cuda.DeviceBuffer {
++    const h = try gpa.alloc(u32, n);
++    defer gpa.free(h);
++    for (h) |*w| w.* = @truncate(rng.next());
++    return cuda.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(h));
++}
++
++fn zeroed(d: *const cuda.Driver, n: usize) !cuda.DeviceBuffer {
++    const b = try cuda.DeviceBuffer.alloc(d, @max(n, 4));
++    try b.fill8(0, null);
++    return b;
++}
++
++/// A wo_a-like group: segments of K rows each, output columns side by side in one bf16 row of kb columns.
++const Case = struct { k: usize, ns: []const usize, k2s: []const u32, hot: bool = false };
++
++const cases = [_]Case{
++    .{ .k = 4096, .ns = &.{ 1024, 1024, 1024, 1024 }, .k2s = &.{ 10, 10, 12, 8 } }, // the served wo_a: SK 8, WK 4
++    .{ .k = 4096, .ns = &.{ 1024, 1024, 1024, 1024 }, .k2s = &.{ 10, 10, 12, 8 }, .hot = true },
++    .{ .k = 512, .ns = &.{ 256, 384, 128 }, .k2s = &.{ 6, 4, 6 } }, // SK 1, WK 4
++    .{ .k = 1024, .ns = &.{ 8192, 1024 }, .k2s = &.{ 10, 10 } }, // an 8-warp launch with a 4-warp split segment
++};
++
++fn minb(wk: usize) u32 {
++    return if (wk == 8) 1 else 3;
++}
++
++fn bytes(gpa: std.mem.Allocator, b: cuda.DeviceBuffer) ![]u8 {
++    const x = try gpa.alloc(u8, b.len);
++    errdefer gpa.free(x);
++    try b.download(0, x);
++    return x;
++}
++
++fn runCase(gpu: Gpu, o: dense.Ops, stream: cuda.Stream, rng: *Rng, c: Case, rows: []const usize) !usize {
++    const gpa = gpu.gpa;
++    const d = gpu.d;
++    const max_m: usize = 64;
++    var segs: [dense.max_seg]dense.Seg = undefined;
++    var kb: usize = 0;
++    for (c.ns, c.k2s, 0..) |n, k2, i| {
++        const pl = dense.plan(c.k, n);
++        segs[i] = .{ .k = c.k, .n = n, .k2 = k2, .sk = pl[0], .wk = pl[1], .out = 0, .col = kb };
++        kb += n;
++    }
++    const ss = segs[0..c.ns.len];
++    const big = try dense.layout(ss, max_m);
++    var xh_in = try halves(gpa, d, rng, big.xh_total, -1.0, 1.0, c.hot);
++    defer xh_in.free();
++    var T: [dense.max_seg]cuda.DeviceBuffer = undefined;
++    var svh: [dense.max_seg]cuda.DeviceBuffer = undefined;
++    // hot: column scales past fp16's range once rotated (infinities in wo_b's rows)
++    const lo: f32 = if (c.hot) 4.0 else 0.01;
++    const hi: f32 = if (c.hot) 64.0 else 0.03;
++    for (ss, 0..) |s, i| {
++        T[i] = try words(gpa, d, rng, (s.k / 16) * (s.n / 16) * 4 * s.k2);
++        svh[i] = try halves(gpa, d, rng, s.n, lo, hi, false);
++    }
++    defer for (ss, 0..) |_, i| {
++        T[i].free();
++        svh[i].free();
++    };
++    var rsuh = try halves(gpa, d, rng, kb, -2.0, 2.0, false);
++    defer rsuh.free();
++    var z = try zeroed(d, big.z_total * 4);
++    defer z.free();
++    var counters = try zeroed(d, big.c_total * 4);
++    defer counters.free();
++    var outs: [4]cuda.DeviceBuffer = undefined; // oa and wo_b's rows: H's, then the fold's
++    for (&outs) |*b| b.* = try zeroed(d, max_m * kb * 2);
++    defer for (&outs) |*b| b.free();
++    var name: [160]u8 = undefined;
++    var n_cases: usize = 0;
++    for (rows) |m| {
++        const lay = try dense.layout(ss, m);
++        for (&outs) |*b| try b.fill8(0, null);
++        for ([_]bool{ false, true }) |fold| {
++            const oa = outs[if (fold) 2 else 0];
++            const xh = outs[if (fold) 3 else 1];
++            var bufs: [dense.max_seg]dense.SegBufs = undefined;
++            for (ss, 0..) |_, i| bufs[i] = .{ .T = T[i].ptr, .svh = svh[i].ptr, .y = oa.ptr, .ld = kb };
++            for (lay.launches[0..lay.n_launches]) |l| {
++                const tab = dense.linTable(lay, l, ss, bufs[0..ss.len], .bf16, xh_in.ptr, z.ptr, counters.ptr);
++                if (fold) {
++                    const cols = dense.launchCols(l, ss);
++                    const ro = try dense.rotOut(cols[0..l.count], xh.ptr, rsuh.ptr, kb);
++                    try o.lanesRotLinear(tab, ro, .bf16, m, l.programs, l.k2, l.wk, minb(l.wk), false);
++                } else try o.lanesLinear(tab, .bf16, m, l, minb(l.wk), false);
++            }
++            if (!fold) {
++                var t = std.mem.zeroes(dense.RotTable);
++                t.n = 1;
++                t.s[0] = .{ .x = oa.ptr, .suh = rsuh.ptr, .xh = xh.ptr, .ld = @intCast(kb), .K = @intCast(kb), .x_dtype = @backingInt(dense.DType.bf16) };
++                try o.segRotIn(t, m, false);
++            }
++        }
++        try stream.synchronize();
++        const len = m * kb * 2;
++        var got: [4][]u8 = undefined;
++        for (&got, outs) |*g, b| g.* = try bytes(gpa, b);
++        defer for (got) |g| gpa.free(g);
++        const tag = try std.fmt.bufPrint(&name, "K {d} N {any} K2 {any} hot {any} M {d}", .{ c.k, c.ns, c.k2s, c.hot, m });
++        try check.sameBytes(tag, got[2][0..len], got[0][0..len]); // the linear's own bf16 rows (L.oa)
++        try check.sameBytes(tag, got[3][0..len], got[1][0..len]); // wo_b's rotated fp16 rows (L.wo_b.xh)
++        const cnt = try bytes(gpa, counters);
++        defer gpa.free(cnt);
++        for (cnt) |b| try check.expect(b == 0, "{s}: k-split counters not back at zero", .{tag});
++        n_cases += 1;
++    }
++    return n_cases;
++}
++
++pub fn run(gpu: Gpu, k: *const dsv41.Kernels, rows_arg: ?[]const u8) !void {
++    var rows_buf: [32]usize = undefined;
++    var rows: []const usize = &.{ 1, 3, 8, 9, 16, 17, 32, 33, 64 };
++    if (rows_arg) |r| {
++        var it = std.mem.tokenizeScalar(u8, r, ',');
++        var n: usize = 0;
++        while (it.next()) |t| : (n += 1) {
++            if (n == rows_buf.len) return error.TooManyRows;
++            rows_buf[n] = try std.fmt.parseInt(usize, t, 10);
++            if (rows_buf[n] < 1 or rows_buf[n] > 64) return error.BadRows;
++        }
++        rows = rows_buf[0..n];
++    }
++    var stream = try cuda.Stream.init(gpu.d, false);
++    defer stream.deinit();
++    // H's launches never take lin2's variants here; the fold's instances from the same dense3 image
++    var f = k.dense;
++    f.lin2 = null;
++    f.rot = try dense.Rot.resolve(k.mods[6]);
++    const o: dense.Ops = .{ .f = &f, .s = stream };
++    var rng: Rng = .{ .s = 0x9e3779b97f4a7c15 };
++    var total: usize = 0;
++    for (cases) |c| total += try runCase(gpu, o, stream, &rng, c, rows);
++    check.pass("rot-fold: {d} launches' L.oa and L.wo_b.xh equal to lanes_linear + seg_rot_in byte for byte", .{total});
++}
+diff --git a/zig/tests/cuda/dsv41_main.zig b/zig/tests/cuda/dsv41_main.zig
+index ba994a7810b8eda1f5749913a37636a942195d84..386a3978ccd0056906480a00044250f62cba6e10 100644
+--- a/zig/tests/cuda/dsv41_main.zig
++++ b/zig/tests/cuda/dsv41_main.zig
+@@ -14,6 +14,7 @@ const mhc_alloc = @import("deepseek_v41/mhc_alloc_bench.zig");
+ const x3gm3_bench = @import("deepseek_v41/x3gm3_bench.zig");
+ const stream_rb_bench = @import("deepseek_v41/stream_rb_bench.zig");
+ const lin2_bench = @import("deepseek_v41/lin2_bench.zig");
++const rot_fold = @import("deepseek_v41/rot_fold_check.zig");
+ const scores_b_bench = @import("deepseek_v41/scores_b_bench.zig");
+ const x3ld_epi_bench = @import("deepseek_v41/x3ld_epi_bench.zig");
+ const topk_b_bench = @import("deepseek_v41/topk_b_bench.zig");
+@@ -32,6 +33,7 @@ const usage =
+     \\  mhc-alloc [windows]  the 16-row mHC boundary's time with buffers per cuMemAlloc / arena / VMM (TF_DSV41_ARENA)
+     \\  stream-rb <aot dir> [--reps N]  _stream_rb2 / _rb4 against _stream (Triton AOT set): bits and time (synthetic)
+     \\  lin2 [reps]        TF_DSV41_LIN2's two-tile linears against the originals: bits at 17-32 rows, time (synthetic data)
++    \\  rot-fold [rows,..] TF_DSV41_ROT_FOLD's wo_a epilogue against lanes_linear + seg_rot_in: every byte (synthetic)
+     \\  scores-b <aot dir> [--reps N]   _scores_b against _scores (Triton AOT set): bits and time, mixed 131K / short rows
+     \\  topk-b <aot dir> [--reps N]     TF_DSV41_INDEX_BOUND's top-k twins (topk_b.cu, _dtopk_b) against topk_cuda.cu /
+     \\                                  _dtopk: every output byte and time, mixed 154K / short rows (fatbins + AOT set)
+@@ -86,6 +88,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
+     if (std.mem.eql(u8, cmd, "mhc-probe")) return mhc_probe.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "mhc-alloc")) return mhc_alloc.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "lin2")) return lin2_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null);
++    if (std.mem.eql(u8, cmd, "rot-fold")) return rot_fold.run(gpu, &k, if (rest.len > 0) rest[0] else null);
+     if (std.mem.eql(u8, cmd, "x3gm3-bench")) return x3gm3_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null, if (rest.len > 1) rest[1] else null);
+     if (std.mem.eql(u8, cmd, "topk-b")) return topk_b_bench.run(gpu, &k, rest);
+     if (std.mem.eql(u8, cmd, "x3ld-epi")) return x3ld_epi_bench.run(gpu, &k, if (rest.len > 0) rest[0] else null, if (rest.len > 1) rest[1] else null);

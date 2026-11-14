@@ -1,0 +1,60 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 14:49:12 +0700
+Subject: [PATCH 110/207] In-model runner: proof replays bn-011's inline cells
+ from smoke r0-583d0cd875f6 (powers to 3^256 owned; 3^400, 191 digits,
+ abstains unsupported)
+
+---
+ zig/src/core/runner_proof_test.zig | 38 ++++++++++++++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 22ff2d03d64cba5003b698d587c7a48a7c84f1fc..59c173cde1c8cc9e35e6ba1cb20feb37c8694f45 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -297,6 +297,44 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+     both.graph.release(1);
+ }
+ 
++test "runner proof: bn-011's inline cells (smoke r0-583d0cd875f6): powers to 3^256 own CPython's value, 3^400 abstains" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
++    const front = routed.frontend();
++    // the reply's own cells verbatim (S1-UNOWNED-CELLS.md "T3 smoke r0-583d0cd875f6"); null: abstains today
++    for ([_]struct { []const u8, ?[]const u8 }{
++        .{ "3^64", "3433683820292512484657849089281" },
++        .{ "3^128", "11790184577738583171520872861412518665678211592275841109096961" },
++        .{ "3^256", "139008452377144732764939786789661303114218850808529137991604824430036072629766435941001769154109609521811665540548899435521" },
++        .{ "1000^6", "1000000000000000000" },
++        .{ "262144*707", "185335808" },
++        // 191 digits: past the bank's 128-digit width and the frontend's 62, so `unsupported` (all six abstains)
++        .{ "3^400", null },
++    }) |c| {
++        var arena = std.heap.ArenaAllocator.init(gpa);
++        defer arena.deinit();
++        const t = try front.translate(front.ctx, arena.allocator(), .{ .form = .inline_expr, .lang = "python", .code = c[0] });
++        const want = c[1] orelse {
++            if (t != .abstain or t.abstain != .unsupported) {
++                std.debug.print("{s}: {any}\n", .{ c[0], t });
++                return error.TestExpectedEqual;
++            }
++            continue;
++        };
++        if (t != .program or t.program.kind != .graph) {
++            std.debug.print("not on the graph route: {s}: {any}\n", .{ c[0], t });
++            return error.TestExpectedRoute;
++        }
++        const r = finish(both.graph, try both.graph.start(1, t.program, 4_000_000));
++        try std.testing.expectEqualStrings(want, std.mem.trimEnd(u8, r.out, "\n"));
++    }
++    both.graph.release(1);
++}
++
+ test "runner proof: a print reads an earlier piece's value (TFGS2), so d_mirror's check reuses q and r; cheap names do not" {
+     var both: Both = undefined;
+     try both.open();

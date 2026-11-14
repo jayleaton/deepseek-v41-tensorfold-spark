@@ -1,0 +1,1937 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 10:50:10 +0700
+Subject: [PATCH 098/207] Merge T2 6876cb172 (posix_spawn ELF compile, image
+ cache; whole checked scripts on the graph bank)
+
+Squashed merge of 2 commits:
+- runner: whole checked scripts run on the graph bank before any compile (Jay Leaton)
+- runner: ELF cells compile by posix_spawn and repeat from an image cache; graph pieces run side by side (Jay Leaton)
+---
+ zig/build/runner_cost.zig                     |   3 +
+ zig/src/core/lane_host_tests.zig              |   1 +
+ zig/src/core/runner.zig                       |   1 +
+ zig/src/core/runner_frontend_decimal.zig      |   3 +-
+ zig/src/core/runner_frontend_elf_cache.zig    | 117 ++++++
+ .../core/runner_frontend_elf_cache_test.zig   |  69 +++
+ zig/src/core/runner_frontend_fraction.zig     |   1 +
+ zig/src/core/runner_frontend_integer.zig      |  24 +-
+ .../core/runner_frontend_integer_python.zig   |   3 +-
+ .../core/runner_frontend_program_compile.zig  |  75 ++--
+ zig/src/core/runner_frontend_spawn.zig        | 172 ++++++++
+ zig/src/core/runner_frontend_test.zig         |   1 +
+ zig/src/core/runner_graph_dispatch.zig        | 396 ++++++++++++++++++
+ zig/src/core/runner_graph_program.zig         |   4 +-
+ zig/src/core/runner_graph_route.zig           | 188 +--------
+ zig/src/core/runner_graph_table.zig           | 199 +++++++++
+ zig/src/core/runner_graph_table_test.zig      | 205 +++++++++
+ zig/src/core/runner_proof_test.zig            |   6 +-
+ zig/src/core/runner_s3_bench.zig              | 211 ++++++++++
+ 19 files changed, 1454 insertions(+), 225 deletions(-)
+ create mode 100644 zig/src/core/runner_frontend_elf_cache.zig
+ create mode 100644 zig/src/core/runner_frontend_elf_cache_test.zig
+ create mode 100644 zig/src/core/runner_frontend_spawn.zig
+ create mode 100644 zig/src/core/runner_graph_dispatch.zig
+ create mode 100644 zig/src/core/runner_graph_table.zig
+ create mode 100644 zig/src/core/runner_graph_table_test.zig
+ create mode 100644 zig/src/core/runner_s3_bench.zig
+
+diff --git a/zig/build/runner_cost.zig b/zig/build/runner_cost.zig
+index 77623f7bf89329c49bb307d0edd3ced2040ddd60..e9d1713437aaec7f5f87bc1f1630b8e1741fa8e8 100644
+--- a/zig/build/runner_cost.zig
++++ b/zig/build/runner_cost.zig
+@@ -12,4 +12,7 @@ pub fn steps(b: *std.Build) void {
+     const hold = b.createModule(.{ .root_source_file = b.path("zig/src/core/runner_hold_bench.zig"), .target = target, .optimize = .ReleaseFast, .link_libc = true, .imports = &.{ .{ .name = "lanes", .module = lanes }, .{ .name = "dsv41_tokenizer", .module = tok } } });
+     const hold_exe = b.addExecutable(.{ .name = "runner-hold-bench", .root_module = hold });
+     b.step("bench-runner-hold", "A runner hold's parts through the served runner (TF_DSV41_RUNNER* knobs; tokenizer.json, replies.jsonl)").dependOn(&b.addInstallArtifact(hold_exe, .{}).step);
++    const s3 = b.createModule(.{ .root_source_file = b.path("zig/src/core/runner_s3_bench.zig"), .target = target, .optimize = .ReleaseFast, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
++    const s3_exe = b.addExecutable(.{ .name = "runner-s3-bench", .root_module = s3 });
++    b.step("bench-runner-s3", "S3 lane calls through the served runner: route, steps, ms (TF_DSV41_COMPUTE_LANE_RUNNER* knobs; cells.jsonl)").dependOn(&b.addInstallArtifact(s3_exe, .{}).step);
+ }
+diff --git a/zig/src/core/lane_host_tests.zig b/zig/src/core/lane_host_tests.zig
+index d3f7efaad84b5e5fe1443852da26b9f81111a102..720270accf7e0e6426fe60b18db3faf0bc038c8b 100644
+--- a/zig/src/core/lane_host_tests.zig
++++ b/zig/src/core/lane_host_tests.zig
+@@ -34,5 +34,6 @@ test {
+     _ = @import("runner_proof_test.zig");
+     _ = @import("runner_place_test.zig");
+     _ = @import("runner_graph_route.zig");
++    _ = @import("runner_graph_dispatch.zig");
+     _ = @import("runner_graph_program.zig");
+ }
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 8061db2e18d773871b723a0f69f5faba114f1b62..b7ca17792d0c441591f5b3677feb69693e15672f 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -488,4 +488,5 @@ test {
+     _ = @import("runner_trace_test.zig");
+     _ = @import("runner_settle_test.zig");
+     _ = @import("runner_probe.zig");
++    _ = @import("runner_graph_table_test.zig");
+ }
+diff --git a/zig/src/core/runner_frontend_decimal.zig b/zig/src/core/runner_frontend_decimal.zig
+index 79a87e51ecb48c976b3aadcdfc416382b37d00f4..9a98cdf3d67cba03e85855b60ea650d0156c64f7 100644
+--- a/zig/src/core/runner_frontend_decimal.zig
++++ b/zig/src/core/runner_frontend_decimal.zig
+@@ -76,7 +76,8 @@ const Parser = struct {
+             steps = (@import("runner_frontend_integer_cost.zig").estimateMany(&p.nodes, roots[0..count], budget - extra) orelse return error.Unsupported) + extra;
+         }
+         const endings: [8]u8 = @splat('\n');
+-        return .{ .source = try integer.lowerFormatted(a, &p.nodes, roots[0..count], endings[0..count], styles[0..count], scales[0..count]), .estimated_steps = steps };
++        const source = try integer.lowerFormatted(a, &p.nodes, roots[0..count], endings[0..count], styles[0..count], scales[0..count]);
++        return .{ .source = source, .estimated_steps = steps, .table = integer.table(&p.nodes, roots[0..count], endings[0..count], styles[0..count], scales[0..count]) };
+     }
+ 
+     fn parse(p: *Parser, text: []const u8) !Value {
+diff --git a/zig/src/core/runner_frontend_elf_cache.zig b/zig/src/core/runner_frontend_elf_cache.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9bffe25c48939c8779cfb2d99323d38b508da5b6
+--- /dev/null
++++ b/zig/src/core/runner_frontend_elf_cache.zig
+@@ -0,0 +1,117 @@
++//! Compiled RV32 ELF images by a hash of their normalized source and compile settings; opaque-input sources only.
++const std = @import("std");
++
++pub const Key = [32]u8;
++
++/// Slots kept; a full cache overwrites its oldest entry.
++pub const slots = 64;
++/// Larger images are never kept.
++pub const max_image = 256 * 1024;
++
++const Entry = struct { key: Key, bytes: []u8 };
++
++var mutex: std.Io.Mutex = .init;
++var entries: [slots]?Entry = @splat(null);
++var next: usize = 0;
++var hits: u64 = 0;
++
++/// Opaque inputs (clang cannot fold an answer) and an admission with no AST pass: the source alone decides the image.
++pub fn wanted(opaque_inputs: bool, step_budget: usize, estimated_steps: ?usize) bool {
++    if (!opaque_inputs) return false;
++    if (step_budget == 0) return true;
++    const steps = estimated_steps orelse return false;
++    return steps <= step_budget;
++}
++
++/// Everything besides the fixed runtime that changes the image or its acceptance.
++pub fn key(normalized: []const u8, clang: []const u8, linker: ?[]const u8, optimize: u8, stack_limit: usize) Key {
++    var h = std.crypto.hash.sha2.Sha256.init(.{});
++    for ([_][]const u8{ clang, linker orelse "", normalized }) |part| {
++        h.update(std.mem.asBytes(&part.len));
++        h.update(part);
++    }
++    h.update(&.{optimize});
++    h.update(std.mem.asBytes(&stack_limit));
++    h.update(if (linker == null) "lld" else "path");
++    var out: Key = undefined;
++    h.final(&out);
++    return out;
++}
++
++/// A copy of the image kept for `k`, owned by the caller, or null.
++pub fn get(a: std.mem.Allocator, io: std.Io, k: Key) std.mem.Allocator.Error!?[]u8 {
++    mutex.lockUncancelable(io);
++    defer mutex.unlock(io);
++    for (&entries) |*slot| if (slot.*) |e| if (std.mem.eql(u8, &e.key, &k)) {
++        hits += 1;
++        return try a.dupe(u8, e.bytes);
++    };
++    return null;
++}
++
++/// Keeps a copy of a validated image; best effort (an allocation failure or an oversized image keeps nothing).
++pub fn put(io: std.Io, k: Key, bytes: []const u8) void {
++    if (bytes.len > max_image) return;
++    const copy = std.heap.page_allocator.dupe(u8, bytes) catch return;
++    mutex.lockUncancelable(io);
++    defer mutex.unlock(io);
++    for (&entries) |*slot| if (slot.*) |e| if (std.mem.eql(u8, &e.key, &k)) {
++        std.heap.page_allocator.free(copy);
++        return;
++    };
++    if (entries[next]) |old| std.heap.page_allocator.free(old.bytes);
++    entries[next] = .{ .key = k, .bytes = copy };
++    next = (next + 1) % slots;
++}
++
++/// Lookups answered from the cache since start (or the last reset).
++pub fn hitCount(io: std.Io) u64 {
++    mutex.lockUncancelable(io);
++    defer mutex.unlock(io);
++    return hits;
++}
++
++/// Empties the cache (tests).
++pub fn reset(io: std.Io) void {
++    mutex.lockUncancelable(io);
++    defer mutex.unlock(io);
++    for (&entries) |*slot| if (slot.*) |e| {
++        std.heap.page_allocator.free(e.bytes);
++        slot.* = null;
++    };
++    next = 0;
++    hits = 0;
++}
++
++test "elf cache: only opaque inputs with a known admission, distinct settings never share an image, oldest goes first" {
++    const t = std.testing;
++    try t.expect(wanted(true, 0, null));
++    try t.expect(wanted(true, 100, 100));
++    try t.expect(!wanted(true, 100, 101));
++    try t.expect(!wanted(true, 100, null));
++    try t.expect(!wanted(false, 0, 5));
++    reset(t.io);
++    defer reset(t.io);
++    const k = key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 0);
++    for ([_]Key{
++        key("int main(void) {\n }\n", "/usr/bin/clang", null, 1, 0),
++        key("int main(void) {\n}\n", "/usr/bin/clang-18", null, 1, 0),
++        key("int main(void) {\n}\n", "/usr/bin/clang", "", 1, 0),
++        key("int main(void) {\n}\n", "/usr/bin/clang", null, 2, 0),
++        key("int main(void) {\n}\n", "/usr/bin/clang", null, 1, 4096),
++    }) |other| try t.expect(!std.mem.eql(u8, &k, &other));
++    try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, k));
++    put(t.io, k, "image one");
++    put(t.io, k, "image two");
++    const got = (try get(t.allocator, t.io, k)).?;
++    defer t.allocator.free(got);
++    try t.expectEqualStrings("image one", got);
++    try t.expectEqual(@as(u64, 1), hitCount(t.io));
++    const big = try t.allocator.alloc(u8, max_image + 1);
++    defer t.allocator.free(big);
++    const kb = key("big", "c", null, 1, 0);
++    put(t.io, kb, big);
++    try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, kb));
++    for (0..slots) |i| put(t.io, key(std.mem.asBytes(&i), "c", null, 1, 0), "filler");
++    try t.expectEqual(@as(?[]u8, null), try get(t.allocator, t.io, k));
++}
+diff --git a/zig/src/core/runner_frontend_elf_cache_test.zig b/zig/src/core/runner_frontend_elf_cache_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..980c5b9140e4facca3f8a03c769238160a621164
+--- /dev/null
++++ b/zig/src/core/runner_frontend_elf_cache_test.zig
+@@ -0,0 +1,69 @@
++//! The compiled-image cache through compile() and the frontend: opaque Python cells repeat from it, nothing else does.
++const std = @import("std");
++const compiler = @import("runner_frontend_program_compile.zig");
++const elf_cache = @import("runner_frontend_elf_cache.zig");
++const f = @import("runner_frontend.zig");
++const t = std.testing;
++
++test {
++    _ = @import("runner_frontend_spawn.zig");
++    _ = elf_cache;
++}
++
++const body = "int main(void) {\n return 0;\n}\n";
++
++test "compile answers a cached opaque-input source with no compiler run; other settings and trusted C miss" {
++    elf_cache.reset(t.io);
++    defer elf_cache.reset(t.io);
++    const config: compiler.Config = .{ .clang = "/nonexistent-elf-cache-clang", .opaque_inputs = true, .estimated_steps = 40 };
++    elf_cache.put(t.io, (try compiler.cacheKey(t.allocator, body, config)).?, "cached image");
++    const hit = (try compiler.compile(t.allocator, t.io, body, config)).?;
++    defer t.allocator.free(hit);
++    try t.expectEqualStrings("cached image", hit);
++    try t.expectEqual(@as(u64, 1), elf_cache.hitCount(t.io));
++    // each of these reaches the missing compiler and abstains: none may take the cached image
++    var plain = config;
++    plain.opaque_inputs = false;
++    var over = config;
++    over.estimated_steps = config.step_budget + 1;
++    var unknown = config;
++    unknown.estimated_steps = null;
++    var o2 = config;
++    o2.optimize = .O2;
++    var stack = config;
++    stack.stack_limit = 4096;
++    var other_clang = config;
++    other_clang.clang = "/nonexistent-elf-cache-clang-2";
++    for ([_]compiler.Config{ plain, over, unknown, o2, stack, other_clang }) |c| {
++        try t.expectEqual(@as(?[]u8, null), try compiler.compile(t.allocator, t.io, body, c));
++    }
++    try t.expectEqual(@as(?[]u8, null), try compiler.compile(t.allocator, t.io, "int main(void) {\n return 1;\n}\n", config));
++    try t.expectEqual(@as(u64, 1), elf_cache.hitCount(t.io));
++}
++
++test "configured RV32: a repeated Python cell is compiled once and returns the same image; a C cell compiles each time" {
++    var env = try t.environ.createMap(t.allocator);
++    defer env.deinit();
++    const clang = env.get("TF_RUNNER_CLANG") orelse return error.SkipZigTest;
++    elf_cache.reset(t.io);
++    defer elf_cache.reset(t.io);
++    var context: f.Context = .{ .io = t.io, .compiler = .{ .clang = clang, .linker = env.get("TF_RUNNER_LLD") } };
++    const front = context.frontend();
++    const code = "def f(n):\n    s = 0\n    for i in range(n):\n        s += i * i\n    return s\nprint(f(12))\n";
++    var images: [2][]const u8 = undefined;
++    for (&images, 0..) |*image, i| {
++        const r = try front.translate(front.ctx, t.allocator, .{ .form = .fence, .lang = "python", .code = code });
++        try t.expect(r == .program);
++        try t.expectEqual(.elf, r.program.kind);
++        image.* = r.program.bytes;
++        try t.expectEqual(@as(u64, i), elf_cache.hitCount(t.io));
++    }
++    defer for (images) |image| t.allocator.free(image);
++    try t.expectEqualSlices(u8, images[0], images[1]);
++    for (0..2) |_| {
++        const r = try front.translate(front.ctx, t.allocator, .{ .form = .fence, .lang = "c", .code = "int main(void) { return 0; }\n" });
++        try t.expect(r == .program);
++        t.allocator.free(r.program.bytes);
++    }
++    try t.expectEqual(@as(u64, 1), elf_cache.hitCount(t.io));
++}
+diff --git a/zig/src/core/runner_frontend_fraction.zig b/zig/src/core/runner_frontend_fraction.zig
+index 06c28c461b2f789cd9b227167082e9056c38ce04..c14059ab9b1468461807f6f0dd738d8c5f2b4070 100644
+--- a/zig/src/core/runner_frontend_fraction.zig
++++ b/zig/src/core/runner_frontend_fraction.zig
+@@ -41,6 +41,7 @@ fn checked(a: Allocator, code: []const u8, budget: usize) Failure!integer.Lowere
+             script.scales[0..script.output_count],
+         ),
+         .estimated_steps = steps,
++        .table = integer.table(&script.parser, roots, script.endings[0..script.output_count], script.styles[0..script.output_count], script.scales[0..script.output_count]),
+     };
+ }
+ 
+diff --git a/zig/src/core/runner_frontend_integer.zig b/zig/src/core/runner_frontend_integer.zig
+index 64a4b052a2fcce29c5ef4a94ac615665f44fc5fb..03032f5fc1afac24a6f631b62e29d4fb81a956f7 100644
+--- a/zig/src/core/runner_frontend_integer.zig
++++ b/zig/src/core/runner_frontend_integer.zig
+@@ -3,7 +3,29 @@ const ast = @import("runner_frontend_integer_ast.zig");
+ const compiler = @import("runner_frontend_program_compile.zig");
+ const cost = @import("runner_frontend_integer_cost.zig");
+ 
+-pub const Lowered = struct { source: []u8, estimated_steps: ?usize };
++pub const Lowered = struct { source: []u8, estimated_steps: ?usize, table: ?Table = null };
++
++/// A lowered script's DAG and ordered outputs, the data the runtime evaluates; literal text is dropped (use value).
++pub const Table = struct {
++    nodes: [64]ast.Node = undefined,
++    count: usize = 0,
++    roots: [8]usize = undefined,
++    endings: [8]u8 = undefined,
++    styles: [8]u8 = @splat(0), // 0 integer/bool/tuple, 1 exact integral float, 2 fixed Decimal
++    scales: [8]u8 = @splat(0),
++    outputs: usize = 0,
++};
++
++/// The table lowerFormatted renders as C; a non-literal node's value is a proof, never a result to print.
++pub fn table(parser: *const ast.Parser, roots: []const usize, endings: []const u8, styles: ?[]const u8, scales: ?[]const u8) Table {
++    var t: Table = .{ .count = parser.count, .outputs = roots.len };
++    for (parser.nodes[0..parser.count], t.nodes[0..parser.count]) |n, *m| m.* = .{ .op = n.op, .l = n.l, .r = n.r, .k = n.k, .value = n.value };
++    @memcpy(t.roots[0..roots.len], roots);
++    @memcpy(t.endings[0..roots.len], endings);
++    if (styles) |s| @memcpy(t.styles[0..roots.len], s);
++    if (scales) |s| @memcpy(t.scales[0..roots.len], s);
++    return t;
++}
+ 
+ pub fn ambiguousPercent(a: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!bool {
+     if (std.mem.indexOfScalar(u8, source, '%') == null) return false;
+diff --git a/zig/src/core/runner_frontend_integer_python.zig b/zig/src/core/runner_frontend_integer_python.zig
+index b341f3412cbf98f34cd3a45449418b0604258622..798e5ef3dd1800b731a715cca931ee0bc15cc80d 100644
+--- a/zig/src/core/runner_frontend_integer_python.zig
++++ b/zig/src/core/runner_frontend_integer_python.zig
+@@ -25,7 +25,8 @@ fn checked(a: Allocator, code: []const u8, budget: usize) Failure!integer.Lowere
+     var steps: ?usize = null;
+     const roots = script.roots[0..script.count];
+     if (budget != 0) steps = cost.estimateMany(parser, roots, budget) orelse return error.Unsupported;
+-    return .{ .source = try integer.lowerPrints(a, parser, roots, script.endings[0..script.count]), .estimated_steps = steps };
++    const endings = script.endings[0..script.count];
++    return .{ .source = try integer.lowerPrints(a, parser, roots, endings), .estimated_steps = steps, .table = integer.table(parser, roots, endings, null, null) };
+ }
+ 
+ // Shares whole-script validation with the RV32 path, including unused assignments and import gates.
+diff --git a/zig/src/core/runner_frontend_program_compile.zig b/zig/src/core/runner_frontend_program_compile.zig
+index e4859f67ef1fe07e77eac5575682a8bfef975466..1da6fd270d97679aec1ffd40a06948b4e8715dc0 100644
+--- a/zig/src/core/runner_frontend_program_compile.zig
++++ b/zig/src/core/runner_frontend_program_compile.zig
+@@ -3,6 +3,8 @@ const std = @import("std");
+ const Allocator = std.mem.Allocator;
+ const inputs = @import("runner_frontend_c_inputs.zig");
+ const cost = @import("runner_frontend_c_cost.zig");
++const spawn = @import("runner_frontend_spawn.zig");
++const elf_cache = @import("runner_frontend_elf_cache.zig");
+ 
+ pub const Config = struct {
+     clang: []const u8 = "/usr/bin/clang",
+@@ -133,6 +135,8 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+     if (config.deadline) |end| if (std.Io.Clock.awake.now(io).toNanoseconds() >= end.toNanoseconds()) return null;
+     const normalized = try normalizeWithTrust(a, source, config.opaque_inputs) orelse return null;
+     defer a.free(normalized);
++    const cached = imageKey(normalized, config);
++    if (cached) |k| if (try elf_cache.get(a, io, k)) |bytes| return bytes;
+     if (!std.fs.path.isAbsolute(config.scratch_root)) return null;
+     const parent = std.Io.Dir.cwd().openDir(io, config.scratch_root, .{}) catch return null;
+     defer parent.close(io);
+@@ -174,18 +178,13 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+         if (config.estimated_steps) |steps| if (steps > config.step_budget) return null;
+     }
+     if (!config.opaque_inputs or (config.step_budget != 0 and config.estimated_steps == null)) {
+-        const ast = std.process.run(a, io, .{
+-            .argv = &.{ config.clang, "--target=riscv32-unknown-elf", "-march=rv32im_zba", "-mabi=ilp32", "-ffreestanding", "-fno-builtin", "-nostdinc", "-Werror=format", "-fsyntax-only", "-Xclang", "-ast-dump=json", "-x", "c", src },
+-            .stdout_limit = .limited(4 * 1024 * 1024),
+-            .stderr_limit = .limited(16384),
+-            .timeout = .{ .duration = .{ .raw = remaining(io, config, 500) orelse return null, .clock = .awake } },
+-        }) catch |err| switch (err) {
+-            error.OutOfMemory => return error.OutOfMemory,
+-            else => return null,
+-        };
+-        defer a.free(ast.stdout);
+-        defer a.free(ast.stderr);
+-        if (!ast.term.success()) return null;
++        const ast = try spawn.run(a, io, &.{ config.clang, "--target=riscv32-unknown-elf", "-march=rv32im_zba", "-mabi=ilp32", "-ffreestanding", "-fno-builtin", "-nostdinc", "-Werror=format", "-fsyntax-only", "-Xclang", "-ast-dump=json", "-x", "c", src }, .{
++            .stdout = 4 * 1024 * 1024,
++            .stderr = 16384,
++            .timeout = remaining(io, config, 500) orelse return null,
++        }) orelse return null;
++        defer ast.deinit(a);
++        if (!ast.ok) return null;
+         var instrumented: ?[]u8 = null;
+         var restoration_steps: usize = 0;
+         defer if (instrumented) |text| a.free(text);
+@@ -207,31 +206,22 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+             file.writeStreamingAll(io, rewritten) catch return null;
+         }
+     }
+-    const result = std.process.run(a, io, .{
+-        .argv = &.{
+-            config.clang,           "--target=riscv32-unknown-elf", "-march=rv32im_zba",   "-mabi=ilp32",
+-            switch (config.optimize) {
+-                .O0 => "-O0",
+-                .O1 => "-O1",
+-                .O2 => "-O2",
+-            },
+-            "-ffreestanding",       "-fno-builtin",                 "-nostdinc",           "-nostdlib",
+-            "-fno-stack-protector", "-fno-pic",                     "-mno-relax",          "-Werror=format",
+-            "-Wno-format-security", "-fstack-usage",                "-fno-unwind-tables",  "-fno-asynchronous-unwind-tables",
+-            linker_arg,             "-Wl,--no-relax",               "-Wl,--build-id=none", "-Wl,-T",
+-            link_path,              "-x",                           "c",                   src,
+-            "-o",                   elf,
++    const result = try spawn.run(a, io, &.{
++        config.clang,           "--target=riscv32-unknown-elf", "-march=rv32im_zba",   "-mabi=ilp32",
++        switch (config.optimize) {
++            .O0 => "-O0",
++            .O1 => "-O1",
++            .O2 => "-O2",
+         },
+-        .stdout_limit = .limited(4096),
+-        .stderr_limit = .limited(16384),
+-        .timeout = .{ .duration = .{ .raw = remaining(io, config, 1000) orelse return null, .clock = .awake } },
+-    }) catch |err| switch (err) {
+-        error.OutOfMemory => return error.OutOfMemory,
+-        else => return null,
+-    };
+-    defer a.free(result.stdout);
+-    defer a.free(result.stderr);
+-    if (!result.term.success()) return null;
++        "-ffreestanding",       "-fno-builtin",                 "-nostdinc",           "-nostdlib",
++        "-fno-stack-protector", "-fno-pic",                     "-mno-relax",          "-Werror=format",
++        "-Wno-format-security", "-fstack-usage",                "-fno-unwind-tables",  "-fno-asynchronous-unwind-tables",
++        linker_arg,             "-Wl,--no-relax",               "-Wl,--build-id=none", "-Wl,-T",
++        link_path,              "-x",                           "c",                   src,
++        "-o",                   elf,
++    }, .{ .stdout = 4096, .stderr = 16384, .timeout = remaining(io, config, 1000) orelse return null }) orelse return null;
++    defer result.deinit(a);
++    if (!result.ok) return null;
+     if (config.stack_limit != 0) {
+         const usage = dir.readFileAlloc(io, "program.su", a, .limited(65536)) catch |err| switch (err) {
+             error.OutOfMemory => return error.OutOfMemory,
+@@ -248,9 +238,22 @@ pub fn compile(a: Allocator, io: std.Io, source: []const u8, config: Config) All
+         a.free(bytes);
+         return null;
+     }
++    if (cached) |k| elf_cache.put(io, k, bytes);
+     return bytes;
+ }
+ 
++fn imageKey(normalized: []const u8, config: Config) ?elf_cache.Key {
++    if (!elf_cache.wanted(config.opaque_inputs, config.step_budget, config.estimated_steps)) return null;
++    return elf_cache.key(normalized, config.clang, config.linker, @backingInt(config.optimize), config.stack_limit);
++}
++
++/// The image-cache key compile() uses for `source` under `config`, or null when it would not cache (tests).
++pub fn cacheKey(a: Allocator, source: []const u8, config: Config) Allocator.Error!?elf_cache.Key {
++    const normalized = try normalizeWithTrust(a, source, config.opaque_inputs) orelse return null;
++    defer a.free(normalized);
++    return imageKey(normalized, config);
++}
++
+ fn remaining(io: std.Io, config: Config, milliseconds: i64) ?std.Io.Duration {
+     const cap = std.Io.Duration.fromMilliseconds(milliseconds);
+     const end = config.deadline orelse return cap;
+diff --git a/zig/src/core/runner_frontend_spawn.zig b/zig/src/core/runner_frontend_spawn.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..08ebb0ef715085eae6f85f5d3d3b9c415fe3d4e7
+--- /dev/null
++++ b/zig/src/core/runner_frontend_spawn.zig
+@@ -0,0 +1,172 @@
++//! The cross compiler's process by posix_spawn (Linux libc): unlike fork it never copies the runner's page tables.
++const std = @import("std");
++const builtin = @import("builtin");
++const linux = std.os.linux;
++const Allocator = std.mem.Allocator;
++
++/// A finished child's captured streams and whether it exited 0; the caller frees both streams.
++pub const Ran = struct {
++    stdout: []u8,
++    stderr: []u8,
++    ok: bool,
++
++    pub fn deinit(r: Ran, a: Allocator) void {
++        a.free(r.stdout);
++        a.free(r.stderr);
++    }
++};
++
++pub const Limits = struct { stdout: usize, stderr: usize, timeout: std.Io.Duration };
++
++const spawned = builtin.link_libc and builtin.os.tag == .linux;
++
++/// argv run with stdin on /dev/null (PATH for a bare name); null if it cannot start, overflows a limit or times out.
++pub fn run(a: Allocator, io: std.Io, argv: []const []const u8, limits: Limits) Allocator.Error!?Ran {
++    if (comptime !spawned) return forked(a, io, argv, limits);
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    const args = try arena.allocSentinel(?[*:0]const u8, argv.len, null);
++    for (argv, 0..) |arg, i| args[i] = try arena.dupeSentinel(u8, arg, 0);
++    var fds: [4]linux.fd_t = @splat(-1);
++    defer for (fds) |fd| if (fd >= 0) close(fd);
++    for (0..2) |i| {
++        var pair: [2]linux.fd_t = undefined;
++        if (linux.errno(linux.pipe2(&pair, .{ .CLOEXEC = true })) != .SUCCESS) return null;
++        fds[2 * i] = pair[0];
++        fds[2 * i + 1] = pair[1];
++    }
++    const deadline = now() +| @as(u64, @intCast(@max(limits.timeout.toNanoseconds(), 0)));
++    var pid: linux.pid_t = 0;
++    if (!start(&pid, args, fds[1], fds[3])) return null;
++    for ([_]usize{ 1, 3 }) |i| {
++        close(fds[i]);
++        fds[i] = -1;
++    }
++    var out: std.ArrayList(u8) = .empty;
++    defer out.deinit(a);
++    var err: std.ArrayList(u8) = .empty;
++    defer err.deinit(a);
++    const drained = drain(a, &fds, &out, &err, limits, deadline) catch |e| {
++        kill(pid);
++        return e;
++    };
++    if (!drained) {
++        kill(pid);
++        return null;
++    }
++    const status = reap(pid) orelse return null;
++    const stdout = try out.toOwnedSlice(a);
++    errdefer a.free(stdout);
++    return .{ .stdout = stdout, .stderr = try err.toOwnedSlice(a), .ok = status == 0 };
++}
++
++/// Reads both pipes to end of stream; false on a passed limit, the deadline or a failed poll.
++fn drain(a: Allocator, fds: *[4]linux.fd_t, out: *std.ArrayList(u8), err: *std.ArrayList(u8), limits: Limits, deadline: u64) Allocator.Error!bool {
++    var buf: [4096]u8 = undefined;
++    while (fds[0] >= 0 or fds[2] >= 0) {
++        const t = now();
++        if (t >= deadline) return false;
++        var pf = [_]linux.pollfd{
++            .{ .fd = fds[0], .events = linux.POLL.IN, .revents = 0 },
++            .{ .fd = fds[2], .events = linux.POLL.IN, .revents = 0 },
++        };
++        const wait: i32 = @intCast(@min((deadline - t) / std.time.ns_per_ms + 1, std.math.maxInt(i32)));
++        const rc = linux.poll(&pf, pf.len, wait);
++        if (linux.errno(rc) == .INTR) continue;
++        if (linux.errno(rc) != .SUCCESS) return false;
++        for ([_]usize{ 0, 2 }, [_]*std.ArrayList(u8){ out, err }, [_]usize{ limits.stdout, limits.stderr }, 0..) |i, list, limit, p| {
++            if (pf[p].revents == 0) continue;
++            const n = linux.read(fds[i], &buf, buf.len);
++            if (linux.errno(n) == .INTR or linux.errno(n) == .AGAIN) continue;
++            if (linux.errno(n) != .SUCCESS or n == 0) {
++                close(fds[i]);
++                fds[i] = -1;
++                continue;
++            }
++            if (list.items.len + n > limit) return false;
++            try list.appendSlice(a, buf[0..n]);
++        }
++    }
++    return true;
++}
++
++const libc = struct {
++    extern "c" fn posix_spawnp(pid: *linux.pid_t, file: [*:0]const u8, actions: *const Opaque, attr: ?*const anyopaque, argv: [*:null]const ?[*:0]const u8, envp: [*:null]const ?[*:0]const u8) c_int;
++    extern "c" fn posix_spawn_file_actions_init(actions: *Opaque) c_int;
++    extern "c" fn posix_spawn_file_actions_destroy(actions: *Opaque) c_int;
++    extern "c" fn posix_spawn_file_actions_adddup2(actions: *Opaque, fd: c_int, to: c_int) c_int;
++    extern "c" fn posix_spawn_file_actions_addopen(actions: *Opaque, fd: c_int, path: [*:0]const u8, flags: c_int, mode: c_uint) c_int;
++    extern "c" var environ: [*:null]?[*:0]u8;
++};
++
++const Opaque = extern struct { bytes: [512]u8 align(16) = undefined };
++
++fn start(pid: *linux.pid_t, argv: [:null]?[*:0]const u8, stdout: linux.fd_t, stderr: linux.fd_t) bool {
++    var actions: Opaque = .{};
++    if (libc.posix_spawn_file_actions_init(&actions) != 0) return false;
++    defer _ = libc.posix_spawn_file_actions_destroy(&actions);
++    var rc = libc.posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", 0, 0);
++    if (rc == 0) rc = libc.posix_spawn_file_actions_adddup2(&actions, stdout, 1);
++    if (rc == 0) rc = libc.posix_spawn_file_actions_adddup2(&actions, stderr, 2);
++    if (rc == 0) rc = libc.posix_spawnp(pid, argv[0].?, &actions, null, argv.ptr, @ptrCast(libc.environ));
++    return rc == 0;
++}
++
++fn kill(pid: linux.pid_t) void {
++    _ = linux.kill(pid, .KILL);
++    _ = reap(pid);
++}
++
++/// The child's wait status, or null when it cannot be reaped.
++fn reap(pid: linux.pid_t) ?u32 {
++    while (true) {
++        var st: i32 = 0;
++        switch (linux.errno(linux.wait4(pid, &st, 0, null))) {
++            .SUCCESS => return @bitCast(st),
++            .INTR => continue,
++            else => return null,
++        }
++    }
++}
++
++fn close(fd: linux.fd_t) void {
++    _ = linux.close(fd);
++}
++
++fn now() u64 {
++    var ts: linux.timespec = undefined;
++    _ = linux.clock_gettime(.MONOTONIC, &ts);
++    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
++}
++
++/// Hosts without Linux libc (macOS builds) keep std.process.run.
++fn forked(a: Allocator, io: std.Io, argv: []const []const u8, limits: Limits) Allocator.Error!?Ran {
++    const r = std.process.run(a, io, .{
++        .argv = argv,
++        .stdout_limit = .limited(limits.stdout),
++        .stderr_limit = .limited(limits.stderr),
++        .timeout = .{ .duration = .{ .raw = limits.timeout, .clock = .awake } },
++    }) catch |err| switch (err) {
++        error.OutOfMemory => return error.OutOfMemory,
++        else => return null,
++    };
++    return .{ .stdout = r.stdout, .stderr = r.stderr, .ok = r.term.success() };
++}
++
++test "spawned compiler process: exit status, captured streams, limits, timeout and a missing program" {
++    const t = std.testing;
++    const ok = (try run(t.allocator, t.io, &.{ "/bin/sh", "-c", "printf out; printf err >&2" }, .{ .stdout = 64, .stderr = 64, .timeout = .fromMilliseconds(5000) })).?;
++    defer ok.deinit(t.allocator);
++    try t.expect(ok.ok);
++    try t.expectEqualStrings("out", ok.stdout);
++    try t.expectEqualStrings("err", ok.stderr);
++    const failed = (try run(t.allocator, t.io, &.{ "sh", "-c", "read x; exit 3" }, .{ .stdout = 64, .stderr = 64, .timeout = .fromMilliseconds(5000) })).?;
++    defer failed.deinit(t.allocator);
++    try t.expect(!failed.ok);
++    try t.expectEqual(@as(?Ran, null), try run(t.allocator, t.io, &.{ "/bin/sh", "-c", "head -c 200 /dev/zero" }, .{ .stdout = 64, .stderr = 64, .timeout = .fromMilliseconds(5000) }));
++    const t0 = now();
++    try t.expectEqual(@as(?Ran, null), try run(t.allocator, t.io, &.{ "/bin/sh", "-c", "sleep 5" }, .{ .stdout = 64, .stderr = 64, .timeout = .fromMilliseconds(100) }));
++    try t.expect(now() - t0 < 3 * std.time.ns_per_s);
++    try t.expectEqual(@as(?Ran, null), try run(t.allocator, t.io, &.{"/nonexistent/tf-clang"}, .{ .stdout = 64, .stderr = 64, .timeout = .fromMilliseconds(5000) }));
++}
+diff --git a/zig/src/core/runner_frontend_test.zig b/zig/src/core/runner_frontend_test.zig
+index 5afb9c77bfb64f191303a202037bc54c2dff4ff4..dffbdd46cad4b4bdfd8f3766d99ee2be0859b54e 100644
+--- a/zig/src/core/runner_frontend_test.zig
++++ b/zig/src/core/runner_frontend_test.zig
+@@ -20,6 +20,7 @@ test {
+     _ = @import("runner_frontend_decimal_test.zig");
+     _ = @import("runner_frontend_fraction_test.zig");
+     _ = @import("runner_frontend_digit_reverse_test.zig");
++    _ = @import("runner_frontend_elf_cache_test.zig");
+ }
+ 
+ test "complete integer assignment requests use firmware with original inputs and no compiler" {
+diff --git a/zig/src/core/runner_graph_dispatch.zig b/zig/src/core/runner_graph_dispatch.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9028f82f954f7480a207edff5b8312528474f2de
+--- /dev/null
++++ b/zig/src/core/runner_graph_dispatch.zig
+@@ -0,0 +1,396 @@
++//! Graph programs to the graph backend (a sequence's pieces side by side), calc and ELF to the circuit, by job id bits.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const prog = @import("runner_graph_program.zig");
++const Allocator = std.mem.Allocator;
++
++pub const Dispatch = struct {
++    gpa: Allocator,
++    circuit: api.Backend,
++    graph: api.Backend,
++    seqs: std.ArrayList(*Seq) = .empty,
++    next_seq: api.JobId = 1,
++
++    const tag: api.JobId = 1 << 63;
++    const seq_tag: api.JobId = 1 << 62;
++
++    /// One line of a sequence: a bank packet, or text ('L') printed as written; kind 0 is a malformed line.
++    const Piece = struct {
++        kind: u8,
++        sep: u8,
++        body: []const u8,
++        job: ?api.JobId = null,
++        done: ?api.Result = null, // its run's status and counts; the printed value is in `text`
++        text: [160]u8 = undefined,
++        len: ?usize = null, // null: the value is not one `kind` can print
++    };
++
++    const Seq = struct {
++        id: api.JobId,
++        stream: u64,
++        budget: u64,
++        pieces: []Piece,
++        next: usize = 0, // the first piece not yet printed
++        out: std.ArrayList(u8) = .empty,
++        steps: u64 = 0,
++        exec_ns: u64 = 0,
++        end: ?api.Result = null,
++        delivered: bool = false,
++        bytes: []u8,
++
++        /// Appends a piece's text and its separator (S a space, N a newline, J none); false when the run ended here.
++        fn say(q: *Seq, gpa: Allocator, text: []const u8, sep: u8) bool {
++            const end: []const u8 = switch (sep) {
++                'S' => " ",
++                'N' => "\n",
++                'J' => "",
++                else => {
++                    q.end = .{ .status = .fault, .steps = q.steps };
++                    return false;
++                },
++            };
++            q.out.appendSlice(gpa, text) catch {
++                q.end = .{ .status = .abstain, .abstain = .too_big };
++                return false;
++            };
++            q.out.appendSlice(gpa, end) catch {};
++            return true;
++        }
++    };
++
++    pub fn backend(d: *Dispatch) api.Backend {
++        return .{ .ctx = d, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release, .now = now } };
++    }
++    pub fn deinit(d: *Dispatch) void {
++        for (d.seqs.items) |q| d.free(q);
++        d.seqs.deinit(d.gpa);
++    }
++    fn stop(d: *Dispatch, q: *Seq) void {
++        for (q.pieces) |*p| if (p.job) |j| {
++            d.graph.cancel(j);
++            p.job = null;
++        };
++    }
++    fn free(d: *Dispatch, q: *Seq) void {
++        d.stop(q);
++        q.out.deinit(d.gpa);
++        d.gpa.free(q.pieces);
++        d.gpa.free(q.bytes);
++        d.gpa.destroy(q);
++    }
++    /// A stream's delivered sequences: their `out` lives until its next call.
++    fn forget(d: *Dispatch, stream: u64, all: bool) void {
++        var i: usize = 0;
++        while (i < d.seqs.items.len) {
++            const q = d.seqs.items[i];
++            if (q.stream == stream and (all or q.delivered)) d.free(d.seqs.swapRemove(i)) else i += 1;
++        }
++    }
++    fn start(ctx: *anyopaque, stream: u64, p: api.Program, budget: u64) error{ OutOfMemory, Busy }!api.JobId {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        if (p.kind != .graph) return d.circuit.start(stream, p, budget);
++        if (!std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return tag | try d.graph.start(stream, p, budget);
++        d.forget(stream, false);
++        const q = try d.gpa.create(Seq);
++        errdefer d.gpa.destroy(q);
++        const bytes = try d.gpa.dupe(u8, p.bytes);
++        errdefer d.gpa.free(bytes);
++        const pieces = try split(d.gpa, bytes[prog.seq_magic.len..]);
++        errdefer d.gpa.free(pieces);
++        q.* = .{ .id = d.next_seq, .stream = stream, .budget = budget, .pieces = pieces, .bytes = bytes };
++        try d.seqs.append(d.gpa, q);
++        d.next_seq += 1;
++        d.step(q);
++        return seq_tag | q.id;
++    }
++    /// A sequence's lines (`<kind><sep> <body>\n`); text after the last newline is not a piece.
++    fn split(gpa: Allocator, lines: []const u8) Allocator.Error![]Piece {
++        const n = std.mem.count(u8, lines, "\n");
++        const pieces = try gpa.alloc(Piece, n);
++        var it = std.mem.splitScalar(u8, lines, '\n');
++        for (pieces) |*p| {
++            const line = it.next().?;
++            p.* = if (line.len < 4 or line[2] != ' ') .{ .kind = 0, .sep = 0, .body = "" } else .{ .kind = line[0], .sep = line[1], .body = line[3..] };
++        }
++        return pieces;
++    }
++    /// Collects, starts what workers allow, prints in order; ends at the last piece or the first (in order) not ok.
++    fn step(d: *Dispatch, q: *Seq) void {
++        d.collect(q);
++        d.launch(q);
++        while (q.end == null) {
++            if (q.next == q.pieces.len) {
++                q.end = .{ .status = .ok, .out = q.out.items, .steps = q.steps, .exec_ns = q.exec_ns };
++                break;
++            }
++            const p = &q.pieces[q.next];
++            if (p.kind == 0) {
++                q.end = .{ .status = .fault, .steps = q.steps };
++                break;
++            }
++            if (p.kind == 'L') {
++                q.next += 1;
++                if (!q.say(d.gpa, p.body, p.sep)) break;
++                continue;
++            }
++            const r = p.done orelse return;
++            q.next += 1;
++            q.steps += r.steps;
++            q.exec_ns += r.exec_ns;
++            // a piece run beside earlier ones had the whole budget; in turn it would have had what they left
++            if (r.status == .ok and q.steps > q.budget) {
++                q.end = .{ .status = .budget, .steps = q.budget, .exec_ns = q.exec_ns };
++                break;
++            }
++            if (r.status != .ok) {
++                q.end = .{ .status = r.status, .abstain = r.abstain, .steps = @min(q.steps, q.budget), .exec_ns = q.exec_ns };
++                break;
++            }
++            const len = p.len orelse {
++                q.end = .{ .status = .fault, .steps = q.steps };
++                break;
++            };
++            if (!q.say(d.gpa, p.text[0..len], p.sep)) break;
++        }
++        d.stop(q);
++    }
++    /// Polls every running piece; a finished piece's value is copied out at once (the backend frees it next call).
++    fn collect(d: *Dispatch, q: *Seq) void {
++        for (q.pieces[q.next..]) |*p| if (p.job) |j| switch (d.graph.poll(j)) {
++            .running => {},
++            .done => |r| {
++                p.job = null;
++                p.done = r;
++                p.done.?.out = "";
++                if (r.status == .ok) if (format(p.kind, std.mem.trimEnd(u8, r.out, "\n"), &p.text)) |text| {
++                    p.len = text.len;
++                };
++            },
++        };
++    }
++    /// Starts waiting pieces, largest packet first, until the graph backend is busy: the longest runs set the time.
++    fn launch(d: *Dispatch, q: *Seq) void {
++        if (q.end != null) return;
++        while (true) {
++            var best: ?*Piece = null;
++            for (q.pieces[q.next..]) |*p| {
++                if (p.kind == 0 or p.kind == 'L' or p.job != null or p.done != null) continue;
++                if (best == null or p.body.len > best.?.body.len) best = p;
++            }
++            const p = best orelse return;
++            p.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = p.body }, q.budget) catch return;
++        }
++    }
++    /// A piece's printed value: I as is, B as Python's bool, F with `.0`, `1`..`6` at that fixed Decimal scale.
++    fn format(kind: u8, v: []const u8, buf: []u8) ?[]const u8 {
++        const digits = v[@intFromBool(v.len > 0 and v[0] == '-')..];
++        if (digits.len == 0 or digits.len + 3 > buf.len) return null;
++        for (digits) |c| if (!std.ascii.isDigit(c)) return null;
++        return switch (kind) {
++            'I' => blk: {
++                @memcpy(buf[0..v.len], v);
++                break :blk buf[0..v.len];
++            },
++            // a comparison's graph prints 1 or 0
++            'B' => if (std.mem.eql(u8, v, "1")) copy(buf, "True") else if (std.mem.eql(u8, v, "0")) copy(buf, "False") else null,
++            'F' => std.fmt.bufPrint(buf, "{s}.0", .{v}) catch null,
++            '1'...'6' => fixed(v, kind - '0', buf),
++            else => null,
++        };
++    }
++    fn copy(buf: []u8, s: []const u8) []const u8 {
++        @memcpy(buf[0..s.len], s);
++        return buf[0..s.len];
++    }
++    /// Decimal's str of coefficient v at `scale` places (the runtime's tf_wfixed): 0.0042, -12.50.
++    fn fixed(v: []const u8, scale: usize, buf: []u8) ?[]const u8 {
++        const neg = v[0] == '-';
++        const digits = v[@intFromBool(neg)..];
++        var w: std.Io.Writer = .fixed(buf);
++        if (neg) w.writeByte('-') catch return null;
++        if (digits.len <= scale) {
++            w.writeAll("0.") catch return null;
++            w.splatByteAll('0', scale - digits.len) catch return null;
++            w.writeAll(digits) catch return null;
++        } else {
++            w.writeAll(digits[0 .. digits.len - scale]) catch return null;
++            w.writeByte('.') catch return null;
++            w.writeAll(digits[digits.len - scale ..]) catch return null;
++        }
++        return w.buffered();
++    }
++    fn find(d: *Dispatch, id: api.JobId) ?*Seq {
++        for (d.seqs.items) |q| if (q.id == id) return q;
++        return null;
++    }
++    fn poll(ctx: *anyopaque, job: api.JobId) api.Poll {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        if (job & tag != 0) return d.graph.poll(job & ~tag);
++        if (job & seq_tag == 0) return d.circuit.poll(job);
++        const q = d.find(job & ~seq_tag) orelse return .{ .done = .{ .status = .abstain, .abstain = .unsupported } };
++        d.step(q);
++        var r = q.end orelse return .running;
++        r.out = q.out.items;
++        q.delivered = true;
++        return .{ .done = r };
++    }
++    fn cancel(ctx: *anyopaque, job: api.JobId) void {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        if (job & tag != 0) return d.graph.cancel(job & ~tag);
++        if (job & seq_tag == 0) return d.circuit.cancel(job);
++        for (d.seqs.items, 0..) |q, i| if (q.id == job & ~seq_tag) {
++            d.free(d.seqs.swapRemove(i));
++            return;
++        };
++    }
++    fn release(ctx: *anyopaque, stream: u64) void {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        d.forget(stream, true);
++        d.graph.release(stream);
++        d.circuit.release(stream);
++    }
++    fn now(ctx: *anyopaque, p: api.Program, budget: u64, quick: u64) ?api.Result {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        // one packet only: a sequence's pieces run as jobs
++        return if (p.kind == .graph and !std.mem.startsWith(u8, p.bytes, prog.seq_magic)) d.graph.now(p, budget, quick) else null;
++    }
++};
++
++test "runner graph route: graph programs reach the graph backend, the rest the circuit, by job id" {
++    const Fake = struct {
++        name: u8,
++        started: u32 = 0,
++        released: u32 = 0,
++        fn backend(f: *@This()) api.Backend {
++            return .{ .ctx = f, .vtable = &.{ .start = st, .poll = pl, .cancel = cn, .release = rl, .now = nw } };
++        }
++        fn st(ctx: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            f.started += 1;
++            return 7;
++        }
++        fn pl(ctx: *anyopaque, job: api.JobId) api.Poll {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            return .{ .done = .{ .status = .ok, .out = if (f.name == 'g') "graph" else "circuit", .steps = job } };
++        }
++        fn cn(_: *anyopaque, _: api.JobId) void {}
++        fn nw(ctx: *anyopaque, _: api.Program, _: u64, _: u64) ?api.Result {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            return .{ .status = .ok, .out = if (f.name == 'g') "graph" else "circuit" };
++        }
++        fn rl(ctx: *anyopaque, _: u64) void {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            f.released += 1;
++        }
++    };
++    var c: Fake = .{ .name = 'c' };
++    var g: Fake = .{ .name = 'g' };
++    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
++    const b = d.backend();
++    const gj = try b.start(1, .{ .kind = .graph, .bytes = "{}" }, 10);
++    const cj = try b.start(1, .{ .kind = .calc, .bytes = "2*3" }, 10);
++    try std.testing.expectEqualStrings("graph", b.poll(gj).done.out);
++    try std.testing.expectEqual(@as(u64, 7), b.poll(gj).done.steps);
++    try std.testing.expectEqualStrings("circuit", b.poll(cj).done.out);
++    // a run here (settling holds) is the graph backend's only
++    try std.testing.expectEqualStrings("graph", b.now(.{ .kind = .graph, .bytes = "{}" }, 10, 10).?.out);
++    try std.testing.expectEqual(null, b.now(.{ .kind = .calc, .bytes = "2*3" }, 10, 10));
++    b.release(1);
++    try std.testing.expect(c.started == 1 and g.started == 1 and c.released == 1 and g.released == 1);
++}
++
++/// A graph backend of `workers` slots: packet `v:n` prints v after n polls (`!` a budget end); start order is kept.
++const Slots = struct {
++    workers: u32,
++    jobs: [16]struct { body: []const u8 = "", left: u32 = 0, live: bool = false } = @splat(.{}),
++    started: [16][]const u8 = undefined,
++    n: u32 = 0,
++    most: u32 = 0,
++    cancelled: u32 = 0,
++
++    fn backend(f: *Slots) api.Backend {
++        return .{ .ctx = f, .vtable = &.{ .start = st, .poll = pl, .cancel = cn, .release = rl, .now = nw } };
++    }
++    fn live(f: *Slots) u32 {
++        var k: u32 = 0;
++        for (f.jobs) |j| k += @intFromBool(j.live);
++        return k;
++    }
++    fn st(ctx: *anyopaque, _: u64, p: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++        const f: *Slots = @ptrCast(@alignCast(ctx));
++        if (f.live() >= f.workers) return error.Busy;
++        const colon = std.mem.indexOfScalar(u8, p.bytes, ':').?;
++        f.jobs[f.n] = .{ .body = p.bytes[0..colon], .left = std.fmt.parseInt(u32, p.bytes[colon + 1 ..], 10) catch unreachable, .live = true };
++        f.started[f.n] = p.bytes;
++        f.n += 1;
++        f.most = @max(f.most, f.live());
++        return f.n - 1;
++    }
++    fn pl(ctx: *anyopaque, job: api.JobId) api.Poll {
++        const f: *Slots = @ptrCast(@alignCast(ctx));
++        const j = &f.jobs[@intCast(job)];
++        if (j.left > 0) {
++            j.left -= 1;
++            return .running;
++        }
++        j.live = false;
++        if (std.mem.eql(u8, j.body, "!")) return .{ .done = .{ .status = .budget, .steps = 10 } };
++        return .{ .done = .{ .status = .ok, .out = j.body, .steps = 10 } };
++    }
++    fn cn(ctx: *anyopaque, job: api.JobId) void {
++        const f: *Slots = @ptrCast(@alignCast(ctx));
++        f.jobs[@intCast(job)].live = false;
++        f.cancelled += 1;
++    }
++    fn rl(_: *anyopaque, _: u64) void {}
++    fn nw(_: *anyopaque, _: api.Program, _: u64, _: u64) ?api.Result {
++        return null;
++    }
++};
++
++fn finish(b: api.Backend, id: api.JobId) api.Result {
++    while (true) switch (b.poll(id)) {
++        .running => {},
++        .done => |r| return r,
++    };
++}
++
++test "runner graph dispatch: a sequence's pieces run side by side, largest first, and print in order as in turn" {
++    var c: Slots = .{ .workers = 1 };
++    var g: Slots = .{ .workers = 2 };
++    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
++    defer d.deinit();
++    const b = d.backend();
++    const r = finish(b, try b.start(1, .{ .kind = .graph, .bytes = "TFGS1\nIS 7:1\nLJ (\nIN 1155:6\nBN 1:33\n" }, 100));
++    try std.testing.expectEqual(api.Status.ok, r.status);
++    try std.testing.expectEqualStrings("7 (1155\nTrue\n", r.out);
++    try std.testing.expectEqual(@as(u64, 30), r.steps);
++    try std.testing.expectEqual(@as(u32, 2), g.most);
++    // the two largest packets went first; the smallest waited for a free worker
++    try std.testing.expectEqualStrings("1155:6", g.started[0]);
++    try std.testing.expectEqualStrings("1:33", g.started[1]);
++    try std.testing.expectEqualStrings("7:1", g.started[2]);
++    b.release(1);
++}
++
++test "runner graph dispatch: the first piece in print order that is not ok ends the run; later ones are cancelled" {
++    var c: Slots = .{ .workers = 1 };
++    var g: Slots = .{ .workers = 3 };
++    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
++    defer d.deinit();
++    const b = d.backend();
++    const r = finish(b, try b.start(1, .{ .kind = .graph, .bytes = "TFGS1\nIS 7:0\nIN !:0\nIN 123456:9\n" }, 100));
++    try std.testing.expectEqual(api.Status.budget, r.status);
++    try std.testing.expectEqualStrings("7 ", r.out);
++    try std.testing.expectEqual(@as(u32, 1), g.cancelled);
++    try std.testing.expectEqual(@as(u32, 0), g.live());
++    // pieces that each fit but together pass the budget end as a budget, as they would have in turn
++    const over = finish(b, try b.start(2, .{ .kind = .graph, .bytes = "TFGS1\nIS 1:0\nIS 2:0\nIN 3:0\n" }, 25));
++    try std.testing.expectEqual(api.Status.budget, over.status);
++    try std.testing.expectEqualStrings("1 2 ", over.out);
++    // a malformed line is a fault where it is reached; the value a kind cannot print is one too
++    try std.testing.expectEqual(api.Status.fault, finish(b, try b.start(3, .{ .kind = .graph, .bytes = "TFGS1\nIS 1:0\nbad\n" }, 100)).status);
++    try std.testing.expectEqual(api.Status.fault, finish(b, try b.start(4, .{ .kind = .graph, .bytes = "TFGS1\nBN 7:0\n" }, 100)).status);
++    b.release(1);
++    b.release(2);
++}
+diff --git a/zig/src/core/runner_graph_program.zig b/zig/src/core/runner_graph_program.zig
+index 75896d596cf920fe811987db824632f83b02df62..9a6442021f659b1936f7c34ec111efe001b4b3b1 100644
+--- a/zig/src/core/runner_graph_program.zig
++++ b/zig/src/core/runner_graph_program.zig
+@@ -149,7 +149,7 @@ fn piece(arena: Allocator, bank: *const graph.Bank, defs: anytype, arg: []const
+     const l = try expand(arena, defs, arg[0..at]) orelse return null;
+     const r = try expand(arena, defs, arg[at + 2 ..]) orelse return null;
+     if (std.mem.indexOfAny(u8, l, "=!<>") != null or std.mem.indexOfAny(u8, r, "=!<>") != null) return null;
+-    // d = l - r; with M = 10^D above |d|: (d+M-1)//M is 1 for d > 0, (-d+M-1)//M is 1 for d < 0, both 0 at d = 0
++    // d = l - r; with M = 10^D above |d|, (d+M)%M is 0 only at d = 0, so ((d+M)%M+M-1)//M is d != 0 (d read once)
+     const d = try std.mem.concat(arena, u8, &.{ "(", l, ")-(", r, ")" });
+     const sh = try route.shape(arena, d) orelse return null;
+     const digits = sh.nodes[sh.root].digits;
+@@ -157,7 +157,7 @@ fn piece(arena: Allocator, bank: *const graph.Bank, defs: anytype, arg: []const
+     const m = try arena.alloc(u8, digits + 1);
+     m[0] = '1';
+     @memset(m[1..], '0');
+-    const nz = try std.mem.concat(arena, u8, &.{ "(", d, "+", m, "-1)//", m, "+((", r, ")-(", l, ")+", m, "-1)//", m });
++    const nz = try std.mem.concat(arena, u8, &.{ "((", d, "+", m, ")%", m, "+", m, "-1)//", m });
+     const e = if (arg[at] == '=') try std.mem.concat(arena, u8, &.{ "1-(", nz, ")" }) else nz;
+     return .{ .kind = 'B', .packet = try route.lower(arena, bank, e) orelse return null };
+ }
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index 7be95a93b87a817c723e5b159e8d03008db82a89..3dff7791fc049fd5f2d90d45cf41978ccd65151e 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -352,6 +352,9 @@ pub const Routed = struct {
+         const r: *Routed = @ptrCast(@alignCast(ctx.?));
+         if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and !prog.shadowed(cell.prior))
+             if (try prog.program(a, r.bank, cell.code)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
++        // a whole script the frontend checks runs on the bank before any compile; earlier cells' names stay on its path
++        if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and cell.prior.len == 0)
++            if (try @import("runner_graph_table.zig").translate(a, r.bank, cell.code)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         const t = try r.inner.translate(r.inner.ctx, a, cell);
+         if (t == .abstain) if (try prog.direct(a, r.bank, cell, t.abstain)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         if (t != .program or t.program.kind != .calc) return t;
+@@ -360,186 +363,5 @@ pub const Routed = struct {
+     }
+ };
+ 
+-/// Graph programs to the graph backend (a sequence's packets in turn), calc and ELF to the circuit, by job id bits.
+-pub const Dispatch = struct {
+-    gpa: Allocator,
+-    circuit: api.Backend,
+-    graph: api.Backend,
+-    seqs: std.ArrayList(*Seq) = .empty,
+-    next_seq: api.JobId = 1,
+-
+-    const tag: api.JobId = 1 << 63;
+-    const seq_tag: api.JobId = 1 << 62;
+-
+-    const Seq = struct {
+-        id: api.JobId,
+-        stream: u64,
+-        lines: []const u8, // the pieces still to run
+-        budget: u64,
+-        job: ?api.JobId = null,
+-        out: std.ArrayList(u8) = .empty,
+-        steps: u64 = 0,
+-        exec_ns: u64 = 0,
+-        end: ?api.Result = null,
+-        delivered: bool = false,
+-        bytes: []u8,
+-    };
+-
+-    pub fn backend(d: *Dispatch) api.Backend {
+-        return .{ .ctx = d, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release, .now = now } };
+-    }
+-    pub fn deinit(d: *Dispatch) void {
+-        for (d.seqs.items) |q| d.free(q);
+-        d.seqs.deinit(d.gpa);
+-    }
+-    fn free(d: *Dispatch, q: *Seq) void {
+-        if (q.job) |j| d.graph.cancel(j);
+-        q.out.deinit(d.gpa);
+-        d.gpa.free(q.bytes);
+-        d.gpa.destroy(q);
+-    }
+-    /// A stream's delivered sequences: their `out` lives until its next call.
+-    fn forget(d: *Dispatch, stream: u64, all: bool) void {
+-        var i: usize = 0;
+-        while (i < d.seqs.items.len) {
+-            const q = d.seqs.items[i];
+-            if (q.stream == stream and (all or q.delivered)) d.free(d.seqs.swapRemove(i)) else i += 1;
+-        }
+-    }
+-    fn start(ctx: *anyopaque, stream: u64, p: api.Program, budget: u64) error{ OutOfMemory, Busy }!api.JobId {
+-        const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        if (p.kind != .graph) return d.circuit.start(stream, p, budget);
+-        if (!std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return tag | try d.graph.start(stream, p, budget);
+-        d.forget(stream, false);
+-        const q = try d.gpa.create(Seq);
+-        errdefer d.gpa.destroy(q);
+-        const bytes = try d.gpa.dupe(u8, p.bytes);
+-        errdefer d.gpa.free(bytes);
+-        q.* = .{ .id = d.next_seq, .stream = stream, .lines = bytes[prog.seq_magic.len..], .budget = budget, .bytes = bytes };
+-        try d.seqs.append(d.gpa, q);
+-        d.next_seq += 1;
+-        d.step(q);
+-        return seq_tag | q.id;
+-    }
+-    /// Starts or collects the current piece; the sequence ends at its last piece or at the first that is not ok.
+-    fn step(d: *Dispatch, q: *Seq) void {
+-        while (q.end == null) {
+-            if (q.job == null) {
+-                const nl = std.mem.indexOfScalar(u8, q.lines, '\n') orelse {
+-                    q.end = .{ .status = .ok, .out = q.out.items, .steps = q.steps, .exec_ns = q.exec_ns };
+-                    return;
+-                };
+-                const line = q.lines[0..nl];
+-                if (line.len < 4 or line[2] != ' ') {
+-                    q.end = .{ .status = .fault };
+-                    return;
+-                }
+-                q.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = line[3..] }, q.budget -| q.steps) catch return;
+-            }
+-            const r = switch (d.graph.poll(q.job.?)) {
+-                .running => return,
+-                .done => |r| r,
+-            };
+-            q.job = null;
+-            q.steps += r.steps;
+-            q.exec_ns += r.exec_ns;
+-            const nl = std.mem.indexOfScalar(u8, q.lines, '\n').?;
+-            const kind = q.lines[0];
+-            const sep: u8 = if (q.lines[1] == 'S') ' ' else '\n';
+-            q.lines = q.lines[nl + 1 ..];
+-            if (r.status != .ok) {
+-                q.end = .{ .status = r.status, .abstain = r.abstain, .steps = q.steps, .exec_ns = q.exec_ns };
+-                return;
+-            }
+-            const v = std.mem.trimEnd(u8, r.out, "\n");
+-            // a comparison's graph prints 1 or 0; Python prints the bool
+-            const text = if (kind == 'I') v else if (std.mem.eql(u8, v, "1")) "True" else if (std.mem.eql(u8, v, "0")) "False" else {
+-                q.end = .{ .status = .fault, .steps = q.steps };
+-                return;
+-            };
+-            q.out.appendSlice(d.gpa, text) catch {
+-                q.end = .{ .status = .abstain, .abstain = .too_big };
+-                return;
+-            };
+-            q.out.append(d.gpa, sep) catch {};
+-        }
+-    }
+-    fn find(d: *Dispatch, id: api.JobId) ?*Seq {
+-        for (d.seqs.items) |q| if (q.id == id) return q;
+-        return null;
+-    }
+-    fn poll(ctx: *anyopaque, job: api.JobId) api.Poll {
+-        const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        if (job & tag != 0) return d.graph.poll(job & ~tag);
+-        if (job & seq_tag == 0) return d.circuit.poll(job);
+-        const q = d.find(job & ~seq_tag) orelse return .{ .done = .{ .status = .abstain, .abstain = .unsupported } };
+-        d.step(q);
+-        var r = q.end orelse return .running;
+-        r.out = q.out.items;
+-        q.delivered = true;
+-        return .{ .done = r };
+-    }
+-    fn cancel(ctx: *anyopaque, job: api.JobId) void {
+-        const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        if (job & tag != 0) return d.graph.cancel(job & ~tag);
+-        if (job & seq_tag == 0) return d.circuit.cancel(job);
+-        for (d.seqs.items, 0..) |q, i| if (q.id == job & ~seq_tag) {
+-            d.free(d.seqs.swapRemove(i));
+-            return;
+-        };
+-    }
+-    fn release(ctx: *anyopaque, stream: u64) void {
+-        const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        d.forget(stream, true);
+-        d.graph.release(stream);
+-        d.circuit.release(stream);
+-    }
+-    fn now(ctx: *anyopaque, p: api.Program, budget: u64, quick: u64) ?api.Result {
+-        const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        // one packet only: a sequence's pieces run as jobs, in turn
+-        return if (p.kind == .graph and !std.mem.startsWith(u8, p.bytes, prog.seq_magic)) d.graph.now(p, budget, quick) else null;
+-    }
+-};
+-
+-test "runner graph route: graph programs reach the graph backend, the rest the circuit, by job id" {
+-    const Fake = struct {
+-        name: u8,
+-        started: u32 = 0,
+-        released: u32 = 0,
+-        fn backend(f: *@This()) api.Backend {
+-            return .{ .ctx = f, .vtable = &.{ .start = st, .poll = pl, .cancel = cn, .release = rl, .now = nw } };
+-        }
+-        fn st(ctx: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
+-            const f: *@This() = @ptrCast(@alignCast(ctx));
+-            f.started += 1;
+-            return 7;
+-        }
+-        fn pl(ctx: *anyopaque, job: api.JobId) api.Poll {
+-            const f: *@This() = @ptrCast(@alignCast(ctx));
+-            return .{ .done = .{ .status = .ok, .out = if (f.name == 'g') "graph" else "circuit", .steps = job } };
+-        }
+-        fn cn(_: *anyopaque, _: api.JobId) void {}
+-        fn nw(ctx: *anyopaque, _: api.Program, _: u64, _: u64) ?api.Result {
+-            const f: *@This() = @ptrCast(@alignCast(ctx));
+-            return .{ .status = .ok, .out = if (f.name == 'g') "graph" else "circuit" };
+-        }
+-        fn rl(ctx: *anyopaque, _: u64) void {
+-            const f: *@This() = @ptrCast(@alignCast(ctx));
+-            f.released += 1;
+-        }
+-    };
+-    var c: Fake = .{ .name = 'c' };
+-    var g: Fake = .{ .name = 'g' };
+-    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
+-    const b = d.backend();
+-    const gj = try b.start(1, .{ .kind = .graph, .bytes = "{}" }, 10);
+-    const cj = try b.start(1, .{ .kind = .calc, .bytes = "2*3" }, 10);
+-    try std.testing.expectEqualStrings("graph", b.poll(gj).done.out);
+-    try std.testing.expectEqual(@as(u64, 7), b.poll(gj).done.steps);
+-    try std.testing.expectEqualStrings("circuit", b.poll(cj).done.out);
+-    // a run here (settling holds) is the graph backend's only
+-    try std.testing.expectEqualStrings("graph", b.now(.{ .kind = .graph, .bytes = "{}" }, 10, 10).?.out);
+-    try std.testing.expectEqual(null, b.now(.{ .kind = .calc, .bytes = "2*3" }, 10, 10));
+-    b.release(1);
+-    try std.testing.expect(c.started == 1 and g.started == 1 and c.released == 1 and g.released == 1);
+-}
++/// Graph programs to the graph backend, calc and ELF to the circuit (runner_graph_dispatch.zig).
++pub const Dispatch = @import("runner_graph_dispatch.zig").Dispatch;
+diff --git a/zig/src/core/runner_graph_table.zig b/zig/src/core/runner_graph_table.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..b7838363fb369a0b579e9001b85085337d5b59e4
+--- /dev/null
++++ b/zig/src/core/runner_graph_table.zig
+@@ -0,0 +1,199 @@
++//! TF_DSV41_RUNNER_BACKEND=graph: the frontend's checked integer script (its DAG and formatted outputs) as packets.
++const std = @import("std");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const prog = @import("runner_graph_program.zig");
++const packet = @import("runner_graph_packet.zig");
++const ast = @import("runner_frontend_integer_ast.zig");
++const integer = @import("runner_frontend_integer.zig");
++const Allocator = std.mem.Allocator;
++
++/// Pieces a sequence may hold (a printed tuple is five: its text and its two values).
++const max_pieces = 40;
++/// Calc input a piece may expand to: the DAG's shared nodes repeat in each print that uses them.
++const max_expr = 8192;
++
++/// A whole Python script the frontend checks (integer, exact Fraction, fixed Decimal) as graph bytes; null: other.
++pub fn translate(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocator.Error!?[]u8 {
++    if (std.mem.indexOfScalar(u8, code, 0) != null) return null;
++    const lowerings = .{ @import("runner_frontend_integer_python.zig"), @import("runner_frontend_decimal.zig"), @import("runner_frontend_fraction.zig") };
++    inline for (lowerings) |l| if (try l.lowerWithCost(a, code, 0)) |lowered| {
++        a.free(lowered.source);
++        return lower(a, bank, &(lowered.table orelse return null));
++    };
++    return null;
++}
++
++/// The outputs in order, each a piece (`I` integer, `B` bool, `F` integral float, `1`..`6` fixed scale, `L` text).
++pub fn lower(a: Allocator, bank: *const graph.Bank, t: *const integer.Table) Allocator.Error!?[]u8 {
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    var e: Emit = .{ .arena = arena, .bank = bank, .t = t };
++    for (t.roots[0..t.outputs], t.endings[0..t.outputs], t.styles[0..t.outputs], t.scales[0..t.outputs]) |root, end, style, scale| {
++        const sep: u8 = if (end == ' ') 'S' else if (end == '\n') 'N' else return null;
++        if (root >= t.count) return null;
++        const n = t.nodes[root];
++        if (style != 0 and (n.op == .divmod or boolean(n.op))) return null;
++        if (style > 2 or scale > 6) return null;
++        if (n.op == .divmod) {
++            // Python prints the pair as a tuple: (q, r)
++            try e.text('J', "(");
++            if (!try e.value('I', 'J', try e.expr(n.l, n.r, "//"))) return null;
++            try e.text('J', ", ");
++            if (!try e.value('I', 'J', try e.expr(n.l, n.r, "%"))) return null;
++            try e.text(sep, ")");
++            continue;
++        }
++        const kind: u8 = if (style == 2) (if (scale == 0) 'I' else '0' + scale) else if (style == 1) 'F' else if (boolean(n.op)) 'B' else 'I';
++        if (kind == 'I' or kind == 'B') if (try e.algorithm(root)) |p| {
++            try e.piece(kind, sep, p);
++            continue;
++        };
++        if (!try e.value(kind, sep, try e.render(root))) return null;
++    }
++    if (e.n == 1 and e.lone) return try a.dupe(u8, e.last);
++    return try std.mem.concat(a, u8, &.{ prog.seq_magic, e.out.items });
++}
++
++fn boolean(op: ast.Op) bool {
++    return switch (op) {
++        .eq, .ne, .lt, .le, .gt, .ge => true,
++        else => false,
++    };
++}
++
++const Emit = struct {
++    arena: Allocator,
++    bank: *const graph.Bank,
++    t: *const integer.Table,
++    out: std.ArrayList(u8) = .empty,
++    n: usize = 0,
++    lone: bool = false, // the only piece so far is one integer ending its line
++    last: []const u8 = "",
++
++    fn piece(e: *Emit, kind: u8, sep: u8, body: []const u8) Allocator.Error!void {
++        try e.out.print(e.arena, "{c}{c} {s}\n", .{ kind, sep, body });
++        e.lone = e.n == 0 and kind == 'I' and sep == 'N';
++        e.last = body;
++        e.n += 1;
++    }
++
++    fn text(e: *Emit, sep: u8, s: []const u8) Allocator.Error!void {
++        try e.piece('L', sep, s);
++    }
++
++    /// A piece computing `src` on the bank; false when it does not fit a plan (or the sequence is full).
++    fn value(e: *Emit, kind: u8, sep: u8, src: ?[]const u8) Allocator.Error!bool {
++        const s = src orelse return false;
++        if (e.n >= max_pieces) return false;
++        try e.piece(kind, sep, try route.lower(e.arena, e.bank, s) orelse return false);
++        return true;
++    }
++
++    /// One of T1's algorithm plans when the root calls it on literals: gcd, isqrt, factorial, pow(a, b, m).
++    fn algorithm(e: *Emit, root: usize) Allocator.Error!?[]const u8 {
++        const n = e.t.nodes[root];
++        const algo: packet.Algorithm, const args: []const usize = switch (n.op) {
++            .gcd => .{ .gcd, &.{ n.l, n.r } },
++            .isqrt => .{ .isqrt, &.{n.l} },
++            .factorial => .{ .factorial, &.{n.l} },
++            .powmod => .{ .powmod, &.{ n.l, n.r, n.k } },
++            else => return null,
++        };
++        var values: [3][]const u8 = undefined;
++        for (args, 0..) |arg, j| {
++            var i = arg;
++            // gcd ignores signs: gcd(abs(x), y) is gcd(x, y), and abs(x) is the frontend's gcd(x, x)
++            if (algo == .gcd and i < e.t.count and e.t.nodes[i].op == .gcd and e.t.nodes[i].l == e.t.nodes[i].r) i = e.t.nodes[i].l;
++            const v = e.literal(i) orelse return null;
++            // plans take magnitudes: gcd is sign-blind; the others leave a negative operand to the frontend
++            if (v < 0 and algo != .gcd) return null;
++            values[j] = try std.fmt.allocPrint(e.arena, "{d}", .{@abs(v)});
++        }
++        const bytes = graph.Builder.integer(e.arena, algo, values[0..args.len]) catch |err| switch (err) {
++            error.OutOfMemory => return error.OutOfMemory,
++            else => return null,
++        };
++        // only a plan this bank prepared: a missing one would abstain at run time, after the hold began
++        const at = (std.mem.indexOf(u8, bytes, "\"plan\":\"") orelse return null) + "\"plan\":\"".len;
++        const end = std.mem.indexOfScalarPos(u8, bytes, at, '"') orelse return null;
++        return if (e.bank.plan(bytes[at..end]) != null) bytes else null;
++    }
++
++    /// A literal operand, or the negation of one (`-12` is the literal's sign, not a computation).
++    fn literal(e: *Emit, i: usize) ?i512 {
++        if (i >= e.t.count) return null;
++        const n = e.t.nodes[i];
++        if (n.op == .literal) return n.value;
++        if (n.op == .neg and n.l < e.t.count and e.t.nodes[n.l].op == .literal) return -e.t.nodes[n.l].value;
++        return null;
++    }
++
++    fn expr(e: *Emit, l: usize, r: usize, op: []const u8) Allocator.Error!?[]const u8 {
++        const x = try e.render(l) orelse return null;
++        const y = try e.render(r) orelse return null;
++        return try e.join(&.{ "(", x, op, y, ")" });
++    }
++
++    fn join(e: *Emit, parts: []const []const u8) Allocator.Error!?[]const u8 {
++        const s = try std.mem.concat(e.arena, u8, parts);
++        return if (s.len > max_expr) null else s;
++    }
++
++    /// Node `i` as calc input over the script's literals; null for what calc cannot say (a call, a computed exponent).
++    fn render(e: *Emit, i: usize) Allocator.Error!?[]const u8 {
++        if (i >= e.t.count) return null;
++        const n = e.t.nodes[i];
++        return switch (n.op) {
++            // only a literal's value is read: every other node's value is the frontend's proof
++            .literal => try std.fmt.allocPrint(e.arena, "({d})", .{n.value}),
++            .neg => try e.join(&.{ "(-", try e.render(n.l) orelse return null, ")" }),
++            .add => e.expr(n.l, n.r, "+"),
++            .sub => e.expr(n.l, n.r, "-"),
++            .mul => e.expr(n.l, n.r, "*"),
++            .floor => e.expr(n.l, n.r, "//"),
++            .mod => e.expr(n.l, n.r, "%"),
++            .pow => {
++                if (n.r >= e.t.count or e.t.nodes[n.r].op != .literal or e.t.nodes[n.r].value < 0) return null;
++                return try e.join(&.{ "(", try e.render(n.l) orelse return null, ")**", try std.fmt.allocPrint(e.arena, "{d}", .{e.t.nodes[n.r].value}) });
++            },
++            // abs(x) is gcd(x, x): |x| = x * sign(x)
++            .gcd => if (n.l == n.r) e.sign(n.l, n.l, .abs) else null,
++            .eq => e.sign(n.l, n.r, .eq),
++            .ne => e.sign(n.l, n.r, .ne),
++            .lt => e.sign(n.l, n.r, .lt),
++            .le => e.sign(n.l, n.r, .le),
++            .gt => e.sign(n.l, n.r, .gt),
++            .ge => e.sign(n.l, n.r, .ge),
++            .powmod, .digits, .divmod, .isqrt, .factorial, .range_product, .digit_sum => null,
++        };
++    }
++
++    /// l vs r as 0/1 (or |l|): with d = l - r and M = 10^D above |d|, (d+M-1)//M is 1 exactly when d > 0.
++    fn sign(e: *Emit, l: usize, r: usize, how: enum { eq, ne, lt, le, gt, ge, abs }) Allocator.Error!?[]const u8 {
++        const x = try e.render(l) orelse return null;
++        const d = if (how == .abs) x else try e.join(&.{ "(", x, "-", try e.render(r) orelse return null, ")" }) orelse return null;
++        const sh = try route.shape(e.arena, d) orelse return null;
++        const digits = sh.nodes[sh.root].digits;
++        if (digits > 123) return null;
++        const m = try e.arena.alloc(u8, digits + 1);
++        m[0] = '1';
++        @memset(m[1..], '0');
++        if (how == .eq or how == .ne) {
++            // (d+M)%M is 0 only at d = 0 (operands non-negative): d read once, not twice as in pos + neg
++            const nz = try e.join(&.{ "(((", d, "+", m, ")%", m, "+", m, "-1)//", m, ")" }) orelse return null;
++            return if (how == .ne) nz else try e.join(&.{ "(1-", nz, ")" });
++        }
++        const pos = try e.join(&.{ "((", d, "+", m, "-1)//", m, ")" }) orelse return null;
++        const neg = try e.join(&.{ "((-", d, "+", m, "-1)//", m, ")" }) orelse return null;
++        return switch (how) {
++            .gt => pos,
++            .lt => neg,
++            .ge => try e.join(&.{ "(1-", neg, ")" }),
++            .le => try e.join(&.{ "(1-", pos, ")" }),
++            .eq, .ne => unreachable,
++            .abs => try e.join(&.{ "(", d, "*(", pos, "-", neg, "))" }),
++        };
++    }
++};
+diff --git a/zig/src/core/runner_graph_table_test.zig b/zig/src/core/runner_graph_table_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..927d8da204e99cc92807944e6a9d090f67f31c42
+--- /dev/null
++++ b/zig/src/core/runner_graph_table_test.zig
+@@ -0,0 +1,205 @@
++//! A checked whole script on the graph bank (runner_graph_table.zig): Python's output, no compile, the same tokens.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const table = @import("runner_graph_table.zig");
++const integer_python = @import("runner_frontend_integer_python.zig");
++
++const gpa = std.testing.allocator;
++
++/// A graph backend that prints each packet's own text as its value: `-4` prints -4.
++const Echo = struct {
++    jobs: std.ArrayList([]u8) = .empty,
++    out: [64]u8 = undefined,
++
++    fn backend(e: *Echo) api.Backend {
++        return .{ .ctx = e, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(ctx: *anyopaque, _: u64, p: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++        const e: *Echo = @ptrCast(@alignCast(ctx));
++        try e.jobs.append(gpa, try gpa.dupe(u8, p.bytes));
++        return e.jobs.items.len - 1;
++    }
++    fn poll(ctx: *anyopaque, job: api.JobId) api.Poll {
++        const e: *Echo = @ptrCast(@alignCast(ctx));
++        const v = std.fmt.bufPrint(&e.out, "{s}\n", .{e.jobs.items[job]}) catch unreachable;
++        return .{ .done = .{ .status = .ok, .out = v, .steps = 1 } };
++    }
++    fn cancel(_: *anyopaque, _: api.JobId) void {}
++    fn release(_: *anyopaque, _: u64) void {}
++    fn deinit(e: *Echo) void {
++        for (e.jobs.items) |j| gpa.free(j);
++        e.jobs.deinit(gpa);
++    }
++};
++
++/// A backend no test here may start (the circuit, when every program is a graph one).
++const Never = struct {
++    fn backend() api.Backend {
++        return .{ .ctx = undefined, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(_: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++        return error.Busy;
++    }
++    fn poll(_: *anyopaque, _: api.JobId) api.Poll {
++        unreachable;
++    }
++    fn cancel(_: *anyopaque, _: api.JobId) void {}
++    fn release(_: *anyopaque, _: u64) void {}
++};
++
++/// The sequence's end through Dispatch, its text copied (owned by the caller).
++fn run(d: *route.Dispatch, bytes: []const u8) !struct { status: api.Status, out: []u8 } {
++    const b = d.backend();
++    const job = try b.start(1, .{ .kind = .graph, .bytes = bytes }, 50_000_000);
++    const r = while (true) switch (b.poll(job)) {
++        .running => std.Thread.yield() catch {},
++        .done => |x| break x,
++    };
++    defer b.release(1);
++    return .{ .status = r.status, .out = try gpa.dupe(u8, r.out) };
++}
++
++test "runner graph table: text pieces, integral floats and fixed scales print as the runtime does; bad pieces fault" {
++    var echo: Echo = .{};
++    defer echo.deinit();
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = echo.backend() };
++    defer d.deinit();
++    const ok = try run(&d, "TFGS1\nLJ (\nIJ -4\nLJ , \nIJ 1\nLN )\nFS -21\n3S 5\n3S 123\n2S -1250\n1N -3\nBS 1\nBN 0\n");
++    defer gpa.free(ok.out);
++    try std.testing.expectEqual(api.Status.ok, ok.status);
++    try std.testing.expectEqualStrings("(-4, 1)\n-21.0 0.005 0.123 -12.50 -0.3\nTrue False\n", ok.out);
++    // negative controls: an unknown separator or kind, a bool that is not 0/1, a value that is not a number
++    for ([_][]const u8{ "TFGS1\nIX 7\n", "TFGS1\nQN 7\n", "TFGS1\nBN 7\n", "TFGS1\nFN x\n", "TFGS1\nLQ (\n" }) |bad| {
++        const r = try run(&d, bad);
++        defer gpa.free(r.out);
++        try std.testing.expectEqual(api.Status.fault, r.status);
++    }
++}
++
++test "runner graph table: the frontend's checked table keeps its outputs, endings and styles" {
++    const lowered = (try integer_python.lowerWithCost(gpa, "a=-17\nb=5\nprint(a//b, a%b)\nprint(divmod(a,b))\n", 0)).?;
++    defer gpa.free(lowered.source);
++    const t = lowered.table.?;
++    try std.testing.expectEqual(@as(usize, 3), t.outputs);
++    try std.testing.expectEqualSlices(u8, " \n\n", t.endings[0..3]);
++    try std.testing.expectEqual(.divmod, t.nodes[t.roots[2]].op);
++    for (t.nodes[0..t.count]) |n| try std.testing.expectEqualStrings("", n.text);
++}
++
++/// Whole problems T5 admits (div_big, S1 divmod, mul_big) and edges, with CPython's stdout under the lane prelude.
++const cases = [_][2][]const u8{
++    .{ "a=-23777868243178464\nb=-41832496\nprint(a//b, a%b)\nprint(a/b)\nprint(divmod(a,b))\n", "568406634 0\n568406634.0\n(568406634, 0)\n" },
++    .{ "from fractions import Fraction\nn=44253970636272\nprint(n//48, n%48)\nprint(Fraction(n,-48))\nprint(n/-48)\n", "921957721589 0\n-921957721589\n-921957721589.0\n" },
++    .{ "from fractions import Fraction\nn=-160371104\nd=932\nf=Fraction(n,d)\nprint(f, float(f))\nprint(n//d, n%d)\nimport math\nprint(math.gcd(abs(n),d))\n", "-172072 -172072.0\n-172072 0\n932\n" },
++    .{ "from fractions import Fraction\nn=32685677580\nd=-4826\nf=Fraction(n,d)\nprint(f, f.numerator, f.denominator)\nprint(n/d)\nimport math\nprint(math.gcd(n,4826))\n", "-6772830 -6772830 1\n-6772830.0\n4826\n" },
++    .{ "A = 314159265358979323846264338327950288419716939937510\nB = 271828182845904523536\nprint(divmod(A, B))\n", "(1155727349790921717910215407028, 23663814570294126502)\n" },
++    .{ "from decimal import Decimal\nprint(Decimal('-27.201')*Decimal('4952356'))\n", "-134709035.556\n" },
++    .{ "from decimal import Decimal\nprint(Decimal('562.1') * Decimal('7.691'))\n", "4323.1111\n" },
++    .{ "from decimal import Decimal\nprint(Decimal('0.002')*Decimal('3'))\nprint(Decimal('-0.5')*Decimal('0.25'))\nprint(Decimal('1.50')*Decimal('2'))\n", "0.006\n-0.125\n3.00\n" },
++    .{ "print(divmod(-7, 2))\n", "(-4, 1)\n" },
++    .{ "x=10**20\ny=10**20+1\nprint(x<y, x<=y, x>y, x>=y, x==y, x!=y)\n", "True True False False False True\n" },
++    .{ "x=10**20\ny=10**20+1\nprint(y==x, y!=x, x==x, x!=x, -y==-y, -y!=y)\n", "False True True False True True\n" },
++    .{ "from fractions import Fraction\nprint(float(Fraction(-84, 4)))\n", "-21.0\n" },
++    .{ "a=-17\nb=5\nprint(a//b, a%b, (a<b)+1)\n", "-4 3 2\n" },
++    .{ "import math\nprint(math.gcd(-12, 18), math.gcd(12, -18))\n", "6 6\n" },
++};
++
++/// Scripts the bank must leave to the frontend's own route: a fraction, a computed divisor, a string.
++const refused = [_][]const u8{ "print(7/2)\n", "a=3\nprint(100//(a+1))\n", "print(len(str(2**100)))\n" };
++
++fn openBank() !graph.Bank {
++    const g = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    return graph.Bank.load(gpa, std.mem.span(g));
++}
++
++test "runner graph table: whole problems print CPython's output on the real bank (TF_RUNNER_GRAPH_BANK)" {
++    var bank = try openBank();
++    defer bank.deinit();
++    const g = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(g);
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = g };
++    defer d.deinit();
++    const has_gcd = bank.plan("gcd-16") != null;
++    for (cases) |c| {
++        // gcd needs T1's algorithm plan; a bank without it leaves the script to the frontend's route
++        if (!has_gcd and std.mem.indexOf(u8, c[0], "gcd") != null) {
++            try std.testing.expectEqual(null, try table.translate(gpa, &bank, c[0]));
++            continue;
++        }
++        const bytes = (try table.translate(gpa, &bank, c[0])) orelse {
++            std.debug.print("not on the bank: {s}\n", .{c[0]});
++            return error.TestExpectedRoute;
++        };
++        defer gpa.free(bytes);
++        const r = try run(&d, bytes);
++        defer gpa.free(r.out);
++        if (r.status != .ok or !std.mem.eql(u8, r.out, c[1])) std.debug.print("{s}: {t} '{s}'\n", .{ c[0], r.status, r.out });
++        try std.testing.expectEqual(api.Status.ok, r.status);
++        try std.testing.expectEqualStrings(c[1], r.out);
++    }
++    for (refused) |code| try std.testing.expectEqual(null, try table.translate(gpa, &bank, code));
++}
++
++test "runner graph table: the bank computes from the literals; the frontend's proof values never reach the output" {
++    var bank = try openBank();
++    defer bank.deinit();
++    const g = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(g);
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = g };
++    defer d.deinit();
++    const lowered = (try @import("runner_frontend_fraction.zig").lowerWithCost(gpa, cases[1][0], 0)).?;
++    gpa.free(lowered.source);
++    var t = lowered.table.?;
++    // a wrong proof on every computed node: the output must not move
++    for (t.nodes[0..t.count]) |*n| if (n.op != .literal) {
++        n.value = 12345;
++    };
++    const same = (try table.lower(gpa, &bank, &t)).?;
++    defer gpa.free(same);
++    const r = try run(&d, same);
++    defer gpa.free(r.out);
++    try std.testing.expectEqualStrings(cases[1][1], r.out);
++    // a changed literal changes the output (n + 48): the run reads its inputs
++    for (t.nodes[0..t.count]) |*n| if (n.op == .literal and n.value == 44253970636272) {
++        n.value += 48;
++    };
++    const moved = (try table.lower(gpa, &bank, &t)).?;
++    defer gpa.free(moved);
++    const m = try run(&d, moved);
++    defer gpa.free(m.out);
++    try std.testing.expectEqualStrings("921957721590 0\n-921957721590\n-921957721590.0\n", m.out);
++}
++
++/// A frontend that counts its calls and abstains (the compile route a graph script must not reach).
++const Inner = struct {
++    calls: u32 = 0,
++    fn frontend(i: *Inner) api.Frontend {
++        return .{ .ctx = i, .translate = translate };
++    }
++    fn translate(ctx: ?*anyopaque, _: std.mem.Allocator, _: api.Cell) std.mem.Allocator.Error!api.Translation {
++        const i: *Inner = @ptrCast(@alignCast(ctx.?));
++        i.calls += 1;
++        return .{ .abstain = .unsupported };
++    }
++};
++
++test "runner graph table: Routed takes a checked fence script before the compile; earlier cells or refusals go on" {
++    var bank = try openBank();
++    defer bank.deinit();
++    var inner: Inner = .{};
++    var routed: route.Routed = .{ .inner = inner.frontend(), .bank = &bank };
++    const fe = routed.frontend();
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const t = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = cases[0][0] });
++    try std.testing.expect(t == .program and t.program.kind == .graph);
++    try std.testing.expectEqual(@as(u32, 0), inner.calls);
++    _ = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = refused[1] });
++    try std.testing.expectEqual(@as(u32, 1), inner.calls);
++    // a later cell could have rebound a name the script uses: the frontend's own checks decide
++    _ = try fe.translate(fe.ctx, a, .{ .form = .fence, .lang = "python", .code = cases[0][0], .prior = &.{"divmod = max\n"} });
++    try std.testing.expectEqual(@as(u32, 2), inner.calls);
++}
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 29dc8fb4461c84f953e6151ed0f39757d7b164b4..27ed92343dc4fc1549627bb1d0daf8711112acbe 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -59,8 +59,10 @@ const Count = struct {
+     }
+     fn start(ctx: *anyopaque, stream: u64, p: rapi.Program, budget: u64) error{ OutOfMemory, Busy }!rapi.JobId {
+         const c: *Count = @ptrCast(@alignCast(ctx));
++        // jobs the inner backend took (a Busy refusal starts nothing)
++        const id = try c.inner.start(stream, p, budget);
+         c.started += 1;
+-        return c.inner.start(stream, p, budget);
++        return id;
+     }
+     fn poll(ctx: *anyopaque, job: rapi.JobId) rapi.Poll {
+         const c: *Count = @ptrCast(@alignCast(ctx));
+@@ -226,6 +228,8 @@ test "runner proof: straight-line integer cells print Python's lines on the grap
+         .{ "x = -7\nprint(x // 2); print(x % 3)  # floor", "-4\n2\n" },
+         .{ "print(2**64 == 18446744073709551616)", "True\n" },
+         .{ "a=10\nprint(a == 11)", "False\n" },
++        .{ divmod_cell[10..112] ++ "print(q*b + r == a + 1, q*b + r != a - 1, q*b + r - a == 0, a != a)", "False True True False\n" },
++        .{ "a = -10**40\nb = 10**40\nprint(a == b, a != b, a == -b, b - a == 2*b)", "False True True True\n" },
+         .{ "n = 37\nprint(2**n - 1, n)", "137438953471 37\n" },
+         .{ "a = 2**10\nprint(a)", "1024\n" },
+         .{ "s = 2 + 3\nprint(s * 4)", "20\n" },
+diff --git a/zig/src/core/runner_s3_bench.zig b/zig/src/core/runner_s3_bench.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..6afa48585fed58b156515f6a3043fc40b13e259d
+--- /dev/null
++++ b/zig/src/core/runner_s3_bench.zig
+@@ -0,0 +1,211 @@
++//! S3 lane calls (whole tool scripts) through the served runner, run as S3 runs them: route, steps, ms; no GPU.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const runner = @import("runner.zig");
++const ropen = @import("runner_open.zig");
++const prog = @import("runner_graph_program.zig");
++const lane = @import("compute_lane.zig");
++const rc = @import("runner_circuit.zig");
++const elf_cache = @import("runner_frontend_elf_cache.zig");
++const linux = std.os.linux;
++
++fn now() u64 {
++    var ts: std.c.timespec = undefined;
++    _ = std.c.clock_gettime(.MONOTONIC, &ts);
++    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
++}
++
++fn env(name: []const u8) ?[]const u8 {
++    var buf: [96]u8 = undefined;
++    if (name.len >= buf.len) return null;
++    @memcpy(buf[0..name.len], name);
++    buf[name.len] = 0;
++    const v = std.mem.span(std.c.getenv(buf[0..name.len :0]) orelse return null);
++    return if (v.len == 0) null else v;
++}
++
++fn pinTo(cpu: u32) void {
++    var set: [16]u64 = @splat(0);
++    set[cpu / 64] = @as(u64, 1) << @intCast(cpu % 64);
++    _ = linux.syscall3(.sched_setaffinity, 0, @sizeOf(@TypeOf(set)), @intFromPtr(&set));
++}
++
++const Cell = struct { id: []const u8, code: []const u8, want: []const u8 };
++
++/// The route a program takes on the served backend: one bank packet, a sequence of them, calc or ELF on the circuit.
++fn route(p: api.Program) []const u8 {
++    return switch (p.kind) {
++        .graph => if (std.mem.startsWith(u8, p.bytes, prog.seq_magic)) "graph-seq" else "graph",
++        .calc => "calc",
++        .elf => "elf",
++    };
++}
++
++/// Pieces in a graph sequence (1 for anything else).
++fn pieces(p: api.Program) usize {
++    if (p.kind != .graph or !std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return 1;
++    return std.mem.count(u8, p.bytes[prog.seq_magic.len..], "\n");
++}
++
++/// One cell's staged run: translate, then start and spin-poll to the end (the backend's own time, no S3 naps).
++const Staged = struct { route: []const u8 = "abstain", pieces: usize = 0, bytes: usize = 0, translate: u64 = 0, run: u64 = 0, steps: u64 = 0, exec: u64 = 0, boot: u64 = 0, eval: u64 = 0, ok: bool = false };
++
++/// A circuit program's boot (the snapshot and the program loaded) and its steps, timed apart on this thread.
++fn split(c: *const rc.Circuit, p: api.Program, budget: u64, s: *Staged) !void {
++    const gpa = std.heap.c_allocator;
++    const t0 = now();
++    var m = try rc.Machine.boot(gpa, c, p);
++    defer m.deinit(gpa);
++    const t1 = now();
++    var out: std.ArrayList(u8) = .empty;
++    defer out.deinit(gpa);
++    const never: std.atomic.Value(bool) = .init(false);
++    _ = try m.run(budget, &out, null, &never);
++    s.boot = t1 - t0;
++    s.eval = now() - t1;
++}
++
++fn staged(a: std.mem.Allocator, r: *runner.Runner, c: Cell, stream: u64, circuit: ?*const rc.Circuit) !Staged {
++    var s: Staged = .{};
++    const t0 = now();
++    const t = try r.frontend.translate(r.frontend.ctx, a, .{ .form = .fence, .lang = "python", .code = c.code });
++    const t1 = now();
++    s.translate = t1 - t0;
++    const p = switch (t) {
++        .program => |p| p,
++        .abstain => return s,
++    };
++    s.route = route(p);
++    s.pieces = pieces(p);
++    s.bytes = p.bytes.len;
++    defer r.backend.release(stream);
++    const job = try r.backend.start(stream, p, r.cfg.max_steps);
++    const res = while (true) switch (r.backend.poll(job)) {
++        .running => std.atomic.spinLoopHint(),
++        .done => |x| break x,
++    };
++    s.run = now() - t1;
++    s.steps = res.steps;
++    s.exec = res.exec_ns;
++    s.ok = res.status == .ok and std.mem.eql(u8, res.out, c.want);
++    if (circuit) |k| if (p.kind != .graph) try split(k, p, r.cfg.max_steps, &s);
++    return s;
++}
++
++/// One S3 call as compute_circuit.Exec.run makes it (lane S3): translate, start, poll with 1 ms naps; its body.
++fn call(a: std.mem.Allocator, r: *runner.Runner, code: []const u8, stream: u64) !?[]u8 {
++    const t = try r.frontend.translate(r.frontend.ctx, a, .{ .form = .fence, .lang = "python", .code = code });
++    const p = switch (t) {
++        .program => |p| p,
++        .abstain => return null,
++    };
++    defer r.backend.release(stream);
++    const job = while (true) {
++        if (r.backend.start(stream, p, r.cfg.max_steps)) |j| break j else |e| switch (e) {
++            error.OutOfMemory => return e,
++            error.Busy => nap(),
++        }
++    };
++    while (true) {
++        switch (r.backend.poll(job)) {
++            .running => {},
++            .done => |x| return if (x.status == .ok) try lane.runner.body(a, .{ .status = .ok, .stdout = x.out }, 0, 0) else null,
++        }
++        nap();
++    }
++}
++
++fn nap() void {
++    const ts: std.c.timespec = .{ .sec = 0, .nsec = std.time.ns_per_ms };
++    _ = std.c.nanosleep(&ts, null);
++}
++
++const Row = struct { st: Staged, e2e: [2]u64, served_ok: bool };
++
++fn median(xs: []u64) u64 {
++    std.mem.sort(u64, xs, {}, std.sort.asc(u64));
++    return xs[xs.len / 2];
++}
++
++fn ms(ns: u64) f64 {
++    return @as(f64, @floatFromInt(ns)) / 1e6;
++}
++
++/// runner-s3-bench <cells.jsonl> [reps] [engine-cpu]; a line is {"id", "code", "want"} (want: CPython's stdout).
++pub fn main(init: std.process.Init) !u8 {
++    const gpa = std.heap.c_allocator;
++    const argv = try init.minimal.args.toSlice(init.arena.allocator());
++    if (argv.len < 2) {
++        std.debug.print("usage: runner-s3-bench <cells.jsonl> [reps] [engine-cpu] (TF_DSV41_COMPUTE_LANE_RUNNER* knobs)\n", .{});
++        return 2;
++    }
++    const reps = if (argv.len > 2) try std.fmt.parseInt(u32, argv[2], 10) else 5;
++    if (argv.len > 3) pinTo(try std.fmt.parseInt(u32, argv[3], 10));
++    const text = try std.Io.Dir.cwd().readFileAlloc(init.io, argv[1], gpa, .limited(1 << 26));
++    var cells: std.ArrayList(Cell) = .empty;
++    var lines = std.mem.splitScalar(u8, text, '\n');
++    while (lines.next()) |line| if (line.len > 0) {
++        const p = try std.json.parseFromSlice(Cell, gpa, line, .{ .ignore_unknown_fields = true });
++        try cells.append(gpa, p.value);
++    };
++    const cfg = (try runner.Config.parse(&env, "TF_DSV41_COMPUTE_LANE_RUNNER")) orelse {
++        std.debug.print("TF_DSV41_COMPUTE_LANE_RUNNER is off\n", .{});
++        return 2;
++    };
++    const r = try ropen.open(gpa, cfg);
++    // a second copy of the circuit: ELF and calc programs' boot and steps timed apart from the backend
++    var circuit = try rc.Circuit.load(gpa, cfg.circuit);
++    defer circuit.deinit(gpa);
++    const rows = try gpa.alloc(Row, cells.items.len);
++    const e2es = try gpa.alloc(u64, reps);
++    const tr = try gpa.alloc(u64, reps);
++    const run = try gpa.alloc(u64, reps);
++    var stream: u64 = 1 << 40;
++    // TF_S3_BENCH_COLD=1 empties the compiled-image cache before every call: each ELF cell pays its compile
++    const cold = env("TF_S3_BENCH_COLD") != null;
++    std.debug.print("| cell | route | pieces | bytes | steps | translate ms | backend ms | exec ms | boot ms | steps ms | S3 first ms | S3 p50 ms | body |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n", .{});
++    for (cells.items, rows) |c, *row| {
++        row.* = .{ .st = .{}, .e2e = .{ 0, 0 }, .served_ok = true };
++        for (0..reps) |i| {
++            var arena = std.heap.ArenaAllocator.init(gpa);
++            defer arena.deinit();
++            // the served call first (cold on rep 0: no translation or run of this cell before it)
++            stream += 1;
++            if (cold) elf_cache.reset(init.io);
++            const t0 = now();
++            const got = try call(arena.allocator(), r, c.code, stream);
++            e2es[i] = now() - t0;
++            const want = try lane.runner.body(arena.allocator(), .{ .status = .ok, .stdout = c.want }, 0, 0);
++            if (got == null or !std.mem.eql(u8, got.?, want)) row.served_ok = false;
++            stream += 1;
++            if (cold) elf_cache.reset(init.io);
++            const st = try staged(arena.allocator(), r, c, stream, &circuit);
++            row.st = st;
++            row.st.route = st.route;
++            tr[i] = st.translate;
++            run[i] = st.run;
++            if (!st.ok) row.served_ok = false;
++        }
++        row.e2e = .{ e2es[0], median(e2es) };
++        row.st.translate = median(tr);
++        row.st.run = median(run);
++        std.debug.print("| {s} | {s} | {d} | {d} | {d} | {d:.2} | {d:.2} | {d:.2} | {d:.2} | {d:.2} | {d:.2} | {d:.2} | {s} |\n", .{ c.id, row.st.route, row.st.pieces, row.st.bytes, row.st.steps, ms(row.st.translate), ms(row.st.run), ms(row.st.exec), ms(row.st.boot), ms(row.st.eval), ms(row.e2e[0]), ms(row.e2e[1]), if (row.served_ok) "= CPython" else "DIFFERS" });
++    }
++    var all: std.ArrayList(u64) = .empty;
++    var first: std.ArrayList(u64) = .empty;
++    var under: u32 = 0;
++    var same: u32 = 0;
++    for (rows) |row| {
++        try all.append(gpa, row.e2e[1]);
++        try first.append(gpa, row.e2e[0]);
++        under += @intFromBool(row.e2e[1] < 40 * std.time.ns_per_ms);
++        same += @intFromBool(row.served_ok);
++    }
++    const v = all.items;
++    std.mem.sort(u64, v, {}, std.sort.asc(u64));
++    std.debug.print("\nS3 call p50 over cells: median {d:.2} ms, p90 {d:.2} ms, max {d:.2} ms; {d}/{d} under 40 ms; {d}/{d} bodies = CPython\n", .{ ms(v[v.len / 2]), ms(v[(v.len * 9) / 10]), ms(v[v.len - 1]), under, v.len, same, v.len });
++    const w = first.items;
++    std.mem.sort(u64, w, {}, std.sort.asc(u64));
++    std.debug.print("S3 first call over cells: median {d:.2} ms, max {d:.2} ms; image cache {s}, {d} hits\n", .{ ms(w[w.len / 2]), ms(w[w.len - 1]), if (cold) "emptied per call" else "kept", elf_cache.hitCount(init.io) });
++    return if (same == v.len) 0 else 1;
++}

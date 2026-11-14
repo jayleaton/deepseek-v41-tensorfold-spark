@@ -1,0 +1,303 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 14:44:49 +0700
+Subject: [PATCH 174/207] server: deadline_s ends a reply at its deadline with
+ every token, usage and receipt
+
+A request may name "deadline_s" (seconds, more than 0, at most 1000000). At that time the server cancels the
+engine itself, still commits the tokens the engine gives before its finished event, and labels the reply
+finish_reason "deadline". The final response keeps usage, token_ids/token_sha256 and the runner receipt, so a
+deadline-cut reply carries native token telemetry (W9-SPEC item 1). Without the field nothing changes.
+
+test-request-deadline-host: a forced deadline (finish deadline, the late token kept, ids and receipt), the field
+off against a deadline the reply never meets (reply, token sha and every stream delta the same), bad values
+refused.
+
+(cherry picked from commit dadaa0e2400c616f80fe3fe0b8b57f812fd55f7f)
+---
+ zig/build/cuda.zig                       |   1 +
+ zig/src/server/chat.zig                  |  10 +-
+ zig/src/server/compute_segments.zig      |   2 +-
+ zig/src/server/generation.zig            |   8 +-
+ zig/src/server/request_deadline_test.zig | 166 +++++++++++++++++++++++
+ zig/src/server/root.zig                  |   1 +
+ 6 files changed, 184 insertions(+), 4 deletions(-)
+ create mode 100644 zig/src/server/request_deadline_test.zig
+
+diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
+index 828559ea7b53a6d80db1fd80af8f2ab22d64aec0..1e4f8d98513310d9417946a9f8a8bf9220d2506b 100644
+--- a/zig/build/cuda.zig
++++ b/zig/build/cuda.zig
+@@ -423,6 +423,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
+     b.step("test-runner-guide-host", "TF_DSV41_RUNNER_GUIDE: T5's guide text in a chat's system message").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runner guide:"} })).step);
+     b.step("test-runner-live-host", "Runner records streamed as they land: a client that leaves mid-write keeps them").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runner live records:"} })).step);
++    b.step("test-request-deadline-host", "deadline_s: the server ends a reply at its deadline with usage, ids and receipt").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"request deadline:"} })).step);
+     b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     const server_test = b.addRunArtifact(b.addTest(.{ .root_module = server_tests }));
+     b.step("test-done-times-host", "Request-local done line times and lane admission on the CPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"done times:"} })).step);
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 727ee30f21b314805cffefb65f076326113dd290..473ee7ee71f6dddfc4768e49d7f88979ab3dd9c3 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -93,6 +93,7 @@ pub const Prepared = struct {
+     guide: ?[]const u8 = null,
+     stops: fields_mod.Stops,
+     preparing: bool,
++    deadline_ns: ?i96 = null, // "deadline_s": the server ends the reply there itself (finish_reason "deadline")
+ };
+ 
+ /// Render ``input`` and run every check that can refuse it, before anything reaches the client or the engine.
+@@ -188,7 +189,12 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     if (request.run_cells and thinking and srv.think_close.len > 0) request.think_end = srv.think_close_end;
+     if (request.run_cells) request.run_trace = @import("runner_guide.zig").traceAsk(f) catch
+         return cx.refuse("runner_trace must be a boolean, runner_trace_format one line of at most 128 bytes with {} once, runner_trace_repeat 0 to 3");
+-    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .guide = guided.guide };
++    const deadline: ?i96 = if (f.get("deadline_s")) |v| blk: {
++        const s = (if (v == .bool) null else v.float64()) orelse return cx.refuse("deadline_s must be a number of seconds");
++        if (!(s > 0 and s <= 1e6)) return cx.refuse("deadline_s must be more than 0 and at most 1000000 seconds");
++        break :blk received + @as(i96, @intFromFloat(s * std.time.ns_per_s));
++    } else null;
++    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing, .guide = guided.guide, .deadline_ns = deadline };
+ }
+ 
+ /// Submit a prepared request and collect its reply; ``sink`` hears the stream (null: not streamed).
+@@ -234,7 +240,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
+     preparing = false;
+     var filter: @import("compute_turns.zig").Filter = .{ .a = a, .inner = if (sink) |s| s else undefined };
+     const shown: ?Sink = if (request.hold_eos and sink != null) filter.sink() else sink; // built-in calls stay hidden
+-    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .sink = shown, .hold = request.hold_eos, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .guide = prepared.guide, .lp = if (request.logprobs != null) .{} else null, .loop_stop = request.loop_stop };
++    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .reply_id = input.id, .seed = if (request.sampling) |v| v.seed else null, .sink = shown, .hold = request.hold_eos, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools, .token_ids = prepared.token_ids, .guide = prepared.guide, .lp = if (request.logprobs != null) .{} else null, .loop_stop = request.loop_stop, .deadline_ns = prepared.deadline_ns };
+     defer srv.noteRequest(prepared.prompt_len, box.cached orelse 0, gen.collected.items.len, box.stats.drafted, box.stats.accepted, box.stats.rounds, received, gen.first_ns, gen.last_ns, box.stats.prefill_seconds);
+     errdefer if (!gen.engine_done) gen.cancel(); // the engine writes to the mailbox until it says finished
+     const result: Failure!Reply = blk: {
+diff --git a/zig/src/server/compute_segments.zig b/zig/src/server/compute_segments.zig
+index 078a45a4a42404f9f697f6083f0c889878786117..62fe759e2523acd9a39d26267c987c5ff41f3821 100644
+--- a/zig/src/server/compute_segments.zig
++++ b/zig/src/server/compute_segments.zig
+@@ -90,7 +90,7 @@ fn finish(g: *Generation, cx: *Cx, p: chat.Prepared) chat.Failure!chat.Reply {
+ /// The segment after an inserted result: the same reply, its first tokens the result's, its own text and calls.
+ fn next(g: *Generation, inserted: []const u32, left: usize) chat.Failure!*Generation {
+     const n = try g.a.create(Generation);
+-    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns, .cells_sent = g.cells_sent, .cells_sig = g.cells_sig };
++    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns, .cells_sent = g.cells_sent, .cells_sig = g.cells_sig, .deadline_ns = g.deadline_ns, .deadline_hit = g.deadline_hit };
+     if (g.calls != null) n.calls = try tool_stream.Streamer.init(g.a, g.tools);
+     return n;
+ }
+diff --git a/zig/src/server/generation.zig b/zig/src/server/generation.zig
+index 41c98b59297ef7cd35d5bcd23efe8cf9491531cc..cb7076ba2c8da5a2be0add9209b5abb952a84140 100644
+--- a/zig/src/server/generation.zig
++++ b/zig/src/server/generation.zig
+@@ -59,6 +59,8 @@ pub const Generation = struct {
+     skip: []const u32 = &.{}, // a resumed segment's first tokens: the inserted tool result, checked and not shown
+     cells_sent: usize = 0, // the runner records the stream sent last: a prefix the client has every landed byte of
+     cells_sig: u64 = 0, // their Mailbox.covered sig
++    deadline_ns: ?i96 = null, // "deadline_s": when the server ends the reply itself
++    deadline_hit: bool = false, // it did: the engine was cancelled there; what it gave before its end still lands
+ 
+     fn eos(g: *const Generation, t: u32) bool {
+         return !g.ignore_eos and std.mem.indexOfScalar(u32, g.srv.eos, t) != null;
+@@ -202,6 +204,10 @@ pub const Generation = struct {
+                 g.cancel();
+                 return error.Cancelled;
+             }
++            if (g.deadline_ns) |d| if (!g.deadline_hit and nowNs(g.srv.io) >= d) {
++                g.deadline_hit = true;
++                g.srv.engine.cancel(g.id); // the engine ends the stream: its tokens, usage and receipt stay whole
++            };
+             if (chunk == null) if (g.sink) |sink| try g.liveCells(sink);
+             if (chunk == null and @hasDecl(Gone, "beat")) {
+                 // queueing and a long prefill send nothing: a client that times out a silent stream would leave
+@@ -268,7 +274,7 @@ pub const Generation = struct {
+             .stop => "stop",
+             .length => "length",
+             .silence => return cx.other("the text engine returned a speech-only finish reason"),
+-            .cancelled => "cancelled",
++            .cancelled => if (g.deadline_hit) "deadline" else "cancelled",
+             .failed => return cx.other(if (m.message.len > 0) try a.dupe(u8, m.message) else "the reply failed"),
+         };
+         const stopped: ?u32 = if (g.loop_stop) m.stats.loop_period else null;
+diff --git a/zig/src/server/request_deadline_test.zig b/zig/src/server/request_deadline_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d33357670382636ec17466e109c89ce793f698fb
+--- /dev/null
++++ b/zig/src/server/request_deadline_test.zig
+@@ -0,0 +1,166 @@
++//! "deadline_s": the server ends a reply at its deadline itself, with finish_reason "deadline", usage, ids and receipt.
++const std = @import("std");
++const api = @import("engine_api");
++const json = @import("json");
++const server = @import("server.zig");
++const chat = @import("chat.zig");
++const model_text = @import("model_text.zig");
++const Cx = @import("errors.zig").Cx;
++
++const gpa = std.testing.allocator;
++
++/// One byte a token.
++const Bytes = struct {
++    fn text(t: *Bytes) model_text.Text {
++        return .{ .ctx = t, .vtable = &.{ .encode = encode, .decode = decode, .token_id = tokenId, .token_string = tokenString, .vocab_size = vocab, .eos_ids = eos, .render = render, .template_source = template } };
++    }
++    fn encode(_: *anyopaque, a: std.mem.Allocator, input: []const u8, _: bool) model_text.Error![]u32 {
++        const ids = try a.alloc(u32, input.len);
++        for (input, ids) |byte, *id| id.* = byte;
++        return ids;
++    }
++    fn decode(_: *anyopaque, a: std.mem.Allocator, ids: []const u32) std.mem.Allocator.Error![]u8 {
++        const out = try a.alloc(u8, ids.len);
++        for (out, ids) |*v, id| v.* = @intCast(id);
++        return out;
++    }
++    fn tokenId(_: *anyopaque, _: []const u8) ?u32 {
++        return null;
++    }
++    fn tokenString(_: *anyopaque, a: std.mem.Allocator, id: u32) ![]u8 {
++        return std.fmt.allocPrint(a, "{d}", .{id});
++    }
++    fn vocab(_: *anyopaque) u32 {
++        return 256;
++    }
++    fn eos(_: *anyopaque) []const u32 {
++        return &.{};
++    }
++    fn render(_: *anyopaque, a: std.mem.Allocator, _: json.Value, _: model_text.RenderOptions, _: *[]const u8) model_text.Error!model_text.Rendered {
++        return .{ .text = try a.dupe(u8, "prompt") };
++    }
++    fn template(_: *anyopaque) []const u8 {
++        return "";
++    }
++};
++
++const receipt = "{\"trace\":{\"owned\":1},\"cells\":[{\"cell\":0,\"form\":\"inline\",\"value\":\"b\",\"field\":\"content\",\"at\":1}]}";
++
++/// Gives `abc`; then ends by itself later (`de`, stop), or, cancelled, gives the `d` it had made, then its receipt.
++const Script = struct {
++    sink: ?api.Sink = null,
++    id: api.Id = 0,
++    done: bool = false,
++    cancelled: bool = false,
++    fn engine(s: *Script) api.Engine {
++        return .{ .ctx = s, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory } };
++    }
++    fn info(_: *anyopaque) api.Info {
++        return .{ .context_window = 8192 };
++    }
++    fn submit(ctx: *anyopaque, id: api.Id, _: *const api.Request, sink: api.Sink) api.SubmitError!void {
++        const s: *Script = @ptrCast(@alignCast(ctx));
++        s.* = .{ .sink = sink, .id = id };
++        sink.event(sink.ctx, id, &.{ .prefilled = 0 });
++        sink.event(sink.ctx, id, &.{ .tokens = &.{ 'a', 'b', 'c' } });
++    }
++    fn end(s: *Script, tokens: []const u32, reason: api.Reason) void {
++        if (s.done) return;
++        s.done = true;
++        const sink = s.sink.?;
++        sink.event(sink.ctx, s.id, &.{ .tokens = tokens });
++        sink.event(sink.ctx, s.id, &.{ .finished = .{ .reason = reason, .runner = receipt } });
++    }
++    fn cancel(ctx: *anyopaque, _: api.Id) void {
++        const s: *Script = @ptrCast(@alignCast(ctx));
++        if (!s.done) s.cancelled = true;
++        s.end(&.{'d'}, .cancelled);
++    }
++    fn status(_: *anyopaque, out: *api.Status, _: []u32) void {
++        out.* = .{};
++    }
++    fn memory(_: *anyopaque, _: bool) ?api.Memory {
++        return null;
++    }
++};
++
++/// The client never leaves; the engine ends by itself at the 40th check (~2 s), a stuck reply fails at the 400th.
++const Gone = struct {
++    s: *Script,
++    checks: *usize,
++    pub fn check(g: @This()) bool {
++        if (g.s.sink == null) return false;
++        g.checks.* += 1;
++        if (g.checks.* == 40) g.s.end(&.{ 'd', 'e' }, .stop);
++        return g.checks.* > 400;
++    }
++};
++
++const Deltas = struct {
++    a: std.mem.Allocator,
++    out: std.ArrayList([]const u8) = .empty,
++    fn call(ctx: *anyopaque, delta: json.Value) error{Closed}!void {
++        const d: *Deltas = @ptrCast(@alignCast(ctx));
++        d.out.append(d.a, json.stringify(d.a, delta, .{}) catch return error.Closed) catch return error.Closed;
++    }
++};
++
++const Run = struct { reply: chat.Reply, deltas: []const []const u8, cancelled: bool };
++
++fn run(a: std.mem.Allocator, deadline: ?json.Value) !Run {
++    var script: Script = .{};
++    var bytes: Bytes = .{};
++    const srv = try server.Server.init(gpa, std.testing.io, script.engine(), bytes.text(), .{ .served_name = "test", .model_ids = &.{"test"}, .enable_thinking = false }, null);
++    defer srv.deinit();
++    const fields = try json.newObject(a);
++    try fields.put(a, "return_token_ids", .{ .bool = true });
++    if (deadline) |d| try fields.put(a, "deadline_s", d);
++    var deltas: Deltas = .{ .a = a };
++    var checks: usize = 0;
++    var cx: Cx = .{ .a = a };
++    const input: chat.Input = .{ .id = "chatcmpl-deadline", .prompt = .{ .text = "prompt" }, .max_tokens = 100, .fields = .{ .object = fields } };
++    const reply = try chat.run(srv, &cx, input, .{ .ctx = &deltas, .call = Deltas.call }, Gone{ .s = &script, .checks = &checks });
++    return .{ .reply = reply, .deltas = deltas.out.items, .cancelled = script.cancelled };
++}
++
++fn tokenIds(a: std.mem.Allocator, reply: chat.Reply) ![]const u8 {
++    return json.stringify(a, reply.runtime.get("token_ids").?, .{});
++}
++
++test "request deadline: the server ends the reply at deadline_s with finish deadline, every token, its ids and receipt" {
++    var arena: std.heap.ArenaAllocator = .init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const got = try run(a, .{ .float = 0.05 });
++    try std.testing.expect(got.cancelled);
++    try std.testing.expectEqualStrings("deadline", got.reply.finish_reason);
++    try std.testing.expectEqualStrings("abcd", got.reply.content); // the token the engine made before its end lands
++    try std.testing.expectEqual(4, got.reply.completion_tokens);
++    try std.testing.expectEqualStrings("[97, 98, 99, 100]", try tokenIds(a, got.reply));
++    try std.testing.expectEqual(1, got.reply.runtime.get("runner").?.get("cells").?.array.len);
++}
++
++test "request deadline: without deadline_s, or with one the reply ends before, the reply and stream are the same" {
++    var arena: std.heap.ArenaAllocator = .init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const off = try run(a, null);
++    const late = try run(a, .{ .int = "100" });
++    for ([_]Run{ off, late }) |r| {
++        try std.testing.expect(!r.cancelled);
++        try std.testing.expectEqualStrings("stop", r.reply.finish_reason);
++        try std.testing.expectEqualStrings("abcde", r.reply.content);
++        try std.testing.expectEqualStrings("[97, 98, 99, 100, 101]", try tokenIds(a, r.reply));
++    }
++    try std.testing.expectEqualStrings(off.reply.runtime.get("token_sha256").?.string, late.reply.runtime.get("token_sha256").?.string);
++    try std.testing.expectEqual(off.deltas.len, late.deltas.len);
++    for (off.deltas, late.deltas) |x, y| try std.testing.expectEqualStrings(x, y);
++}
++
++test "request deadline: deadline_s that is not a positive number of seconds is refused" {
++    var arena: std.heap.ArenaAllocator = .init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    for ([_]json.Value{ .{ .int = "0" }, .{ .float = -1 }, .{ .string = "300" }, .{ .bool = true } }) |bad|
++        try std.testing.expectError(error.Refused, run(a, bad));
++}
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 82d063c6785bb3b31939c5f17afee1675dd10614..68a14117bd7e8f9945bf3c5c81995b9238ef428a 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -29,6 +29,7 @@ test {
+     _ = @import("http_limits_test.zig");
+     _ = @import("done_times_test.zig");
+     _ = @import("runner_live_test.zig");
++    _ = @import("request_deadline_test.zig");
+     _ = @import("drain_test.zig");
+     _ = @import("keepalive_test.zig");
+     _ = @import("idle_unload.zig");

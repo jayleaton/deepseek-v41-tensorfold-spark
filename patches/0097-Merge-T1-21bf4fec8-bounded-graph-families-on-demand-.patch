@@ -1,0 +1,2500 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 10:50:10 +0700
+Subject: [PATCH 097/207] Merge T1 21bf4fec8 (bounded graph families, on-demand
+ weights; DROM byte-load golden)
+
+Squashed merge of 2 commits:
+- Add bounded graph families and load prepared weights on demand (Jay Leaton)
+- Add a required DROM byte-load golden to each circuit shard (Jay Leaton)
+---
+ tools/runner-graph-algorithms.md          |  60 ++++++
+ tools/runner-graph-probe.zig              |  19 +-
+ tools/runner_drom_golden.c                |  20 ++
+ tools/runner_drom_golden.md               |  77 ++++++++
+ tools/runner_drom_golden.patch            | 186 +++++++++++++++++
+ tools/runner_drom_golden.py               | 145 ++++++++++++++
+ tools/runner_graph_algorithms.py          |  15 +-
+ tools/runner_graph_byte.py                |  26 +++
+ tools/runner_graph_export.py              |   8 +-
+ tools/runner_graph_format.py              |  12 +-
+ tools/runner_graph_ir.py                  |  24 ++-
+ tools/runner_graph_verify.py              |  10 +-
+ tools/runner_graph_whole.py               |  17 +-
+ tools/runner_trace.py                     |   6 +-
+ zig/src/core/runner_graph_algorithms.zig  |  53 ++++-
+ zig/src/core/runner_graph_bank.zig        | 213 +++++++++++++++-----
+ zig/src/core/runner_graph_binary.zig      |  88 ++++++++-
+ zig/src/core/runner_graph_f64.zig         |  63 ++++++
+ zig/src/core/runner_graph_f64_context.zig | 143 ++++++++++++++
+ zig/src/core/runner_graph_f64_math.zig    | 231 ++++++++++++++++++++++
+ zig/src/core/runner_graph_f64_print.zig   | 210 ++++++++++++++++++++
+ zig/src/core/runner_graph_factor.zig      | 113 +++++++++++
+ zig/src/core/runner_graph_lazy.zig        |  46 +++++
+ zig/src/core/runner_graph_machine.zig     |   4 +
+ zig/src/core/runner_graph_packet.zig      |  14 +-
+ zig/src/core/runner_graph_print.zig       |  28 ++-
+ zig/src/core/runner_graph_state_cache.zig |   1 +
+ 27 files changed, 1734 insertions(+), 98 deletions(-)
+ create mode 100644 tools/runner_drom_golden.c
+ create mode 100644 tools/runner_drom_golden.md
+ create mode 100644 tools/runner_drom_golden.patch
+ create mode 100644 tools/runner_drom_golden.py
+ create mode 100644 tools/runner_graph_byte.py
+ create mode 100644 zig/src/core/runner_graph_f64.zig
+ create mode 100644 zig/src/core/runner_graph_f64_context.zig
+ create mode 100644 zig/src/core/runner_graph_f64_math.zig
+ create mode 100644 zig/src/core/runner_graph_f64_print.zig
+ create mode 100644 zig/src/core/runner_graph_factor.zig
+ create mode 100644 zig/src/core/runner_graph_lazy.zig
+
+diff --git a/tools/runner-graph-algorithms.md b/tools/runner-graph-algorithms.md
+index 4e85f94c00a4b5275ced1e0bd035e47622990dd8..9f860efa5ce93763411fd79f1229f2c4faeb4cc2 100644
+--- a/tools/runner-graph-algorithms.md
++++ b/tools/runner-graph-algorithms.md
+@@ -172,3 +172,63 @@ whole-cell qualification. It parses a bounded numeric AST into operand bindings,
+ checked operations and print descriptors without evaluating answers. Production
+ source admission remains owned by the native frontend. Bank capability, offline
+ source binding, frontend admission and live ownership are separate measurements.
++
++Bounded trial division adds `smallest_factor(n,bound)` and named-only
++`factorize(n,bound)` plans in every bucket. Both require n≥1 and an inclusive
++bound1..10000. Smallest-factor returns the least divisor, n if primality is
++proved, or0 if the bound prevents a conclusion; n1 returns1. Factorize emits
++`(remaining, count, f1, ..., fk)\n`; factors repeat in sorted order, and remaining1
++means complete. A residual proved prime can be retained above the trial bound.
++All arithmetic and branch predicates run through prepared FFNs.
++
++`reverse_decimal` matches `int(str(n)[::-1])` for nonnegative integers, using
++occupied decimal length rather than padded bucket width. Negative nonzero
++inputs set the checked error flag. `select(a,b,condition)` selects a for a
++nonzero condition and b otherwise. `assert_true` sets the checked error flag
++when its input is zero. These kernels do not recognize problem-specific names.
++
++`Print.style=byte` emits one numeric byte0..255, with ending`empty`, prefixfalse
++and precision0. Before any program output, `byte_check-128` validates every
++such descriptor through FFNs. `emit_byte-4` produces the BYTE and HALT tokens.
++Sequences can encode ASCII or valid UTF-8; source admission must enforce its
++chosen text domain, bounds, quoting, container and assertion semantics.
++
++`Bank.load` reads v2 prepared-pack headers and plans, deferring payload decoding
++until first use of each template. `Bank.loadEager` or `loadWithMode(...,.eager)`
++provides explicit preloading. First use verifies the pinned header and payload
++checksum, decoded identity and bindings under a per-template mutex. Loaded
++weights stay immutable and shared; each stream retains its own State. Failures
++are cached; `retryFailed(name,width)` permits retry against the same pinned
++artifact only. Destroy all machines/backends before bank deinit. The allocator
++must support concurrent allocations. Lazy loading performs no graph compilation.
++Old v1 packs remain eagerly validated; rebake them offline for lazy loading.
++
++Unrestricted binary64 arithmetic and Python float rendering remain unsupported.
++Exact Fraction/Decimal and integral-float bridges do not establish IEEE coverage.
++
++The bounded finite-normal binary64 family uses a canonical pair `(M,E)` for
++`M*2**E`: nonzero absolute M is in `[2**52,2**53)`, E is in `[-100,100]`,
++and signed zero uses M0/E0. `f64_ratio(N,D)` takes exact signed integers with
++at most62digits per operand; `f64_mul` and `f64_sub` take two canonical pairs.
++They return two Values and round nearest-even after each operation. Invalid
++pairs, division by zero, unsupported intermediate results or widths abstain.
++This domain excludes subnormals, infinities and NaNs.
++
++`f64_isclose` takes four pairs: a, b, relative tolerance and absolute tolerance.
++It validates external pairs and nonnegative tolerances, compares equality, then
++uses rounded subtraction and relative products with internal exponents up to±256. `f64_format(M,E)` returns coefficient/control
++Values for `Print.style=prepared`, with the control in `Print.second`. It finds
++the shortest round-trip fixed spelling, including signed zero and integral .0,
++and requires final adjusted decimal exponent in `[-4,15]`. The distinct
++`format_f64-62` prepared formatter allows precision up to20; legacy `format`
++retains its18-place domain. Prepared Print requires descriptor precision0,
++endingnewline and prefixfalse; its typed control supplies the actual layout.
++Named-only `f64_repr` emits that spelling directly. All binary64 plans use
++width128; native dispatch decodes no mantissas or exponents.
++
++Python source lowering must preserve evaluation order and conversion points:
++`(4/3)*pi*radius**3` rounds the ratio and first product, computes integer power,
++rounds that integer's float conversion, then rounds the final product. Pi binds
++its specified binary64 encoding. Source admission and lexical literal conversion
++remain frontend responsibilities; these bounded operators are not a claim of
++unrestricted Python floating-point support.
+diff --git a/tools/runner-graph-probe.zig b/tools/runner-graph-probe.zig
+index 5edd143a0cfa3be29642f1e6dc152ac0502b0b40..6e0a729d64373ad6bf73ea6a7cb17cb989bc5244 100644
+--- a/tools/runner-graph-probe.zig
++++ b/tools/runner-graph-probe.zig
+@@ -51,11 +51,15 @@ const Options = struct {
+     algorithm_lifecycle: bool = false,
+     fresh_states: bool = false,
+     fixed_widths: bool = false,
++    eager_bank: bool = false,
+ };
+ const Report = struct {
+     pass: bool,
+     reuse_states: bool,
+     adaptive_widths: bool,
++    boot_prepared: usize,
++    prepared_templates: usize,
++    template_load_attempts: u64,
+     boot_wall_ns: u64,
+     boot_process_cpu_ns: u64,
+     run_wall_ns: u64,
+@@ -110,6 +114,10 @@ fn options(args: []const []const u8) !Options {
+     var o: Options = .{ .manifest = args[1], .cases = args[2] };
+     var i: usize = 3;
+     while (i < args.len) : (i += 1) {
++        if (std.mem.eql(u8, args[i], "--eager-bank")) {
++            o.eager_bank = true;
++            continue;
++        }
+         if (std.mem.eql(u8, args[i], "--lifecycle")) {
+             o.lifecycle = true;
+             continue;
+@@ -142,7 +150,8 @@ fn options(args: []const []const u8) !Options {
+ }
+ 
+ fn canonicalBank(bank: *const graph.Bank) !void {
+-    for (bank.templates) |t| {
++    for (bank.templates) |*t| {
++        if (!t.isPrepared()) continue;
+         if (t.circuit.halt != halt or t.circuit.byte_family != 6) return error.NoncanonicalBank;
+         const family, const payload = t.circuit.split(byte_base + 255) orelse return error.NoncanonicalBank;
+         if (family != 6 or payload != 255) return error.NoncanonicalBank;
+@@ -287,6 +296,7 @@ fn cacheClean(cache: *const state_cache.Cache) bool {
+ 
+ fn resetProof(a: Allocator, bank: *const graph.Bank) !void {
+     const t = &bank.templates[0];
++    try t.prepare();
+     var first: state_cache.Cache = .{};
+     defer first.deinit(a);
+     var second: state_cache.Cache = .{};
+@@ -441,9 +451,10 @@ fn run(init: std.process.Init) !u8 {
+     const o = try options(args);
+     const boot_start = now();
+     const boot_cpu_start = cpuNow();
+-    var bank = try graph.Bank.load(a, o.manifest);
++    var bank = try graph.Bank.loadWithMode(a, o.manifest, if (o.eager_bank) .eager else .lazy);
+     const boot_cpu_ns = cpuNow() - boot_cpu_start;
+     const boot_ns = now() - boot_start;
++    const boot_prepared = bank.preparedCount();
+     defer bank.deinit();
+     try canonicalBank(&bank);
+     const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, o.cases, a, .limited(128 << 20));
+@@ -494,7 +505,11 @@ fn run(init: std.process.Init) !u8 {
+         life.pass = life.error_name.len == 0 and life.checks == (if (seeds.items.len == 4) @as(usize, 10) else 9) and
+             (!o.algorithm_lifecycle or seeds.items.len == 4);
+     }
++    try canonicalBank(&bank);
+     const report: Report = .{
++        .boot_prepared = boot_prepared,
++        .prepared_templates = bank.preparedCount(),
++        .template_load_attempts = bank.loadAttempts(),
+         .pass = rows.items.len > 0 and failed == 0 and (!o.lifecycle or life.pass),
+         .reuse_states = !o.fresh_states,
+         .adaptive_widths = !o.fixed_widths,
+diff --git a/tools/runner_drom_golden.c b/tools/runner_drom_golden.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..636b1d10aa0791ddf203f710e41c83133c41c40b
+--- /dev/null
++++ b/tools/runner_drom_golden.c
+@@ -0,0 +1,20 @@
++static const char message[] = "circuit drom bytes\n";
++static const unsigned char sign_probe[] = {129, 0};
++
++__attribute__((noinline)) static int signed_bytes(const volatile signed char *p) {
++    int c;
++    while ((c = *p++) != 0) putchar(c);
++    return *(const volatile signed char *)sign_probe;
++}
++
++__attribute__((noinline)) static unsigned unsigned_bytes(const volatile unsigned char *p) {
++    unsigned c;
++    while ((c = *p++) != 0) putchar(c);
++    return *(const volatile unsigned char *)sign_probe;
++}
++
++int main(void) {
++    int s = signed_bytes((const volatile signed char *)message);
++    unsigned u = unsigned_bytes((const volatile unsigned char *)message);
++    return s != -127 || u != 129;
++}
+diff --git a/tools/runner_drom_golden.md b/tools/runner_drom_golden.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..76dcdd1ac0df6d4d5fda5b4eac7a9bfdff6b62e7
+--- /dev/null
++++ b/tools/runner_drom_golden.md
+@@ -0,0 +1,77 @@
++# Supplemental DROM golden
++
++The original 10,002-case corpus remains frozen. `runner_drom_golden.py` generates
++one independent `drom-byte-string` ELF case from the pinned Qwenputer reference
++machine, including every token, interval-256 prefix checkpoints and exact output.
++It prints `circuit drom bytes\n` twice and exits zero. Both signed and unsigned
++volatile byte loops read the string through its NUL terminator. A high-bit DROM
++byte also checks LB sign extension and LBU zero extension.
++
++The tool extracts the actual `runtime` and `linker_script` multiline literals from
++the supplied served frontend compiler source. It compiles freestanding RV32IM+Zba
++C at O0, with `-fno-builtin`, without the CLI's expression/IR translation route.
++Explicit `--clang` / `--linker` override `TF_RUNNER_CLANG` / `TF_RUNNER_LLD`; the
++defaults match the frontend. It requires DROM `.rodata`
++containing both probes and the terminator, and both LB/LBU instruction encodings. `--zig /absolute/path/zig` selects Zig cc;
++`--objdump` optionally adds full external disassembly. Without it, the artifact
++lists the LB/LBU addresses decoded directly from the ELF instructions.
++The generated source, linker script, disassembly, compiler command and checksums
++remain in the supplement for inspection. A changed frontend literal format fails
++closed. Generation refuses a nonempty destination.
++
++Run only inside the parent's admitted per-node CPU scope (nice 19, idle IO,
++at most 2 GiB, no swap, at most 30 minutes, with QUIET and thermal/boot floors):
++
++```sh
++python3 tools/runner_drom_golden.py \
++  --qwenputer "$QWENPUTER" \
++  --compiler-source "$CIRCUIT_SOURCE/runner_frontend_program_compile.zig" \
++  --clang "$RV_CLANG" --linker "$RV_LLD" --objdump "$RV_OBJDUMP" \
++  --output "$GOLDENS-drom"
++```
++
++Use an absolute compiler source path; the compiler can come from the served image
++when the host lacks lld. The reference recorder refuses more than 100,000 generated
++tokens, including refreshes. A fault, nonzero exit or different output fails export.
++
++The actual shard checker is `zig/src/core/runner_circuit_golden_test.zig`, supplied
++by T2 and absent in this exporter checkout. `runner_native_check.py` is a separate
++benchmark checker. Apply `runner_drom_golden.patch` to the mutable integrated source
++overlay before its build, and run `zig fmt` there. Do not patch frozen source kits.
++The patch targets the isolation-v2 checker and leaves its existing cases untouched.
++
++The checker runs the original modulo selection first, then the entire supplement.
++`TF_RUNNER_GOLDEN_LIMIT` only limits original calc cases. The default supplement
++path is `${TF_RUNNER_GOLDENS}-drom`; `TF_RUNNER_DROM_GOLDENS` can select another
++supplement, but cannot disable it. Missing files, invalid supplement metadata, an
++unsupported ELF boot or a missing/extra supplemental case fail the test.
++The ELF, rows and tokens are checked against the supplement manifest before use.
++Every token, checkpoint, output byte and final HALT is compared by the existing
++checker, with the supplemental run capped at 100,000 steps.
++
++For shard `0/25`, the expected result is the existing 401 original cases plus one
++supplemental case, 402 total, with no supplemental skips. Other shards each gain
++one case independently of modulo selection. Parent verification must run the
++accepted circuit and the m3 DROM-disabled mutant separately with this same shard:
++
++```sh
++TF_RUNNER_CIRCUIT="$CORRECT_CALC" TF_RUNNER_GOLDENS="$GOLDENS" \
++  TF_RUNNER_GOLDEN_SHARD=0/25 zig build test-runner-host -j1
++TF_RUNNER_CIRCUIT="$M3_CALC" TF_RUNNER_GOLDENS="$GOLDENS" \
++  TF_RUNNER_GOLDEN_SHARD=0/25 zig build test-runner-host -j1
++```
++
++The first must pass 402 cases; the second must fail on the supplemental DROM case
++within the cap. Keep the existing m1-m6 control proofs. The exact accepted circuit
++identity and all original corpus hash pins remain requirements of the parent gate.
++
++Task ledger: read `AGENTS.md`, `CONTRIBUTING.md`, `docs/atc/SKILL.md`,
++`docs/recipes/SKILL.md`, `RUNBOOK.md`, `docs/recipes/README.md`, `.zig-version`,
++`build.zig`, `build.zig.zon`, `.github/workflows/no-gpu.yml` and `zig-fmt.yml`.
++Relevant checks: Zig 0.17.0 `zig fmt --check build.zig zig`,
++`zig build test test-kernel-contract test-golden fuzz-cortheon`, plain `zig build`,
++and lean identity comparison using `tools/zig/lean_check.py` / `lean_new.py`.
++The parent also requires the 11 codec tests and seeded single-job gates.
++The qualified `t1-artifacts/drom-v1` release retains the actual patched checker,
++402-case positive receipt, m3 failure, project gates and source identities.
++Apply the patch explicitly when integrating into the T2 checker branch.
+diff --git a/tools/runner_drom_golden.patch b/tools/runner_drom_golden.patch
+new file mode 100644
+index 0000000000000000000000000000000000000000..5e31819301455d799dc9fb8a61fcbb6d0921765a
+--- /dev/null
++++ b/tools/runner_drom_golden.patch
+@@ -0,0 +1,186 @@
++--- a/zig/src/core/runner_circuit_golden_test.zig
+++++ b/zig/src/core/runner_circuit_golden_test.zig
++@@ -72,82 +72,110 @@
++     }
++     var circuit = try rc.Circuit.load(gpa, circuit_path);
++     defer circuit.deinit(gpa);
++-    const manifest_bytes = try readFile(dir, "manifest.json");
++-    defer gpa.free(manifest_bytes);
++-    var manifest = try std.json.parseFromSlice(std.json.Value, gpa, manifest_bytes, .{});
++-    defer manifest.deinit();
++-    const cases_gz = try checked(dir, manifest.value, "cases.jsonl.gz");
++-    defer gpa.free(cases_gz);
++-    const tokens_gz = try checked(dir, manifest.value, "tokens.leu32.gz");
++-    defer gpa.free(tokens_gz);
++-    const lines = try gunzip(cases_gz);
++-    defer gpa.free(lines);
++-    const blob = try gunzip(tokens_gz);
++-    defer gpa.free(blob);
+++    const supplemental = if (env("TF_RUNNER_DROM_GOLDENS")) |value|
+++        try gpa.dupe(u8, value)
+++    else
+++        try std.fmt.allocPrint(gpa, "{s}-drom", .{dir});
+++    defer gpa.free(supplemental);
++     var totals: struct { cases: u64 = 0, steps: u64 = 0, ns: u64 = 0, skipped: u64 = 0 } = .{};
++-    var it = std.mem.tokenizeScalar(u8, lines, '\n');
++-    var calc_seen: u64 = 0;
++-    var index: u64 = 0;
++-    while (it.next()) |line| : (index += 1) {
++-        if (index % shard[1] != shard[0]) continue;
++-        var parsed = try std.json.parseFromSlice(Case, gpa, line, .{ .ignore_unknown_fields = true });
++-        defer parsed.deinit();
++-        const case = parsed.value;
++-        const is_calc = std.mem.eql(u8, case.kind, "calc");
++-        if (is_calc and std.mem.startsWith(u8, case.id, "calc-")) {
++-            calc_seen += 1;
++-            if (calc_seen > limit) continue;
+++    for ([_][]const u8{ dir, supplemental }, 0..) |corpus_dir, corpus_index| {
+++        const is_drom = corpus_index == 1;
+++        const manifest_bytes = try readFile(corpus_dir, "manifest.json");
+++        defer gpa.free(manifest_bytes);
+++        var manifest = try std.json.parseFromSlice(std.json.Value, gpa, manifest_bytes, .{});
+++        defer manifest.deinit();
+++        if (is_drom) {
+++            const object = manifest.value.object;
+++            try std.testing.expectEqualStrings("tensorfold-runner-drom-goldens-v1", object.get("format").?.string);
+++            try std.testing.expectEqualStrings("bec1a0c9654ac8151b6f36ed0154a19c53141384", object.get("upstream_commit").?.string);
+++            try std.testing.expectEqual(@as(i64, 1), object.get("case_count").?.integer);
+++            try std.testing.expectEqual(@as(i64, 100000), object.get("step_budget").?.integer);
++         }
++-        const want = blob[case.token_offset_bytes..][0 .. 4 * case.trace_token_count];
++-        try std.testing.expectEqualStrings(case.trace_sha256, &hex(want));
++-        var input: []u8 = undefined;
++-        if (is_calc) {
++-            const h = case.input.bytes_hex.?;
++-            input = try gpa.alloc(u8, h.len / 2);
++-            _ = try std.fmt.hexToBytes(input, h);
++-            input = input[0 .. input.len - 1];
++-        } else input = try readFile(dir, case.input.elf.?);
++-        defer gpa.free(input.ptr[0 .. input.len + @intFromBool(is_calc)]);
++-        var m = rc.Machine.boot(gpa, &circuit, .{ .kind = if (is_calc) .calc else .elf, .bytes = input }) catch |e| {
++-            if (e != error.CircuitElfUnsupported) return e;
++-            std.debug.print("golden {s}: skipped, ELF boot not built yet\n", .{case.id});
++-            totals.skipped += 1;
++-            continue;
++-        };
++-        defer m.deinit(gpa);
++-        var out: std.ArrayList(u8) = .empty;
++-        defer out.deinit(gpa);
++-        var trace: std.ArrayList(u32) = .empty;
++-        defer trace.deinit(gpa);
++-        try trace.append(gpa, circuit.go);
++-        var cancel: std.atomic.Value(bool) = .init(false);
++-        const t0 = rc.nowNs();
++-        const end = m.run(case.generated_steps + 1, &out, &trace, &cancel) catch |e| {
++-            std.debug.print("golden {s}: {s} at step {d}\n", .{ case.id, @errorName(e), m.state.steps });
++-            return e;
++-        };
++-        totals.ns += rc.nowNs() - t0;
++-        for (trace.items, 0..) |t, i| {
++-            if (i * 4 >= want.len) return error.GoldenTraceLonger;
++-            const w = std.mem.readInt(u32, want[4 * i ..][0..4], .little);
++-            if (t != w) {
++-                std.debug.print("golden {s}: token {d} is {d}, reference {d}\n", .{ case.id, i, t, w });
++-                return error.GoldenTokenMismatch;
++-            }
+++        const cases_gz = try checked(corpus_dir, manifest.value, "cases.jsonl.gz");
+++        defer gpa.free(cases_gz);
+++        const tokens_gz = try checked(corpus_dir, manifest.value, "tokens.leu32.gz");
+++        defer gpa.free(tokens_gz);
+++        const lines = try gunzip(cases_gz);
+++        defer gpa.free(lines);
+++        const blob = try gunzip(tokens_gz);
+++        defer gpa.free(blob);
+++        var supplemental_seen: u64 = 0;
+++        var it = std.mem.tokenizeScalar(u8, lines, '\n');
+++        var calc_seen: u64 = 0;
+++        var index: u64 = 0;
+++        while (it.next()) |line| : (index += 1) {
+++            if (!is_drom and index % shard[1] != shard[0]) continue;
+++            var parsed = try std.json.parseFromSlice(Case, gpa, line, .{ .ignore_unknown_fields = true });
+++            defer parsed.deinit();
+++            const case = parsed.value;
+++            const is_calc = std.mem.eql(u8, case.kind, "calc");
+++            if (is_drom) {
+++                try std.testing.expectEqualStrings("drom-byte-string", case.id);
+++                try std.testing.expectEqualStrings("elf", case.kind);
+++                try std.testing.expectEqualStrings("drom.elf", case.input.elf.?);
+++                try std.testing.expect(case.generated_steps <= 100000);
+++                supplemental_seen += 1;
+++            }
+++            if (is_calc and std.mem.startsWith(u8, case.id, "calc-")) {
+++                calc_seen += 1;
+++                if (calc_seen > limit) continue;
+++            }
+++            const want = blob[case.token_offset_bytes..][0 .. 4 * case.trace_token_count];
+++            try std.testing.expectEqualStrings(case.trace_sha256, &hex(want));
+++            var input: []u8 = undefined;
+++            if (is_calc) {
+++                const h = case.input.bytes_hex.?;
+++                input = try gpa.alloc(u8, h.len / 2);
+++                _ = try std.fmt.hexToBytes(input, h);
+++                input = input[0 .. input.len - 1];
+++            } else input = if (is_drom)
+++                try checked(corpus_dir, manifest.value, case.input.elf.?)
+++            else
+++                try readFile(corpus_dir, case.input.elf.?);
+++            defer gpa.free(input.ptr[0 .. input.len + @intFromBool(is_calc)]);
+++            var m = rc.Machine.boot(gpa, &circuit, .{ .kind = if (is_calc) .calc else .elf, .bytes = input }) catch |e| {
+++                if (is_drom or e != error.CircuitElfUnsupported) return e;
+++                std.debug.print("golden {s}: skipped, ELF boot not built yet\n", .{case.id});
+++                totals.skipped += 1;
+++                continue;
+++            };
+++            defer m.deinit(gpa);
+++            var out: std.ArrayList(u8) = .empty;
+++            defer out.deinit(gpa);
+++            var trace: std.ArrayList(u32) = .empty;
+++            defer trace.deinit(gpa);
+++            try trace.append(gpa, circuit.go);
+++            var cancel: std.atomic.Value(bool) = .init(false);
+++            const t0 = rc.nowNs();
+++            const budget = if (is_drom) @min(case.generated_steps + 1, 100000) else case.generated_steps + 1;
+++            const end = m.run(budget, &out, &trace, &cancel) catch |e| {
+++                std.debug.print("golden {s}: {s} at step {d}\n", .{ case.id, @errorName(e), m.state.steps });
+++                return e;
+++            };
+++            totals.ns += rc.nowNs() - t0;
+++            for (trace.items, 0..) |t, i| {
+++                if (i * 4 >= want.len) return error.GoldenTraceLonger;
+++                const w = std.mem.readInt(u32, want[4 * i ..][0..4], .little);
+++                if (t != w) {
+++                    std.debug.print("golden {s}: token {d} is {d}, reference {d}\n", .{ case.id, i, t, w });
+++                    return error.GoldenTokenMismatch;
+++                }
+++            }
+++            try std.testing.expectEqual(case.trace_token_count, trace.items.len);
+++            try std.testing.expectEqual(case.generated_steps, end.steps);
+++            try std.testing.expect(end.end == .halted);
+++            const want_out = try gpa.alloc(u8, case.final_output_hex.len / 2);
+++            defer gpa.free(want_out);
+++            _ = try std.fmt.hexToBytes(want_out, case.final_output_hex);
+++            try std.testing.expectEqualStrings(want_out, out.items);
+++            for (case.checkpoints) |cp| {
+++                const prefix = std.mem.sliceAsBytes(trace.items[0..cp.token_count]);
+++                try std.testing.expectEqualStrings(cp.prefix_sha256, &hex(prefix));
+++            }
+++            totals.cases += 1;
+++            totals.steps += end.steps;
++         }
++-        try std.testing.expectEqual(case.trace_token_count, trace.items.len);
++-        try std.testing.expectEqual(case.generated_steps, end.steps);
++-        try std.testing.expect(end.end == .halted);
++-        const want_out = try gpa.alloc(u8, case.final_output_hex.len / 2);
++-        defer gpa.free(want_out);
++-        _ = try std.fmt.hexToBytes(want_out, case.final_output_hex);
++-        try std.testing.expectEqualStrings(want_out, out.items);
++-        for (case.checkpoints) |cp| {
++-            const prefix = std.mem.sliceAsBytes(trace.items[0..cp.token_count]);
++-            try std.testing.expectEqualStrings(cp.prefix_sha256, &hex(prefix));
++-        }
++-        totals.cases += 1;
++-        totals.steps += end.steps;
+++        if (is_drom) try std.testing.expectEqual(@as(u64, 1), supplemental_seen);
++     }
++     const rate = if (totals.ns == 0) 0 else totals.steps * std.time.ns_per_s / totals.ns;
++     std.debug.print("golden: {d} cases token-exact, {d} steps, {d} steps/s, {d} skipped\n", .{ totals.cases, totals.steps, rate, totals.skipped });
+diff --git a/tools/runner_drom_golden.py b/tools/runner_drom_golden.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9ceb182c25890f634ee7e4eea1e7fb7a607c818
+--- /dev/null
++++ b/tools/runner_drom_golden.py
+@@ -0,0 +1,145 @@
++#!/usr/bin/env python3
++"""Generate a separate, bounded DROM golden using the served C prelude and pinned Qwenputer."""
++
++import argparse
++from contextlib import ExitStack
++import json
++import os
++from pathlib import Path
++import struct
++import subprocess
++import tempfile
++
++from runner_trace import UPSTREAM, file_hash, gzip_stream, json_line, load_upstream, record_case
++
++
++CASE_ID = "drom-byte-string"
++OUTPUT = "circuit drom bytes\ncircuit drom bytes\n"
++BUDGET = 100_000
++
++
++def zig_string(source, name):
++    """Read the actual Zig multiline literal rather than maintaining a second compiler prelude."""
++    marker = f"{name} =\n"
++    body = source.split(marker, 1)[1].split("\n;", 1)[0]
++    lines = body.splitlines()
++    if not lines or any(not line.startswith(" " * 4 + chr(92) * 2) for line in lines):
++        raise ValueError(f"unsupported {name} literal")
++    return "\n".join(line[6:] for line in lines) + "\n"
++
++
++def inspect_elf(path):
++    """Require real DROM data and both signed and unsigned RV32 byte-load instructions."""
++    data = path.read_bytes()
++    if data[:6] != b"\x7fELF\x01\x01" or struct.unpack_from("<H", data, 18)[0] != 243:
++        raise ValueError("expected little-endian RV32 ELF")
++    offset = struct.unpack_from("<I", data, 32)[0]
++    size, count, names_index = struct.unpack_from("<HHH", data, 46)
++    sections = [struct.unpack_from("<10I", data, offset + i * size) for i in range(count)]
++    names = sections[names_index]
++    strings = data[names[4]:names[4] + names[5]]
++    found = {}
++    for section in sections:
++        name = strings[section[0]:].split(b"\0", 1)[0].decode("ascii")
++        found[name] = section
++    rodata, text = found[".rodata"], found[".text"]
++    payload = data[rodata[4]:rodata[4] + rodata[5]]
++    if not (0x20000 <= rodata[3] and rodata[3] + rodata[5] <= 0x40000):
++        raise ValueError("rodata is outside DROM")
++    if b"circuit drom bytes\n\0" not in payload or b"\x81\0" not in payload:
++        raise ValueError("missing DROM string/terminator/sign probe")
++    code = data[text[4]:text[4] + text[5]]
++    loads = {kind: [] for kind in (0, 4)}
++    for i in range(0, len(code) - 3, 4):
++        word = struct.unpack_from("<I", code, i)[0]
++        kind = (word >> 12) & 7
++        if word & 127 == 3 and kind in loads:
++            loads[kind].append(text[3] + i)
++    if not all(loads.values()):
++        raise ValueError("ELF must contain both LB and LBU")
++    return {"rodata_address": rodata[3], "rodata_bytes": rodata[5],
++            "lb_addresses": loads[0], "lbu_addresses": loads[4]}
++
++
++def export(args):
++    """Stage an independent supplemental corpus without opening or rewriting the frozen goldens."""
++    (_, ref, spec, elf), hashes = load_upstream(args.qwenputer.resolve())
++    compiler = args.compiler_source.read_text()
++    runtime = zig_string(compiler, "runtime")
++    linker = zig_string(compiler, "linker_script")
++    fixture = Path(__file__).with_suffix(".c")
++    args.output.mkdir(parents=True, exist_ok=True)
++    if any(args.output.iterdir()):
++        raise ValueError("supplemental destination must be empty")
++    with tempfile.TemporaryDirectory(prefix=".drom-", dir=args.output) as temporary:
++        staging = Path(temporary)
++        (staging / "program.c").write_text(runtime + "\n" + fixture.read_text())
++        (staging / "rom.ld").write_text(linker)
++        command = ([str(args.zig), "cc", "-target", "riscv32-freestanding", "-mcpu=generic_rv32+m+zba"]
++                   if args.zig else [args.clang, "--target=riscv32-unknown-elf", "-march=rv32im_zba"])
++        command += ["-mabi=ilp32",
++                   "-O0", "-fno-sanitize=all", "-ffreestanding", "-fno-builtin", "-nostdinc", "-nostdlib",
++                   "-fno-stack-protector", "-fno-pic", "-mno-relax", "-fno-unwind-tables",
++                   "-fno-asynchronous-unwind-tables",
++                   *([f"--ld-path={args.linker}"] if args.linker else ([] if args.zig else ["-fuse-ld=lld"])),
++                   *([] if args.zig else ["-Wl,--no-relax", "-Wl,--build-id=none"]), "-Wl,-T,rom.ld",
++                   "-x", "c", "program.c", "-o", "drom.elf"]
++        subprocess.run(command, cwd=staging, check=True, timeout=30)
++        inspection = inspect_elf(staging / "drom.elf")
++        if args.objdump:
++            disassembly = subprocess.check_output([args.objdump, "-d", "drom.elf"], cwd=staging,
++                                                 text=True, timeout=30)
++            if "\tlb\t" not in disassembly or "\tlbu\t" not in disassembly:
++                raise ValueError("disassembler did not confirm LB and LBU")
++        else:
++            disassembly = "# Byte-load instruction addresses decoded from RV32 ELF .text\n"
++            for kind, name in (("lb_addresses", "lb"), ("lbu_addresses", "lbu")):
++                disassembly += "".join(f"{address:08x}: {name}\n" for address in inspection[kind])
++        (staging / "disassembly.txt").write_text(disassembly)
++        machine = ref.Machine.from_program(elf.program(staging / "drom.elf"))
++        with ExitStack() as stack:
++            tokens = gzip_stream(stack, staging / "tokens.leu32.gz")
++            row = record_case(machine, spec, tokens, 256, CASE_ID, token_limit=BUDGET + 1)
++        if row["final_output"] != OUTPUT or row["exit_code"] != 0:
++            raise ValueError("DROM reference output or sign extension mismatch")
++        row.update(id=CASE_ID, kind="elf", operation="drom_lb_lbu", expected_output=OUTPUT,
++                   outcome="ok", token_offset_bytes=0, input={"elf": "drom.elf", "stdin_hex": ""})
++        with ExitStack() as stack:
++            gzip_stream(stack, staging / "cases.jsonl.gz").write(json_line(row))
++        files = ["drom.elf", "program.c", "rom.ld", "disassembly.txt", "cases.jsonl.gz", "tokens.leu32.gz"]
++        manifest = {"format": "tensorfold-runner-drom-goldens-v1", "upstream_commit": UPSTREAM,
++                    "source": {"repository": "https://github.com/divagr18/qwenputer", "license": "MIT",
++                               "credit": "Divyansh Agrawal",
++                               "license_text": (args.qwenputer / "LICENSE").read_text(encoding="utf-8")},
++                    "upstream_files_sha256": hashes, "compiler_source_sha256": file_hash(args.compiler_source),
++                    "fixture_sha256": file_hash(fixture), "compile_command": command,
++                    "case_count": 1, "checkpoint_interval": 256, "window_tokens": 8,
++                    "step_budget": BUDGET, "token_encoding": "little-endian-u32", "inspection": inspection,
++                    "files": {name: {"sha256": file_hash(staging / name),
++                                     "bytes": (staging / name).stat().st_size} for name in files}}
++        (staging / "manifest.json").write_bytes(json_line(manifest))
++        for name in [*files, "manifest.json"]:
++            os.replace(staging / name, args.output / name)
++    print(json.dumps({"id": CASE_ID, "generated_steps": row["generated_steps"],
++                      "trace_sha256": row["trace_sha256"], "final_output_hex": row["final_output_hex"]}))
++
++
++def main():
++    """Honor explicit compiler options before the same environment overrides used by the served frontend."""
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--qwenputer", type=Path, required=True)
++    parser.add_argument("--output", type=Path, required=True)
++    parser.add_argument("--compiler-source", type=Path, required=True)
++    parser.add_argument("--clang", default=os.environ.get("TF_RUNNER_CLANG", "/usr/bin/clang"))
++    parser.add_argument("--linker", default=os.environ.get("TF_RUNNER_LLD"))
++    parser.add_argument("--zig", type=Path, help="use Zig cc instead of clang")
++    parser.add_argument("--objdump", help="optional full RV32 disassembly; byte-load decoding is always required")
++    args = parser.parse_args()
++    try:
++        export(args)
++    except (OSError, ValueError, KeyError, IndexError, subprocess.SubprocessError) as error:
++        parser.exit(1, f"runner_drom_golden: {error}\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/runner_graph_algorithms.py b/tools/runner_graph_algorithms.py
+index ab04f8760b1803cba232ca2e0dfadb4fd98a95e1..065e21f5cf7c35df012965018bea6b481a068796 100644
+--- a/tools/runner_graph_algorithms.py
++++ b/tools/runner_graph_algorithms.py
+@@ -6,14 +6,14 @@ from runner_graph_ir import Value
+ OPERATIONS = ("meta", "half", "digit_sum", "mulmodstep")
+ ALGORITHMS = {"powmod": 3, "gcd": 2, "isqrt": 1, "range_product": 2,
+               "factorial": 1, "digit_sum": 1, "divmod": 2, "square_offset": 2,
+-              "fraction": 2, "divexact": 2}
++              "fraction": 2, "divexact": 2, "smallest_factor": 2, "factorize": 2}
+ 
+ 
+ def build(b, op):
+     zero = b.zero
+     width = b.width
+-    arity = {"meta": 2, "half": 1, "digit_sum": 1, "mulmodstep": 4}[op]
+-    inputs = [b.input(i) for i in range(arity)]
++    arity = {"meta": 2, "half": 1, "digit_sum": 1, "mulmodstep": 4, "raw_meta": 2}[op]
++    inputs = [b.input(i, preserve_sign=op == "raw_meta") for i in range(arity)]
+     error = b.any(value.error for value in inputs)
+     if op == "mulmodstep":
+         remainder, a, digit, modulus = inputs
+@@ -46,7 +46,7 @@ def build(b, op):
+                     merged.append(digits + [carry])
+             rows = merged
+         return Value(rows[0], zero, error)
+-    if op == "meta":
++    if op in ("meta", "raw_meta"):
+         a, c = inputs
+         _, less = b.sub(a.digits, c.digits)
+         equal = b.one - b.any(b.one - b.eq(x - y, 0, -9, 9)
+@@ -75,4 +75,11 @@ def catalog(widths):
+     plans += [{"name": f"fixed_div-{places}-{width}", "inputs": 2, "literals": [], "ops": [],
+                "result": 0, "algorithm": "fixed_div", "width": width, "precision": places}
+               for width in widths for places in range(19)]
++    plans += [{"name": f"reverse_decimal-{width}", "inputs": 1, "literals": [],
++               "ops": [{"op": "reverse_decimal", "a": 0, "width": width, "checked": True}],
++               "result": 1} for width in widths]
++    plans += [{"name": f"{name}-128", "inputs": arity, "literals": [], "ops": [],
++               "result": 0, "algorithm": name, "width": 128}
++              for name, arity in (("f64_ratio", 2), ("f64_mul", 4), ("f64_sub", 4),
++                                  ("f64_isclose", 8), ("f64_repr", 2), ("f64_format", 2)) if 128 in widths]
+     return plans
+diff --git a/tools/runner_graph_byte.py b/tools/runner_graph_byte.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..d12f99df117cb94bea890c9208eaca7b853897d8
+--- /dev/null
++++ b/tools/runner_graph_byte.py
+@@ -0,0 +1,26 @@
++"""Checked numeric-byte output compiled into FFNs; native scheduling never constructs answer bytes."""
++
++from runner_graph_ir import Value
++
++
++def check(b, value):
++    magnitude = sum((10 ** i * digit for i, digit in enumerate(value.digits[:3])), b.zero)
++    error = b.any([value.error, value.sign, b.nz(value.digits[3:]), b.ge(magnitude, 256, 0, 999)])
++    return Value(value.digits, b.zero, error)
++
++
++def finish(b, value):
++    value = b._latch(0, check(b, value))
++    magnitude = sum((10 ** i * digit for i, digit in enumerate(value.digits[:3])), b.zero)
++    count = b.c.counter("output.cursor", b.c.fam["GO"], b.c.fam["BYTE"])
++    n = sum(b.c.thermo(count, b.c.fam["GO"], 7, "output.cursor"), b.zero)
++    halt = b.choose(value.error, b.ge(n, 6, 0, 7), b.ge(n, 1, 0, 7))
++    payload = []
++    for bit, terms in enumerate(b.c.fn_bits(magnitude, 0, 255, lambda d: d, 8, "byte.ascii")):
++        normal = b.node(terms, "byte.ascii")
++        error = b.node([term for i, byte in enumerate(b"error\n") if (byte >> bit) & 1
++                        for term in b.c.t_eq(n, i, 0, 7)], "byte.error")
++        payload.append(b.choose(value.error, error, normal))
++    b._exit(halt, payload)
++    b.c.nodes.sort(key=lambda node: node.level)
++    return {"width": b.width, "input_slots": b.input_slots, "output_slots": b.output_slots}
+diff --git a/tools/runner_graph_export.py b/tools/runner_graph_export.py
+index a18dd1fbe3613c07669c359b1e26bea2abfa93c6..7efe1727277e93bbe97fb71b4e3193c355e12d05 100644
+--- a/tools/runner_graph_export.py
++++ b/tools/runner_graph_export.py
+@@ -21,7 +21,7 @@ from runner_graph_algorithms import OPERATIONS as INTEGER_KERNELS, catalog
+ from runner_graph_whole import OPERATIONS as WHOLE_KERNELS, plans as whole_plans
+ 
+ 
+-OPERATIONS = ("add", "sub", "mul", "divstep", "divfinal", *INTEGER_KERNELS, *WHOLE_KERNELS)
++OPERATIONS = ("add", "sub", "mul", "select", "divstep", "divfinal", *INTEGER_KERNELS, *WHOLE_KERNELS)
+ 
+ 
+ def bridge(doc, baseline):
+@@ -35,7 +35,7 @@ def bridge(doc, baseline):
+ def export(args):
+     args.output.mkdir(parents=True, exist_ok=args.resume)
+     sources = ("runner_graph_ir.py", "runner_graph_algorithms.py", "runner_graph_div.py",
+-               "runner_graph_export.py", "runner_graph_plans.py", "runner_graph_whole.py", "runner_graph_format.py")
++               "runner_graph_byte.py", "runner_graph_export.py", "runner_graph_plans.py", "runner_graph_whole.py", "runner_graph_format.py")
+     identity = {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in sources}
+     identity["widths"] = args.widths
+     legacy = json.loads(Path(__file__).with_name("runner-graph-legacy.json").read_text())
+@@ -52,9 +52,11 @@ def export(args):
+     descriptors, receipts = [], []
+     selections = [(op, width) for op in OPERATIONS for width in args.widths if op != "meta" or width >= 8]
+     if any(width < 8 for width in args.widths) and 8 not in args.widths:
+-        selections.append(("meta", 8))
++        selections.extend((op, 8) for op in ("meta", "add", "half", "divstep"))
+     if ("meta", 128) not in selections:
+         selections.append(("meta", 128))
++    selections += [("byte_check", 128), ("emit_byte", 4), ("format_f64", 62)]
++    selections += [("raw_meta", width) for width in (8, 16, 32, 62, 128)]
+     selections += [(op, width) for op in ("emit", "format") for width in (62, 128)]
+     selections += [(op, width) for op in ("emit_first", "emit_last") for width in (62, 128)
+                    if width == 62 or width in args.widths]
+diff --git a/tools/runner_graph_format.py b/tools/runner_graph_format.py
+index 97f3c119be766b3222db64491717a53b990e1a7a..6d1e6538bc3e65fccf6e832bfdfc5ed1d5f74ba2 100644
+--- a/tools/runner_graph_format.py
++++ b/tools/runner_graph_format.py
+@@ -35,7 +35,7 @@ def _cursor(b, limit):
+     return b.node([(1, sum(pieces, b.zero), b.one)], "format.cursor")
+ 
+ 
+-def _controls(b, value, control):
++def _controls(b, value, control, max_precision=18):
+     digits = control.digits
+     precision = b.node([(1, digits[0] + 10 * digits[1], b.one)], "format.precision")
+     modes = [b.eq(digits[2], mode, 0, 9) for mode in range(5)]
+@@ -49,7 +49,7 @@ def _controls(b, value, control):
+                            b.node([(1, value.sign, b.nz(value.digits))], "format.bool.negative")]))],
+                           "format.bool.invalid")
+     error = b.any([value.error, control.error, control.sign, b.nz(digits[5:]),
+-                   b.ge(precision, 19, 0, 99), b.ge(digits[2], 5, 0, 9),
++                   b.ge(precision, max_precision + 1, 0, 99), b.ge(digits[2], 5, 0, 9),
+                    b.ge(digits[3], len(ENDINGS), 0, 9), b.ge(prefix, 2, 0, 9), invalid_precision, invalid_bool])
+     return precision, modes, endings, prefix, fixed, error
+ 
+@@ -94,8 +94,8 @@ def _numeric(b, value, n, precision, modes, fixed, layout, prefix, limit):
+     return digit, comma, dot, float_zero, minus, position
+ 
+ 
+-def _emit(b, value, control):
+-    precision, modes, endings, prefix, fixed, error = _controls(b, value, control)
++def _emit(b, value, control, max_precision=18):
++    precision, modes, endings, prefix, fixed, error = _controls(b, value, control, max_precision)
+     layout = _layout(b, value, precision, modes, fixed)
+     length, coefficient_length, groups, truth, body_length, sign = layout
+     limit = b.width + (b.width - 1) // 3 + 8
+@@ -129,11 +129,11 @@ def _emit(b, value, control):
+     b._exit(halt, payload)
+ 
+ 
+-def finish(builder, inputs):
++def finish(builder, inputs, max_precision=18):
+     """Latch coefficient and control as two output Values before emitting any BYTE steps."""
+     if builder.width not in (62, 128) or len(inputs) != 2:
+         raise ValueError("format requires width 62 or 128 and two input Values")
+     latched = [builder._latch(i, value, preserve_sign=True) for i, value in enumerate(inputs)]
+-    _emit(builder, *latched)
++    _emit(builder, *latched, max_precision=max_precision)
+     builder.c.nodes.sort(key=lambda node: node.level)
+     return {"width": builder.width, "input_slots": builder.input_slots, "output_slots": builder.output_slots}
+diff --git a/tools/runner_graph_ir.py b/tools/runner_graph_ir.py
+index 524346d2c9b5946f7e07ff53dbd780c94eaf497c..a9e1d6fdfea43ab3f97bb7dc0735dd3bd22f86ee 100644
+--- a/tools/runner_graph_ir.py
++++ b/tools/runner_graph_ir.py
+@@ -297,12 +297,12 @@ class Builder:
+ def build_template(root, op, width):
+     if width not in BUCKETS:
+         raise ValueError(f"template width must be one of {BUCKETS}")
+-    whole = ("format", "round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact")
+-    if op not in ("add", "sub", "mul", "select", "emit", "emit_first", "emit_last", "divstep", "divfinal", "meta", "half", "digit_sum", "mulmodstep", *whole):
++    whole = ("format", "format_f64", "round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact", "reverse_decimal", "assert_true")
++    if op not in ("add", "sub", "mul", "select", "emit", "emit_first", "emit_last", "divstep", "divfinal", "meta", "half", "digit_sum", "mulmodstep", "emit_byte", "byte_check", "raw_meta", *whole):
+         raise ValueError(f"unsupported ALU operation: {op}")
+-    if op == "meta" and width < 8:
++    if op in ("meta", "raw_meta") and width < 8:
+         raise ValueError("meta template requires at least 8 digits")
+-    if op == "format" and width not in (62, 128):
++    if op in ("format", "format_f64") and width not in (62, 128):
+         raise ValueError("format template requires width 62 or 128")
+     root = Path(root).resolve()
+     load_upstream(root)
+@@ -315,12 +315,17 @@ def build_template(root, op, width):
+     from chipformer.rv import core, spec
+ 
+     builder = Builder(width, core, ir, np)
+-    if op == "format":
++    if op in ("emit_byte", "byte_check"):
++        module = importlib.import_module("runner_graph_byte")
++        outputs = builder.input(0)
++        if op == "byte_check":
++            outputs = module.check(builder, outputs)
++    elif op in ("format", "format_f64"):
+         outputs = [builder.input(i, preserve_sign=True) for i in range(2)]
+     elif op in whole:
+         module = importlib.import_module("runner_graph_whole")
+         outputs = module.build(builder, op)
+-    elif op in ("meta", "half", "digit_sum", "mulmodstep"):
++    elif op in ("meta", "raw_meta", "half", "digit_sum", "mulmodstep"):
+         module = importlib.import_module("runner_graph_algorithms")
+         outputs = module.build(builder, op)
+     elif op.startswith("div"):
+@@ -338,8 +343,11 @@ def build_template(root, op, width):
+         else:
+             outputs = getattr(builder, f"signed_{op}")(a, b)
+     prefix, suffix = {"emit_first": (b"(", b", "), "emit_last": (b"", b")\n")}.get(op, (b"", b"\n"))
+-    if op == "format":
+-        metadata = importlib.import_module("runner_graph_format").finish(builder, outputs)
++    if op == "emit_byte":
++        metadata = importlib.import_module("runner_graph_byte").finish(builder, outputs)
++    elif op in ("format", "format_f64"):
++        metadata = importlib.import_module("runner_graph_format").finish(
++            builder, outputs, max_precision=20 if op == "format_f64" else 18)
+     else:
+         metadata = builder.finish(outputs, emit=op.startswith("emit"), prefix=prefix, suffix=suffix,
+                                   preserve_sign=op in ("round_div", "decimal_mul", "scale10", "float_exact"))
+diff --git a/tools/runner_graph_verify.py b/tools/runner_graph_verify.py
+index 0caa17aa31095fa2b82b69f1263522b539043b6b..72179471b25c6374dbfcc9f79cb97dbd0600f428 100644
+--- a/tools/runner_graph_verify.py
++++ b/tools/runner_graph_verify.py
+@@ -22,7 +22,9 @@ BYTE = sum(size for _, size in LAYOUT[:6])
+ HALT = sum(size for _, size in LAYOUT[:17])
+ RUNTIME_FILES = ("runner_graph.zig", "runner_graph_bank.zig", "runner_graph_machine.zig",
+                  "runner_graph_binary.zig", "runner_graph_packet.zig", "runner_graph_algorithms.zig",
+-                 "runner_graph_state_cache.zig", "runner_graph_print.zig")
++                 "runner_graph_state_cache.zig", "runner_graph_print.zig",
++                 "runner_graph_factor.zig", "runner_graph_lazy.zig", "runner_graph_f64.zig",
++                 "runner_graph_f64_context.zig", "runner_graph_f64_math.zig", "runner_graph_f64_print.zig")
+ 
+ 
+ def require(condition, message):
+@@ -67,10 +69,10 @@ def structural_audit(source_root, probe_source, manifest, cwd):
+         code = "\n".join(line.split("//", 1)[0] for line in source.splitlines())
+         require(not any(word in code for word in forbidden), f"runtime compilation path in {name}")
+     probe = sources[probe_source.name]
+-    require(probe.count("graph.Bank.load(") == 1, "probe must load its bank exactly once")
++    require(probe.count("graph.Bank.loadWithMode(") == 1, "probe must load its bank exactly once")
+     require("m.trace = &trace" in probe and "graph.Machine.boot(" in probe, "missing actual machine trace hook")
+     bank = sources["runner_graph_bank.zig"]
+-    require("binary.load(" in bank, "bank must load offline prepared packs")
++    require("binary.loadPinned(" in bank, "bank must load offline prepared packs")
+     templates = manifest.get("templates", [])
+     require(manifest.get("version") == 1 and templates, "manifest needs prepared templates")
+     packs = []
+@@ -229,7 +231,7 @@ def pack_controls(binary, manifest_path, cases, cwd):
+                 victim["path"] = str(path)
+             path = root / "bank.json"
+             path.write_text(json.dumps(altered))
+-            child = subprocess.run([str(binary), str(path), str(cases)], cwd=cwd,
++            child = subprocess.run([str(binary), str(path), str(cases), "--eager-bank"], cwd=cwd,
+                                    capture_output=True, text=True, timeout=60, check=False)
+             failure = json.loads(child.stdout)
+             require(child.returncode != 0 and failure.get("fatal_error") == expected,
+diff --git a/tools/runner_graph_whole.py b/tools/runner_graph_whole.py
+index 2b407ac5ff9c9a16d24f5106d816339cd5101891..d3afd3baa97cb23e5b878dbf1929bda7d86d1b4f 100644
+--- a/tools/runner_graph_whole.py
++++ b/tools/runner_graph_whole.py
+@@ -3,13 +3,26 @@
+ from runner_graph_ir import Value
+ 
+ 
+-OPERATIONS = ("round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact")
++OPERATIONS = ("round_div", "decimal_mul", "compare", "min", "max", "scale10", "float_exact", "reverse_decimal", "assert_true")
+ 
+ 
+ def build(b, op):
+-    arity = 4 if op == "round_div" else 1 if op in ("scale10", "float_exact") else 2
++    arity = 4 if op == "round_div" else 1 if op in ("scale10", "float_exact", "reverse_decimal", "assert_true") else 2
+     inputs = [b.input(i, preserve_sign=True) for i in range(arity)]
+     error = b.any(value.error for value in inputs)
++    if op == "assert_true":
++        value = inputs[0]
++        return Value(value.digits, value.sign, b.any([error, b.one - b.nz(value.digits)]))
++    if op == "reverse_decimal":
++        a = b.normalize(inputs[0])
++        suffix = [b.zero] * (b.width + 1)
++        for i in reversed(range(b.width)):
++            suffix[i] = b.any([b.ge(a.digits[i], 1, 0, 9), suffix[i + 1]])
++        lengths = [b.node([(1, suffix[i], b.one - suffix[i + 1])], "reverse.length")
++                   for i in range(b.width)]
++        digits = [b.node([(1, a.digits[end - i], lengths[end]) for end in range(i, b.width)],
++                         "reverse.digit") for i in range(b.width)]
++        return Value(digits, b.zero, b.any([error, a.sign]))
+     if op == "float_exact":
+         a = inputs[0]
+         return Value(a.digits, a.sign, b.any([error, b.nz(a.digits[15:])]))
+diff --git a/tools/runner_trace.py b/tools/runner_trace.py
+index 422de7ec2465450e9d6d3093ae35845ca09841bc..750631bc8c251c5784c5f92344efebd56329071a 100644
+--- a/tools/runner_trace.py
++++ b/tools/runner_trace.py
+@@ -66,7 +66,7 @@ def gzip_stream(stack, path):
+     return stack.enter_context(gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6))
+ 
+ 
+-def record_case(machine, spec, token_stream, interval, case_id):
++def record_case(machine, spec, token_stream, interval, case_id, token_limit=TOKEN_LIMIT):
+     """Hash every token prefix and retain checkpoints at exact token counts."""
+     digest = hashlib.sha256()
+     window = deque(maxlen=WINDOW)
+@@ -93,8 +93,8 @@ def record_case(machine, spec, token_stream, interval, case_id):
+     append(spec.tok("GO"))
+     while not machine.halted:
+         record = machine.record()
+-        if not record or count + len(record) > TOKEN_LIMIT:
+-            raise ValueError(f"{case_id}: empty record or trace exceeds {TOKEN_LIMIT} tokens")
++        if not record or count + len(record) > token_limit:
++            raise ValueError(f"{case_id}: empty record or trace exceeds {token_limit} tokens")
+         for token in record:
+             append(token)
+     if checkpoints[-1]["token_count"] != count:
+diff --git a/zig/src/core/runner_graph_algorithms.zig b/zig/src/core/runner_graph_algorithms.zig
+index eca2b68a500b4233646bcd183f57a264b4d6747d..98b6821037ad3220cb5129c0443a69009db12937 100644
+--- a/zig/src/core/runner_graph_algorithms.zig
++++ b/zig/src/core/runner_graph_algorithms.zig
+@@ -2,11 +2,14 @@
+ const std = @import("std");
+ const api = @import("runner_api.zig");
+ const packet = @import("runner_graph_packet.zig");
++const factor = @import("runner_graph_factor.zig");
+ const End = @FieldType(api.RunEnd, "end");
+ const Cancel = ?*const std.atomic.Value(bool);
+ 
+ /// Executes an algorithm in request-local scratch and copies only its typed outputs back to the caller.
+ pub fn compute(m: anytype, kind: []const u8, width: u8, precision: u8, refs: []const u32, dest: usize, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !End {
++    if (std.mem.startsWith(u8, kind, "f64_")) return @import("runner_graph_f64.zig").compute(m, kind, width, refs, dest, budget, out, cancel);
++    if (std.mem.eql(u8, kind, "factorize")) return error.GraphAlgorithm;
+     const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
+     const outputs = packet.algorithmOutputs(family);
+     if (!packet.widthValid(width) or refs.len != packet.algorithmArity(family) or dest + outputs > m.values.len)
+@@ -26,7 +29,8 @@ pub fn compute(m: anytype, kind: []const u8, width: u8, precision: u8, refs: []c
+     }
+     m.values = &scratch;
+     defer m.values = original;
+-    var c: Context(@TypeOf(m)) = .{ .m = m, .width = width, .precision = precision, .budget = budget, .out = out, .cancel = cancel, .input_digits = occupiedDigits(&scratch[2]) };
++    const work_width = if (std.mem.eql(u8, kind, "smallest_factor")) @max(width, 8) else width;
++    var c: Context(@TypeOf(m)) = .{ .m = m, .width = work_width, .precision = precision, .budget = budget, .out = out, .cancel = cancel, .input_digits = occupiedDigits(&scratch[2]) };
+     const result = c.calculate(kind) catch |err| switch (err) {
+         error.GraphAlgorithmStopped => return c.end,
+         error.GraphAlgorithmLimit => return .budget,
+@@ -43,10 +47,16 @@ pub fn compute(m: anytype, kind: []const u8, width: u8, precision: u8, refs: []c
+ 
+ /// Named legacy algorithms retain their token schedules; new fractional formats use the compiled formatter.
+ pub fn run(m: anytype, kind: []const u8, width: u8, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !api.RunEnd {
++    if (std.mem.startsWith(u8, kind, "f64_")) return @import("runner_graph_f64.zig").run(m, kind, budget, out, cancel);
++    if (std.mem.eql(u8, kind, "factorize")) return runFactorize(m, width, budget, out, cancel);
+     const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
+     const refs = [_]u32{ 0, 1, 2 };
+     var end = try compute(m, kind, width, m.precision, refs[0..packet.algorithmArity(family)], 0, budget, out, cancel);
+     if (end != .halted) return .{ .end = end, .steps = m.steps };
++    if (std.mem.eql(u8, kind, "smallest_factor")) {
++        end = try @import("runner_graph_print.zig").emit(m, .{ .ref = 0 }, budget, out, cancel);
++        return .{ .end = end, .steps = m.steps };
++    }
+     if (family == .fraction or family == .fixed_div) {
+         end = try @import("runner_graph_print.zig").emit(m, .{ .ref = 0, .second = if (family == .fraction) 1 else null, .style = if (family == .fraction) .fraction else .fixed, .precision = m.precision }, budget, out, cancel);
+         return .{ .end = end, .steps = m.steps };
+@@ -70,6 +80,36 @@ pub fn run(m: anytype, kind: []const u8, width: u8, budget: u64, out: *std.Array
+     return .{ .end = .halted, .steps = m.steps };
+ }
+ 
++fn runFactorize(m: anytype, width: u8, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !api.RunEnd {
++    if (!packet.widthValid(width) or m.values.len < 2) return error.GraphAlgorithmScratch;
++    if (m.precision != 0) return error.GraphPrecision;
++    const original = m.values;
++    const zero = try packet.literal("0");
++    var scratch: [32]packet.Value = @splat(zero);
++    scratch[1] = try packet.literal("1");
++    for (original[0..2], 0..) |value, i| {
++        for (width..packet.max_digits) |digit| {
++            for (value[digit / 31][2 + digit % 31 * 4 ..][0..4]) |bit|
++                if (bit != 0) return error.GraphNarrowBinding;
++        }
++        scratch[2 + i] = value;
++    }
++    m.values = &scratch;
++    defer m.values = original;
++    var c: Context(@TypeOf(m)) = .{ .m = m, .width = @max(width, 8), .budget = budget, .out = out, .cancel = cancel, .input_digits = occupiedDigits(&scratch[2]) };
++    factor.factorize(&c) catch |err| switch (err) {
++        error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
++        error.GraphAlgorithmLimit => return .{ .end = .budget, .steps = m.steps },
++        error.GraphAlgorithmArithmetic => {
++            scratch[0][0][127] = packet.bit_scale;
++            const end = try @import("runner_graph_print.zig").emit(m, .{ .ref = 0 }, budget, out, cancel);
++            return .{ .end = end, .steps = m.steps };
++        },
++        else => return err,
++    };
++    return .{ .end = .halted, .steps = m.steps };
++}
++
+ fn Context(comptime M: type) type {
+     return struct {
+         m: M,
+@@ -83,7 +123,7 @@ fn Context(comptime M: type) type {
+ 
+         const Self = @This();
+ 
+-        fn call(c: *Self, name: []const u8, refs: []const u32, dest: usize) !void {
++        pub fn call(c: *Self, name: []const u8, refs: []const u32, dest: usize) !void {
+             const width = if (std.mem.eql(u8, name, "meta")) @max(c.width, 8) else c.width;
+             var needed: usize = 1;
+             for (refs) |ref| needed = @max(needed, occupiedDigits(&c.m.values[ref]));
+@@ -112,19 +152,19 @@ fn Context(comptime M: type) type {
+             if (c.end != .halted) return error.GraphAlgorithmStopped;
+         }
+ 
+-        fn move(c: *Self, dest: usize, source: usize) void {
++        pub fn move(c: *Self, dest: usize, source: usize) void {
+             c.m.values[dest] = c.m.values[source];
+         }
+ 
+-        fn meta(c: *Self, a: u32, b: u32) !void {
++        pub fn meta(c: *Self, a: u32, b: u32) !void {
+             try c.call("meta", &.{ a, b }, 20);
+         }
+ 
+-        fn flag(c: *Self, digit: usize) !bool {
++        pub fn flag(c: *Self, digit: usize) !bool {
+             return predicate(&c.m.values[22], digit);
+         }
+ 
+-        fn nonzero(c: *Self, ref: u32) !bool {
++        pub fn nonzero(c: *Self, ref: u32) !bool {
+             try c.meta(ref, 0);
+             return c.flag(0);
+         }
+@@ -157,6 +197,7 @@ fn Context(comptime M: type) type {
+         }
+ 
+         fn calculate(c: *Self, kind: []const u8) ![2]u32 {
++            if (std.mem.eql(u8, kind, "smallest_factor")) return .{ try factor.smallest(c), 0 };
+             if (std.mem.eql(u8, kind, "divmod") or std.mem.eql(u8, kind, "divexact")) {
+                 try c.meta(2, 3);
+                 c.move(5, 20);
+diff --git a/zig/src/core/runner_graph_bank.zig b/zig/src/core/runner_graph_bank.zig
+index 1b5dca1af7825dcda5061982c360425bd66d5216..717602f5773ca78f23293de8d4c65ee50c48ac17 100644
+--- a/zig/src/core/runner_graph_bank.zig
++++ b/zig/src/core/runner_graph_bank.zig
+@@ -1,11 +1,12 @@
+-//! Boot-loaded immutable prepared weights, logical table slots and validated named binding plans.
++//! Stable template descriptors with once-only lazy prepared weights and validated named binding plans.
+ const std = @import("std");
+ const model = @import("steps_v1/runner_circuit_model.zig");
+ const binary = @import("runner_graph_binary.zig");
+ const packet = @import("runner_graph_packet.zig");
++const lazy = @import("runner_graph_lazy.zig");
+ const Allocator = std.mem.Allocator;
+ const missing = std.math.maxInt(u32);
+-pub const Slots = [packet.max_arity][packet.max_groups]u32;
++pub const Slots = lazy.Slots;
+ 
+ pub const Template = struct {
+     name: []const u8,
+@@ -15,8 +16,69 @@ pub const Template = struct {
+     outputs: u8,
+     in_slots: Slots,
+     out_slots: Slots,
++    preparation: ?*Preparation = null,
++    materialized: bool = true,
++
++    /// Circuit fields and logical slots may be read only after this succeeds; prepared copies keep their own circuit.
++    pub fn prepare(t: *const Template) !void {
++        const p = t.preparation orelse return;
++        if (p.ready.load(.acquire)) {
++            if (t != p.owner and !t.materialized) return error.GraphUnpreparedCopy;
++            return;
++        }
++        if (t != p.owner) return error.GraphUnpreparedCopy;
++        var threaded: std.Io.Threaded = .init_single_threaded;
++        const io = threaded.io();
++        p.mutex.lockUncancelable(io);
++        defer p.mutex.unlock(io);
++        if (p.ready.load(.acquire)) return;
++        if (p.failure) |err| return err;
++        _ = p.attempts.fetchAdd(1, .monotonic);
++        p.publish() catch |err| {
++            p.failure = err;
++            return err;
++        };
++    }
++
++    pub fn isPrepared(t: *const Template) bool {
++        const p = t.preparation orelse return true;
++        return p.ready.load(.acquire) and (t == p.owner or t.materialized);
++    }
++
++    pub fn loadAttempts(t: *const Template) u32 {
++        return if (t.preparation) |p| p.attempts.load(.monotonic) else 0;
++    }
+ };
+ 
++const Preparation = struct {
++    gpa: Allocator,
++    owner: *Template,
++    path: []const u8,
++    header: binary.Header,
++    mutex: std.Io.Mutex = .init,
++    ready: std.atomic.Value(bool) = .init(false),
++    attempts: std.atomic.Value(u32) = .init(0),
++    failure: ?anyerror = null,
++
++    fn publish(p: *Preparation) !void {
++        const t = p.owner;
++        var circuit = try binary.loadPinned(p.gpa, p.path, t.name, t.width, &p.header);
++        errdefer circuit.deinit(p.gpa);
++        const layout = try lazy.Binding.inspect(&circuit, t.width);
++        if ((t.inputs != 0 and layout.inputs != t.inputs) or (t.outputs != 0 and layout.outputs != t.outputs))
++            return error.GraphSlotArity;
++        if (t.inputs == 0) t.inputs = layout.inputs;
++        if (t.outputs == 0) t.outputs = layout.outputs;
++        t.circuit = circuit;
++        t.in_slots = layout.in_slots;
++        t.out_slots = layout.out_slots;
++        t.materialized = true;
++        p.ready.store(true, .release);
++    }
++};
++
++pub const LoadMode = enum { lazy, eager };
++
+ const Descriptor = struct {
+     name: []const u8,
+     width: u8,
+@@ -49,6 +111,15 @@ pub const Bank = struct {
+     plans: []const PreparedPlan,
+ 
+     pub fn load(a: Allocator, path: []const u8) !Bank {
++        return loadWithMode(a, path, .lazy);
++    }
++
++    pub fn loadEager(a: Allocator, path: []const u8) !Bank {
++        return loadWithMode(a, path, .eager);
++    }
++
++    /// The allocator must support concurrent stream allocations; the bank owns all loaded circuits until deinit.
++    pub fn loadWithMode(a: Allocator, path: []const u8, mode: LoadMode) !Bank {
+         var threaded: std.Io.Threaded = .init_single_threaded;
+         const bytes = try std.Io.Dir.cwd().readFileAlloc(threaded.io(), path, a, .limited(32 << 20));
+         defer a.free(bytes);
+@@ -57,19 +128,30 @@ pub const Bank = struct {
+         const doc = try std.json.parseFromSliceLeaky(Manifest, arena.allocator(), bytes, .{ .allocate = .alloc_always });
+         if (doc.version != 1 or doc.templates.len == 0 or doc.templates.len > 256) return error.GraphManifest;
+         const templates = try arena.allocator().alloc(Template, doc.templates.len);
++        const preparations = try arena.allocator().alloc(Preparation, doc.templates.len);
++        const expected_schema = binary.schemaHash();
+         var loaded: usize = 0;
+-        errdefer for (templates[0..loaded]) |*t| t.circuit.deinit(a);
+-        for (doc.templates, templates) |d, *t| {
+-            if (!packet.widthValid(d.width) or d.name.len == 0) return error.GraphTemplate;
++        errdefer for (templates[0..loaded]) |*t| {
++            if (t.isPrepared()) t.circuit.deinit(a);
++        };
++        for (doc.templates, templates, preparations) |d, *t, *preparation| {
++            if (!packet.widthValid(d.width) or d.name.len == 0 or d.path.len == 0) return error.GraphTemplate;
++            if (d.inputs) |n| if (n == 0 or n > packet.max_arity) return error.GraphSlotArity;
++            if (d.outputs) |n| if (n == 0 or n > packet.max_arity) return error.GraphSlotArity;
+             for (templates[0..loaded]) |prior| if (prior.width == d.width and std.mem.eql(u8, prior.name, d.name))
+                 return error.GraphDuplicateTemplate;
+-            const resolved = if (std.fs.path.isAbsolute(d.path)) try a.dupe(u8, d.path) else try std.fs.path.join(a, &.{ std.fs.path.dirname(path) orelse ".", d.path });
+-            defer a.free(resolved);
+-            t.* = .{ .name = d.name, .width = d.width, .circuit = try binary.load(a, resolved, d.name, d.width), .inputs = 0, .outputs = 0, .in_slots = @splat(@splat(missing)), .out_slots = @splat(@splat(missing)) };
++            const joined = if (std.fs.path.isAbsolute(d.path)) d.path else try std.fs.path.join(arena.allocator(), &.{ std.fs.path.dirname(path) orelse ".", d.path });
++            const resolved = try std.Io.Dir.cwd().realPathFileAlloc(threaded.io(), joined, arena.allocator());
++            const h = try binary.inspect(resolved, d.name, d.width, expected_schema);
++            const legacy = binary.isLegacy(&h);
++            const inputs = d.inputs orelse if (legacy) @as(u8, 0) else return error.GraphSlotArity;
++            const outputs = d.outputs orelse if (legacy) @as(u8, 0) else return error.GraphSlotArity;
++            if (!legacy and (inputs != h[80] or outputs != h[81])) return error.GraphSlotArity;
++            preparation.* = .{ .gpa = a, .owner = t, .path = resolved, .header = h };
++            t.* = .{ .name = d.name, .width = d.width, .circuit = undefined, .inputs = inputs, .outputs = outputs, .in_slots = @splat(@splat(missing)), .out_slots = @splat(@splat(missing)), .preparation = preparation, .materialized = false };
+             loaded += 1;
+-            try slots(t);
+-            if (d.inputs) |n| if (n != t.inputs) return error.GraphSlotArity;
+-            if (d.outputs) |n| if (n != t.outputs) return error.GraphSlotArity;
++            // Legacy headers omit bindings; validate the complete payload before exposing the descriptor.
++            if (legacy) try t.prepare();
+         }
+         const plans = try arena.allocator().alloc(PreparedPlan, doc.plans.len);
+         var bank: Bank = .{ .gpa = a, .arena = arena, .templates = templates, .plans = plans };
+@@ -98,15 +180,49 @@ pub const Bank = struct {
+             break;
+         };
+         bank.arena = arena;
++        if (mode == .eager) try bank.prepareAll();
+         return bank;
+     }
+ 
++    /// Destroy every backend and machine before freeing the bank; prepared copies borrow its circuit allocations.
+     pub fn deinit(b: *Bank) void {
+-        for (b.templates) |*t| t.circuit.deinit(b.gpa);
++        for (b.templates) |*t| {
++            if (t.isPrepared()) t.circuit.deinit(b.gpa);
++        }
+         b.arena.deinit();
+         b.* = undefined;
+     }
+ 
++    pub fn prepareAll(b: *const Bank) !void {
++        for (b.templates) |*t| try t.prepare();
++    }
++
++    pub fn preparedCount(b: *const Bank) usize {
++        var count: usize = 0;
++        for (b.templates) |*t| count += @intFromBool(t.isPrepared());
++        return count;
++    }
++
++    pub fn loadAttempts(b: *const Bank) u64 {
++        var count: u64 = 0;
++        for (b.templates) |*t| count += t.loadAttempts();
++        return count;
++    }
++
++    /// Clears only a cached failure; the next use retries the pinned pack and successful circuits are never replaced.
++    pub fn retryFailed(b: *const Bank, name: []const u8, width: u8) !void {
++        const t = b.find(name, width) orelse return error.GraphTemplate;
++        const p = t.preparation orelse return error.GraphAlreadyPrepared;
++        var threaded: std.Io.Threaded = .init_single_threaded;
++        const io = threaded.io();
++        p.mutex.lockUncancelable(io);
++        defer p.mutex.unlock(io);
++        if (p.ready.load(.acquire)) return error.GraphAlreadyPrepared;
++        if (p.failure == null) return error.GraphNotFailed;
++        p.failure = null;
++    }
++
++    /// Lookup reads metadata only; call Template.prepare before accessing its circuit or logical slots.
+     pub fn find(b: *const Bank, name: []const u8, width: u8) ?*const Template {
+         for (b.templates) |*t| if (t.width == width and std.mem.eql(u8, t.name, name)) return t;
+         return null;
+@@ -131,7 +247,8 @@ pub const Bank = struct {
+                     return error.GraphBinding;
+                 if (op.flags) |r| if (r >= count) return error.GraphReference;
+             } else {
+-                if (std.mem.startsWith(u8, op.op, "emit") or std.mem.eql(u8, op.op, "format") or op.copies.len != 0 or op.flags != null)
++                if (std.mem.eql(u8, op.op, "factorize") or std.mem.eql(u8, op.op, "f64_repr")) return error.GraphAlgorithm;
++                if (std.mem.startsWith(u8, op.op, "emit") or (std.mem.eql(u8, op.op, "format") or std.mem.eql(u8, op.op, "format_f64")) or op.copies.len != 0 or op.flags != null)
+                     return error.GraphTemplate;
+                 const arity: u8 = if (std.meta.stringToEnum(packet.Algorithm, op.op)) |family| blk: {
+                     try b.validateAlgorithm(family, op.width, op.precision);
+@@ -165,7 +282,17 @@ pub const Bank = struct {
+         try b.require("format", 128, 2, 2);
+         for (prints) |p| {
+             if (p.ref >= count or p.precision > 18 or (p.style != .fixed and p.precision != 0)) return error.GraphPrint;
+-            if ((p.style == .fraction or p.style == .tuple) != (p.second != null)) return error.GraphPrint;
++            if (p.style == .byte) {
++                if (p.precision != 0 or p.prefix or p.ending != .empty or p.second != null) return error.GraphPrint;
++                try b.require("byte_check", 128, 1, 1);
++                try b.require("emit_byte", 4, 1, 1);
++                continue;
++            }
++            if (p.style == .prepared) {
++                try b.require("format_f64", 62, 2, 2);
++                if (p.prefix or p.precision != 0 or p.ending != .newline or p.second == null) return error.GraphPrint;
++            }
++            if ((p.style == .fraction or p.style == .tuple or p.style == .prepared) != (p.second != null)) return error.GraphPrint;
+             if (p.second) |ref| if (ref >= count) return error.GraphReference;
+             if (p.style == .fraction) try b.require("meta", 128, 2, 3);
+             if (p.style == .tuple and (p.prefix or (p.ending != .newline and p.ending != .space and p.ending != .empty and p.ending != .comma_space)))
+@@ -181,17 +308,42 @@ pub const Bank = struct {
+     fn validateAlgorithm(b: *const Bank, family: packet.Algorithm, width: u8, precision: u8) !void {
+         if (!packet.widthValid(width) or precision > 18 or (family != .fixed_div and precision != 0))
+             return error.GraphAlgorithm;
++        if (std.mem.startsWith(u8, @tagName(family), "f64_")) {
++            if (width != 128) return error.GraphAlgorithm;
++            try b.require("raw_meta", 128, 2, 3);
++            try b.require("format_f64", 62, 2, 2);
++            try b.require("decimal_mul", 128, 2, 1);
++            try b.require("compare", 128, 2, 1);
++            try b.require("round_div", 128, 4, 1);
++            try b.require("add", 128, 2, 1);
++            try b.require("sub", 128, 2, 1);
++            try b.require("half", 128, 1, 2);
++            try b.require("divstep", 128, 3, 2);
++            try b.require("format", 62, 2, 2);
++            return;
++        }
++        const factor = family == .smallest_factor or family == .factorize;
++        const work_width = if (factor) @max(width, 8) else width;
++        if (factor) {
++            try b.require("add", work_width, 2, 1);
++            try b.require("half", work_width, 1, 2);
++            try b.require("divstep", work_width, 3, 2);
++            try b.require("meta", work_width, 2, 3);
++            try b.require("format", 62, 2, 2);
++            try b.require("format", 128, 2, 2);
++            return;
++        }
+         const kernels = [_]struct { []const u8, u8, u8 }{
+             .{ "add", 2, 1 },        .{ "sub", 2, 1 },      .{ "mul", 2, 1 },  .{ "half", 1, 2 },
+             .{ "divstep", 3, 2 },    .{ "divfinal", 4, 2 }, .{ "meta", 2, 3 }, .{ "digit_sum", 1, 1 },
+             .{ "mulmodstep", 4, 1 },
+         };
+-        for (kernels) |k| try b.require(k[0], if (std.mem.eql(u8, k[0], "meta")) @max(width, 8) else width, k[1], k[2]);
++        for (kernels) |k| try b.require(k[0], if (std.mem.eql(u8, k[0], "meta")) @max(work_width, 8) else work_width, k[1], k[2]);
+         if (family == .fixed_div) {
+             try b.require("scale10", width, 1, 1);
+         }
+         if (family == .fixed_div or family == .divexact) try b.require("round_div", width, 4, 1);
+-        if (family == .fraction or family == .fixed_div) {
++        if (family == .fraction or family == .fixed_div or factor) {
+             try b.require("format", 62, 2, 2);
+             try b.require("format", 128, 2, 2);
+         }
+@@ -200,32 +352,3 @@ pub const Bank = struct {
+             try b.require(name, @max(width, 62), 1, 1);
+     }
+ };
+-
+-fn slots(t: *Template) !void {
+-    if (t.circuit.program.a_bit != packet.bit_scale or t.circuit.program.a_ref != packet.reference_scale)
+-        return error.GraphValueScale;
+-    if (t.circuit.tables.len != t.circuit.table_names.len) return error.GraphSlots;
+-    for (t.circuit.table_names, 0..) |name, table| {
+-        if (std.mem.startsWith(u8, name, "output.cursor")) continue;
+-        const input = std.mem.startsWith(u8, name, "in");
+-        const output = std.mem.startsWith(u8, name, "out");
+-        if (!input and !output) continue;
+-        const prefix: usize = if (input) 2 else 3;
+-        const dot = std.mem.indexOfScalarPos(u8, name, prefix, '.') orelse return error.GraphSlots;
+-        const logical = std.fmt.parseInt(u8, name[prefix..dot], 10) catch return error.GraphSlots;
+-        const offset = std.fmt.parseInt(u8, name[dot + 1 ..], 10) catch return error.GraphSlots;
+-        if (logical >= packet.max_arity or offset % 31 != 0) return error.GraphSlots;
+-        if (offset >= t.width) return error.GraphSlots;
+-        const target = if (input) &t.in_slots else &t.out_slots;
+-        const group = offset / 31;
+-        if (target[logical][group] != missing) return error.GraphSlots;
+-        if (t.circuit.tables[table].rows.len != 128 * 128) return error.GraphSlots;
+-        target[logical][group] = @intCast(table);
+-        const arity = if (input) &t.inputs else &t.outputs;
+-        arity.* = @max(arity.*, logical + 1);
+-    }
+-    if (t.inputs == 0 or t.outputs == 0) return error.GraphSlots;
+-    const groups = (@as(usize, t.width) + 30) / 31;
+-    for (t.in_slots[0..t.inputs]) |s| for (s[0..groups]) |idx| if (idx == missing) return error.GraphSlots;
+-    for (t.out_slots[0..t.outputs]) |s| for (s[0..groups]) |idx| if (idx == missing) return error.GraphSlots;
+-}
+diff --git a/zig/src/core/runner_graph_binary.zig b/zig/src/core/runner_graph_binary.zig
+index 0e78da94ffa877918d01c400a801a8d38148e63a..9a52a7f506806f738505a0285aa7415c2ab6a9a6 100644
+--- a/zig/src/core/runner_graph_binary.zig
++++ b/zig/src/core/runner_graph_binary.zig
+@@ -1,10 +1,12 @@
+-//! Offline prepared circuit encoding; boot restores exact runtime fields without compiling graph IR.
++//! Offline prepared circuit encoding; lazy loading restores exact runtime fields without compiling graph IR.
+ const std = @import("std");
+ const builtin = @import("builtin");
+ const model = @import("steps_v1/runner_circuit_model.zig");
++const binding = @import("runner_graph_lazy.zig");
+ const Allocator = std.mem.Allocator;
+ const Hash = std.crypto.hash.sha2.Sha256;
+-const header = 80;
++const header = 160;
++pub const Header = [header]u8;
+ const max_bytes = 1 << 30;
+ const Prepared = struct { name: []const u8, width: u8, circuit: model.Circuit };
+ 
+@@ -50,12 +52,17 @@ fn schema(comptime T: type, h: *Hash) void {
+ }
+ 
+ pub fn schemaHash() [32]u8 {
++    return versionedSchemaHash(false);
++}
++
++fn versionedSchemaHash(legacy: bool) [32]u8 {
+     var h = Hash.init(.{});
+-    h.update("runner-graph-prepared-v1-rle:");
++    h.update(if (legacy) "runner-graph-prepared-v1-rle:" else "runner-graph-prepared-v2-rle-bindings:");
+     h.update(builtin.zig_version_string);
+     h.update(@embedFile("steps_v1/runner_circuit_model.zig"));
+     h.update(@embedFile("steps_v1/runner_circuit_state.zig"));
+     h.update(@embedFile("steps_v1/runner_circuit_eval.zig"));
++    if (!legacy) h.update(@embedFile("runner_graph_lazy.zig"));
+     schema(Prepared, &h);
+     return h.finalResult();
+ }
+@@ -226,35 +233,98 @@ const Decoder = struct {
+ };
+ 
+ pub fn encode(a: Allocator, c: model.Circuit, name: []const u8, width: u8) ![]u8 {
++    if (name.len == 0) return error.GraphPackIdentity;
++    const layout = try binding.Binding.inspect(&c, width);
+     var e: Encoder = .{ .a = a };
+     errdefer e.bytes.deinit(a);
+     try e.bytes.appendNTimes(a, 0, header);
+     try e.put(Prepared, .{ .name = name, .width = width, .circuit = c });
+-    @memcpy(e.bytes.items[0..8], "TFGRPH01");
++    @memcpy(e.bytes.items[0..8], "TFGRPH02");
+     std.mem.writeInt(u64, e.bytes.items[8..16], e.bytes.items.len - header, .little);
+     @memcpy(e.bytes.items[16..48], &schemaHash());
+     Hash.hash(e.bytes.items[header..], e.bytes.items[48..80], .{});
++    e.bytes.items[80] = layout.inputs;
++    e.bytes.items[81] = layout.outputs;
++    e.bytes.items[82] = width;
++    Hash.hash(name, e.bytes.items[96..128], .{});
++    Hash.hash(e.bytes.items[0..128], e.bytes.items[128..160], .{});
+     return e.bytes.toOwnedSlice(a);
+ }
+ 
+ pub fn decode(a: Allocator, bytes: []const u8, name: []const u8, width: u8) !model.Circuit {
+-    if (bytes.len < header or !std.mem.eql(u8, bytes[0..8], "TFGRPH01")) return error.GraphPackMagic;
+-    if (std.mem.readInt(u64, bytes[8..16], .little) != bytes.len - header) return error.GraphPackSize;
+-    if (!std.mem.eql(u8, bytes[16..48], &schemaHash())) return error.GraphPackSchema;
++    if (bytes.len < 80) return error.GraphPackTruncated;
++    var h: Header = @splat(0);
++    @memcpy(h[0..80], bytes[0..80]);
++    const legacy = isLegacy(&h);
++    const offset: usize = if (legacy) 80 else header;
++    if (bytes.len < offset) return error.GraphPackTruncated;
++    @memcpy(h[0..offset], bytes[0..offset]);
++    try validateHeader(&h, bytes.len, name, width, schemaHash());
+     var digest: [32]u8 = undefined;
+-    Hash.hash(bytes[header..], &digest, .{});
++    Hash.hash(bytes[offset..], &digest, .{});
+     if (!std.mem.eql(u8, bytes[48..80], &digest)) return error.GraphPackChecksum;
+     var arena = std.heap.ArenaAllocator.init(a);
+     errdefer arena.deinit();
+-    var d: Decoder = .{ .a = arena.allocator(), .bytes = bytes[header..] };
++    var d: Decoder = .{ .a = arena.allocator(), .bytes = bytes[offset..] };
+     const prepared = try d.get(Prepared);
+     if (prepared.width != width or !std.mem.eql(u8, prepared.name, name)) return error.GraphPackIdentity;
+     var out = prepared.circuit;
+     if (d.at != d.bytes.len) return error.GraphPackTrailing;
++    const layout = try binding.Binding.inspect(&out, width);
++    if (!legacy and (layout.inputs != h[80] or layout.outputs != h[81])) return error.GraphSlotArity;
+     out.arena = arena;
+     return out;
+ }
+ 
++fn validateHeader(h: *const Header, size: u64, name: []const u8, width: u8, expected_schema: [32]u8) !void {
++    const legacy = isLegacy(h);
++    if (!legacy and !std.mem.eql(u8, h[0..8], "TFGRPH02")) return error.GraphPackMagic;
++    const offset: u64 = if (legacy) 80 else header;
++    if (size < offset or size > max_bytes or std.mem.readInt(u64, h[8..16], .little) != size - offset)
++        return error.GraphPackSize;
++    const expected = if (legacy) versionedSchemaHash(true) else expected_schema;
++    if (!std.mem.eql(u8, h[16..48], &expected)) return error.GraphPackSchema;
++    if (legacy) return;
++    var digest: [32]u8 = undefined;
++    Hash.hash(h[0..128], &digest, .{});
++    if (!std.mem.eql(u8, h[128..160], &digest)) return error.GraphPackChecksum;
++    Hash.hash(name, &digest, .{});
++    if (name.len == 0 or width != h[82] or !std.mem.eql(u8, h[96..128], &digest))
++        return error.GraphPackIdentity;
++    if (h[80] == 0 or h[80] > 16 or h[81] == 0 or h[81] > 16) return error.GraphSlotArity;
++    for (h[83..96]) |v| if (v != 0) return error.GraphPackEncoding;
++}
++
++pub fn isLegacy(h: *const Header) bool {
++    return std.mem.eql(u8, h[0..8], "TFGRPH01");
++}
++
++/// Reads only the checksummed descriptor header; payload verification is mandatory before first execution.
++pub fn inspect(path: []const u8, name: []const u8, width: u8, expected_schema: [32]u8) !Header {
++    var threaded: std.Io.Threaded = .init_single_threaded;
++    const io = threaded.io();
++    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
++    defer file.close(io);
++    const size = (try file.stat(io)).size;
++    var h: Header = @splat(0);
++    if (try file.readPositionalAll(io, h[0..80], 0) != 80) return error.GraphPackTruncated;
++    if (!isLegacy(&h) and (try file.readPositionalAll(io, h[80..], 80)) != header - 80)
++        return error.GraphPackTruncated;
++    try validateHeader(&h, size, name, width, expected_schema);
++    return h;
++}
++
++/// Pins deferred loading to the exact header accepted at bank boot, including its payload digest.
++pub fn loadPinned(a: Allocator, path: []const u8, name: []const u8, width: u8, expected: *const Header) !model.Circuit {
++    var threaded: std.Io.Threaded = .init_single_threaded;
++    const bytes = try std.Io.Dir.cwd().readFileAlloc(threaded.io(), path, a, .limited(max_bytes));
++    defer a.free(bytes);
++    const offset: usize = if (isLegacy(expected)) 80 else header;
++    if (bytes.len < offset or !std.mem.eql(u8, bytes[0..offset], expected[0..offset]))
++        return error.GraphPackChanged;
++    return decode(a, bytes, name, width);
++}
++
+ pub fn load(a: Allocator, path: []const u8, name: []const u8, width: u8) !model.Circuit {
+     var threaded: std.Io.Threaded = .init_single_threaded;
+     const bytes = try std.Io.Dir.cwd().readFileAlloc(threaded.io(), path, a, .limited(max_bytes));
+diff --git a/zig/src/core/runner_graph_f64.zig b/zig/src/core/runner_graph_f64.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..603c66c23054bfb35c721158fe08edaef4c98de3
+--- /dev/null
++++ b/zig/src/core/runner_graph_f64.zig
+@@ -0,0 +1,63 @@
++//! Checked bounded binary64 orchestration over prepared integer FFNs and circuit-owned decimal formatting.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const packet = @import("runner_graph_packet.zig");
++const context = @import("runner_graph_f64_context.zig");
++const math = @import("runner_graph_f64_math.zig");
++const printing = @import("runner_graph_f64_print.zig");
++const End = @FieldType(api.RunEnd, "end");
++const Cancel = ?*const std.atomic.Value(bool);
++
++pub fn compute(m: anytype, kind: []const u8, width: u8, refs: []const u32, dest: usize, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !End {
++    if (width != 128 or std.mem.eql(u8, kind, "f64_repr")) return error.GraphAlgorithm;
++    const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
++    const outputs = packet.algorithmOutputs(family);
++    if (refs.len != packet.algorithmArity(family) or dest + outputs > m.values.len) return error.GraphSlotArity;
++    const original = m.values;
++    const zero = try packet.literal("0");
++    var scratch: [256]packet.Value = @splat(zero);
++    scratch[1] = try packet.literal("1");
++    for (refs, 0..) |ref, i| {
++        if (ref >= original.len) return error.GraphReference;
++        scratch[2 + i] = original[ref];
++    }
++    m.values = &scratch;
++    defer m.values = original;
++    var c: context.Context(@TypeOf(m)) = .{ .m = m, .budget = budget, .out = out, .cancel = cancel };
++    const result = (if (std.mem.eql(u8, kind, "f64_format")) printing.prepare(&c, 2, 3) else math.calculate(&c, kind)) catch |err| switch (err) {
++        error.GraphAlgorithmStopped => return c.end,
++        else => return err,
++    };
++    const values = [2]packet.Value{ scratch[result[0]], scratch[result[1]] };
++    @memcpy(original[dest .. dest + outputs], values[0..outputs]);
++    return .halted;
++}
++
++pub fn run(m: anytype, kind: []const u8, budget: u64, out: *std.ArrayList(u8), cancel: Cancel) !api.RunEnd {
++    if (std.mem.eql(u8, kind, "f64_repr")) {
++        const original = m.values;
++        const zero = try packet.literal("0");
++        var scratch: [256]packet.Value = @splat(zero);
++        scratch[1] = try packet.literal("1");
++        scratch[2] = original[0];
++        scratch[3] = original[1];
++        m.values = &scratch;
++        defer m.values = original;
++        var c: context.Context(@TypeOf(m)) = .{ .m = m, .budget = budget, .out = out, .cancel = cancel };
++        printing.render(&c, 2, 3) catch |err| switch (err) {
++            error.GraphAlgorithmStopped => return .{ .end = c.end, .steps = m.steps },
++            else => return err,
++        };
++        return .{ .end = .halted, .steps = m.steps };
++    }
++    const family = std.meta.stringToEnum(packet.Algorithm, kind) orelse return error.GraphAlgorithm;
++    const refs = [_]u32{ 0, 1, 2, 3, 4, 5, 6, 7 };
++    const end = try compute(m, kind, m.width, refs[0..packet.algorithmArity(family)], 0, budget, out, cancel);
++    if (end != .halted) return .{ .end = end, .steps = m.steps };
++    const printed = try @import("runner_graph_print.zig").emit(m, .{
++        .ref = 0,
++        .second = if (packet.algorithmOutputs(family) == 2) 1 else null,
++        .style = if (packet.algorithmOutputs(family) == 2) .tuple else .boolean,
++    }, budget, out, cancel);
++    return .{ .end = printed, .steps = m.steps };
++}
+diff --git a/zig/src/core/runner_graph_f64_context.zig b/zig/src/core/runner_graph_f64_context.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc3bcddd72bb890e5a7c4fb18d8cc8da91d0a13b
+--- /dev/null
++++ b/zig/src/core/runner_graph_f64_context.zig
+@@ -0,0 +1,143 @@
++//! Request-local FFN dispatch and predicates for the bounded binary64 family.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const packet = @import("runner_graph_packet.zig");
++const End = @FieldType(api.RunEnd, "end");
++
++pub fn Context(comptime M: type) type {
++    return struct {
++        m: M,
++        width: u8 = 128,
++        budget: u64,
++        out: *std.ArrayList(u8),
++        cancel: ?*const std.atomic.Value(bool),
++        end: End = .halted,
++        extended: bool = false,
++
++        const Self = @This();
++
++        pub fn call(c: *Self, name: []const u8, refs: []const u32, dest: usize) !void {
++            var needed: usize = 1;
++            for (refs) |ref| {
++                if (ref >= c.m.values.len) return error.GraphReference;
++                try clean(&c.m.values[ref]);
++                needed = @max(needed, occupiedDigits(&c.m.values[ref]));
++            }
++            if (std.mem.eql(u8, name, "mul") or std.mem.eql(u8, name, "decimal_mul")) {
++                needed = occupiedDigits(&c.m.values[refs[0]]) + occupiedDigits(&c.m.values[refs[1]]);
++            } else if (std.mem.eql(u8, name, "add") or std.mem.eql(u8, name, "sub") or
++                std.mem.eql(u8, name, "scale10") or std.mem.eql(u8, name, "round_div"))
++            {
++                needed += 1;
++            }
++            const raw_meta = std.mem.eql(u8, name, "raw_meta");
++            const selected = if (raw_meta) @max(@as(u8, 8), bucket(@min(needed, c.width))) else bucket(@min(needed, c.width));
++            const t = (if (c.m.adaptive_widths) c.m.bank.find(name, selected) else null) orelse
++                c.m.bank.find(name, c.width) orelse return error.GraphTemplate;
++            if (dest + t.outputs > c.m.values.len) return error.GraphAlgorithmScratch;
++            c.end = try c.m.invoke(t, refs, dest, c.budget, c.out, c.cancel, false);
++            if (c.end != .halted) return error.GraphAlgorithmStopped;
++            for (dest..dest + t.outputs) |i| try clean(&c.m.values[i]);
++        }
++
++        pub fn move(c: *Self, dest: usize, source: usize) void {
++            c.m.values[dest] = c.m.values[source];
++        }
++
++        pub fn literal(c: *Self, dest: usize, text: []const u8) !void {
++            c.m.values[dest] = try packet.literal(text);
++        }
++
++        pub fn meta(c: *Self, a: u32, b: u32) !void {
++            try c.call("raw_meta", &.{ a, b }, 253);
++        }
++
++        pub fn flag(c: *Self, index: usize) !bool {
++            if (index >= 6) return error.GraphPredicate;
++            return predicate(&c.m.values[255], index);
++        }
++
++        pub fn nonzero(c: *Self, ref: u32) !bool {
++            try c.meta(ref, 0);
++            return c.flag(0);
++        }
++
++        pub fn sign(c: *Self, ref: u32) !bool {
++            try c.meta(ref, 0);
++            return c.flag(2);
++        }
++
++        pub fn less(c: *Self, a: u32, b: u32) !bool {
++            try c.call("compare", &.{ a, b }, 252);
++            try c.meta(252, 0);
++            return try c.flag(0) and try c.flag(2);
++        }
++
++        pub fn equal(c: *Self, a: u32, b: u32) !bool {
++            try c.call("compare", &.{ a, b }, 252);
++            return !try c.nonzero(252);
++        }
++
++        /// Unsigned long division consumes occupied decimal lanes; slots 240..246 are private.
++        pub fn divide(c: *Self, a: u32, b: u32, q: usize, r: usize) !void {
++            if ((q >= 240 and q <= 246) or (r >= 240 and r <= 246) or q == r)
++                return error.GraphAlgorithmScratch;
++            const inputs = [2]packet.Value{ c.m.values[a], c.m.values[b] };
++            c.m.values[240] = inputs[0];
++            c.m.values[241] = inputs[1];
++            try c.meta(240, 241);
++            if (try c.flag(2) or try c.flag(3) or !try c.flag(1)) return error.GraphF64Arithmetic;
++            c.move(242, 0);
++            c.move(243, 0);
++            var digit = occupiedDigits(&c.m.values[240]);
++            while (digit > 0) {
++                digit -= 1;
++                c.move(244, 0);
++                packet.copyBits(&c.m.values[244], &c.m.values[240], .{
++                    .ref = 240,
++                    .from = @intCast(digit),
++                    .digits = 1,
++                });
++                try c.call("divstep", &.{ 243, 241, 244 }, 245);
++                c.move(243, 245);
++                packet.copyBits(&c.m.values[242], &c.m.values[246], .{
++                    .ref = 246,
++                    .to = @intCast(digit),
++                    .digits = 1,
++                });
++            }
++            const result = [2]packet.Value{ c.m.values[242], c.m.values[243] };
++            c.m.values[q] = result[0];
++            c.m.values[r] = result[1];
++        }
++    };
++}
++
++pub fn occupiedDigits(value: *const packet.Value) usize {
++    var digits: usize = packet.max_digits;
++    while (digits > 1) : (digits -= 1) {
++        const at = digits - 1;
++        for (value[at / 31][2 + at % 31 * 4 ..][0..4]) |bit| if (bit != 0) return digits;
++    }
++    return digits;
++}
++
++fn bucket(needed: usize) u8 {
++    for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |width| if (needed <= width) return width;
++    unreachable;
++}
++
++fn clean(value: *const packet.Value) !void {
++    const bit = value[0][127];
++    if (bit == packet.bit_scale) return error.GraphF64Arithmetic;
++    if (bit != 0) return error.GraphPredicate;
++}
++
++fn predicate(value: *const packet.Value, digit: usize) !bool {
++    try clean(value);
++    const bits = value[digit / 31][2 + digit % 31 * 4 ..][0..4];
++    for (bits[1..]) |bit| if (bit != 0) return error.GraphPredicate;
++    if (bits[0] == 0) return false;
++    if (bits[0] == packet.bit_scale) return true;
++    return error.GraphPredicate;
++}
+diff --git a/zig/src/core/runner_graph_f64_math.zig b/zig/src/core/runner_graph_f64_math.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..581b2fb38999e3bbeb7cd2f2767f8d36bbfbf01b
+--- /dev/null
++++ b/zig/src/core/runner_graph_f64_math.zig
+@@ -0,0 +1,231 @@
++//! Bounded binary64 operations use exact FFN integers and a single nearest-even rounding boundary.
++const std = @import("std");
++const packet = @import("runner_graph_packet.zig");
++const context = @import("runner_graph_f64_context.zig");
++
++pub fn calculate(c: anytype, kind: []const u8) ![2]u32 {
++    if (std.mem.eql(u8, kind, "f64_ratio")) {
++        if (context.occupiedDigits(&c.m.values[2]) > 62 or context.occupiedDigits(&c.m.values[3]) > 62)
++            return error.GraphF64Arithmetic;
++        try ratio(c, 2, 3, 32, 33);
++    } else if (std.mem.eql(u8, kind, "f64_mul")) {
++        try multiply(c, 2, 3, 4, 5, 32, 33);
++    } else if (std.mem.eql(u8, kind, "f64_sub")) {
++        try subtract(c, 2, 3, 4, 5, 32, 33);
++    } else if (std.mem.eql(u8, kind, "f64_isclose")) {
++        try isclose(c);
++    } else return error.GraphAlgorithm;
++    return .{ 32, 33 };
++}
++
++/// The canonical finite domain includes raw signed zero with exponent zero.
++pub fn ensureFloat(c: anytype, m: u32, e: u32) !void {
++    const inputs = [2]packet.Value{ c.m.values[m], c.m.values[e] };
++    c.m.values[110] = inputs[0];
++    c.m.values[111] = inputs[1];
++    try constants(c);
++    if (try c.less(111, 116) or try c.less(117, 111)) return error.GraphF64Arithmetic;
++    try c.meta(110, 113);
++    const nonzero = try c.flag(0);
++    const below = try c.flag(4);
++    if (!nonzero) {
++        if (try c.nonzero(111)) return error.GraphF64Arithmetic;
++        return;
++    }
++    if (below) return error.GraphF64Arithmetic;
++    try c.meta(110, 114);
++    if (!try c.flag(4)) return error.GraphF64Arithmetic;
++}
++
++/// Normalize an exact ratio before the final 53-bit quotient and remainder are rounded together.
++pub fn ratio(c: anytype, n: u32, d: u32, out_m: usize, out_e: usize) !void {
++    const inputs = [2]packet.Value{ c.m.values[n], c.m.values[d] };
++    c.m.values[64] = inputs[0];
++    c.m.values[65] = inputs[1];
++    try constants(c);
++    try c.meta(64, 65);
++    if (!try c.flag(1)) return error.GraphF64Arithmetic;
++    const negative = try c.flag(2) != try c.flag(3);
++    c.move(66, 253);
++    c.move(67, 254);
++    c.move(68, 0);
++    try c.literal(72, if (negative) "-1" else "1");
++    if (!try c.nonzero(66)) {
++        try c.call("decimal_mul", &.{ 0, 72 }, 69);
++        return output(c, 69, 68, out_m, out_e);
++    }
++    var steps: usize = 0;
++    while (try c.less(66, 67)) {
++        try limit(&steps);
++        try c.call("decimal_mul", &.{ 66, 112 }, 66);
++        try c.call("sub", &.{ 68, 1 }, 68);
++    }
++    while (true) {
++        try c.call("decimal_mul", &.{ 67, 112 }, 70);
++        if (try c.less(66, 70)) break;
++        try limit(&steps);
++        c.move(67, 70);
++        try c.call("add", &.{ 68, 1 }, 68);
++    }
++    try c.call("decimal_mul", &.{ 66, 113 }, 66);
++    try c.literal(71, "52");
++    try c.call("sub", &.{ 68, 71 }, 68);
++    try c.divide(66, 67, 70, 71);
++    try c.call("round_div", &.{ 70, 71, 72, 67 }, 69);
++    try c.meta(69, 114);
++    if (try c.flag(5)) {
++        c.move(70, 253);
++        try c.call("half", &.{70}, 73);
++        try c.call("decimal_mul", &.{ 73, 72 }, 69);
++        try c.call("add", &.{ 68, 1 }, 68);
++    }
++    try ensureFloat(c, 69, 68);
++    try output(c, 69, 68, out_m, out_e);
++}
++
++/// Exact mantissa multiplication is truncated once, retaining guard and sticky predicates.
++pub fn multiply(c: anytype, m1: u32, e1: u32, m2: u32, e2: u32, out_m: usize, out_e: usize) !void {
++    try inputs4(c, m1, e1, m2, e2);
++    try ensureFloat(c, 64, 65);
++    try ensureFloat(c, 66, 67);
++    try c.call("decimal_mul", &.{ 64, 66 }, 68);
++    try c.call("add", &.{ 65, 67 }, 69);
++    try normalize(c, 68, 69, out_m, out_e);
++}
++
++/// Alignment is exact in decimal lanes, followed by one rounding of the signed difference.
++pub fn subtract(c: anytype, m1: u32, e1: u32, m2: u32, e2: u32, out_m: usize, out_e: usize) !void {
++    try inputs4(c, m1, e1, m2, e2);
++    try ensureFloat(c, 64, 65);
++    try ensureFloat(c, 66, 67);
++    try c.meta(64, 66);
++    const both_zero = !try c.flag(0) and !try c.flag(1);
++    const negative_zero = try c.flag(2) and !try c.flag(3);
++    if (both_zero) {
++        try c.literal(68, if (negative_zero) "-0" else "0");
++        return output(c, 68, 0, out_m, out_e);
++    }
++    var steps: usize = 0;
++    while (try c.less(65, 67)) {
++        try limit(&steps);
++        try c.call("decimal_mul", &.{ 66, 112 }, 66);
++        try c.call("sub", &.{ 67, 1 }, 67);
++    }
++    while (try c.less(67, 65)) {
++        try limit(&steps);
++        try c.call("decimal_mul", &.{ 64, 112 }, 64);
++        try c.call("sub", &.{ 65, 1 }, 65);
++    }
++    try c.call("sub", &.{ 64, 66 }, 68);
++    try normalize(c, 68, 65, out_m, out_e);
++}
++
++fn normalize(c: anytype, m: u32, e: u32, out_m: usize, out_e: usize) !void {
++    const inputs = [2]packet.Value{ c.m.values[m], c.m.values[e] };
++    c.m.values[80] = inputs[0];
++    c.m.values[81] = inputs[1];
++    try constants(c);
++    try c.meta(80, 0);
++    const negative = try c.flag(2);
++    c.move(84, 253);
++    if (!try c.flag(0)) return output(c, 80, 0, out_m, out_e);
++    var steps: usize = 0;
++    while (try c.less(84, 113)) {
++        try limit(&steps);
++        try c.call("decimal_mul", &.{ 84, 112 }, 84);
++        try c.call("sub", &.{ 81, 1 }, 81);
++    }
++    var guard = false;
++    var sticky = false;
++    while (!try c.less(84, 114)) {
++        try limit(&steps);
++        try c.call("half", &.{84}, 86);
++        sticky = sticky or guard;
++        guard = try c.nonzero(87);
++        c.move(84, 86);
++        try c.call("add", &.{ 81, 1 }, 81);
++    }
++    if (guard) {
++        try c.call("half", &.{84}, 86);
++        if (sticky or try c.nonzero(87)) try c.call("add", &.{ 84, 1 }, 84);
++    }
++    if (try c.equal(84, 114)) {
++        try c.call("half", &.{84}, 86);
++        c.move(84, 86);
++        try c.call("add", &.{ 81, 1 }, 81);
++    }
++    try c.literal(88, if (negative) "-1" else "1");
++    try c.call("decimal_mul", &.{ 84, 88 }, 89);
++    try ensureFloat(c, 89, 81);
++    try output(c, 89, 81, out_m, out_e);
++}
++
++fn isclose(c: anytype) !void {
++    const inputs = [8]packet.Value{
++        c.m.values[2], c.m.values[3], c.m.values[4], c.m.values[5],
++        c.m.values[6], c.m.values[7], c.m.values[8], c.m.values[9],
++    };
++    for (inputs, 128..) |value, i| c.m.values[i] = value;
++    for (0..4) |i| try ensureFloat(c, @intCast(128 + i * 2), @intCast(129 + i * 2));
++    for ([_]u32{ 132, 134 }) |m| {
++        try c.meta(m, 0);
++        if (try c.flag(0) and try c.flag(2)) return error.GraphF64Arithmetic;
++    }
++    const previous = c.extended;
++    c.extended = true;
++    defer c.extended = previous;
++    var close = try c.equal(128, 130) and try c.equal(129, 131);
++    if (!close) {
++        try subtract(c, 128, 129, 130, 131, 136, 137);
++        try c.meta(136, 0);
++        c.move(136, 253);
++        try c.meta(128, 0);
++        c.move(138, 253);
++        try multiply(c, 132, 133, 138, 129, 138, 139);
++        close = try positiveLE(c, 136, 137, 138, 139);
++        if (!close) {
++            try c.meta(130, 0);
++            c.move(138, 253);
++            try multiply(c, 132, 133, 138, 131, 138, 139);
++            close = try positiveLE(c, 136, 137, 138, 139);
++        }
++        if (!close) close = try positiveLE(c, 136, 137, 134, 135);
++    }
++    c.move(32, if (close) 1 else 0);
++    c.move(33, 0);
++}
++
++fn positiveLE(c: anytype, am: u32, ae: u32, bm: u32, be: u32) !bool {
++    if (!try c.nonzero(am)) return true;
++    if (!try c.nonzero(bm)) return false;
++    if (try c.less(ae, be)) return true;
++    if (!try c.equal(ae, be)) return false;
++    return try c.less(am, bm) or try c.equal(am, bm);
++}
++
++fn inputs4(c: anytype, m1: u32, e1: u32, m2: u32, e2: u32) !void {
++    const inputs = [4]packet.Value{ c.m.values[m1], c.m.values[e1], c.m.values[m2], c.m.values[e2] };
++    for (inputs, 64..) |value, i| c.m.values[i] = value;
++}
++
++fn output(c: anytype, m: u32, e: u32, out_m: usize, out_e: usize) !void {
++    if (out_m == out_e or out_m >= c.m.values.len or out_e >= c.m.values.len)
++        return error.GraphAlgorithmScratch;
++    const values = [2]packet.Value{ c.m.values[m], c.m.values[e] };
++    c.m.values[out_m] = values[0];
++    c.m.values[out_e] = values[1];
++}
++
++fn constants(c: anytype) !void {
++    try c.literal(112, "2");
++    try c.literal(113, "4503599627370496");
++    try c.literal(114, "9007199254740992");
++    try c.literal(115, "-1");
++    try c.literal(116, if (c.extended) "-256" else "-100");
++    try c.literal(117, if (c.extended) "256" else "100");
++}
++
++fn limit(steps: *usize) !void {
++    if (steps.* >= 1000) return error.GraphF64Arithmetic;
++    steps.* += 1;
++}
+diff --git a/zig/src/core/runner_graph_f64_print.zig b/zig/src/core/runner_graph_f64_print.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..92ee61d4759ec865191a50355ad955ee0b6b1fd4
+--- /dev/null
++++ b/zig/src/core/runner_graph_f64_print.zig
+@@ -0,0 +1,210 @@
++//! Shortest bounded fixed decimal output keeps all operand arithmetic in prepared FFN kernels.
++const std = @import("std");
++const packet = @import("runner_graph_packet.zig");
++const math = @import("runner_graph_f64_math.zig");
++
++const s = struct {
++    const original_m: u32 = 140;
++    const original_e: u32 = 141;
++    const magnitude: u32 = 142;
++    const two: u32 = 143;
++    const ten: u32 = 144;
++    const minus_one: u32 = 145;
++    const hundred: u32 = 146;
++    const integral: u32 = 147;
++    const min_k: u32 = 148;
++    const max_k: u32 = 149;
++    const min_probe_k: u32 = 150;
++    const max_scale: u32 = 151;
++    const n: u32 = 152;
++    const d: u32 = 153;
++    const exponent: u32 = 154;
++    const k: u32 = 155;
++    const scaled_n: u32 = 156;
++    const temporary: u32 = 158;
++    const p_minus_one: u32 = 159;
++    const quotient: u32 = 160;
++    const remainder: u32 = 161;
++    const nearest: u32 = 162;
++    const other: u32 = 163;
++    const coefficient: u32 = 164;
++    const scale: u32 = 165;
++    const candidate_n: u32 = 166;
++    const candidate_d: u32 = 167;
++    const scale_work: u32 = 168;
++    const back_m: u32 = 169;
++    const back_e: u32 = 170;
++    const trim_q: u32 = 171;
++    const trim_r: u32 = 172;
++    const control: u32 = 173;
++    const adjusted_k: u32 = 174;
++    const decade: u32 = 175;
++    const sign_factor: u32 = 176;
++};
++
++/// Named repr emission publishes bytes only after preparation and the formatter both succeed.
++pub fn render(c: anytype, m: u32, e: u32) !void {
++    const refs = try prepare(c, m, e);
++    try publish(c, refs);
++}
++
++/// Returns coefficient/control refs 164/173 without BYTE output; scratch occupies only slots 140..176.
++pub fn prepare(c: anytype, m: u32, e: u32) ![2]u32 {
++    c.move(s.original_m, m);
++    c.move(s.original_e, e);
++    try math.ensureFloat(c, s.original_m, s.original_e);
++    try constants(c);
++    const negative = try c.sign(s.original_m);
++    c.move(s.sign_factor, if (negative) s.minus_one else 1);
++    if (!try c.nonzero(s.original_m)) {
++        try c.call("decimal_mul", &.{ 0, s.sign_factor }, s.coefficient);
++        c.move(s.control, s.integral);
++        return .{ s.coefficient, s.control };
++    }
++    try c.meta(s.original_m, 0);
++    c.move(s.magnitude, 253);
++    try exactFraction(c);
++    try normalize(c);
++    if (try c.less(s.k, s.min_probe_k) or try c.less(s.max_k, s.k))
++        return error.GraphF64Arithmetic;
++    c.move(s.scaled_n, s.n);
++    c.move(s.p_minus_one, 0);
++    c.move(s.decade, s.ten);
++    for (1..18) |_| {
++        try c.divide(s.scaled_n, s.d, s.quotient, s.remainder);
++        try c.call("round_div", &.{ s.quotient, s.remainder, s.scaled_n, s.d }, s.nearest);
++        try c.call("sub", &.{ s.p_minus_one, s.k }, s.scale);
++        if (try c.equal(s.nearest, s.quotient)) {
++            try c.call("add", &.{ s.quotient, 1 }, s.other);
++        } else c.move(s.other, s.quotient);
++        if (try roundtrips(c, s.nearest)) {
++            c.move(s.coefficient, s.nearest);
++            try finish(c);
++            return .{ s.coefficient, s.control };
++        }
++        if (try c.nonzero(s.remainder) and try roundtrips(c, s.other)) {
++            c.move(s.coefficient, s.other);
++            try finish(c);
++            return .{ s.coefficient, s.control };
++        }
++        // Only a carry to 10 can bring k=-5 into the admitted output interval, and p=1 already tried it.
++        if (try c.less(s.k, s.min_k)) return error.GraphF64Arithmetic;
++        try c.call("decimal_mul", &.{ s.scaled_n, s.ten }, s.scaled_n);
++        try c.call("add", &.{ s.p_minus_one, 1 }, s.p_minus_one);
++        try c.call("decimal_mul", &.{ s.decade, s.ten }, s.decade);
++    }
++    return error.GraphF64Arithmetic;
++}
++
++fn constants(c: anytype) !void {
++    try c.literal(s.two, "2");
++    try c.literal(s.ten, "10");
++    try c.literal(s.minus_one, "-1");
++    try c.literal(s.hundred, "100");
++    try c.literal(s.integral, "300");
++    try c.literal(s.min_k, "-4");
++    try c.literal(s.max_k, "15");
++    try c.literal(s.min_probe_k, "-5");
++    try c.literal(s.max_scale, "20");
++}
++
++fn exactFraction(c: anytype) !void {
++    c.move(s.n, s.magnitude);
++    c.move(s.d, 1);
++    c.move(s.exponent, s.original_e);
++    for (0..100) |_| {
++        if (!try c.nonzero(s.exponent)) return;
++        if (try c.less(s.exponent, 0)) {
++            try c.call("decimal_mul", &.{ s.d, s.two }, s.d);
++            try c.call("add", &.{ s.exponent, 1 }, s.exponent);
++        } else {
++            try c.call("decimal_mul", &.{ s.n, s.two }, s.n);
++            try c.call("sub", &.{ s.exponent, 1 }, s.exponent);
++        }
++    }
++    if (try c.nonzero(s.exponent)) return error.GraphF64Arithmetic;
++}
++
++/// N/D is made decimal-normal without division or any host interpretation of its tensor digits.
++fn normalize(c: anytype) !void {
++    c.move(s.k, 0);
++    for (0..64) |_| {
++        if (try c.less(s.n, s.d)) {
++            try c.call("decimal_mul", &.{ s.n, s.ten }, s.n);
++            try c.call("sub", &.{ s.k, 1 }, s.k);
++            continue;
++        }
++        try c.call("decimal_mul", &.{ s.d, s.ten }, s.temporary);
++        if (!try c.less(s.n, s.temporary)) {
++            c.move(s.d, s.temporary);
++            try c.call("add", &.{ s.k, 1 }, s.k);
++            continue;
++        }
++        return;
++    }
++    return error.GraphF64Arithmetic;
++}
++
++/// Candidate C has exact value C*10^-scale; canonical binary equality decides the shortest precision.
++fn roundtrips(c: anytype, coefficient: u32) !bool {
++    if (!try c.nonzero(coefficient)) return false;
++    c.move(s.candidate_n, coefficient);
++    c.move(s.candidate_d, 1);
++    c.move(s.scale_work, s.scale);
++    try c.meta(s.scale_work, 0);
++    c.move(s.temporary, 253);
++    if (try c.less(s.max_scale, s.temporary)) return error.GraphF64Arithmetic;
++    for (0..20) |_| {
++        if (!try c.nonzero(s.scale_work)) break;
++        if (try c.less(s.scale_work, 0)) {
++            try c.call("decimal_mul", &.{ s.candidate_n, s.ten }, s.candidate_n);
++            try c.call("add", &.{ s.scale_work, 1 }, s.scale_work);
++        } else {
++            try c.call("decimal_mul", &.{ s.candidate_d, s.ten }, s.candidate_d);
++            try c.call("sub", &.{ s.scale_work, 1 }, s.scale_work);
++        }
++    }
++    if (try c.nonzero(s.scale_work)) return error.GraphF64Arithmetic;
++    try c.call("decimal_mul", &.{ s.candidate_n, s.sign_factor }, s.candidate_n);
++    try math.ratio(c, s.candidate_n, s.candidate_d, s.back_m, s.back_e);
++    return try c.equal(s.back_m, s.original_m) and try c.equal(s.back_e, s.original_e);
++}
++
++fn finish(c: anytype) !void {
++    c.move(s.adjusted_k, s.k);
++    if (!try c.less(s.coefficient, s.decade))
++        try c.call("add", &.{ s.adjusted_k, 1 }, s.adjusted_k);
++    if (try c.less(s.adjusted_k, s.min_k) or try c.less(s.max_k, s.adjusted_k))
++        return error.GraphF64Arithmetic;
++    for (0..17) |_| {
++        try c.divide(s.coefficient, s.ten, s.trim_q, s.trim_r);
++        if (try c.nonzero(s.trim_r)) break;
++        c.move(s.coefficient, s.trim_q);
++        try c.call("sub", &.{ s.scale, 1 }, s.scale);
++    }
++    if (try c.less(0, s.scale)) {
++        if (try c.less(s.max_scale, s.scale)) return error.GraphF64Arithmetic;
++        try c.call("add", &.{ s.hundred, s.scale }, s.control);
++    } else {
++        for (0..15) |_| {
++            if (!try c.nonzero(s.scale)) break;
++            try c.call("decimal_mul", &.{ s.coefficient, s.ten }, s.coefficient);
++            try c.call("add", &.{ s.scale, 1 }, s.scale);
++        }
++        if (try c.nonzero(s.scale)) return error.GraphF64Arithmetic;
++        c.move(s.control, s.integral);
++    }
++    try c.call("decimal_mul", &.{ s.coefficient, s.sign_factor }, s.coefficient);
++}
++
++/// The emitter may stop after BYTE tokens, so no bytes are published until its successful halt.
++fn publish(c: anytype, refs: [2]u32) !void {
++    var bytes: std.ArrayList(u8) = .empty;
++    defer bytes.deinit(c.m.gpa);
++    const template = c.m.bank.find("format_f64", 62) orelse return error.GraphEmitMissing;
++    c.end = try c.m.invoke(template, &refs, 0, c.budget, &bytes, c.cancel, true);
++    if (c.end != .halted) return error.GraphAlgorithmStopped;
++    if (bytes.items.len > packet.max_output or c.out.items.len > packet.max_output - bytes.items.len)
++        return error.GraphOutputSize;
++    try c.out.appendSlice(c.m.gpa, bytes.items);
++}
+diff --git a/zig/src/core/runner_graph_factor.zig b/zig/src/core/runner_graph_factor.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9ebb2f57ad93c8d4a3f79a82354e263bbc6192bb
+--- /dev/null
++++ b/zig/src/core/runner_graph_factor.zig
+@@ -0,0 +1,113 @@
++//! Bounded trial division follows prepared FFN predicates and keeps operand arithmetic inside the graph bank.
++const std = @import("std");
++const packet = @import("runner_graph_packet.zig");
++const printing = @import("runner_graph_print.zig");
++
++const max_factors = packet.max_digits * 4;
++const max_iterations = 10000 + max_factors;
++
++/// Inputs are n>=1 and inclusive bound 1..10000; negative signs, including signed zero, are domain errors.
++pub fn smallest(c: anytype) !u32 {
++    return trial(c, null);
++}
++
++/// Emits (remaining, count, f1, ..., fk) with a newline; n=1 emits (1, 0), and zero is rejected.
++pub fn factorize(c: anytype) !void {
++    var factors: std.ArrayList(packet.Value) = .empty;
++    defer factors.deinit(c.m.gpa);
++    _ = try trial(c, &factors);
++    var bytes: std.ArrayList(u8) = .empty;
++    defer bytes.deinit(c.m.gpa);
++    try emit(c, 5, .comma_space, true, &bytes);
++    try emit(c, 9, if (factors.items.len == 0) .close else .comma_space, false, &bytes);
++    for (factors.items, 0..) |value, i| {
++        c.m.values[14] = value;
++        try emit(c, 14, if (i + 1 == factors.items.len) .close else .comma_space, false, &bytes);
++    }
++    if (c.out.items.len > packet.max_output - bytes.items.len) return error.GraphOutputSize;
++    try c.out.appendSlice(c.m.gpa, bytes.items);
++}
++
++fn emit(c: anytype, ref: u32, ending: packet.Ending, prefix: bool, bytes: *std.ArrayList(u8)) !void {
++    c.end = try printing.emit(c.m, .{ .ref = ref, .ending = ending, .prefix = prefix }, c.budget, bytes, c.cancel);
++    if (c.end != .halted) return error.GraphAlgorithmStopped;
++}
++
++/// Slots 5..11 hold remaining, candidate, quotient, remainder, count, two and the bound ceiling.
++fn trial(c: anytype, factors: ?*std.ArrayList(packet.Value)) !u32 {
++    try c.meta(2, 3);
++    if (try c.flag(2) or try c.flag(3)) return error.GraphAlgorithmArithmetic;
++    if (!try c.flag(0) or !try c.flag(1)) return error.GraphAlgorithmArithmetic;
++    c.move(5, 20);
++    c.m.values[11] = try packet.literal("10000");
++    try c.meta(11, 3);
++    if (try c.flag(4)) return error.GraphAlgorithmArithmetic;
++    c.move(9, 0);
++    try c.meta(5, 1);
++    if (try c.flag(5)) return 1;
++    c.m.values[10] = try packet.literal("2");
++    c.move(6, 10);
++    var even = true;
++    for (0..max_iterations) |_| {
++        if (even) {
++            try c.call("half", &.{5}, 12);
++            c.move(7, 12);
++            c.move(8, 13);
++        } else try divide(c);
++        try c.meta(7, 6);
++        if (try c.flag(4)) {
++            if (factors) |list| {
++                try retain(c, list, 5);
++                c.move(5, 1);
++            }
++            return 5;
++        }
++        try c.meta(3, 6);
++        if (try c.flag(4)) return 0;
++        if (!try c.nonzero(8)) {
++            if (factors) |list| {
++                try retain(c, list, 6);
++                c.move(5, 7);
++                try c.meta(5, 1);
++                if (try c.flag(5)) return 5;
++                continue;
++            }
++            return 6;
++        }
++        try c.call("add", &.{ 6, if (even) @as(u32, 1) else 10 }, 6);
++        even = false;
++    }
++    return error.GraphAlgorithmLimit;
++}
++
++fn retain(c: anytype, factors: *std.ArrayList(packet.Value), ref: u32) !void {
++    if (factors.items.len >= max_factors) return error.GraphAlgorithmLimit;
++    try factors.append(c.m.gpa, c.m.values[ref]);
++    try c.call("add", &.{ 9, 1 }, 9);
++}
++
++/// Only occupied digit lanes are scheduled; quotient assembly copies FFN output bits without decoding them.
++fn divide(c: anytype) !void {
++    c.move(24, 5);
++    c.move(25, 6);
++    c.move(26, 0);
++    c.move(27, 0);
++    var digit: usize = c.width;
++    while (digit > 1) : (digit -= 1) {
++        const at = digit - 1;
++        var occupied = false;
++        for (c.m.values[24][at / 31][2 + at % 31 * 4 ..][0..4]) |bit|
++            occupied = occupied or bit != 0;
++        if (occupied) break;
++    }
++    while (digit > 0) {
++        digit -= 1;
++        c.move(28, 0);
++        packet.copyBits(&c.m.values[28], &c.m.values[24], .{ .ref = 24, .from = @intCast(digit), .digits = 1 });
++        try c.call("divstep", &.{ 27, 25, 28 }, 29);
++        c.move(27, 29);
++        packet.copyBits(&c.m.values[26], &c.m.values[30], .{ .ref = 30, .to = @intCast(digit), .digits = 1 });
++    }
++    c.move(7, 26);
++    c.move(8, 27);
++}
+diff --git a/zig/src/core/runner_graph_lazy.zig b/zig/src/core/runner_graph_lazy.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..36ee6ca51ab0eab05777a8c1fe02aa1efc51f658
+--- /dev/null
++++ b/zig/src/core/runner_graph_lazy.zig
+@@ -0,0 +1,46 @@
++//! Logical bindings validated offline and again before publishing a lazily decoded circuit.
++const std = @import("std");
++const model = @import("steps_v1/runner_circuit_model.zig");
++const packet = @import("runner_graph_packet.zig");
++const missing = std.math.maxInt(u32);
++pub const Slots = [packet.max_arity][packet.max_groups]u32;
++
++pub const Binding = struct {
++    inputs: u8 = 0,
++    outputs: u8 = 0,
++    in_slots: Slots = @splat(@splat(missing)),
++    out_slots: Slots = @splat(@splat(missing)),
++
++    pub fn inspect(c: *const model.Circuit, width: u8) !Binding {
++        if (!packet.widthValid(width)) return error.GraphTemplate;
++        if (c.program.a_bit != packet.bit_scale or c.program.a_ref != packet.reference_scale)
++            return error.GraphValueScale;
++        if (c.tables.len != c.table_names.len) return error.GraphSlots;
++        var out: Binding = .{};
++        for (c.table_names, 0..) |name, table| {
++            if (std.mem.startsWith(u8, name, "output.cursor")) continue;
++            const input = std.mem.startsWith(u8, name, "in");
++            const output = std.mem.startsWith(u8, name, "out");
++            if (!input and !output) continue;
++            const prefix: usize = if (input) 2 else 3;
++            const dot = std.mem.indexOfScalarPos(u8, name, prefix, '.') orelse return error.GraphSlots;
++            const logical = std.fmt.parseInt(u8, name[prefix..dot], 10) catch return error.GraphSlots;
++            const offset = std.fmt.parseInt(u8, name[dot + 1 ..], 10) catch return error.GraphSlots;
++            if (logical >= packet.max_arity or offset % 31 != 0 or offset >= width) return error.GraphSlots;
++            const target = if (input) &out.in_slots else &out.out_slots;
++            const group = offset / 31;
++            if (target[logical][group] != missing or c.tables[table].rows.len != 128 * 128)
++                return error.GraphSlots;
++            target[logical][group] = @intCast(table);
++            const arity = if (input) &out.inputs else &out.outputs;
++            arity.* = @max(arity.*, logical + 1);
++        }
++        if (out.inputs == 0 or out.outputs == 0) return error.GraphSlots;
++        const groups = (@as(usize, width) + 30) / 31;
++        for (out.in_slots[0..out.inputs]) |s| for (s[0..groups]) |idx| if (idx == missing)
++            return error.GraphSlots;
++        for (out.out_slots[0..out.outputs]) |s| for (s[0..groups]) |idx| if (idx == missing)
++            return error.GraphSlots;
++        return out;
++    }
++};
+diff --git a/zig/src/core/runner_graph_machine.zig b/zig/src/core/runner_graph_machine.zig
+index 42ea9d0121354e74208a577244f1430fcd4f7c23..8eb41cccdfb414843ffada963ea1673afc5508b3 100644
+--- a/zig/src/core/runner_graph_machine.zig
++++ b/zig/src/core/runner_graph_machine.zig
+@@ -106,6 +106,8 @@ pub const Machine = struct {
+             count += op.outputs;
+         }
+         if (m.prints.len != 0) {
++            const validated = try printing.validateBytes(m, m.prints, budget, out, cancel);
++            if (validated != .halted) return .{ .end = validated, .steps = m.steps };
+             for (m.prints) |p| {
+                 const end = try printing.emit(m, p, budget, out, cancel);
+                 if (end != .halted) return .{ .end = end, .steps = m.steps };
+@@ -126,6 +128,8 @@ pub const Machine = struct {
+         if (m.steps >= budget) return .budget;
+         if (cancelled(cancel)) return .cancelled;
+         for (refs) |ref| try fits(&m.values[ref], t.width);
++        try t.prepare();
++        if (cancelled(cancel)) return .cancelled;
+         var fresh: State = undefined;
+         const state = if (m.reuse_states) try m.states.get(m.gpa, t) else blk: {
+             fresh = try State.init(m.gpa, &t.circuit);
+diff --git a/zig/src/core/runner_graph_packet.zig b/zig/src/core/runner_graph_packet.zig
+index 3b2a12c7f450d67ea2cded1065b5e9fe5aa60a65..01856a65c00fe79b466a3b8325027e1657894169 100644
+--- a/zig/src/core/runner_graph_packet.zig
++++ b/zig/src/core/runner_graph_packet.zig
+@@ -33,7 +33,7 @@ pub const Op = struct {
+     checked: bool = false,
+ };
+ 
+-pub const Style = enum { integer, fixed, comma, integral_float, boolean, fraction, tuple };
++pub const Style = enum { integer, fixed, comma, integral_float, boolean, fraction, tuple, byte, prepared };
+ pub const Ending = enum { newline, space, empty, comma_space, close, slash, close_space, close_empty, close_comma_space };
+ pub const Print = struct {
+     ref: u32,
+@@ -65,7 +65,7 @@ pub const Plan = struct {
+ };
+ 
+ pub const Family = enum { add, sub, mul, div, mod, pow };
+-pub const Algorithm = enum { powmod, gcd, isqrt, range_product, factorial, digit_sum, divmod, square_offset, fraction, fixed_div, divexact };
++pub const Algorithm = enum { powmod, gcd, isqrt, range_product, factorial, digit_sum, divmod, square_offset, fraction, fixed_div, divexact, smallest_factor, factorize, f64_ratio, f64_mul, f64_sub, f64_isclose, f64_repr, f64_format };
+ pub const Shape = enum { sum, squares, factorial, fib, list_sum, sorted_distance };
+ 
+ pub const Builder = struct {
+@@ -129,7 +129,8 @@ pub const Builder = struct {
+             const digits = operand.len - @intFromBool(operand[0] == '-' or operand[0] == '+');
+             needed = @max(needed, digits);
+         }
+-        const width: u8 = if (family == .factorial or family == .range_product) 128 else blk: {
++        const width: u8 = if (family == .factorial or family == .range_product or
++            std.mem.startsWith(u8, @tagName(family), "f64_")) 128 else blk: {
+             for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |n| if (needed <= n) break :blk n;
+             unreachable;
+         };
+@@ -189,14 +190,17 @@ pub const Builder = struct {
+ 
+ pub fn algorithmArity(family: Algorithm) u8 {
+     return switch (family) {
++        .f64_mul, .f64_sub => 4,
++        .f64_isclose => 8,
++        .f64_ratio, .f64_repr, .f64_format => 2,
+         .powmod => 3,
+-        .gcd, .range_product, .divmod, .square_offset, .fraction, .fixed_div, .divexact => 2,
++        .gcd, .range_product, .divmod, .square_offset, .fraction, .fixed_div, .divexact, .smallest_factor, .factorize => 2,
+         .isqrt, .factorial, .digit_sum => 1,
+     };
+ }
+ 
+ pub fn algorithmOutputs(family: Algorithm) u8 {
+-    return if (family == .divmod or family == .fraction) 2 else 1;
++    return if (family == .divmod or family == .fraction or family == .f64_ratio or family == .f64_mul or family == .f64_sub or family == .f64_format) 2 else 1;
+ }
+ 
+ pub fn widthValid(n: u8) bool {
+diff --git a/zig/src/core/runner_graph_print.zig b/zig/src/core/runner_graph_print.zig
+index e626d2dc6b5381a220b45619aca89fdcbdcfec59..79386dd1f1c5641d2ab389dc434ceba9a2dfc57e 100644
+--- a/zig/src/core/runner_graph_print.zig
++++ b/zig/src/core/runner_graph_print.zig
+@@ -4,6 +4,24 @@ const packet = @import("runner_graph_packet.zig");
+ const api = @import("runner_api.zig");
+ const End = @FieldType(api.RunEnd, "end");
+ 
++/// Validate every byte before any output so invalid later bytes cannot leave a partial successful prefix.
++pub fn validateBytes(m: anytype, prints: []const packet.Print, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !End {
++    const original = m.values;
++    var scratch: [2]packet.Value = undefined;
++    m.values = &scratch;
++    defer m.values = original;
++    for (prints) |p| {
++        if (p.style != .byte) continue;
++        scratch[0] = original[p.ref];
++        const t = m.bank.find("byte_check", 128) orelse return error.GraphTemplate;
++        const end = try m.invoke(t, &.{0}, 1, budget, out, cancel, false);
++        if (end != .halted) return end;
++        if (scratch[1][0][127] == packet.bit_scale) return error.GraphArithmetic;
++        if (scratch[1][0][127] != 0) return error.GraphPredicate;
++    }
++    return .halted;
++}
++
+ pub fn emit(m: anytype, p: packet.Print, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !End {
+     const original = m.values;
+     if (p.ref >= original.len) return error.GraphReference;
+@@ -23,6 +41,14 @@ pub fn emit(m: anytype, p: packet.Print, budget: u64, out: *std.ArrayList(u8), c
+         scratch[2][0][127] = packet.bit_scale;
+         return part(m, 2, .integer, 0, .newline, false, budget, out, cancel);
+     }
++    if (p.style == .prepared) {
++        const t = m.bank.find("format_f64", 62) orelse return error.GraphTemplate;
++        return m.invoke(t, &.{ 2, 3 }, 0, budget, out, cancel, true);
++    }
++    if (p.style == .byte) {
++        const t = m.bank.find("emit_byte", 4) orelse return error.GraphTemplate;
++        return m.invoke(t, &.{2}, 0, budget, out, cancel, true);
++    }
+     if (p.style == .fraction) {
+         const t = m.bank.find("meta", 128) orelse return error.GraphTemplate;
+         const end = try m.invoke(t, &.{ 3, 1 }, 20, budget, out, cancel, false);
+@@ -54,7 +80,7 @@ pub fn emit(m: anytype, p: packet.Print, budget: u64, out: *std.ArrayList(u8), c
+ }
+ 
+ fn part(m: anytype, ref: u32, style: packet.Style, precision: u8, ending: packet.Ending, prefix: bool, budget: u64, out: *std.ArrayList(u8), cancel: ?*const std.atomic.Value(bool)) !End {
+-    if (style == .fraction or style == .tuple or precision > 18 or (style != .fixed and precision != 0))
++    if (style == .fraction or style == .tuple or style == .prepared or style == .byte or precision > 18 or (style != .fixed and precision != 0))
+         return error.GraphPrint;
+     const mode: u32 = switch (style) {
+         .integer => 0,
+diff --git a/zig/src/core/runner_graph_state_cache.zig b/zig/src/core/runner_graph_state_cache.zig
+index bb518c97c9da9b06e5338d6f7a9a103740268a29..c8fb3879b1baf2126c1b90f97a674487a0596c51 100644
+--- a/zig/src/core/runner_graph_state_cache.zig
++++ b/zig/src/core/runner_graph_state_cache.zig
+@@ -16,6 +16,7 @@ pub const Cache = struct {
+ 
+     /// The returned pointer stays valid until the next get; callers release it with reset on every exit.
+     pub fn get(c: *Cache, a: std.mem.Allocator, t: *const Template) !*State {
++        try t.prepare();
+         for (c.entries.items) |*e| if (e.template == t) return &e.state;
+         try c.entries.ensureUnusedCapacity(a, 1);
+         const state = try State.init(a, &t.circuit);

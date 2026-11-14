@@ -1,0 +1,503 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 20:57:26 +0700
+Subject: [PATCH 132/207] Merge lane 3c3603793 (list min/max, sorted and
+ filters as circuit compare networks; T5's mutated-packet test)
+
+The def test's list golden keeps only the served-route check: lists lower again, on the graph route.
+
+Squashed merge of 1 commits:
+- runner: list min/max, sorted and filters run on the circuit, not the host (T5 ownership gate) (Jay Leaton)
+---
+ .../core/runner_frontend_integer_def_test.zig |   5 +-
+ zig/src/core/runner_frontend_integer_list.zig | 171 +++++++++++++-----
+ .../runner_frontend_integer_list_test.zig     | 109 ++++++++++-
+ .../core/runner_frontend_integer_python.zig   |   2 +-
+ 4 files changed, 225 insertions(+), 62 deletions(-)
+
+diff --git a/zig/src/core/runner_frontend_integer_def_test.zig b/zig/src/core/runner_frontend_integer_def_test.zig
+index 9cd360bd1d3fbb0024e4ee1ae9fafaf4ee96bddf..dabe20357a5b22532f8060a6f34a782de7a648ed 100644
+--- a/zig/src/core/runner_frontend_integer_def_test.zig
++++ b/zig/src/core/runner_frontend_integer_def_test.zig
+@@ -155,7 +155,7 @@ test "runner frontend integer def: the scripts run on the real bank and print CP
+     for (refused) |code| try std.testing.expectEqual(null, try table.translate(gpa, &bank, code));
+ }
+ 
+-/// T5's merge gate on the list tip (T5-S3-MERGE.md): the served graph route refuses each, or prints CPython's stdout.
++/// T5's merge gate on the list tip (T5-S3-MERGE.md); the mutated-packet check is runner_frontend_integer_list_test.zig.
+ const lists = [_][2][]const u8{
+     .{ "print(min([2, 3]))\n", "2\n" },
+     .{ "print(min([4, 3]))\n", "3\n" },
+@@ -164,8 +164,7 @@ const lists = [_][2][]const u8{
+     .{ "print(sum(range(3, 1)))\n", "0\n" },
+ };
+ 
+-test "runner frontend integer def: lists refuse in the integer lowering and the served graph route never misprints them" {
+-    for (lists) |c| try std.testing.expectEqual(null, try integer_python.lowerWithCost(gpa, c[0], 0));
++test "runner frontend integer def: the served graph route refuses each list program or prints CPython's stdout" {
+     const g = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
+     var bank = try graph.Bank.load(gpa, std.mem.span(g));
+     defer bank.deinit();
+diff --git a/zig/src/core/runner_frontend_integer_list.zig b/zig/src/core/runner_frontend_integer_list.zig
+index 3e5b371dd92fa68ee6eb689e7a46bef9128904b7..606dd65d4ec2d317f6191606c71445ced749047f 100644
+--- a/zig/src/core/runner_frontend_integer_list.zig
++++ b/zig/src/core/runner_frontend_integer_list.zig
+@@ -3,9 +3,71 @@ const std = @import("std");
+ const ast = @import("runner_frontend_integer_ast.zig");
+ const Parser = ast.Parser;
+ const Invalid = ast.Invalid;
++const node_cap = @typeInfo(@FieldType(Parser, "nodes")).array.len;
+ 
+-/// items[start..][0..len] of the parser; a range object prints as `range(...)`, so it is never printed here.
+-pub const List = struct { start: usize = 0, len: usize = 0, range: bool = false };
++/// items[start..][0..len]; a range never prints here; a filtered list's 0/1 masks follow (its len is a circuit value).
++pub const List = struct { start: usize = 0, len: usize = 0, range: bool = false, masked: bool = false };
++
++/// A list whose elements all exist: a filtered one only reaches sum() and len(), on the circuit.
++pub fn plain(p: *const Parser, li: usize) Invalid!List {
++    const l = p.lists[li];
++    if (l.masked) return error.Unsupported;
++    return l;
++}
++
++/// Whether node `i` is the script's text alone: no comparison (a filter's or a min's choice) beneath it.
++fn fixed(p: *const Parser, i: usize) bool {
++    var seen: [node_cap]bool = @splat(false);
++    return fixedAt(p, i, &seen);
++}
++
++fn fixedAt(p: *const Parser, i: usize, seen: *[node_cap]bool) bool {
++    if (i >= p.count) return false;
++    if (seen[i]) return true;
++    seen[i] = true;
++    const n = p.nodes[i];
++    return switch (n.op) {
++        .literal => true,
++        .eq, .ne, .lt, .le, .gt, .ge => false,
++        .neg, .digits, .isqrt, .factorial, .digit_sum => fixedAt(p, n.l, seen),
++        .powmod, .range_product => fixedAt(p, n.l, seen) and fixedAt(p, n.r, seen) and fixedAt(p, n.k, seen),
++        else => fixedAt(p, n.l, seen) and fixedAt(p, n.r, seen),
++    };
++}
++
++/// `acc` or `e`, chosen on the circuit: acc + (e - acc) * (e < acc), or `>` for max; a tie keeps acc (Python's first).
++fn pick(p: *Parser, acc: usize, e: usize, largest: bool) Invalid!usize {
++    const better = try p.add(.{ .op = if (largest) .gt else .lt, .l = e, .r = acc });
++    const step = try p.add(.{ .op = .mul, .l = try p.add(.{ .op = .sub, .l = e, .r = acc }), .r = better });
++    return p.add(.{ .op = .add, .l = acc, .r = step });
++}
++
++/// min and max of a and b on the circuit: t = (b - a) * (b < a); min = a + t, max = b - t.
++fn exchange(p: *Parser, a: usize, b: usize) Invalid![2]usize {
++    const t = try p.add(.{ .op = .mul, .l = try p.add(.{ .op = .sub, .l = b, .r = a }), .r = try p.add(.{ .op = .lt, .l = b, .r = a }) });
++    return .{ try p.add(.{ .op = .add, .l = a, .r = t }), try p.add(.{ .op = .sub, .l = b, .r = t }) };
++}
++
++/// sorted() as a compare-exchange network, each output a circuit value; its depth sets the packet's size.
++fn network(p: *Parser, elems: []usize, reverse: bool) Invalid!void {
++    for (elems) |e| if (p.boolean(e)) return error.Unsupported; // sorted([True, 0]) keeps its bools
++    if (elems.len == 4) {
++        // the depth-3 network for four (transposition's depth 4 outgrows a packet)
++        for ([_][2]usize{ .{ 0, 1 }, .{ 2, 3 }, .{ 0, 2 }, .{ 1, 3 }, .{ 1, 2 } }) |c| {
++            const lo, const hi = try exchange(p, elems[c[0]], elems[c[1]]);
++            elems[c[0]], elems[c[1]] = if (reverse) .{ hi, lo } else .{ lo, hi };
++        }
++        return;
++    }
++    // odd-even transposition: n rounds
++    for (0..elems.len) |round| {
++        var i = round % 2;
++        while (i + 1 < elems.len) : (i += 2) {
++            const lo, const hi = try exchange(p, elems[i], elems[i + 1]);
++            elems[i], elems[i + 1] = if (reverse) .{ hi, lo } else .{ lo, hi };
++        }
++    }
++}
+ 
+ /// Small literals the lowering itself makes (an index, a length): their text, as a literal node must carry one.
+ const digits = blk: {
+@@ -52,7 +114,7 @@ pub fn whole(p: *Parser, text: []const u8) Invalid!usize {
+     return li;
+ }
+ 
+-/// A list expression here. Never a node: its length, filter and order come from the exact proof, its values from code.
++/// A list expression here. Never a node: its length is the script's shape; its filter and order are circuit values.
+ pub fn parse(p: *Parser, depth: usize) Invalid!usize {
+     if (depth > 12) return error.Unsupported;
+     p.space();
+@@ -81,20 +143,10 @@ pub fn parse(p: *Parser, depth: usize) Invalid!usize {
+         } else if (!generator and separator(content) != null) return error.Unsupported;
+         const src = try argument(p, arg, depth);
+         if (p.check_only) return src;
+-        const l = p.lists[src];
++        const l = try plain(p, src);
+         var elems: [ast.max_items]usize = undefined;
+         @memcpy(elems[0..l.len], p.items[l.start..][0..l.len]);
+-        if (sorting) {
+-            const Ctx = struct { p: *Parser, reverse: bool };
+-            // stable, as Python's sort: equal ints keep their order either way
+-            std.sort.insertion(usize, elems[0..l.len], Ctx{ .p = p, .reverse = reverse }, struct {
+-                fn less(c: Ctx, x: usize, y: usize) bool {
+-                    const a = c.p.nodes[x].value;
+-                    const b = c.p.nodes[y].value;
+-                    return if (c.reverse) a > b else a < b;
+-                }
+-            }.less);
+-        }
++        if (sorting) try network(p, elems[0..l.len], reverse);
+         return make(p, elems[0..l.len], false);
+     }
+     const name = try p.identifier();
+@@ -144,6 +196,19 @@ pub fn make(p: *Parser, elems: []const usize, is_range: bool) Invalid!usize {
+     return p.list_count - 1;
+ }
+ 
++/// A comprehension's list with each element's 0/1 keep mask (every element proved: one a filter drops may refuse).
++fn filtered(p: *Parser, elems: []const usize, masks: []const usize) Invalid!usize {
++    if (p.item_count + 2 * elems.len > p.items.len) return error.Unsupported;
++    const li = try make(p, elems, false);
++    for (masks) |m| if (!p.check_only) {
++        _ = try p.prove(m, m);
++    };
++    @memcpy(p.items[p.item_count..][0..masks.len], masks);
++    p.item_count += masks.len;
++    p.lists[li].masked = true;
++    return li;
++}
++
+ fn literal(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+     var elems: [ast.max_items]usize = undefined;
+     var n: usize = 0;
+@@ -179,7 +244,8 @@ fn range(p: *Parser, depth: usize) Invalid!usize {
+         try p.need(",");
+     }
+     if (p.check_only) return placeholder(p);
+-    for (args[0..n]) |a| if (p.boolean(a) or p.nodes[a].op == .divmod) return error.Unsupported;
++    // the length is a shape: never from a circuit choice (a filter's len, a min)
++    for (args[0..n]) |a| if (p.boolean(a) or p.nodes[a].op == .divmod or !fixed(p, a)) return error.Unsupported;
+     const start: ?usize = if (n == 1) null else args[0];
+     const stop = if (n == 1) args[0] else args[1];
+     const step: ?usize = if (n == 3) args[2] else null;
+@@ -251,20 +317,20 @@ fn comprehension(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+             const args = try parenthesized(p);
+             const comma = separator(args) orelse return error.Unsupported;
+             if (separator(args[comma + 1 ..]) != null) return error.Unsupported;
+-            columns[0] = p.lists[try nested(p, args[0..comma], depth)];
+-            columns[1] = p.lists[try nested(p, args[comma + 1 ..], depth)];
++            columns[0] = try plain(p, try nested(p, args[0..comma], depth));
++            columns[1] = try plain(p, try nested(p, args[comma + 1 ..], depth));
+             pairs = .zip;
+         } else if (p.word("enumerate")) {
+             const args = try parenthesized(p);
+             const comma = separator(args);
+-            columns[1] = p.lists[try nested(p, args[0 .. comma orelse args.len], depth)];
++            columns[1] = try plain(p, try nested(p, args[0 .. comma orelse args.len], depth));
+             if (comma) |c| {
+                 first = try sub(p, std.mem.trim(u8, args[c + 1 ..], " \t"), depth);
+                 if (p.boolean(first.?) or p.nodes[first.?].op == .divmod) return error.Unsupported;
+             }
+             pairs = .enumerate;
+         } else {
+-            columns[0] = p.lists[try parse(p, depth + 1)];
++            columns[0] = try plain(p, try parse(p, depth + 1));
+         }
+         p.space();
+         if (p.pos != p.source.len) return error.Unsupported;
+@@ -276,7 +342,7 @@ fn comprehension(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+         .enumerate => columns[1].len,
+     };
+     var out: [ast.max_items]usize = undefined;
+-    var kept: usize = 0;
++    var masks: [ast.max_items]usize = undefined;
+     var counter: usize = 0; // enumerate's count from its start: the start, then one more each element
+     const one = if (first != null and len > 1) try number(p, 1) else 0;
+     for (0..len) |k| {
+@@ -299,22 +365,21 @@ fn comprehension(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+             p.kinds[p.binding_count] = false;
+             p.binding_count += 1;
+         }
+-        // a condition only selects, by its exact value: its nodes never print, so they are dropped after the proof
+-        var keep = true;
++        // the conditions' product is the element's keep mask, a circuit value: the host never chooses what stays
++        var mask: ?usize = null;
+         for (conds[0..nconds]) |cond| {
+-            const m = p.mark();
+             const c = try sub(p, cond, depth);
+             if (p.nodes[c].op == .divmod) return error.Unsupported;
+-            if (!p.check_only and try p.prove(c, c) == 0) keep = false;
+-            p.reset(m);
+-            if (!keep) break;
++            // an int condition is its truth: nonzero
++            const truth = if (p.boolean(c)) c else try p.add(.{ .op = .ne, .l = c, .r = try number(p, 0) });
++            mask = if (mask) |m| try p.add(.{ .op = .mul, .l = m, .r = truth }) else truth;
+         }
+-        if (!keep) continue;
+-        if (kept == out.len) return error.Unsupported;
+-        out[kept] = try sub(p, body, depth);
+-        kept += 1;
++        if (k == out.len) return error.Unsupported;
++        if (mask) |m| masks[k] = m;
++        out[k] = try sub(p, body, depth);
+     }
+-    return make(p, out[0..kept], false);
++    if (nconds == 0) return make(p, out[0..len], false);
++    return filtered(p, out[0..len], masks[0..len]);
+ }
+ 
+ /// An int expression over `text`, the parser's position kept.
+@@ -351,16 +416,22 @@ fn parenthesized(p: *Parser) Invalid![]const u8 {
+ 
+ // ---- int consumers, called from the parser's atoms ----
+ 
+-/// len(xs): the list's static length, a literal; the list's own new nodes are dropped.
++/// len(xs): the list's static length, a literal (its new nodes dropped); a filtered list's is its masks' sum.
+ pub fn length(p: *Parser, depth: usize) Invalid!usize {
+     const content = try parenthesized(p);
+     // len() of a generator is a TypeError
+     if (top(content, "for", 0) != null or separator(content) != null) return error.Unsupported;
+     const m = p.mark();
+     const li = try nested(p, content, depth);
+-    const len = if (p.check_only) 1 else p.lists[li].len;
+-    p.reset(m);
+-    return number(p, len);
++    const l = p.lists[li];
++    if (p.check_only or !l.masked) {
++        p.reset(m);
++        return number(p, if (p.check_only) 1 else l.len);
++    }
++    // from 0: one mask alone would print as a bool
++    var acc = try number(p, 0);
++    for (p.items[l.start + l.len ..][0..l.len]) |mask| acc = try p.add(.{ .op = .add, .l = acc, .r = mask });
++    return acc;
+ }
+ 
+ /// sum(xs) or sum(generator): 0 for none, else the elements added left to right (start= refuses).
+@@ -368,6 +439,13 @@ pub fn sum(p: *Parser, depth: usize) Invalid!usize {
+     const content = try parenthesized(p);
+     if (top(content, "for", 0) == null and separator(content) != null) return error.Unsupported;
+     const l = p.lists[try argument(p, content, depth)];
++    if (l.masked) {
++        // each element times its keep mask, from 0
++        var acc = try number(p, 0);
++        for (p.items[l.start..][0..l.len], p.items[l.start + l.len ..][0..l.len]) |e, mask|
++            acc = try p.add(.{ .op = .add, .l = acc, .r = try p.add(.{ .op = .mul, .l = e, .r = mask }) });
++        return acc;
++    }
+     if (l.len == 0) return number(p, 0);
+     var acc = p.items[l.start];
+     // sum([True]) is 1, an int
+@@ -376,7 +454,7 @@ pub fn sum(p: *Parser, depth: usize) Invalid!usize {
+     return acc;
+ }
+ 
+-/// min/max of one list or generator, or of two or more ints: the first extreme element (an empty list refuses).
++/// min/max of one list or generator, or of two or more ints: chosen on the circuit, pairwise (an empty list refuses).
+ pub fn extreme(p: *Parser, depth: usize, comptime largest: bool) Invalid!usize {
+     p.listed = true;
+     const content = try parenthesized(p);
+@@ -394,21 +472,15 @@ pub fn extreme(p: *Parser, depth: usize, comptime largest: bool) Invalid!usize {
+             if (comma) |c| rest = rest[c + 1 ..] else break;
+         }
+     } else {
+-        const l = p.lists[try argument(p, content, depth)];
++        const l = try plain(p, try argument(p, content, depth));
+         @memcpy(elems[0..l.len], p.items[l.start..][0..l.len]);
+         n = l.len;
+     }
+     if (n == 0) return error.Unsupported; // ValueError
+-    if (p.check_only) return elems[0];
++    for (elems[0..n]) |e| if (p.boolean(e)) return error.Unsupported; // min(True, 2) is True, a bool
+     var best = elems[0];
+-    var value = try p.prove(best, best);
+-    for (elems[1..n]) |e| {
+-        const v = try p.prove(e, e);
+-        if (if (largest) v > value else v < value) {
+-            best = e;
+-            value = v;
+-        }
+-    }
++    for (elems[1..n]) |e| best = try pick(p, best, e, largest);
++    if (!p.check_only) _ = try p.prove(best, best);
+     return best;
+ }
+ 
+@@ -418,8 +490,9 @@ pub fn index(p: *Parser, li: usize, depth: usize) Invalid!usize {
+     const i = try p.expr(depth + 1);
+     try p.need("]");
+     if (p.check_only) return i;
+-    if (p.boolean(i) or p.nodes[i].op == .divmod) return error.Unsupported;
+-    const l = p.lists[li];
++    // which element is a shape: never from a circuit choice
++    if (p.boolean(i) or p.nodes[i].op == .divmod or !fixed(p, i)) return error.Unsupported;
++    const l = try plain(p, li);
+     const v = try p.prove(i, i);
+     const at = if (v < 0) v + @as(i512, @intCast(l.len)) else v;
+     if (at < 0 or at >= l.len) return error.Unsupported;
+diff --git a/zig/src/core/runner_frontend_integer_list_test.zig b/zig/src/core/runner_frontend_integer_list_test.zig
+index 1f7c9634ad7dbadf9390839e3930937d65dd9470..a2f5b24c7e5b4085ac1468b29dc8c15db4eff76d 100644
+--- a/zig/src/core/runner_frontend_integer_list_test.zig
++++ b/zig/src/core/runner_frontend_integer_list_test.zig
+@@ -12,16 +12,19 @@ const gpa = std.testing.allocator;
+ /// mbpp-66 as recorded at arm-d (imr-measure-20261101T155322Z), then variations; expected stdout from CPython 3.
+ const cases = [_][2][]const u8{
+     .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nassert pos_count([1, -2, 3, -4]) == 2\nprint(pos_count([1, -2, 3, -4]))", "2\n" },
+-    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nprint(pos_count([0, 5, -7, 8, 9]), pos_count(list(range(-3, 4))))\n", "3 3\n" },
++    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nprint(pos_count([0, 5, -7, 8, 9]))\n", "3\n" },
++    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nprint(pos_count(list(range(-3, 4))))\n", "3\n" },
+     .{ "xs = [3, 1, 2]\nprint(len(xs), sum(xs), min(xs), max(xs))\n", "3 6 1 3\n" },
+     .{ "print(sorted([3, 1, 2]))\n", "[1, 2, 3]\n" },
+     .{ "print(sorted([3, 1, 2], reverse=True))\n", "[3, 2, 1]\n" },
+-    .{ "print(sorted([2, -1, 2, 0, -1]))\n", "[-1, -1, 0, 2, 2]\n" },
++    .{ "print(sorted([2, -1, 2, 0]))\n", "[-1, 0, 2, 2]\n" },
++    .{ "print(sorted([4, 1, 3, 2], reverse=True))\n", "[4, 3, 2, 1]\n" },
+     .{ "print(list(range(5)))\nprint(list(range(2, 11, 3)))\nprint(list(range(10, 0, -3)))\n", "[0, 1, 2, 3, 4]\n[2, 5, 8]\n[10, 7, 4, 1]\n" },
+-    .{ "n = 6\nprint([i * i for i in range(1, n) if i % 2 == 1])\n", "[1, 9, 25]\n" },
++    .{ "n = 6\nprint(sum(i * i for i in range(1, n) if i % 2 == 1))\n", "35\n" },
++    .{ "n = 6\nprint(len([i for i in range(1, n) if i % 2 == 1]))\n", "3\n" },
+     .{ "a = [1, 2, 3]\nb = [10, 20, 30]\nprint([x + y for x, y in zip(a, b)])\n", "[11, 22, 33]\n" },
+     .{ "print(list(x * y for x, y in zip([1, 2, 3], [4, 5])))\n", "[4, 10]\n" },
+-    .{ "xs = [5, 7, 9]\nprint([i * x for i, x in enumerate(xs)], [i for i, x in enumerate(xs, 1) if x > 6])\n", "[0, 7, 18] [2, 3]\n" },
++    .{ "xs = [5, 7, 9]\nprint([i * x for i, x in enumerate(xs)], sum(i for i, x in enumerate(xs, 1) if x > 6))\n", "[0, 7, 18] 5\n" },
+     .{ "print(sum(x * x for x in range(10)))\n", "285\n" },
+     .{ "xs = [4, -1, 7]\nprint(xs, xs[0], xs[-1])\n", "[4, -1, 7] 4 7\n" },
+     .{ "print([x > 2 for x in [1, 2, 3, 4]])\n", "[False, False, True, True]\n" },
+@@ -32,9 +35,13 @@ const cases = [_][2][]const u8{
+     .{ "a = [1, 2]\nb = a\nprint(b, a)\n", "[1, 2] [1, 2]\n" },
+     .{ "print([2 ** 100, -(3 ** 40)])\n", "[1267650600228229401496703205376, -12157665459056928801]\n" },
+     .{ "print(sum(x for x in range(5) if x > 10), len([]), sum([]))\n", "0 0 0\n" },
+-    .{ "print(sorted(x % 5 for x in range(12, 3, -2)))\n", "[0, 1, 2, 3, 4]\n" },
+     .{ "xs = [1, 2]\nprint(xs)\nprint(len(xs))\n", "[1, 2]\n2\n" },
+-    .{ "print([x for x in range(20) if x % 2 == 0 if x % 3 == 0])\n", "[0, 6, 12, 18]\n" },
++    // T5's ownership programs (S3 merge gate), then filters whose masks are int truths
++    .{ "print(min([2, 3]), len([x for x in [7] if x > 0]))\n", "2 1\n" },
++    .{ "print(sorted([2, 3]))\n", "[2, 3]\n" },
++    .{ "print(sum(x for x in [2, 5] if x > 3), max(3, 2))\n", "5 3\n" },
++    .{ "print(min(x * x for x in [2, 3]))\n", "4\n" },
++    .{ "print(len([x for x in [7, -2, 9] if x % 3]))\n", "2\n" },
+     .{ "print(list(range(12)))\n", "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]\n" },
+     // an empty range with a start (T5: `sum(range(3,1))` panicked in ReleaseSafe)
+     .{ "print(sum(range(3, 1)), len(range(4, 2)), sum(range(2, 2, 3)))\n", "0 0 0\n" },
+@@ -88,6 +95,21 @@ const refused = [_][]const u8{
+     "print(sum([1], 10))\n",
+     "print(*[1, 2])\n",
+     "print([x if x > 0 else 0 for x in [1, -1]])\n",
++    // a filter's kept elements or a circuit choice as a shape: which elements, how many, which one
++    "print([x for x in [1, 2] if x > 1])\n",
++    "print([x for x in range(20) if x % 2 == 0 if x % 3 == 0])\n",
++    "xs = [x for x in [1, 2] if x > 1]\nprint(xs[0])\n",
++    "print(max(x for x in [1, 2] if x > 0))\n",
++    "print(sorted(x for x in [3, 1] if x))\n",
++    "print([y for y in [x for x in [1, 2] if x > 1]])\n",
++    "print(list(range(min(2, 3))))\n",
++    "print([1, 2, 3][min(0, 1)])\n",
++    "print(sum(range(len([x for x in [1] if x]))))\n",
++    // bools min/max/sorted would return as bools
++    "print(min(True, 2))\n",
++    "print(sorted([1 > 0, 0]))\n",
++    // a sorting network past the node budget
++    "print(sorted(x % 5 for x in range(12, 3, -2)))\n",
+     "sorted = 3\nprint(sorted)\n",
+ };
+ 
+@@ -149,12 +171,17 @@ test "runner frontend integer list: lists are the graph route's only; calc and C
+     try std.testing.expect(std.mem.indexOf(u8, source, "tf_run_prints(") != null);
+ }
+ 
+-test "runner frontend integer list: a filter's and an assert's nodes are dropped after their proof" {
++test "runner frontend integer list: a filter's masks stay circuit nodes; an assert's nodes are dropped after its proof" {
+     const lowered = (try integer_python.lowerWithCost(gpa, cases[0][0], 0)).?;
+     defer gpa.free(lowered.source);
+     const t = lowered.table.?;
+-    // the call's list (4 literals, two negated), the kept elements' two 1s and their sum; no comparison survives
+-    for (t.nodes[0..t.count]) |n| try std.testing.expect(n.op != .gt and n.op != .eq);
++    // four `number > 0` masks, each times its 1, summed from 0; the assert's `== 2` is gone
++    var masks: usize = 0;
++    for (t.nodes[0..t.count]) |n| {
++        try std.testing.expect(n.op != .eq);
++        masks += @intFromBool(n.op == .gt);
++    }
++    try std.testing.expectEqual(@as(usize, 4), masks);
+     try std.testing.expectEqual(@as(i512, 2), t.nodes[t.roots[0]].value);
+ }
+ 
+@@ -200,3 +227,67 @@ test "runner frontend integer list: the scripts run on the real bank and print C
+     }
+     for (refused) |code| try std.testing.expectEqual(null, try table.translate(gpa, &bank, code));
+ }
++
++/// T5's ownership check: input `from` read as `to` in the same packets prints CPython's stdout for the mutated script.
++const Mutation = struct { code: []const u8, from: []const u8, to: []const u8, after: []const u8 };
++const D = "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\n";
++const mutations = [_]Mutation{
++    // the control, then T5's three failures (min, sorted, a filter's len), then the rest of the circuit choices
++    .{ .code = "print(2*3)\n", .from = "2", .to = "4", .after = "12\n" },
++    .{ .code = "print(min([2, 3]))\n", .from = "2", .to = "4", .after = "3\n" },
++    .{ .code = "print(sorted([2, 3]))\n", .from = "2", .to = "4", .after = "[3, 4]\n" },
++    .{ .code = "print(len([x for x in [7] if x > 0]))\n", .from = "7", .to = "0", .after = "0\n" },
++    .{ .code = "print(max(3, 2))\n", .from = "2", .to = "4", .after = "4\n" },
++    .{ .code = "print(sorted([2, -1, 2, 0]))\n", .from = "2", .to = "4", .after = "[-1, 0, 4, 4]\n" },
++    .{ .code = "print(sorted([3, 1, 2], reverse=True))\n", .from = "2", .to = "4", .after = "[4, 3, 1]\n" },
++    .{ .code = "print(sum(x for x in [2, 5] if x > 3))\n", .from = "2", .to = "4", .after = "9\n" },
++    .{ .code = "xs = [5, 3, 8]\nys = sorted(xs)\nprint(ys[0] + ys[-1])\n", .from = "3", .to = "9", .after = "14\n" },
++    .{ .code = D ++ "print(pos_count([1, -2, 3, -4]))\n", .from = "3", .to = "0", .after = "1\n" },
++    .{ .code = "print(min(x * x for x in [2, 3]))\n", .from = "2", .to = "4", .after = "9\n" },
++    .{ .code = "print(len([x for x in [7, -2, 9] if x % 3]))\n", .from = "9", .to = "8", .after = "3\n" },
++};
++
++fn runOn(b: api.Backend, id: u64, bytes: []const u8) !struct { api.Status, []u8 } {
++    const job = try b.start(id, .{ .kind = .graph, .bytes = bytes }, 50_000_000);
++    const r = while (true) switch (b.poll(job)) {
++        .running => std.Thread.yield() catch {},
++        .done => |x| break x,
++    };
++    defer b.release(id);
++    return .{ r.status, try gpa.dupe(u8, r.out) };
++}
++
++test "runner frontend integer list: the circuit owns min, sorted and filters: a mutated input prints CPython's mutated stdout (TF_RUNNER_GRAPH_BANK)" {
++    const g = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    var bank = try graph.Bank.load(gpa, std.mem.span(g));
++    defer bank.deinit();
++    const backend = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(backend);
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = backend };
++    defer d.deinit();
++    const b = d.backend();
++    for (mutations, 0..) |m, i| {
++        const bytes = (try table.translate(gpa, &bank, m.code)) orelse {
++            std.debug.print("not on the bank: {s}\n", .{m.code});
++            return error.TestExpectedRoute;
++        };
++        defer gpa.free(bytes);
++        // the input as a packet value: `"2"`, in every packet of the sequence
++        const from = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m.from});
++        defer gpa.free(from);
++        const to = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m.to});
++        defer gpa.free(to);
++        if (std.mem.count(u8, bytes, from) == 0) {
++            std.debug.print("input {s} not a packet value: {s}\n{s}\n", .{ m.from, m.code, bytes });
++            return error.TestExpectedInput;
++        }
++        const mutated = try std.mem.replaceOwned(u8, gpa, bytes, from, to);
++        defer gpa.free(mutated);
++        const status, const out = try runOn(b, 1000 + i, mutated);
++        defer gpa.free(out);
++        if (status != .ok or !std.mem.eql(u8, out, m.after))
++            std.debug.print("host-owned: {s} with {s} -> {s}: {t} '{s}', CPython '{s}'\n", .{ m.code, m.from, m.to, status, out, m.after });
++        try std.testing.expectEqual(api.Status.ok, status);
++        try std.testing.expectEqualStrings(m.after, out);
++    }
++}
+diff --git a/zig/src/core/runner_frontend_integer_python.zig b/zig/src/core/runner_frontend_integer_python.zig
+index 7caca6eb2de5f6f85f6b066665711700f58cfd46..b0b6bc0b8060a62b2f8efb4c5bf5f0ac49ba49cd 100644
+--- a/zig/src/core/runner_frontend_integer_python.zig
++++ b/zig/src/core/runner_frontend_integer_python.zig
+@@ -242,7 +242,7 @@ fn printRoots(parser: *ast.Parser, outputs: *Outputs, text: []const u8, multiple
+         if (v.list) {
+             // Python's repr: [1, -2, True]; an empty list or a range object prints no value, so it refuses
+             const l = parser.lists[v.index];
+-            if (!multiple or l.range or l.len == 0 or outputs.count + l.len > outputs.roots.len) return error.Unsupported;
++            if (!multiple or l.range or l.masked or l.len == 0 or outputs.count + l.len > outputs.roots.len) return error.Unsupported;
+             for (parser.items[l.start..][0..l.len], 0..) |e, i| {
+                 outputs.roots[outputs.count] = e;
+                 outputs.endings[outputs.count] = if (i + 1 == l.len) ending else ',';

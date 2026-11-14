@@ -1,0 +1,171 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 17:24:53 +0700
+Subject: [PATCH 185/207] runner graph route: a literal-only inline value runs
+ without earlier cells (R5)
+
+T5-BINDING-RECOVERY.md R5: in T4W6 mul30-14 rc, 13 inline values such
+as `140 mod 9` and `10^9 mod 11` followed a fenced multiplication and
+abstained, because the mod routes refuse any earlier cell.
+
+An inline value whose code is literals only (digits, + - * ^, brackets
+and the word mod: no name, call, %, ., / or e) reads nothing an earlier
+cell can define. Routed.translate now translates it with no prior. This
+covers the engine-thread Quick route too, which goes through Routed for
+inline values. Names, calls, code cells, float and exact-context
+refusals are unchanged.
+
+Goldens: the 13 receipt lines scan to their cells and run on the graph
+bank alone, with the prior as written, with its operand changed, and
+with more printing and binding cells after it; the Quick route gives
+the same program. Zero modulus, a negative left side and oversized
+powers translate the same with and without the prior. A name (`A mod 9`
+after `A = 140`) or a call a prior may rebind (`pow`) still never runs
+without its earlier cell.
+
+(cherry picked from commit 285ad26a28871adc69334fe3e9f689a77f2943c0)
+---
+ zig/src/core/runner_graph_route.zig     | 24 +++++++
+ zig/src/core/runner_inline_mod_test.zig | 90 +++++++++++++++++++++++++
+ 2 files changed, 114 insertions(+)
+
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index 2760c1beeae13a640b2fa3b6ae4a7b32eb529f64..51bfa4e71c200cb184616e98ccf5f50de90706cf 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -411,6 +411,12 @@ pub const Routed = struct {
+ 
+     fn translate(ctx: ?*anyopaque, a: Allocator, cell: api.Cell) Allocator.Error!api.Translation {
+         const r: *Routed = @ptrCast(@alignCast(ctx.?));
++        // R5: a literal-only inline value (`140 mod 9`, `10^9 mod 11`) reads no earlier cell, so it runs without them
++        if (cell.form == .inline_expr and cell.prior.len != 0 and closedLiteral(cell.code)) {
++            var alone = cell;
++            alone.prior = &.{};
++            return translate(ctx, a, alone);
++        }
+         if (try r.graphFirst(a, cell)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         const t = try r.inner.translate(r.inner.ctx, a, cell);
+         if (t == .abstain) if (try prog.direct(a, r.bank, cell, t.abstain)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+@@ -421,6 +427,24 @@ pub const Routed = struct {
+     }
+ };
+ 
++/// An inline value of literals only: digits, `+ - * ^`, brackets, the word `mod`; no name, call, `%`, `.`, `/` or `e`.
++pub fn closedLiteral(code: []const u8) bool {
++    var i: usize = 0;
++    var digit = false;
++    while (i < code.len) : (i += 1) {
++        if (std.mem.startsWith(u8, code[i..], " mod ")) {
++            i += 4;
++            continue;
++        }
++        switch (code[i]) {
++            '0'...'9' => digit = true,
++            ' ', '(', ')', '+', '-', '*', '^' => {},
++            else => return false,
++        }
++    }
++    return digit;
++}
++
+ /// TF_DSV41_RUNNER_SYNC_GRAPH on the engine thread: the whole route for an inline value, else its graph steps only.
+ pub const Quick = struct {
+     routed: *Routed,
+diff --git a/zig/src/core/runner_inline_mod_test.zig b/zig/src/core/runner_inline_mod_test.zig
+index 9855382b435f4cac1f4e2f8fd2a63e46c1995616..ee0e0b6fa6fd1f6e1f4b18c47dea06afb1282807 100644
+--- a/zig/src/core/runner_inline_mod_test.zig
++++ b/zig/src/core/runner_inline_mod_test.zig
+@@ -218,3 +218,93 @@ test "runner proof: inline mod lines scan to cells that run on the graph bank an
+         try t.expectEqualStrings(g[2], std.mem.trimEnd(u8, out.items, "\n"));
+     }
+ }
++
++/// T4W6 mul30-14 rc reply 5 (census rank6 cells 57, 59–67, 70; rank9 54, 56): each follows the fenced product below.
++const mod_prior = [_]Golden{
++    .{ "+8=128; +6=134; +6=140. 140 mod9 =", "140 mod 9", "5" },
++    .{ "+9=145; +2=147. 147 mod9 =", "147 mod 9", "3" },
++    .{ "147 mod9 = 3 (144). B mod9=3. Product mod9 = 5*3=15 mod9=", "15 mod 9", "6" },
++    .{ "455992: sum digits 4+5+5+9+9+2= 34; 34 mod9=", "34 mod 9", "7" },
++    .{ "065324469: sum=0+6+5+3+2+4+4+6+9=39; 39 mod9=", "39 mod 9", "3" },
++    .{ "389066179: sum=3+8+9+0+6+6+1+7+9=49; 49 mod9=", "49 mod 9", "4" },
++    .{ "825281039: sum=8+2+5+2+8+1+0+3+9=38; 38 mod9=", "38 mod 9", "2" },
++    .{ "054396652: sum=0+5+4+3+9+6+6+5+2=40; 40 mod9=", "40 mod 9", "4" },
++    .{ "721075268: sum=7+2+1+0+7+5+2+6+8=38; 38 mod9=", "38 mod 9", "2" },
++    .{ "148093472: sum=1+4+8+0+9+3+4+7+2=38; 38 mod9=", "38 mod 9", "2" },
++    .{ "Sum mods = 7+3+4+2+4+2+2 = 24; 24 mod9=", "24 mod 9", "6" },
++    .{ "Check mod 11 maybe. Since 10^9 mod11 =", "10^9 mod 11", "10" },
++    .{ "Alternating sum = d0 - d1 + d2 - d3 + d4 - d5 + d6 ≡ 10 -1 +2 -0 +7 -1 +9 = 26. 26 mod11 =", "26 mod 11", "4" },
++};
++
++const prior_fence = "print(831680992073052982499463120866 * 548277608446792630955630629392)\n";
++
++test "runner graph route: only a literal-only inline value is closed (R5)" {
++    for ([_][]const u8{ "140 mod 9", "10^9 mod 11", "(3+4)*5", "3^64 mod (1*10^18)" }) |c| try t.expect(route.closedLiteral(c));
++    for ([_][]const u8{ "R mod 9", "A*3", "5 % 3", "1.5*2", "10/2", "pow(10, 9, 11)", "1e9 mod 7", "", "mod" }) |c|
++        try t.expect(!route.closedLiteral(c));
++}
++
++fn same(x: api.Translation, y: api.Translation) bool {
++    if (x == .abstain) return y == .abstain and x.abstain == y.abstain;
++    return y == .program and x.program.kind == y.program.kind and std.mem.eql(u8, x.program.bytes, y.program.bytes);
++}
++
++test "runner proof: literal mod lines after an unrelated fenced cell run alone on the graph bank (R5, TF_RUNNER_GRAPH_BANK)" {
++    const a = t.allocator;
++    var bank = try graph.Bank.load(a, try bankPath());
++    defer bank.deinit();
++    var context: frontend.Context = .{ .io = t.io, .compiler = .{ .clang = "/nonexistent-inline-mod-clang" } };
++    var routed: route.Routed = .{ .inner = context.frontend(), .bank = &bank };
++    const f = routed.frontend();
++    var quick: route.Quick = .{ .routed = &routed }; // TF_DSV41_RUNNER_SYNC_GRAPH's engine-thread route
++    const q = quick.frontend();
++    // the earlier cell as written, with its operand changed, and with more cells printing and binding after it
++    const priors = [_][]const []const u8{
++        &.{prior_fence},
++        &.{"print(831680992073052982499463120867 * 548277608446792630955630629392)\n"},
++        &.{ prior_fence, "print(7)\n", "x = 5\nprint(x * 3)\n" },
++    };
++    for (mod_prior) |g| {
++        const code = try cellOf(a, g[0], .{ .inline_math = true }) orelse return error.TestExpectedInline;
++        defer a.free(code);
++        try t.expectEqualStrings(g[1], code);
++        const alone = try f.translate(f.ctx, a, .{ .form = .inline_expr, .lang = "python", .code = code });
++        defer if (alone == .program) a.free(alone.program.bytes);
++        if (alone != .program or alone.program.kind != .graph) return error.TestExpectedGraph;
++        for (priors) |p| {
++            const with = try f.translate(f.ctx, a, .{ .form = .inline_expr, .lang = "python", .code = code, .prior = p });
++            defer if (with == .program) a.free(with.program.bytes);
++            try t.expect(same(alone, with));
++            const synced = try q.translate(q.ctx, a, .{ .form = .inline_expr, .lang = "python", .code = code, .prior = p });
++            defer if (synced == .program) a.free(synced.program.bytes);
++            try t.expect(same(alone, synced));
++        }
++        var machine = try @import("runner_graph_machine.zig").Machine.boot(a, &bank, alone.program.bytes);
++        defer machine.deinit();
++        var out: std.ArrayList(u8) = .empty;
++        defer out.deinit(a);
++        const end = try machine.run(4_000_000, &out, null);
++        try t.expect(end.end == .halted);
++        try t.expectEqualStrings(g[2], std.mem.trimEnd(u8, out.items, "\n"));
++    }
++    // edge values keep their meaning with no earlier cell (zero modulus, a negative left side, an oversized power)
++    for ([_][]const u8{ "5 mod 0", "(0-5) mod 3", "2^100000 mod 7", "3^400 mod 10^18" }) |code| {
++        const x = try f.translate(f.ctx, a, .{ .form = .inline_expr, .lang = "python", .code = code });
++        defer if (x == .program) a.free(x.program.bytes);
++        const y = try f.translate(f.ctx, a, .{ .form = .inline_expr, .lang = "python", .code = code, .prior = &.{prior_fence} });
++        defer if (y == .program) a.free(y.program.bytes);
++        try t.expect(same(x, y));
++    }
++    // a value that reads or may read an earlier cell keeps the earlier-cell refusal: a name, a call it may rebind
++    for ([_]api.Cell{
++        .{ .form = .inline_expr, .lang = "python", .code = "A mod 9", .prior = &.{"A = 140\nprint(A)\n"} },
++        .{ .form = .inline_expr, .lang = "python", .code = "pow(10, 9, 11)", .prior = &.{"def pow(a, b, c):\n    return 0\n"} },
++    }) |c| {
++        const r = try f.translate(f.ctx, a, c);
++        defer if (r == .program) a.free(r.program.bytes);
++        if (r == .program and r.program.kind == .graph) {
++            std.debug.print("ran without its earlier cell: {s}\n", .{c.code});
++            return error.TestUnexpectedGraph;
++        }
++    }
++}

@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 23:22:12 +0700
+Subject: [PATCH 141/207] compile-dsv41-server: self-hosted backend, links
+ under 2 GiB
+
+The check build is never executed. Under LLVM its single compile peaked
+above 2 GiB (zig RSS 2001M, OOM in a MemoryMax=2G scope). Link threads
+and -j had no effect, and stripping debug info left about 90 MB of
+headroom. With use_llvm/use_lld off, `zig build compile-dsv41-server -j1`
+on 27d7abd72 passes 9/9 steps in a 2 GiB no-swap scope. The exe compile
+uses 753M MaxRSS, and the scope peaks at 1615M (the build runner).
+dsv41-serve and serverOn still build through LLVM.
+
+(cherry picked from commit c5ad8e7520d7604e93d8dc9e15bd8935818e72b1)
+---
+ zig/build/dsv41_draft.zig | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/zig/build/dsv41_draft.zig b/zig/build/dsv41_draft.zig
+index 2a852b2cd593d0189e8a7afe8af49fa0c471d3c7..65f3bcc4a3d932ab29e1a496d936c7f91f431df2 100644
+--- a/zig/build/dsv41_draft.zig
++++ b/zig/build/dsv41_draft.zig
+@@ -45,7 +45,11 @@ pub fn steps(b: *std.Build) void {
+ }
+ 
+ fn server(b: *std.Build, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+-    return serverOn(b, target, .ReleaseSafe, @import("dsv41_cuda.zig").module(b, target, "serve_engine.zig", true));
++    const exe = serverOn(b, target, .ReleaseSafe, @import("dsv41_cuda.zig").module(b, target, "serve_engine.zig", true));
++    // never executed: the self-hosted backend links it in ~0.7 GiB; LLVM needs >2 GiB (dsv41-serve keeps LLVM)
++    exe.use_llvm = false;
++    exe.use_lld = false;
++    return exe;
+ }
+ 
+ /// tensorfold-dsv41, the native server over the DeepSeek lane `engine`, its own modules at `optimize`.
