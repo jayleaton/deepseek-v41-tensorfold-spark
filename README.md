@@ -16,7 +16,7 @@ the previously deployed engine and profile.
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
 | Engine | upstream [TensorFold](https://github.com/ashhart/TensorFold) at [`config/tensorfold.rev`](config/tensorfold.rev), plus this recipe's [`patches/`](patches/) |
-| Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
+| Serving | eight slots of up to 192K tokens each (2.1M-token shared KV pool; [why](results/c8-20261114/README.md)), vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
 This branch builds the engine the pair serves today (G, `6c4eeccda`). The engine is upstream TensorFold `f212eeabd`
 (on upstream `main`, 2026-11-09) with patches `0001`-`0072` applied ([ENGINE](docs/ENGINE.md#the-patch-series)): the
