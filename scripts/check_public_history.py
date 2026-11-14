@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Scan each reachable text blob once, preserving every historical path and pattern exclusion."""
+"""Scan each reachable text blob once, preserving every historical path and pattern exclusion.
+
+    check_public_history.py [--range RANGE] [--patch-private REGEX] [--bench-private REGEX] PATTERN...
+
+PATTERN is check-public.sh's name|regex|exclusions, matched case-insensitively. --patch-private adds the engine patch
+series rule: REGEX, case-sensitive, over every blob that was ever a patches/NNNN-*.patch file (author lines exempt).
+--bench-private does the same for every blob that was ever under bench/. --range limits the scan to the full trees of
+the commits git rev-list RANGE gives (default --all, every ref).
+"""
 from __future__ import annotations
 
 import fnmatch
@@ -20,10 +28,46 @@ def git(*args):
     return subprocess.check_output(['git', *args], env=child_environment())
 
 
+def grep(flags, regex, files):
+    """grep FLAGS REGEX over FILES in argv chunks; yields (sha, line number, text) per hit."""
+    for at in range(0, len(files), 200):
+        result = subprocess.run(['grep', flags, '--', regex, *files[at:at+200]],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment())
+        if result.returncode not in (0, 1):
+            raise ValueError('history grep failed: ' + result.stderr.decode(errors='replace'))
+        for line in result.stdout.splitlines():
+            file, number, text = line.split(b':', 2)
+            yield Path(file.decode()).name, number.decode(), text
+
+
+def scan_paths(title, regex, matches, objects, files):
+    """A case-sensitive current-tree rule (check-public.sh PATCH_PRIVATE / BENCH_PRIVATE) over every historical blob
+    whose path matches (author / co-author lines of patches exempt)."""
+    scoped = [file for file in files if any(matches(path) for path in objects[Path(file).name])]
+    hits = []
+    for sha, number, text in grep('-HnIE', regex, scoped):
+        if PATCH_AUTHOR.fullmatch(text):
+            continue
+        for path, commit in objects[sha].items():
+            if matches(path):
+                hits.append(f'{commit}:{path}:{number}:' + text.decode(errors='replace'))
+    if hits:
+        print('== history: ' + title)
+        for hit in sorted(set(hits)):
+            print(hit[:220])
+    return bool(hits)
+
+
 def main() -> int:
     patterns = sys.argv[1:]
+    options = {'--range': '--all', '--patch-private': None, '--bench-private': None}
+    while patterns[:1] and patterns[0] in options:
+        if len(patterns) < 2:
+            raise ValueError(patterns[0] + ' needs a value')
+        options[patterns[0]], patterns = patterns[1], patterns[2:]
+    commits = git('rev-list', options['--range']).decode().splitlines()
     objects = {}
-    for commit in git('rev-list', '--all').decode().splitlines():
+    for commit in commits:
         for row in git('ls-tree', '-rz', commit).split(b'\0'):
             if not row:
                 continue
@@ -55,29 +99,28 @@ def main() -> int:
             proc.stdin.close()
             if proc.wait() != 0:
                 raise ValueError('git cat-file failed')
+        if options['--patch-private'] is not None:
+            failed |= scan_paths('internal names in the engine patch series', options['--patch-private'],
+                                 PATCH_PATH.fullmatch, objects, files)
+        if options['--bench-private'] is not None:
+            failed |= scan_paths('development host names in bench/', options['--bench-private'],
+                                 lambda path: path.startswith('bench/'), objects, files)
         for entry in patterns:
             name, _, rest = entry.partition('|')
             regex, _, exclusions = rest.rpartition('|')
             hits = []
-            # Chunk argv for large histories; grep retains the exact ERE semantics used by the tree scan.
-            for at in range(0, len(files), 200):
-                result = subprocess.run(['grep', '-HnIiE', '--', regex, *files[at:at+200]],
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment())
-                if result.returncode not in (0, 1):
-                    raise ValueError('history grep failed: ' + result.stderr.decode(errors='replace'))
-                for line in result.stdout.splitlines():
-                    file, number, text = line.split(b':', 2)
-                    sha = Path(file.decode()).name
-                    if name == 'home directories' and subprocess.run(
-                            ['grep', '-qiE', '/home/(user|you|<you>|<user>|ubuntu)/'],
-                            input=text, stdout=subprocess.DEVNULL, env=child_environment()).returncode == 0:
+            # Chunked grep keeps the exact ERE semantics used by the tree scan.
+            for sha, number, text in grep('-HnIiE', regex, files):
+                if name == 'home directories' and subprocess.run(
+                        ['grep', '-qiE', '/home/(user|you|<you>|<user>|ubuntu)/'],
+                        input=text, stdout=subprocess.DEVNULL, env=child_environment()).returncode == 0:
+                    continue
+                for path, commit in objects[sha].items():
+                    if any(fnmatch.fnmatchcase(path, glob) for glob in exclusions.split()):
                         continue
-                    for path, commit in objects[sha].items():
-                        if any(fnmatch.fnmatchcase(path, glob) for glob in exclusions.split()):
-                            continue
-                        if PATCH_PATH.fullmatch(path) and PATCH_AUTHOR.fullmatch(text):
-                            continue
-                        hits.append(f'{commit}:{path}:{number.decode()}:' + text.decode(errors='replace'))
+                    if PATCH_PATH.fullmatch(path) and PATCH_AUTHOR.fullmatch(text):
+                        continue
+                    hits.append(f'{commit}:{path}:{number}:' + text.decode(errors='replace'))
             if hits:
                 failed = True
                 print('== history: ' + name)

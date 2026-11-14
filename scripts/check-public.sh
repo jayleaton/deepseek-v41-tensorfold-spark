@@ -6,8 +6,12 @@
 #   scripts/check-public.sh           precise patterns; exit 1 on any finding
 #   scripts/check-public.sh --broad   also list every secret / password / api-key / bearer / authorization mention
 #                                     for a manual read (informational, does not fail)
-#   scripts/check-public.sh --history the same patterns over every blob of every commit (git grep), plus every
-#                                     commit's author / committer address (only ALLOWED_AUTHOR passes)
+#   scripts/check-public.sh --history [RANGE]
+#                                     the same patterns over every blob of every commit (git grep), the patch series
+#                                     and bench host-name rules over every historical blob of those paths, plus every
+#                                     commit's author / committer address (only ALLOWED_AUTHORS pass). RANGE (e.g.
+#                                     origin/main..HEAD) limits all of it to the commits a branch would publish: their
+#                                     full trees, messages, identities and added lines; without it, every ref.
 #
 # Scans every tracked and untracked (not ignored) file, the engine patches included, except the vendor/TensorFold
 # submodule (upstream TensorFold, unmodified) and this script.
@@ -28,7 +32,8 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 SELF="scripts/check-public.sh"
 LOCAL_LIST=".check-public.local"
-ALLOWED_AUTHOR="${ALLOWED_AUTHOR:-contact@buildthings.co}"
+# Public commit identities (space-separated): the recipe's address and Jay Leaton's GitHub noreply address.
+ALLOWED_AUTHORS="${ALLOWED_AUTHORS:-${ALLOWED_AUTHOR:-contact@buildthings.co 58495321+jayleaton@users.noreply.github.com}}"
 
 # The GLM engine's image-URL hardening (in patches/0001) refuses private / link-local / CGNAT / metadata addresses;
 # its docstring lists the cloud metadata address 100.100.100.200, not ours.
@@ -117,21 +122,32 @@ done
 # line (strings and code too, not only comments: a tool's report string once named the test host). Case-sensitive, so
 # ordinary words such as "captain" or "doug" in prose do not match.
 PATCH_PRIVATE='\bnode0[0-9]\b|\bNode0[0-9]\b|\bdgx0[0-9]\b|gpu\.lock\b|\b(Cody|Randy|Doug|Danny|Captain|Advosary|Davit)\b|\bdev-box\b|spark-work/|tensorfold-qwen4'
+# bench/ (published study evidence): the development hosts' names, case-sensitive. Only host names: the agents' names
+# are also ordinary benchmark words there (GSM8K's "Cody", "Randy"), and lock paths are already placeholders.
+BENCH_PRIVATE='\bnode0[0-9]\b|\bNode0[0-9]\b|\bdgx0[0-9]\b|\bdev-box\b'
 patch_files=()
 for f in "${FILES[@]}"; do [[ "$f" =~ ^patches/[0-9]{4}-[^/]*\.patch$ ]] && patch_files+=("$f"); done
 if [[ -n "${patch_files[*]-}" ]]; then
     hits=$(grep -HnIE -- "$PATCH_PRIVATE" "${patch_files[@]}" 2>/dev/null | grep -vE "$PATCH_AUTHOR_LINES")
     if [[ -n "$hits" ]]; then fail=1; echo "== internal names in the engine patch series"; cut -c1-220 <<< "$hits"; fi
 fi
+bench_files=()
+for f in "${FILES[@]}"; do [[ "$f" == bench/* ]] && bench_files+=("$f"); done
+if [[ -n "${bench_files[*]-}" ]]; then
+    hits=$(grep -HnIE -- "$BENCH_PRIVATE" "${bench_files[@]}" 2>/dev/null)
+    if [[ -n "$hits" ]]; then fail=1; echo "== development host names in bench/"; cut -c1-220 <<< "$hits"; fi
+fi
 
 # credentials: one pattern set, shared with scripts/redact.py; allowlist in scripts/check-secrets-allow.txt
 secrets=$(python3 scripts/check_secrets.py "${FILES[@]}" 2>&1)
 if [[ $? -ne 0 ]]; then fail=1; echo "== credentials (scripts/check_secrets.py)"; echo "$secrets"; fi
 
+author_filters=()
+for a in $ALLOWED_AUTHORS; do author_filters+=(-e ":$a"); done
 # e-mail addresses other than placeholder / example domains (model outputs in results/ invent a few)
 emails=$(grep -HnoIiE '[a-z0-9][a-z0-9._%+-]*@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}' "${FILES[@]}" 2>/dev/null |
          grep -viE '@(([a-z0-9-]+\.)*example(\.(com|org|net))?|company\.com|novatech\.io)$|:noreply@anthropic\.com$' |
-         grep -vF ":$ALLOWED_AUTHOR" | grep -vE "$PATCH_AUTHOR_EMAILS" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
+         grep -vF "${author_filters[@]}" | grep -vE "$PATCH_AUTHOR_EMAILS" | grep -vE "$FLASHNEXT_ROLE_EMAILS" | grep -vE "$TEMPLATE_EMAILS" | cut -c1-200)
 if [[ -n "$emails" ]]; then fail=1; echo "== e-mail addresses (not on the example-domain allowlist)"; echo "$emails"; fi
 
 # files that should never be published (.claude/ is local agent tooling, #52)
@@ -141,15 +157,20 @@ bad=$(printf '%s\n' "${FILES[@]}" | grep -E '\.(log|out|pem|key)$|(^|/)\.env$|^c
 if [[ -n "$bad" ]]; then fail=1; echo "== files that should not be published"; echo "$bad"; fi
 
 if [[ "${1:-}" == --history ]]; then
-    commits=$(git rev-list --all 2>/dev/null)
-    echo "== history: $(wc -w <<< "$commits") commit(s)"
-    bad_auth=$(git log --all --format='%h %ae %ce' | awk -v ok="$ALLOWED_AUTHOR" '$2 != ok || $3 != ok')
-    if [[ -n "$bad_auth" ]]; then fail=1; echo "== commits not authored / committed as $ALLOWED_AUTHOR"; echo "$bad_auth"; fi
-    hsecrets=$(python3 scripts/check_secrets.py --history 2>&1)
+    range=${2:---all}
+    [[ "$range" == --all || "$range" != -* ]] || { echo "check-public: --history takes a revision range, not $range" >&2; exit 2; }
+    commits=$(git rev-list "$range" 2>/dev/null) || { echo "check-public: bad revision range $range" >&2; exit 2; }
+    echo "== history ($range): $(wc -w <<< "$commits") commit(s)"
+    bad_auth=$(git log "$range" --format='%h %ae %ce' | awk -v ok=" $ALLOWED_AUTHORS " 'index(ok, " " $2 " ") == 0 || index(ok, " " $3 " ") == 0')
+    if [[ -n "$bad_auth" ]]; then fail=1; echo "== commits not authored / committed as one of: $ALLOWED_AUTHORS"; echo "$bad_auth"; fi
+    hsecrets=$(python3 scripts/check_secrets.py --history "$range" 2>&1)
     if [[ $? -ne 0 ]]; then fail=1; echo "== history: credentials (scripts/check_secrets.py)"; echo "$hsecrets"; fi
     # Repeated trees share blobs; scan each text blob once while retaining ALL its historical paths.
-    python3 scripts/check_public_history.py "${PATTERNS[@]}" || fail=1
-    msgs=$(git log --all --format='%h %B')
+    # The patch series and bench rules above, case-sensitive, over every blob ever stored under those paths: a
+    # pre-scrub file removed or reworded by a later commit still fails.
+    python3 scripts/check_public_history.py --range "$range" --patch-private "$PATCH_PRIVATE" \
+        --bench-private "$BENCH_PRIVATE" "${PATTERNS[@]}" || fail=1
+    msgs=$(git log "$range" --format='%h %B')
     for entry in "${PATTERNS[@]}"; do
         name="${entry%%|*}"; rest="${entry#*|}"; re="${rest%|*}"
         m=$(grep -niE -e "$re" <<< "$msgs" || true)

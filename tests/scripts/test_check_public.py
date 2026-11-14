@@ -133,3 +133,108 @@ def test_patch_series_internal_names_fail_in_strings_too(tmp_path):
     patch.unlink()
     (root / "notes.txt").write_text(f"rank 1 runs on {host}\n")
     assert scan(root).returncode == 0
+
+
+def test_history_fails_on_a_removed_pre_scrub_patch(tmp_path):
+    # A patch committed with the test host's name and scrubbed in a later commit: the current tree is clean, but the
+    # history still carries the old blob, and --history must name it with the series rule (case-sensitive).
+    root = checkout(tmp_path)
+    author = "user@example.com"
+    env = {**os.environ, "ALLOWED_AUTHOR": author}
+
+    def commit(message):
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "-c", "user.name=Example", "-c", f"user.email={author}", "commit", "-qm", message],
+                       cwd=root, check=True)
+
+    def history():
+        return subprocess.run([os.environ.get("TEST_BASH", "bash"), "scripts/check-public.sh", "--history"],
+                              cwd=root, text=True, capture_output=True, env=env, check=False)
+
+    (root / "patches").mkdir()
+    patch = root / "patches" / "0001-fixture.patch"
+    patch.write_text('+    "timing_scope": "test host, nice 19"\n+# Node one and node two are prose, not names\n')
+    commit("clean series")
+    result = history()
+    assert result.returncode == 0, result.stdout
+    host = "node" + "01"
+    patch.write_text(f'+    "timing_scope": "{host} nice19"\n')
+    commit("pre-scrub patch")
+    patch.write_text('+    "timing_scope": "test host, nice 19"\n')
+    commit("scrub")
+    assert scan(root).returncode == 0
+    result = history()
+    assert result.returncode == 1, result.stdout
+    assert "== history: internal names in the engine patch series" in result.stdout
+    assert "patches/0001-fixture.patch:1:" in result.stdout and host in result.stdout
+
+
+def test_bench_host_names_fail_but_benchmark_words_pass(tmp_path):
+    # bench/ carries study evidence: a development host's name fails there; GSM8K's names do not.
+    root = checkout(tmp_path)
+    note = root / "bench" / "study" / "README.md"
+    note.parent.mkdir(parents=True)
+    note.write_text('Cody eats three times as many cookies; run it on the operator workstation.\n')
+    assert scan(root).returncode == 0
+    for host in ("node" + "01", "Node" + "02", "dev" + "-box", "dgx" + "02"):
+        note.write_text(f"never run this on {host}\n")
+        result = scan(root)
+        assert result.returncode == 1 and "development host names in bench/" in result.stdout, (host, result.stdout)
+
+
+JAY = "58495321+jayleaton@users.noreply.github.com"
+
+
+def history_repo(tmp_path):
+    root = checkout(tmp_path)
+    env = {k: v for k, v in os.environ.items() if k not in ("ALLOWED_AUTHOR", "ALLOWED_AUTHORS")}
+
+    def commit(message, email=JAY):
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        subprocess.run(["git", "-c", "user.name=Jay Leaton", "-c", f"user.email={email}", "commit", "-qm", message],
+                       cwd=root, check=True, env=env)
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, text=True,
+                              capture_output=True).stdout.strip()
+
+    def history(*rng):
+        return subprocess.run([os.environ.get("TEST_BASH", "bash"), "scripts/check-public.sh", "--history", *rng],
+                              cwd=root, text=True, capture_output=True, env=env, check=False)
+
+    return root, commit, history
+
+
+def test_history_range_scans_only_the_outgoing_commits_and_their_bench_blobs(tmp_path):
+    # Jay Leaton's noreply address is a public identity by default; a bench blob that named a host fails history
+    # wherever it is reachable, and a range limits the scan to the commits a branch would publish.
+    root, commit, history = history_repo(tmp_path)
+    note = root / "bench" / "README.md"
+    note.parent.mkdir()
+    note.write_text("run it on " + "node" + "01\n")
+    base = commit("inherited")
+    note.write_text("run it on the serving node\n")
+    commit("scrub")
+    result = history()
+    assert result.returncode == 1 and "development host names in bench/" in result.stdout, result.stdout
+    assert f"{base}:bench/README.md:1:" in result.stdout
+    result = history(f"{base}..HEAD")
+    assert result.returncode == 0, result.stdout
+    assert "not authored / committed" not in result.stdout
+    # an outgoing commit that adds a host name and a later one that rewords it: the range still fails
+    note.write_text("mirror on " + "dev" + "-box\n")
+    commit("leak")
+    note.write_text("mirror on the operator workstation\n")
+    commit("reword")
+    assert scan(root).returncode == 0
+    result = history(f"{base}..HEAD")
+    assert result.returncode == 1 and "development host names in bench/" in result.stdout, result.stdout
+
+
+def test_history_range_refuses_identities_outside_the_allowlist(tmp_path):
+    root, commit, history = history_repo(tmp_path)
+    (root / "a.txt").write_text("one\n")
+    base = commit("base")
+    (root / "a.txt").write_text("two\n")
+    commit("other identity", email="someone@example.com")
+    result = history(f"{base}..HEAD")
+    assert result.returncode == 1 and "someone@example.com" in result.stdout, result.stdout
+    assert history("--bogus").returncode == 2

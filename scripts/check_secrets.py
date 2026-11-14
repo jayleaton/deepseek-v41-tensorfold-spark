@@ -3,7 +3,8 @@
 
   check_secrets.py               every tracked and untracked (not ignored) file except the vendor/TensorFold submodule
   check_secrets.py PATH...       these files (directories recursively), git or not
-  check_secrets.py --history     every line added by every commit of every ref, and every commit message
+  check_secrets.py --history [RANGE]
+                                 every line added by every commit of every ref (or of RANGE), and every commit message
 
 Finds API keys (sk-, sk-ant-), Hugging Face (hf_), GitHub (ghp_ gho_ ghu_ ghs_ ghr_ github_pat_), Slack (xox?-) and
 AWS (AKIA) tokens, PEM private keys, long Bearer tokens and quoted credential assignments (api_key = "...") whose value
@@ -122,14 +123,15 @@ def scan_tree(paths: list[str], rules) -> list[tuple[str, str, str]]:
     return found
 
 
-def scan_history(rules) -> list[tuple[str, str, str]]:
-    """Lines added by every commit reachable from any ref (vendor/TensorFold excluded) and every commit message."""
+def scan_history(rules, revisions="--all") -> list[tuple[str, str, str]]:
+    """Lines added by every commit reachable from any ref, or in REVISIONS (vendor/TensorFold excluded), and every
+    commit message."""
 
     log = subprocess.run(
         [
             "git",
             "log",
-            "--all",
+            revisions,
             "-p",
             "--no-color",
             "--no-ext-diff",
@@ -168,7 +170,13 @@ def main(argv: list[str] | None = None) -> int:
         print(__doc__)
         return 0
     rules = allowlist()
-    found = scan_history(rules) if args == ["--history"] else scan_tree(args, rules)
+    if args[:1] == ["--history"] and len(args) <= 2:
+        if len(args) == 2 and args[1].startswith("-") and args[1] != "--all":
+            print("check_secrets: --history takes a revision range", file=sys.stderr)
+            return 2
+        found = scan_history(rules, args[1] if len(args) == 2 else "--all")
+    else:
+        found = scan_tree(args, rules)
     for where, kind, masked in found:
         print(f"{where}: {kind}: {masked}")
     if found:
