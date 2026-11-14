@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 15:56:08 +0700
+Subject: [PATCH 21/72] DeepSeek settings: register TF_DSV41_NO_FORCED_DRAFTS,
+ which the draft lanes read strictly
+
+cfdd9a1eb reads TF_DSV41_NO_FORCED_DRAFTS through environment.read, but
+the shared table had no row for it, so environment.rule panicked
+("unregistered strict environment parser") in Served.open on every
+DeepSeek-V4.1 boot. It is a 0/1 switch like its sibling draft-lane rows;
+the strict-env tests now count it and refuse a malformed value at startup.
+---
+ zig/src/families/deepseek_v41/env_validate_test.zig | 4 ++--
+ zig/src/platform/environment.zig                    | 1 +
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/env_validate_test.zig b/zig/src/families/deepseek_v41/env_validate_test.zig
+index fb64f6234c28254e9cc7d0f937af1e463a9c894b..d76df5162e588e99c83bb0b1e4e16280047092f9 100644
+--- a/zig/src/families/deepseek_v41/env_validate_test.zig
++++ b/zig/src/families/deepseek_v41/env_validate_test.zig
+@@ -36,13 +36,13 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
+     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
+ }
+ 
+-test "DeepSeek strict env: the shared table holds all 81 settings: 47 switches, 14 integers, 16 reals, 3 structured, 1 presence" {
++test "DeepSeek strict env: the shared table holds all 82 settings: 48 switches, 14 integers, 16 reals, 3 structured, 1 presence" {
+     var counts: [5]usize = @splat(0);
+     for (e.rules) |r| if (r.scope == .dsv41) {
+         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
+         counts[@backingInt(group(r))] += 1;
+     };
+-    try t.expectEqual([5]usize{ 47, 14, 16, 3, 1 }, counts);
++    try t.expectEqual([5]usize{ 48, 14, 16, 3, 1 }, counts);
+ }
+ 
+ test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index 7a5f4965f5407e3e2d54cb30196bb332afd37f9d..4672e619a64bab3187d04234c6c677ba346c5e93 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -104,6 +104,7 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_DSV41_REPLAY_RUNS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_JOIN_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_TAIL_JOIN", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
++    .{ .name = "TF_DSV41_NO_FORCED_DRAFTS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_PF_WS_SHARE", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SESSION_SKIP_COVERED", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SESSION_DELTA", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },

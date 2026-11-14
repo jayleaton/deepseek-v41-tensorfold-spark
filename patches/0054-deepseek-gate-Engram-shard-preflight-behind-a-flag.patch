@@ -1,0 +1,207 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 10:58:19 +0700
+Subject: [PATCH 54/72] deepseek: gate Engram shard preflight behind a flag
+
+Validate packed Engram tables against the hasher and each rank's owned range before CUDA and TP initialization. Leave validation disabled by default and retain the existing serving read path.
+---
+ zig/src/families/deepseek_v41/cuda_model.zig  |   1 +
+ .../families/deepseek_v41/engram_validate.zig |  42 +++++++
+ .../deepseek_v41/engram_validate_test.zig     | 114 ++++++++++++++++++
+ zig/src/families/deepseek_v41/shared_test.zig |   1 +
+ 4 files changed, 158 insertions(+)
+ create mode 100644 zig/src/families/deepseek_v41/engram_validate.zig
+ create mode 100644 zig/src/families/deepseek_v41/engram_validate_test.zig
+
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index 2042404dff3db18d3a04ffa4dd9c04eee119e638..e7d75fb5ca2eeb86511b2a88a3d4721b6020a7ae 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -171,6 +171,7 @@ pub const Model = struct {
+         const cwd = std.Io.Dir.cwd();
+         m.tcfg = try tp.Config.fromEnv();
+         m.tcfg.family = @import("idx_split.zig").agreement(&@import("serve_knobs.zig").env); // ranks refuse a mixed split
++        try @import("engram_validate.zig").fromEnv(io, m.tcfg.rank, m.tcfg.world);
+         m.driver = try cuda.Driver.open();
+         errdefer if (!keep_owner) m.driver.close();
+         try @import("dev_arena.zig").applySchedule(&m.driver, @intCast(m.tcfg.device)); // TF_CUDA_SCHED
+diff --git a/zig/src/families/deepseek_v41/engram_validate.zig b/zig/src/families/deepseek_v41/engram_validate.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..beb2bb78b68b3641d9dbdd4dafb6e49e04b1cf62
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/engram_validate.zig
+@@ -0,0 +1,42 @@
++//! Opt-in startup checks that each packed Engram shard covers the hasher's rank-owned rows.
++const std = @import("std");
++const format = @import("engram_rows.zig");
++const hash = @import("engram_hash.zig");
++
++/// TF_DSV41_ENGRAM_VALIDATE: off by default; no file is opened before CUDA boot unless explicitly enabled.
++pub fn fromEnv(io: std.Io, rank: u32, world: u32) !void {
++    const raw = if (std.c.getenv("TF_DSV41_ENGRAM_VALIDATE")) |v| std.mem.span(v) else null;
++    const dir = if (std.c.getenv("TF_DSV41_ENGRAM_DIR")) |v| std.mem.span(v) else null;
++    try apply(io, raw, dir, rank, world, &hash.layers);
++}
++
++/// Checks only metadata; table bytes and the served read/arithmetic paths are unchanged.
++pub fn apply(io: std.Io, raw: ?[]const u8, dir: ?[]const u8, rank: u32, world: u32, layers: []const hash.Layer) !void {
++    const mode = std.mem.trim(u8, raw orelse "", " \t\r\n");
++    if (mode.len == 0 or std.mem.eql(u8, mode, "0")) return;
++    if (!std.mem.eql(u8, mode, "1")) return error.BadKnob;
++    if (world == 0 or rank >= world) return error.BadEngramShard;
++    const root = dir orelse return error.MissingEngramDirectory;
++    for (layers) |meta| {
++        var buf: [4096]u8 = undefined;
++        const path = try std.fmt.bufPrint(&buf, "{s}/engram-l{d}-r{d}of{d}.bin", .{ root, meta.layer_id, rank, world });
++        const file = try std.Io.Dir.cwd().openFile(io, path, .{});
++        defer file.close(io);
++        var bytes: [48]u8 = undefined;
++        if (try file.readPositionalAll(io, &bytes, 0) != bytes.len) return error.BadEngramShard;
++        const header = try format.Header.parse(&bytes, try file.length(io));
++        try coverage(header, meta, rank, world);
++    }
++}
++
++fn coverage(header: format.Header, meta: hash.Layer, rank: u32, world: u32) !void {
++    if (header.layer != meta.layer_id or header.total < meta.rows) return error.BadEngramShard;
++    const part = (hash.columns + @as(u64, world) - 1) / world;
++    const first: usize = @intCast(@min(rank * part, hash.columns));
++    const end: usize = @intCast(@min(first + part, hash.columns));
++    if (first == end) return;
++    const lo = meta.offsets[first];
++    const last = end - 1;
++    const hi = @as(u64, meta.offsets[last]) + meta.primes[last];
++    if (header.lo > lo or header.hi < hi) return error.BadEngramShard;
++}
+diff --git a/zig/src/families/deepseek_v41/engram_validate_test.zig b/zig/src/families/deepseek_v41/engram_validate_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9bca1718ef90b824c6d452eb43cb312be7486ffe
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/engram_validate_test.zig
+@@ -0,0 +1,114 @@
++//! Packed files with internally valid headers can still omit rows the rank's hasher will request.
++const std = @import("std");
++const t = std.testing;
++const guard = @import("engram_validate.zig");
++const format = @import("engram_rows.zig");
++const hash = @import("engram_hash.zig");
++const portable = @import("engram_rows_portable.zig");
++
++fn metadata(id: u32) hash.Layer {
++    var meta: hash.Layer = .{ .layer_id = id, .rows = 48, .multipliers = @splat(1), .primes = @splat(2), .offsets = undefined };
++    for (&meta.offsets, 0..) |*x, i| x.* = @intCast(2 * i);
++    return meta;
++}
++
++fn shard(dir: std.Io.Dir, meta: hash.Layer, rank: u32, lo: u64, hi: u64, total: u64, id: u32) !void {
++    var bytes: [4096 + 48 * 264]u8 = @splat(0);
++    for ([_]u64{ format.magic, id, lo, hi, total, format.row_bytes }, 0..) |x, i|
++        std.mem.writeInt(u64, bytes[i * 8 ..][0..8], x, .little);
++    for (0..@as(usize, @intCast(hi - lo))) |row| for (0..264) |col| {
++        bytes[4096 + row * 264 + col] = if (col < 256) @intCast((row * 7 + col * 3 + id) % 120) else 127;
++    };
++    var name: [64]u8 = undefined;
++    try dir.writeFile(t.io, .{
++        .sub_path = try std.fmt.bufPrint(&name, "engram-l{d}-r{d}of2.bin", .{ meta.layer_id, rank }),
++        .data = bytes[0..@intCast(format.header_bytes + (hi - lo) * format.row_bytes)],
++    });
++}
++
++fn decoded(root: []const u8, rank: u32, out: *[1536]u16) !void {
++    const rows = try portable.Rows.openWithIo(t.allocator, t.io, root, rank, 2, &.{ 1, 14 }, 4);
++    defer rows.close();
++    const base: i64 = @as(i64, rank) * 24;
++    const ids = [_]i64{ base, base + 12, base + 23 };
++    try rows.rows(0, &ids, 256, out[0..768]);
++    try rows.rows(1, &ids, 256, out[768..]);
++}
++
++test "Engram startup validation is opt in and off never opens a shard" {
++    for ([_]?[]const u8{ null, "", "0", " 0 " }) |raw|
++        try guard.apply(t.io, raw, "no-such-engram-directory", 0, 2, &.{metadata(1)});
++    try guard.apply(t.io, null, null, 0, 0, &.{});
++    try t.expectError(error.BadKnob, guard.apply(t.io, "on", null, 0, 2, &.{}));
++    try t.expectError(error.BadKnob, guard.apply(t.io, "2", null, 0, 2, &.{}));
++    try t.expectError(error.MissingEngramDirectory, guard.apply(t.io, "1", null, 0, 2, &.{}));
++    try t.expectError(error.BadEngramShard, guard.apply(t.io, "1", ".", 2, 2, &.{}));
++    try t.expectError(error.BadEngramShard, guard.apply(t.io, "1", ".", 0, 0, &.{}));
++}
++
++test "Engram startup validation accepts both ranks and leaves packed bytes unchanged" {
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    const root = try tmp.dir.realPathFileAlloc(t.io, ".", t.allocator);
++    defer t.allocator.free(root);
++    const metas = [_]hash.Layer{ metadata(1), metadata(14) };
++    for (metas) |meta| {
++        try shard(tmp.dir, meta, 0, 0, 24, 48, meta.layer_id);
++        try shard(tmp.dir, meta, 1, 24, 48, 48, meta.layer_id);
++    }
++    const before = try tmp.dir.readFileAlloc(t.io, "engram-l1-r0of2.bin", t.allocator, .limited(1 << 20));
++    defer t.allocator.free(before);
++    for (0..2) |rank| {
++        var plain: [1536]u16 = undefined;
++        var checked: [1536]u16 = undefined;
++        try guard.apply(t.io, "0", root, @intCast(rank), 2, &metas);
++        try decoded(root, @intCast(rank), &plain);
++        try guard.apply(t.io, "1", root, @intCast(rank), 2, &metas);
++        try decoded(root, @intCast(rank), &checked);
++        try t.expectEqualSlices(u16, &plain, &checked);
++    }
++    const after = try tmp.dir.readFileAlloc(t.io, "engram-l1-r0of2.bin", t.allocator, .limited(1 << 20));
++    defer t.allocator.free(after);
++    try t.expectEqualSlices(u8, before, after);
++    try guard.apply(t.io, "0", root, 0, 2, &metas);
++    try guard.apply(t.io, "1", root, 0, 2, &metas);
++}
++
++test "internally valid Engram headers missing global or rank-owned rows fail before serving" {
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    const root = try tmp.dir.realPathFileAlloc(t.io, ".", t.allocator);
++    defer t.allocator.free(root);
++    const meta = metadata(1);
++    const cases = [_]struct { rank: u32, lo: u64, hi: u64, total: u64, id: u32 }{
++        .{ .rank = 0, .lo = 0, .hi = 24, .total = 47, .id = 1 },
++        .{ .rank = 0, .lo = 1, .hi = 24, .total = 48, .id = 1 },
++        .{ .rank = 0, .lo = 0, .hi = 23, .total = 48, .id = 1 },
++        .{ .rank = 1, .lo = 25, .hi = 48, .total = 48, .id = 1 },
++        .{ .rank = 1, .lo = 24, .hi = 47, .total = 48, .id = 1 },
++        .{ .rank = 0, .lo = 0, .hi = 24, .total = 48, .id = 14 },
++    };
++    for (cases) |c| {
++        try shard(tmp.dir, meta, c.rank, c.lo, c.hi, c.total, c.id);
++        var name: [64]u8 = undefined;
++        const path = try std.fmt.bufPrint(&name, "engram-l1-r{d}of2.bin", .{c.rank});
++        const bytes = try tmp.dir.readFileAlloc(t.io, path, t.allocator, .limited(1 << 20));
++        defer t.allocator.free(bytes);
++        _ = try format.Header.parse(bytes[0..48], bytes.len);
++        try guard.apply(t.io, "0", root, c.rank, 2, &.{meta});
++        try t.expectError(error.BadEngramShard, guard.apply(t.io, "1", root, c.rank, 2, &.{meta}));
++    }
++}
++
++test "Engram startup validation checks every layer and refuses truncated files" {
++    var tmp = t.tmpDir(.{});
++    defer tmp.cleanup();
++    const root = try tmp.dir.realPathFileAlloc(t.io, ".", t.allocator);
++    defer t.allocator.free(root);
++    const metas = [_]hash.Layer{ metadata(1), metadata(14) };
++    try shard(tmp.dir, metas[0], 0, 0, 24, 48, 1);
++    try shard(tmp.dir, metas[1], 0, 0, 24, 47, 14);
++    try t.expectError(error.BadEngramShard, guard.apply(t.io, "1", root, 0, 2, &metas));
++    try tmp.dir.writeFile(t.io, .{ .sub_path = "engram-l1-r0of2.bin", .data = "short" });
++    try t.expectError(error.BadEngramShard, guard.apply(t.io, "1", root, 0, 2, &metas));
++}
+diff --git a/zig/src/families/deepseek_v41/shared_test.zig b/zig/src/families/deepseek_v41/shared_test.zig
+index eaec55077b5fcb20ec0c4b8ffc1b898b5b59d2ca..7568bb315d6910216971bf2a1a7f4a21133a9efd 100644
+--- a/zig/src/families/deepseek_v41/shared_test.zig
++++ b/zig/src/families/deepseek_v41/shared_test.zig
+@@ -2,6 +2,7 @@ const std = @import("std");
+ test {
+     _ = @import("engram_host.zig");
+     _ = @import("engram_tables.zig");
++    _ = @import("engram_validate_test.zig");
+     _ = @import("engram_shared_test.zig");
+     if (@import("builtin").os.tag == .linux or @import("builtin").os.tag == .macos) _ = @import("engram_rows_test.zig");
+     if (@import("builtin").os.tag == .macos) _ = @import("engram_rows_darwin_test.zig");

@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 14:16:28 +0700
+Subject: [PATCH 67/72] server: close the benchmark group test before the
+ ported health wire test
+
+The port of 3e327003e kept both tests at a conflict and lost the first one's closing brace, so the server test
+module did not compile (test-model-idle-host: expected statement, found 'test').
+---
+ zig/src/server/health_test.zig | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/zig/src/server/health_test.zig b/zig/src/server/health_test.zig
+index d5c03633236fb0199d6fb1801de8d1b2906baad6..43ba958af5bdfaeab1cf58a7598800db22b26d48 100644
+--- a/zig/src/server/health_test.zig
++++ b/zig/src/server/health_test.zig
+@@ -555,6 +555,8 @@ test "benchmark group: HTTP manifest copies the loaded four-rank topology" {
+     const got = o.get("group").?.object;
+     try std.testing.expectEqualStrings("multi-node", got.get("category").?.string);
+     try std.testing.expect(got.get("nodes").?.array.items.len == 4);
++}
++
+ test "health wire stays independent of recorded-run totals while native counting remains exact" {
+     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+     defer arena.deinit();

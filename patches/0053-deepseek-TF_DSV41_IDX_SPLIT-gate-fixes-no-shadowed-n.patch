@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 03:00:23 +0700
+Subject: [PATCH 53/72] deepseek: TF_DSV41_IDX_SPLIT gate fixes: no shadowed
+ names, auto's gather count
+
+Zig 0.17 refuses the shadowed names in the ix_gather glue and the oracle.
+The unequal-budget test expected 1's eight split layers under auto too;
+auto splits only the layers past its work threshold, so it now expects the
+equal-budget pair's count (and eight under 1).
+---
+ zig/src/families/deepseek_v41/forward_glue.zig         |  4 ++--
+ .../families/deepseek_v41/idx_split_oracle_test.zig    | 10 +++++-----
+ zig/src/families/deepseek_v41/idx_split_test.zig       |  9 ++++++++-
+ 3 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/forward_glue.zig b/zig/src/families/deepseek_v41/forward_glue.zig
+index d72451f8365ff080dc492e9876d381087a20cf23..677abf0b8f99be99d675c66bd97da24831c4bbdb 100644
+--- a/zig/src/families/deepseek_v41/forward_glue.zig
++++ b/zig/src/families/deepseek_v41/forward_glue.zig
+@@ -135,11 +135,11 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
+         // TF_DSV41_IDX_SPLIT: each rank's int32 selection rows all-gathered, the other's copied into place
+         const sel = c.args[0].arg.t;
+         const cut = try idx_split.glueCut(W, sel.shape[0], c.args[2].arg.i, sel.shape[1], sel.stride[0], numel(c.args[1].arg.t));
+-        const p = cut.plan(f.comm.rank());
++        const xp = cut.plan(f.comm.rank());
+         const row: usize = @intCast(4 * sel.shape[1]);
+         const base = try r.tensorAddr(sel);
+         const tmp = try r.tensorAddr(c.args[1].arg.t);
+-        const send: usize, const count: usize, const src: usize, const dst: usize, const rows: usize = .{ @intCast(p.send), @intCast(p.count), @intCast(p.src), @intCast(p.dst), @intCast(p.rows) };
++        const send: usize, const count: usize, const src: usize, const dst: usize, const rows: usize = .{ @intCast(xp.send), @intCast(xp.count), @intCast(xp.src), @intCast(xp.dst), @intCast(xp.rows) };
+         try f.comm.allGather(base + send * row, tmp, count * row / 4, .i32, s);
+         return r.d.check(r.d.api.cuMemcpyDtoDAsync_v2(base + dst * row, tmp + src * row, rows * row, s), "cuMemcpyDtoDAsync");
+     }
+diff --git a/zig/src/families/deepseek_v41/idx_split_oracle_test.zig b/zig/src/families/deepseek_v41/idx_split_oracle_test.zig
+index b8cacc2eba03332f82400192c4cc8c30c4985e4c..20b1d3fd736178a687f9894551b41c837feb2071 100644
+--- a/zig/src/families/deepseek_v41/idx_split_oracle_test.zig
++++ b/zig/src/families/deepseek_v41/idx_split_oracle_test.zig
+@@ -39,8 +39,8 @@ const Mem = struct {
+         return (try m.role(try m.name(t.role), base + ext))[base..];
+     }
+ 
+-    fn role(m: *Mem, key: []const u8, len: usize) ![]i64 {
+-        const g = try m.roles.getOrPut(m.a, key);
++    fn role(m: *Mem, nm: []const u8, len: usize) ![]i64 {
++        const g = try m.roles.getOrPut(m.a, nm);
+         if (!g.found_existing) g.value_ptr.* = &nothing;
+         if (g.value_ptr.len < len) {
+             const grown = try m.a.alloc(i64, len);
+@@ -163,7 +163,7 @@ const Model = struct {
+         const gather = arg(c, "GATHER").b;
+         const cbs = arg(c, "CBS").i;
+         const ks: usize = @intCast(arg(c, "k_stride").i);
+-        const keys: []const i64 = if (gather) try m.view(arg(c, "KEYS").t) else &nothing;
++        const gk: []const i64 = if (gather) try m.view(arg(c, "KEYS").t) else &nothing;
+         const q0 = o.qRow(c);
+         for (0..rows) |r| {
+             const ri: i64 = @intCast(r);
+@@ -173,9 +173,9 @@ const Model = struct {
+             for (0..nk) |j| {
+                 const ji: i64 = @intCast(j);
+                 const kp: i64 = if (!gather) ji else if (cbs > 0) blk: {
+-                    const b = keys[r * ks + j / @as(usize, @intCast(cbs))];
++                    const b = gk[r * ks + j / @as(usize, @intCast(cbs))];
+                     break :blk if (b < 0) -1 else b * cbs + @mod(ji, cbs);
+-                } else keys[r * ks + j];
++                } else gk[r * ks + j];
+                 const ok = kp >= 0 and kp < vis;
+                 out[r * os + j] = if (ok) score(salt, q0 + ri, kp) else none;
+                 if (ok) {
+diff --git a/zig/src/families/deepseek_v41/idx_split_test.zig b/zig/src/families/deepseek_v41/idx_split_test.zig
+index a3dc015f54302f21e1ac03af58e5b8cf775f1b89..92d7e650eceba903e3192597f024444955b3950b 100644
+--- a/zig/src/families/deepseek_v41/idx_split_test.zig
++++ b/zig/src/families/deepseek_v41/idx_split_test.zig
+@@ -373,7 +373,14 @@ test "idx split: ranks with unequal index budgets still cut alike, issue the sam
+             for (cs, 0..) |r, rank| try markRows(r, L, k, seen, cut.mine(@intCast(rank)));
+             for (seen) |v| try testing.expectEqual(@as(u8, 1), v);
+         };
+-        try testing.expectEqual(@as(usize, 8), gathers);
++        // 1: every eligible layer (2 / 8 / 14, the source, its 4 reindex layers); auto: the equal-budget pair's layers
++        var o = longOpts(n);
++        o.idx_split = md;
++        var want: usize = 0;
++        for (try bp.emitPrefill(aa, &fx.cfg, &fx.w, o, &layers, n, 131072, false)) |c| want += @intFromBool(std.mem.eql(u8, c.name, "glue.ix_gather"));
++        if (md == .all) try testing.expectEqual(@as(usize, 8), want);
++        try testing.expect(want > 0);
++        try testing.expectEqual(want, gathers);
+     };
+ }
+ 

@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 08:38:06 +0700
+Subject: [PATCH 25/72] runner proof: wide proofs skip on a narrow bank;
+ -Dproof-keep-going
+
+A whole proof-host run on the graph-v4 bank stopped at the first width-256
+proof, since v4 has no width-256 template, and the serial shard chain
+then skipped every later shard.
+
+The four width-256 proofs now skip, by name, when the loaded bank has no
+width-256 template; on a bank that has them (v7) they run and fail as
+before.
+
+-Dproof-keep-going makes each shard depend on the catalog only, so a
+failed shard skips no later one, and the step still fails. The shards
+pass --proof-serial: each takes an exclusive lock in the cache dir before
+its test, so tests still run one at a time at any -j.
+---
+ zig/build/runner_proof_shards.zig       | 11 +++++++++--
+ zig/runner_proof_shard_runner.zig       | 15 ++++++++++++---
+ zig/src/core/runner_proof_wide_test.zig | 17 +++++++++++++----
+ 3 files changed, 34 insertions(+), 9 deletions(-)
+
+diff --git a/zig/build/runner_proof_shards.zig b/zig/build/runner_proof_shards.zig
+index 7a71738f18c2662b6fd2b7c33a1120c236302392..4101e548b04c0b4fd682fc1ae971faf407ae0012 100644
+--- a/zig/build/runner_proof_shards.zig
++++ b/zig/build/runner_proof_shards.zig
+@@ -7,6 +7,7 @@ pub fn steps(b: *std.Build, api_fast: *std.Build.Module) void {
+         .filters = &.{"runner proof:"},
+         .test_runner = .{ .path = b.path("zig/runner_proof_shard_runner.zig"), .mode = .server },
+     });
++    const keep_going = b.option(bool, "proof-keep-going", "test-runner-proof-host: a failed shard skips no later one (still serial, still failing)") orelse false;
+     const all = b.step("test-runner-proof-host", "Multiply and loop replies on the real frontend and CPU circuit (TF_RUNNER_CIRCUIT)");
+     const catalog = b.addRunArtifact(tests);
+     catalog.setName("runner proof catalog");
+@@ -20,8 +21,14 @@ pub fn steps(b: *std.Build, api_fast: *std.Build.Module) void {
+         run.setName(b.fmt("runner proof shard {d}", .{index}));
+         run.addArg(b.fmt("--proof-shard-index={d}", .{index}));
+         run.has_side_effects = true;
+-        run.step.dependOn(previous);
+-        previous = &run.step;
++        if (keep_going) {
++            run.addArg("--proof-serial"); // a lock in the cache dir orders the tests instead of the steps
++            run.step.dependOn(&catalog.step);
++            all.dependOn(&run.step);
++        } else {
++            run.step.dependOn(previous);
++            previous = &run.step;
++        }
+     }
+     all.dependOn(previous);
+ }
+diff --git a/zig/runner_proof_shard_runner.zig b/zig/runner_proof_shard_runner.zig
+index e2a06cb2f6b385ec1b5dc46943fd1932cccdb55e..2bd0849e15b002d9fc1638b7bae874cc9e60fc1b 100644
+--- a/zig/runner_proof_shard_runner.zig
++++ b/zig/runner_proof_shard_runner.zig
+@@ -33,6 +33,8 @@ fn run(init: std.process.Init.Minimal) !void {
+     var selected: ?usize = null;
+     var listen = false;
+     var catalog = false;
++    var serial = false;
++    var cache_dir: ?[]const u8 = null;
+     for (args[1..]) |arg| {
+         if (std.mem.startsWith(u8, arg, "--proof-shard-index=")) {
+             if (selected != null) return error.DuplicateProofShard;
+@@ -46,8 +48,10 @@ fn run(init: std.process.Init.Minimal) !void {
+             listen = true;
+         } else if (std.mem.startsWith(u8, arg, "--seed=")) {
+             testing.random_seed = try std.fmt.parseUnsigned(u32, arg["--seed=".len..], 0);
++        } else if (std.mem.eql(u8, arg, "--proof-serial")) {
++            serial = true;
+         } else if (std.mem.startsWith(u8, arg, "--cache-dir=")) {
+-            continue;
++            cache_dir = arg["--cache-dir=".len..];
+         } else return error.UnknownProofArgument;
+     }
+     if (catalog) {
+@@ -60,10 +64,13 @@ fn run(init: std.process.Init.Minimal) !void {
+         return;
+     }
+     if (!listen or selected == null) return error.MissingProofShardArguments;
+-    try mainServer(init, selected.?);
++    // --proof-serial (-Dproof-keep-going): shards no longer wait on each other's steps; one test runs at a time here
++    var lock_path: [std.fs.max_path_bytes]u8 = undefined;
++    const lock = if (serial) try std.fmt.bufPrint(&lock_path, "{s}/proof-shards.lock", .{cache_dir orelse return error.MissingProofCacheDir}) else null;
++    try mainServer(init, selected.?, lock);
+ }
+ 
+-fn mainServer(init: std.process.Init.Minimal, selected: usize) !void {
++fn mainServer(init: std.process.Init.Minimal, selected: usize, lock: ?[]const u8) !void {
+     @disableInstrumentation();
+     var in_buffer: [4096]u8 = undefined;
+     var out_buffer: [4096]u8 = undefined;
+@@ -98,6 +105,8 @@ fn mainServer(init: std.process.Init.Minimal, selected: usize) !void {
+                 if (!metadata_sent) return error.MissingProofMetadata;
+                 if (executed) return error.DuplicateProofExecution;
+                 executed = true;
++                // held until exit: the kernel drops the lock when this process ends, however it ends
++                if (lock) |path| _ = try Io.Dir.cwd().createFile(runner_io, path, .{ .lock = .exclusive, .truncate = false });
+                 try execute(&server, init, selected);
+             },
+             else => return error.UnsupportedProofMessage,
+diff --git a/zig/src/core/runner_proof_wide_test.zig b/zig/src/core/runner_proof_wide_test.zig
+index 28d042c6d03989c77f2d516bebc90ce98d3166cf..47aa8a876d6d03d16a053eb3411cfc4d46b5e575 100644
+--- a/zig/src/core/runner_proof_wide_test.zig
++++ b/zig/src/core/runner_proof_wide_test.zig
+@@ -12,9 +12,18 @@ const finish = pt.finish;
+ 
+ const gpa = std.testing.allocator;
+ 
++/// Opens the real circuit and bank; a bank with no width-256 template (graph-v4) skips `proof`: it needs T1's wide bank
++fn openWide(both: *Both, proof: []const u8) !void {
++    try both.open();
++    for (both.bank.templates) |t| if (t.width == 256) return;
++    both.close();
++    std.debug.print("skip runner proof: {s}: the bank at TF_RUNNER_GRAPH_BANK has no width-256 template\n", .{proof});
++    return error.SkipZigTest;
++}
++
+ test "runner proof: 256-digit divmod modulo source cells match fresh CPython through Dispatch" {
+     var both: Both = undefined;
+-    try both.open();
++    try openWide(&both, "256-digit divmod modulo source cells");
+     defer both.close();
+     try std.testing.expect(both.bank.find("divstep", 256) != null);
+     var ctx: frontend.Context = .{ .io = std.testing.io };
+@@ -126,7 +135,7 @@ test "runner proof: 256-digit division binding refuses narrow and overflowing wi
+     try std.testing.expectError(error.GraphLiteral, packets.Builder.integer(gpa, .divmod, &.{ &too_wide, "3" }));
+ 
+     var both: Both = undefined;
+-    try both.open();
++    try openWide(&both, "256-digit division binding");
+     defer both.close();
+     const a: [256]u8 = @splat('8');
+     var dividend = a;
+@@ -251,7 +260,7 @@ test "runner proof: retained STATED source cells measure exact Dispatch ownershi
+ 
+ test "runner proof: powmod256 source vectors match fresh CPython through real Routed and Dispatch" {
+     var both: Both = undefined;
+-    try both.open();
++    try openWide(&both, "powmod256 source vectors");
+     defer both.close();
+     try std.testing.expect(both.bank.plan("powmod-256") != null);
+     var ctx: frontend.Context = .{ .io = std.testing.io };
+@@ -344,7 +353,7 @@ test "runner proof: powmod256 width refusals lazy bank and two distinct high-dig
+     try std.testing.expect(packets.algorithmWidthValid(.powmod, 256));
+     try std.testing.expect(!packets.algorithmWidthValid(.powmod, 257));
+     var both: Both = undefined;
+-    try both.open();
++    try openWide(&both, "powmod256 width refusals");
+     defer both.close();
+     try std.testing.expectEqual(@as(usize, 0), both.bank.preparedCount());
+     try std.testing.expectEqual(@as(u64, 0), both.bank.loadAttempts());

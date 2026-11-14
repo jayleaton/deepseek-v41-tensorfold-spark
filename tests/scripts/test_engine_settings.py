@@ -43,6 +43,37 @@ def test_prefix_parsed_knob_groups_list_their_composed_names():
     assert engine_settings.composed_names(lines) == {"TF_X_LANE_WORKERS", "TF_X_LANE_PYTHON"}
 
 
+def test_family_bindings_list_their_alias_and_derived_names():
+    # The engine's binding idiom: a family Binding's prefix / alias names reach a knob group's parse through an import
+    # under another name; a derived binding appends a suffix and its module parses its own group under it; a group
+    # that hands its prefix on composes the other group's names too.
+    lines = [
+        'r:zig/src/core/lane.zig:        c.workers = try knob(u8, get, prefix ++ "_WORKERS", c.workers, 1, 64);',
+        'r:zig/src/core/lane_binding.zig:const lane = @import("lane.zig");',
+        'r:zig/src/core/lane_binding.zig:    prefix: []const u8 = "TF_LANE",',
+        'r:zig/src/core/lane_binding.zig:        const old = b.alias orelse return lane.Config.parse(get, b.prefix);',
+        'r:zig/src/core/lane_binding.zig:        return lane.Config.parse(get, old);',
+        'r:zig/src/core/lane_binding.zig:pub const fam: Binding = .{ .alias = "TF_FAM_LANE" };',
+        'r:zig/src/core/run.zig:const place = @import("run_place.zig");',
+        'r:zig/src/core/run.zig:        c.circuit = get(prefix ++ "_CIRCUIT") orelse "";',
+        'r:zig/src/core/run.zig:        c.place = try place.Config.parse(get, prefix);',
+        'r:zig/src/core/run_place.zig:        if (get(prefix ++ "_CPUS")) |s| {}',
+        'r:zig/src/core/run_binding.zig:const run = @import("run.zig");',
+        'r:zig/src/core/run_binding.zig:    prefix: []const u8 = "TF_RUN",',
+        'r:zig/src/core/run_binding.zig:        const old = b.alias orelse return b.of(try run.Config.parse(get, b.prefix));',
+        'r:zig/src/core/s3.zig:pub fn binding(comptime b: @import("lane_binding.zig").Binding) @import("run_binding.zig").Binding {',
+        'r:zig/src/core/s3.zig:    return .{ .prefix = b.prefix ++ "_RUN", .alias = if (b.alias) |a| a ++ "_RUN" else null };',
+        'r:zig/src/core/s3.zig:        c.wall_ms = try knob(u32, get, prefix ++ "_WALL_MS", c.wall_ms, 1, 3_600_000);',
+        'r:zig/src/core/s3.zig:    const cfg = if (x) try Config.parse(get, rb.alias.?) else try Config.parse(get, rb.prefix);',
+    ]
+    assert engine_settings.composed_names(lines) == {
+        "TF_LANE", "TF_FAM_LANE", "TF_LANE_WORKERS", "TF_FAM_LANE_WORKERS",
+        "TF_RUN", "TF_RUN_CIRCUIT", "TF_RUN_CPUS",
+        "TF_LANE_RUN", "TF_FAM_LANE_RUN", "TF_LANE_RUN_CIRCUIT", "TF_FAM_LANE_RUN_CIRCUIT",
+        "TF_LANE_RUN_CPUS", "TF_FAM_LANE_RUN_CPUS", "TF_LANE_RUN_WALL_MS", "TF_FAM_LANE_RUN_WALL_MS",
+    }
+
+
 def test_manifest_lists_the_compute_lane_knob_group():
     _, settings = engine_settings.manifest()
     assert {"TF_DSV41_COMPUTE_LANE"} | {"TF_DSV41_COMPUTE_LANE_" + s for s in (

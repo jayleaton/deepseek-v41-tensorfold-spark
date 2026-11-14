@@ -1,0 +1,114 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 22:57:07 +0700
+Subject: [PATCH 29/72] deepseek: bound PNG palette transparency and pass sizes
+
+An indexed tRNS longer than its PLTE or 256 entries indexed the 1024-byte
+palette past its end. Validate the chunk length before either transparency
+path, and size interlaced pass dimensions in usize so a 32-bit header width
+cannot wrap before the pixel cap applies.
+---
+ zig/src/families/deepseek_v41/vision/png.zig | 70 +++++++++++++++++++-
+ 1 file changed, 68 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/vision/png.zig b/zig/src/families/deepseek_v41/vision/png.zig
+index fc9eacf7b154b6b7468f27f2ebcb052b50b22253..5b09c31f475ec39bb7901752e8a1e116c2edd9be 100644
+--- a/zig/src/families/deepseek_v41/vision/png.zig
++++ b/zig/src/families/deepseek_v41/vision/png.zig
+@@ -65,6 +65,7 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!Image {
+     var at: usize = 8;
+     var hd: ?Header = null;
+     var palette = pixels.defaultPalette();
++    var palette_len: usize = 0;
+     var transparent = false;
+     var idat: std.ArrayList(u8) = .empty;
+     defer idat.deinit(gpa);
+@@ -102,8 +103,10 @@ pub fn decode(gpa: Allocator, raw: []const u8, max_pixels: u64) Error!Image {
+             if (hd == null or hd.?.mode != .p) continue;
+             const n = @min(len / 3, 256);
+             for (0..n) |i| @memcpy(palette[i * 4 ..][0..3], data[i * 3 ..][0..3]);
++            palette_len = n;
+         } else if (std.mem.eql(u8, cid, "tRNS")) {
+             if (hd == null or hd.?.mode != .p) continue;
++            if (data.len > palette_len or data.len > 256) return error.BadPng; // ``_MODES``: one alpha a palette entry
+             var simple_zero = false; // ``_simple_palette``: one 0, the rest 255
+             var zeros: usize = 0;
+             var others = false;
+@@ -135,8 +138,8 @@ const passes = [7][4]u8{ .{ 0, 0, 8, 8 }, .{ 4, 0, 8, 8 }, .{ 0, 4, 4, 8 }, .{ 2
+ 
+ fn passDims(h: Header, p: [4]u8) [2]usize {
+     if (!h.interlace) return .{ h.w, h.h };
+-    const w = if (h.w > p[0]) (h.w - p[0] + p[2] - 1) / p[2] else 0;
+-    const ht = if (h.h > p[1]) (h.h - p[1] + p[3] - 1) / p[3] else 0;
++    const w = if (h.w > p[0]) (@as(usize, h.w) - p[0] + p[2] - 1) / p[2] else 0;
++    const ht = if (h.h > p[1]) (@as(usize, h.h) - p[1] + p[3] - 1) / p[3] else 0;
+     return .{ w, ht };
+ }
+ 
+@@ -251,3 +254,66 @@ fn store(h: Header, im: *Image, row: []const u8, y: usize, x0: usize, dx: usize,
+         }
+     }
+ }
++
++fn appendChunk(gpa: Allocator, out: *std.ArrayList(u8), id: []const u8, data: []const u8) !void {
++    var len: [4]u8 = undefined;
++    std.mem.writeInt(u32, &len, @intCast(data.len), .big);
++    try out.appendSlice(gpa, &len);
++    try out.appendSlice(gpa, id);
++    try out.appendSlice(gpa, data);
++    var c = std.hash.Crc32.init();
++    c.update(id);
++    c.update(data);
++    var crc: [4]u8 = undefined;
++    std.mem.writeInt(u32, &crc, c.final(), .big);
++    try out.appendSlice(gpa, &crc);
++}
++
++/// A 1x1 8-bit indexed PNG with the given palette and tRNS chunks.
++fn testPng(gpa: Allocator, palette: []const u8, trns: []const u8) ![]u8 {
++    var out: std.ArrayList(u8) = .empty;
++    errdefer out.deinit(gpa);
++    try out.appendSlice(gpa, signature);
++    var ihdr: [13]u8 = @splat(0);
++    std.mem.writeInt(u32, ihdr[0..4], 1, .big);
++    std.mem.writeInt(u32, ihdr[4..8], 1, .big);
++    ihdr[8] = 8;
++    ihdr[9] = 3;
++    try appendChunk(gpa, &out, "IHDR", &ihdr);
++    try appendChunk(gpa, &out, "PLTE", palette);
++    try appendChunk(gpa, &out, "tRNS", trns);
++    try appendChunk(gpa, &out, "IDAT", "\x78\x9c\x63\x60\x00\x00\x00\x02\x00\x01");
++    try appendChunk(gpa, &out, "IEND", "");
++    return out.toOwnedSlice(gpa);
++}
++
++test "indexed transparency is bounded by the palette entry count and 256 entries" {
++    const a = std.testing.allocator;
++    const one = [_]u8{ 0, 0, 0 };
++    const full: [768]u8 = @splat(0);
++    var over: [257]u8 = @splat(0xff);
++    over[256] = 0;
++    for ([_][]const u8{ one[0..], full[0..] }) |palette| {
++        const raw = try testPng(a, palette, &over);
++        defer a.free(raw);
++        try std.testing.expectError(error.BadPng, decode(a, raw, 64 * 1024 * 1024));
++    }
++    // the largest valid tRNS: one zero on the last palette entry
++    var ok: [256]u8 = @splat(0xff);
++    ok[255] = 0;
++    const raw = try testPng(a, &full, &ok);
++    defer a.free(raw);
++    var im = try decode(a, raw, 64 * 1024 * 1024);
++    defer im.deinit(a);
++    try std.testing.expect(im.transparent);
++    try std.testing.expectEqual(@as(u8, 0), im.palette[255 * 4 + 3]);
++}
++
++test "an interlaced pass dimensions its rows without wrapping the header's 32 bits" {
++    var h: Header = .{ .w = std.math.maxInt(u32), .h = 1, .depth = 8, .color = 0, .interlace = true, .mode = .l };
++    const d = passDims(h, .{ 0, 0, 8, 8 });
++    try std.testing.expectEqual(@as(usize, 536_870_912), d[0]);
++    try std.testing.expectEqual(@as(usize, 1), d[1]);
++    h.w = 1;
++    try std.testing.expectEqual(@as(usize, 0), passDims(h, .{ 4, 0, 8, 8 })[0]);
++}

@@ -1,0 +1,565 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 20:22:39 +0700
+Subject: [PATCH 58/72] deepseek: skip index scores whose top-k takes every
+ entry (TF_DSV41_IDX_IOTA)
+
+An index layer whose dense top-k reads at most index_topk entries selects
+every valid one whatever the scores, so with TF_DSV41_IDX_IOTA=1 its query
+projection, rope and score launches are not emitted. The top-k launch stays
+with the same arguments, so its selection and counts are byte-identical.
+Reindex layers qualify when their candidate source does and the gathered
+blocks fit the top-k. The decision is static (config, rows, window end).
+
+Only windows ending at or below 1025 (ratio-2 layers) or 512 (ratio 1 and
+reindex) qualify, so at the default TF_DSV41_GRAPH_BUCKET=2048 no graph or
+row program changes. Off by default; unset or 0 emits what H emits.
+
+Mechanism after Bertholomus's dsv41 idx_all / iotaVis (round.zig),
+re-implemented here; credited in docs/credits.md.
+
+Co-authored-by: bertholomus <311723197+bertholomus@users.noreply.github.com>
+---
+ docs/credits.md                               |   3 +
+ zig/src/families/deepseek_v41/block.zig       |   2 +
+ zig/src/families/deepseek_v41/block_index.zig |  39 +-
+ .../families/deepseek_v41/idx_iota_test.zig   | 381 ++++++++++++++++++
+ zig/src/families/deepseek_v41/serve_knobs.zig |   9 +
+ .../deepseek_v41/serve_knobs_apply.zig        |   3 +
+ .../deepseek_v41/serve_knobs_test.zig         |   1 +
+ 7 files changed, 435 insertions(+), 3 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/idx_iota_test.zig
+
+diff --git a/docs/credits.md b/docs/credits.md
+index 5481e5e2abc592778bc6047497fc10586aa8c210..f81846f727da77adb05bf8e634cdf4c907941467 100644
+--- a/docs/credits.md
++++ b/docs/credits.md
+@@ -247,5 +247,8 @@ Some opt-in DeepSeek-V4.1 decode settings follow mechanisms in Bertholomus's (Al
+ 
+ - `TF_DSV41_DEPTH_OVERHEAD_MS` prices a fixed round overhead into the draft depth's rate, as his lane allocator
+   divides expected tokens by a round's table cost plus its observed overhead (`zig/src/core/lanes/allocate.zig`).
++- `TF_DSV41_IDX_IOTA` skips an index layer's query and scores when its top-k must take every entry it reads, as
++  his round selects all visible entries without scoring them (`idx_all` and `iotaVis` in
++  `zig/src/families/dsv41/round.zig`). Here the existing top-k launch stays, so its output bytes are unchanged.
+ 
+ [bert-dsv41]: https://github.com/bertholomus/TensorFold/tree/a57deb9d470b27e1e3fab2a9494915a0049415aa
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 49128fb3ea137a40474515602fc8c0f384dbd9bb..ab86d7fb9cc6f11f4637d55b3432e50a057352da 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -84,6 +84,8 @@ pub const Options = struct {
+     stream_rb: i64 = 0,
+     /// TF_DSV41_INDEX_BOUND: decode index scores and top-k as row-bounded twins that stop at each row's visible end
+     index_bound: bool = false,
++    /// TF_DSV41_IDX_IOTA: an index layer whose top-k takes every entry it reads skips its query and scores (same bits)
++    idx_iota: bool = false,
+     /// decode knob set (same bits): ATTN_SPLIT, ATTN_ROPE, MHC_TAIL, MHC_DEFER, RG_PRUNE, PRUNE_KIT, MOE_BF16, RMS_FOLD
+     r1: bool = false,
+     /// TF_DSV41_ROUTER_GROUP_ROT: wide grouping and expert input rotation in one launch (default off).
+diff --git a/zig/src/families/deepseek_v41/block_index.zig b/zig/src/families/deepseek_v41/block_index.zig
+index 3e5019c2827d3386be1c8885ad3fe0575db6bef3..af854f93ae9fdc24d200f2c21c0f8d7eb8b660bf 100644
+--- a/zig/src/families/deepseek_v41/block_index.zig
++++ b/zig/src/families/deepseek_v41/block_index.zig
+@@ -45,8 +45,12 @@ pub fn index(e: *Emitter, L: u32, qn: Arg, iw: Arg, qnorm: ?Norm) !void {
+     const IH: i64 = e.cfg.index_heads;
+     const ID: i64 = e.cfg.index_dim;
+     const qi = try e.buf("L.qi", .{}, .bf16, &.{ n, IH * ID });
+-    try e.fusedNorm("qi", &.{.{ .w = try e.fmt("L{d}.attn.ix_wq_b", .{L}), .x = qn, .y = qi, .k = e.cfg.q_lora, .n = @intCast(IH * ID) }}, qnorm);
+-    try e.rope(qi, IH, ID, ID - 64);
++    // TF_DSV41_IDX_IOTA: no query, rope or scores where the top-k's bytes cannot depend on them (iotaSelects)
++    const iota = iotaSelects(e, L);
++    if (!iota) {
++        try e.fusedNorm("qi", &.{.{ .w = try e.fmt("L{d}.attn.ix_wq_b", .{L}), .x = qn, .y = qi, .k = e.cfg.q_lora, .n = @intCast(IH * ID) }}, qnorm);
++        try e.rope(qi, IH, ID, ID - 64);
++    }
+     const reindex = e.cfg.mode(L) == .reindex;
+     const src = if (reindex) e.cfg.kvSource(L).? else L;
+     const ratio: i64 = e.cfg.compressRatio(src);
+@@ -62,10 +66,39 @@ pub fn index(e: *Emitter, L: u32, qn: Arg, iw: Arg, qnorm: ?Norm) !void {
+         if (n * nvis * 12 > e.o.index_budget) return e.blocked(L, qi, iw, src, ratio, nvis);
+     }
+     const sc = try e.buf("L.scores", .{}, .f32, &.{ n, nk });
+-    try e.scoreRows(qi, iw, src, ratio, 0, n, try e.pos(), nk, sc, if (reindex) cand else null);
++    if (!iota) try e.scoreRows(qi, iw, src, ratio, 0, n, try e.pos(), nk, sc, if (reindex) cand else null);
+     try e.topkOf(L, sc, cand, nk, ratio, e.o.index_bound);
+ }
+ 
++/// Layer L's dense top-k (`topkOf`, not row blocks) reads at most K entries, and its candidate blocks fit their K.
++fn denseAll(e: *const Emitter, L: u32) bool {
++    if (e.cfg.mode(L) != .full) return false;
++    const k: i64 = e.cfg.index_topk;
++    const nk = @divFloor(e.end(), @as(i64, e.cfg.compressRatio(L)));
++    if (nk > k or e.n * @max(nk, 1) * 12 > e.o.index_budget or topkPlan(nk, null)[1] > topk_max_ept) return false;
++    if (!e.cfg.isCandidateSource(L)) return true;
++    const nb = std.math.divCeil(i64, nk, e.cfg.candidate_block_size) catch return false;
++    return nb <= @as(i64, e.cfg.candidate_blocks) and topkPlan(nb, null)[1] <= topk_max_ept;
++}
++
++/// TF_DSV41_IDX_IOTA: L's top-k selects every valid entry, so its output is the same for any score values.
++pub fn iotaSelects(e: *const Emitter, L: u32) bool {
++    if (!e.o.idx_iota) return false;
++    return switch (e.cfg.mode(L)) {
++        .full => denseAll(e, L),
++        .reindex => blk: {
++            // mode 3's valid entries: the candidate source's blocks, all its visible ones under denseAll, x block size
++            if (!e.cfg.usesCandidates(L)) break :blk false;
++            const c: u32 = @intCast(e.cfg.candidate_source);
++            if (!denseAll(e, c)) break :blk false;
++            const cbs: i64 = e.cfg.candidate_block_size;
++            const nkc = @divFloor(e.end(), @as(i64, e.cfg.compressRatio(c)));
++            break :blk cbs * (std.math.divCeil(i64, nkc, cbs) catch break :blk false) <= @as(i64, e.cfg.index_topk);
++        },
++        else => false,
++    };
++}
++
+ /// index.scores over rows [a, a + rows) into `out` [rows, nk]: dense, or over candidate blocks `cand` (Reindex).
+ pub fn scoreRows(e: *Emitter, qi: Arg, iw: Arg, src: u32, ratio: i64, a: i64, rows: i64, p: Arg, nk: i64, out: Arg, cand: ?Arg) !void {
+     const IH: i64 = e.cfg.index_heads;
+diff --git a/zig/src/families/deepseek_v41/idx_iota_test.zig b/zig/src/families/deepseek_v41/idx_iota_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..4bc2d69720650520e8981566a61f9b66f3078d94
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/idx_iota_test.zig
+@@ -0,0 +1,381 @@
++//! TF_DSV41_IDX_IOTA: the knob, the emitted windows on and off, and the top-k's score independence on a host twin.
++
++const std = @import("std");
++const testing = std.testing;
++const block = @import("block.zig");
++const calls = @import("block_calls.zig");
++const check = @import("calls_check.zig");
++const pk = @import("serve_knobs.zig");
++const Config = @import("config.zig").Config;
++
++const Fake = struct {
++    var pairs: []const [2][]const u8 = &.{};
++    fn get(name: []const u8) ?[]const u8 {
++        for (pairs) |p| if (std.mem.eql(u8, p[0], name)) return p[1];
++        return null;
++    }
++};
++
++test "TF_DSV41_IDX_IOTA: unset and 0 off, 1 on, anything else refused" {
++    defer Fake.pairs = &.{};
++    Fake.pairs = &.{};
++    try testing.expect(!try pk.idxIota(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", "0" }};
++    try testing.expect(!try pk.idxIota(&Fake.get));
++    Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", " 1 " }};
++    try testing.expect(try pk.idxIota(&Fake.get));
++    for ([_][]const u8{ "2", "on", "true", "yes", "-1" }) |v| {
++        Fake.pairs = &.{.{ "TF_DSV41_IDX_IOTA", v }};
++        try testing.expectError(error.BadKnob, pk.idxIota(&Fake.get));
++    }
++    try testing.expect(!(block.Options{}).idx_iota);
++}
++
++// -- the emitted windows ---------------------------------------------------------------------------------------
++
++fn argKey(a: std.mem.Allocator, out: *std.ArrayList(u8), x: calls.Arg) !void {
++    switch (x) {
++        .t, .opaque_table => |t| {
++            try out.print(a, " {s}:{t}@{d}[", .{ switch (t.role) {
++                .weight, .buf => |r| r,
++                .empty => "-",
++            }, t.dt, t.offset });
++            for (t.shape, t.stride) |n, s| try out.print(a, "{d}/{d},", .{ n, s });
++            try out.append(a, ']');
++        },
++        .list => |l| {
++            try out.appendSlice(a, " (");
++            for (l) |y| try argKey(a, out, y);
++            try out.append(a, ')');
++        },
++        .i => |v| try out.print(a, " {d}", .{v}),
++        .f => |v| try out.print(a, " {e}", .{v}),
++        .b => |v| try out.print(a, " {any}", .{v}),
++        .none => try out.appendSlice(a, " none"),
++    }
++}
++
++/// A call as compared here: name, grid, begin, stream, every argument (roles, views, scalars); not the fork mark.
++fn key(a: std.mem.Allocator, c: calls.Call) ![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    try out.print(a, "{s} {any} {t} side={any} join={any} dside={any} djoin={any}", .{ c.name, c.grid, c.begin, c.side, c.join, c.defer_side, c.defer_join });
++    for (c.args) |x| {
++        try out.print(a, " {s}=", .{x.name});
++        try argKey(a, &out, x.arg);
++    }
++    return out.items;
++}
++
++fn readsQi(x: calls.Arg) bool {
++    return switch (x) {
++        .t => |t| t.role == .buf and std.mem.startsWith(u8, t.role.buf, "L.qi"),
++        .list => |l| for (l) |y| {
++            if (readsQi(y)) break true;
++        } else false,
++        else => false,
++    };
++}
++
++/// The calls the knob drops on an eligible layer: the index query (rot_in, linear), its rope and the scores.
++fn dropped(c: calls.Call) bool {
++    if (scores(c)) return true;
++    for (c.args) |x| if (readsQi(x.arg)) return true;
++    return false;
++}
++
++fn isTopk(c: calls.Call) bool {
++    return std.mem.endsWith(u8, c.name, ".topk") and !c.glue;
++}
++
++/// The window's calls a layer each (a layer starts at its `begin`; the head stays with the last).
++fn layersOf(a: std.mem.Allocator, cs: []const calls.Call) ![]const []const calls.Call {
++    var out: std.ArrayList([]const calls.Call) = .empty;
++    var from: usize = 0;
++    for (cs, 0..) |c, i| if (i > 0 and c.begin == .layer) {
++        try out.append(a, cs[from..i]);
++        from = i;
++    };
++    try out.append(a, cs[from..]);
++    return out.items;
++}
++
++fn count(cs: []const calls.Call, comptime f: fn (calls.Call) bool) usize {
++    var k: usize = 0;
++    for (cs) |c| k += @intFromBool(f(c));
++    return k;
++}
++
++fn scores(c: calls.Call) bool {
++    return std.mem.startsWith(u8, c.name, "_scores");
++}
++
++fn forks(c: calls.Call) bool {
++    return c.fork;
++}
++
++/// Index layers whose window ending at `end` qualifies (flash1017: ratio 2 at 2 / 8 / 14, ratio 1 from 20 on).
++fn expected(end: i64, L: u32) bool {
++    const ratio2 = L == 2 or L == 8 or L == 14;
++    const ratio1 = L == 20 or L == 24 or L == 28 or L == 32 or L == 36;
++    return (ratio2 and @divFloor(end, 2) <= 512) or (ratio1 and end <= 512);
++}
++
++test "TF_DSV41_IDX_IOTA: eligible index layers drop query and scores, keep one top-k; the rest is unchanged" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    const cfg: Config = .{};
++    var backbone: [40]u32 = undefined;
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const limit: i64 = 8192;
++    const pages = @divExact(limit, block.Pool.page);
++    var served: block.Options = .{ .limit = limit, .r1 = true, .index_bound = true, .expert_topp = 0.85, .branches = true, .mhc_defer = true, .kv_norm_store = true };
++    served.pool = .{ .comp_pages = @divExact(pages, 2) + 2, .ik_pages = pages + 1, .pts = pages, .split = true };
++    var rows = served;
++    rows.rows = true;
++    const sets = [_]block.Options{ .{ .limit = limit }, served, rows };
++    // window ends: inside both thresholds, at 512 / 513 (ratio 1), 1025 / 1026 (ratio 2), the 2048 bucket's end
++    const ends = [_]i64{ 4, 300, 512, 513, 1000, 1025, 1026, 2048, 4096 };
++    var hits: usize = 0;
++    for (sets) |o| for (ends) |end| for ([_]i64{ 1, 5, 16 }) |n| {
++        if (end < n) continue;
++        var on = o;
++        on.idx_iota = true;
++        const off_cs = try block.emit(a, &cfg, &w, o, &backbone, n, end - n, true);
++        const on_cs = try block.emit(a, &cfg, &w, on, &backbone, n, end - n, true);
++        const off_l = try layersOf(a, off_cs);
++        const on_l = try layersOf(a, on_cs);
++        try testing.expectEqual(backbone.len, off_l.len);
++        try testing.expectEqual(off_l.len, on_l.len);
++        // stream marks: a dropped first side call hands its fork to the next side call (the top-k)
++        try testing.expectEqual(count(off_cs, forks), count(on_cs, forks));
++        for (backbone, off_l, on_l) |L, x, y| {
++            const index_layer = cfg.mode(L) == .full or cfg.mode(L) == .reindex;
++            // flag off: every index layer still scores (the H chain)
++            if (index_layer) try testing.expectEqual(@as(usize, 1), count(x, scores));
++            const want = index_layer and expected(end, L);
++            var kept: std.ArrayList([]const u8) = .empty;
++            for (x) |c| if (!(want and dropped(c))) try kept.append(a, try key(a, c));
++            try testing.expectEqual(kept.items.len, y.len);
++            for (kept.items, y) |k, c| try testing.expectEqualStrings(k, try key(a, c));
++            if (!want) continue;
++            hits += 1;
++            // the query projection (rot_in + linear), its rope and the scores: gone; the one top-k launch stays
++            try testing.expect(x.len - y.len >= 4);
++            try testing.expectEqual(@as(usize, 0), count(y, dropped));
++            try testing.expectEqual(@as(usize, 1), count(y, isTopk));
++        }
++    };
++    try testing.expect(hits > 0);
++}
++
++test "TF_DSV41_IDX_IOTA: a window past the index budget keeps its row blocks (no layer qualifies)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var w: block.Widths = .{};
++    try check.parseDense(a, &w, @embedFile("fixtures/dense-k2.txt"));
++    try check.parseExperts(a, &w, @embedFile("fixtures/expert-k2.txt"));
++    const cfg: Config = .{};
++    var backbone: [20]u32 = undefined; // up to the candidate source: reindex layers would refuse this budget
++    for (&backbone, 0..) |*l, i| l.* = @intCast(i);
++    const o: block.Options = .{ .index_budget = 1 << 10 };
++    var on = o;
++    on.idx_iota = true;
++    const off_cs = try block.emit(a, &cfg, &w, o, &backbone, 16, 300, true);
++    const on_cs = try block.emit(a, &cfg, &w, on, &backbone, 16, 300, true);
++    try testing.expectEqual(off_cs.len, on_cs.len);
++    for (off_cs, on_cs) |x, y| try testing.expectEqualStrings(try key(a, x), try key(a, y));
++}
++
++// -- the top-k's selection on the host (topk_cuda.cu topk_kernel / topk_b.cu topk_b_kernel, one row) ----------
++
++/// topk_cuda.cu image(): 0 marks a missing entry, so a read entry's image is never 0.
++fn image(s: f32) u32 {
++    var b: i32 = @bitCast(s);
++    if (s == 0) b = 0;
++    if (std.math.isNan(s)) b = 0x7FC00000;
++    if (b < 0) b ^= 0x7FFFFFFF;
++    return @as(u32, @bitCast(b)) ^ 0x80000000;
++}
++
++fn fmaxf(x: f32, y: f32) f32 {
++    if (std.math.isNan(x)) return y;
++    if (std.math.isNan(y)) return x;
++    return if (x > y) x else y;
++}
++
++const Job = struct { s: []const f32, cand: []const i32 = &.{}, nk: usize, k: usize, mode: u2, bs: i64, nvis: i64, bound: bool };
++
++/// One row's selection into `out` [k]: every image above the K-th, ties in scan order, -1 after; the visible count.
++fn topkRow(a: std.mem.Allocator, j: Job, out: []i32) !i64 {
++    const nk: i64 = @intCast(j.nk);
++    const k: i64 = @intCast(j.k);
++    const B: i64 = if (!j.bound) nk else switch (j.mode) {
++        0 => @min(nk, @max(j.nvis, k)),
++        2 => @min(nk, @max(0, @divTrunc(j.nvis + j.bs - 1, j.bs))),
++        else => nk,
++    };
++    const img = try a.alloc(u32, j.nk);
++    defer a.free(img);
++    for (img, 0..) |*u, ei| {
++        const e: i64 = @intCast(ei);
++        u.* = 0;
++        if (e >= B) continue;
++        switch (j.mode) {
++            2 => {
++                var m: f32 = 0;
++                var q: i64 = 0;
++                while (q < j.bs) : (q += 1) {
++                    const p = e * j.bs + q;
++                    const v = if (p < j.nvis) j.s[@intCast(p)] else -std.math.inf(f32);
++                    m = if (q > 0) fmaxf(m, v) else v;
++                }
++                if (e == @divTrunc(j.nvis - 1, j.bs)) m = std.math.inf(f32);
++                if (e * j.bs < j.nvis) u.* = image(m);
++            },
++            3 => if (j.cand[@intCast(@divTrunc(e, j.bs))] >= 0) {
++                u.* = image(j.s[ei]);
++            },
++            else => u.* = image(j.s[ei]),
++        }
++    }
++    var prefix: u32 = 0;
++    var pmask: u32 = 0;
++    var above: i64 = 0;
++    var quota = false;
++    for (0..4) |p| {
++        const shift: u5 = @intCast(24 - 8 * p);
++        var hist: [256]i64 = @splat(0);
++        for (img) |v| if (v != 0 and (v & pmask) == prefix) {
++            hist[(v >> shift) & 255] += 1;
++        };
++        var all: i64 = 0;
++        for (hist) |h| all += h;
++        if (p == 0 and all <= k) break;
++        // the highest digit whose suffix reaches K (the kernel's lane scan)
++        var dg: usize = 256;
++        var ge: i64 = 0;
++        var suf: i64 = 0;
++        var d: usize = 256;
++        while (d > 0) {
++            d -= 1;
++            suf += hist[d];
++            if (above + suf >= k) {
++                dg = d;
++                ge = suf;
++                break;
++            }
++        }
++        try testing.expect(dg < 256);
++        const hd = hist[dg];
++        above += ge - hd;
++        prefix |= @as(u32, @intCast(dg)) << shift;
++        pmask |= @as(u32, 255) << shift;
++        if (above + hd == k) break;
++        if (p == 3) quota = true;
++    }
++    const need = k - above;
++    var eq: i64 = 0;
++    var o: usize = 0;
++    var vis: i64 = 0;
++    for (img, 0..) |v, ei| {
++        if (v == 0) continue;
++        const mv = v & pmask;
++        var s = mv > prefix;
++        if (!s and mv == prefix) {
++            s = !quota or eq < need;
++            eq += 1;
++        }
++        if (!s) continue;
++        const e: i64 = @intCast(ei);
++        const pp: i64 = if (j.mode == 3) j.cand[@intCast(@divTrunc(e, j.bs))] * j.bs + @rem(e, j.bs) else e;
++        out[o] = @intCast(pp);
++        o += 1;
++        vis += @intFromBool(pp < j.nvis);
++    }
++    for (out[o..]) |*x| x.* = -1;
++    return vis;
++}
++
++/// Ascending 0 .. m - 1, then -1.
++fn isIota(out: []const i32, m: i64) bool {
++    for (out, 0..) |x, i| if (x != (if (@as(i64, @intCast(i)) < m) @as(i32, @intCast(i)) else -1)) return false;
++    return true;
++}
++
++fn garbage(r: std.Random, s: []f32) void {
++    for (s) |*x| x.* = @bitCast(r.int(u32));
++}
++
++test "top-k twin: up to K entries the selection is every entry ascending, whatever the scores; K + 1 is not" {
++    const a = testing.allocator;
++    const K = 512;
++    var prng = std.Random.DefaultPrng.init(0x1d07a);
++    const r = prng.random();
++    const s = try a.alloc(f32, K + 1);
++    defer a.free(s);
++    const out = try a.alloc(i32, K);
++    defer a.free(out);
++    for ([_]bool{ false, true }) |bound| {
++        // every program NK up to K at a few visible counts, then every visible count at NK = K (a bucket's rows)
++        for (0..K + 1) |nk| for ([_]usize{ 0, 1, nk / 2, nk }) |nv| for (0..2) |_| {
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .nk = nk, .k = K, .mode = 0, .bs = 1, .nvis = @intCast(nv), .bound = bound }, out);
++            try testing.expect(isIota(out, @intCast(nk)));
++            try testing.expectEqual(@as(i64, @intCast(@min(nk, nv))), c);
++        };
++        for (1..K + 1) |nv| {
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .nk = K, .k = K, .mode = 0, .bs = 1, .nvis = @intCast(nv), .bound = bound }, out);
++            try testing.expect(isIota(out, K));
++            try testing.expectEqual(@as(i64, @intCast(nv)), c);
++        }
++        // NK = K + 1 with every row visible: the lowest score is left out, so the scores matter
++        for (s, 0..) |*x, i| x.* = @floatFromInt(i);
++        _ = try topkRow(a, .{ .s = s, .nk = K + 1, .k = K, .mode = 0, .bs = 1, .nvis = K + 1, .bound = bound }, out);
++        try testing.expect(!isIota(out, K));
++        try testing.expectEqual(@as(i32, 1), out[0]);
++    }
++}
++
++test "top-k twin: candidate blocks, then reindex over them, are score independent up to K gathered entries" {
++    const a = testing.allocator;
++    const K = 512;
++    const cfg: Config = .{};
++    const cb: usize = cfg.candidate_blocks;
++    const bs: i64 = cfg.candidate_block_size;
++    var prng = std.Random.DefaultPrng.init(0xb10c5);
++    const r = prng.random();
++    const s = try a.alloc(f32, cb * @as(usize, @intCast(bs)));
++    defer a.free(s);
++    const cand = try a.alloc(i32, cb);
++    defer a.free(cand);
++    const out = try a.alloc(i32, K);
++    defer a.free(out);
++    for ([_]bool{ false, true }) |bound| {
++        var nv: i64 = 0;
++        while (nv <= K + 1) : (nv += if (nv < 24 or nv > K - 24) 1 else 7) {
++            const nkc: usize = @max(K, @as(usize, @intCast(nv))); // the candidate source's NK (ratio 1)
++            const nb = std.math.divCeil(usize, nkc, @intCast(bs)) catch unreachable;
++            garbage(r, s);
++            _ = try topkRow(a, .{ .s = s, .nk = nb, .k = cb, .mode = 2, .bs = bs, .nvis = nv, .bound = bound }, cand);
++            const blocks = @divTrunc(nv + bs - 1, bs);
++            try testing.expect(isIota(cand, blocks));
++            garbage(r, s);
++            const c = try topkRow(a, .{ .s = s, .cand = cand, .nk = s.len, .k = K, .mode = 3, .bs = bs, .nvis = nv, .bound = false }, out);
++            if (nv <= K) {
++                try testing.expect(isIota(out, blocks * bs));
++                try testing.expectEqual(nv, c);
++            } else {
++                // 520 gathered entries past K: increasing scores leave the first ones out
++                for (s, 0..) |*x, i| x.* = @floatFromInt(i);
++                _ = try topkRow(a, .{ .s = s, .cand = cand, .nk = s.len, .k = K, .mode = 3, .bs = bs, .nvis = nv, .bound = false }, out);
++                try testing.expect(!isIota(out, K));
++            }
++        }
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/serve_knobs.zig b/zig/src/families/deepseek_v41/serve_knobs.zig
+index 2fe21240e198f4d9d56242d686fa1cc220956aec..613a4706787b6325a2e7adbeab6457644cd92c8b 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs.zig
+@@ -163,6 +163,15 @@ pub fn indexBound(get: Get) !bool {
+     return error.BadKnob;
+ }
+ 
++/// TF_DSV41_IDX_IOTA (unset / 0 off, 1 on, else refused): block_index.iotaSelects' layers skip their index scores.
++pub fn idxIota(get: Get) !bool {
++    const raw = std.mem.trim(u8, get("TF_DSV41_IDX_IOTA") orelse "0", " ");
++    if (std.mem.eql(u8, raw, "0")) return false;
++    if (std.mem.eql(u8, raw, "1")) return true;
++    if (!quiet) std.log.warn("TF_DSV41_IDX_IOTA={s}: 0 or 1", .{raw});
++    return error.BadKnob;
++}
++
+ /// TF_DSV41_PREFETCH_AHEAD (0 by default): the next prompt segment's Engram reads before this one runs.
+ pub fn prefetchAhead(get: Get) !bool {
+     return @import("sys").environment.value(bool, "TF_DSV41_PREFETCH_AHEAD", get("TF_DSV41_PREFETCH_AHEAD"), false);
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_apply.zig b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+index a1a64f49227b1dd81534c7e9185fca01c1822f01..91648189f6e24436bcb0fec688c54f117f12fe74 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_apply.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_apply.zig
+@@ -8,6 +8,7 @@ const env = pk.env;
+ const gmGu2 = pk.gmGu2;
+ const indexBound = pk.indexBound;
+ const indexBudget = pk.indexBudget;
++const idxIota = pk.idxIota;
+ const kvNormStore = pk.kvNormStore;
+ const mhcPfRows = pk.mhcPfRows;
+ const mhcSiteRows = pk.mhcSiteRows;
+@@ -53,6 +54,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     f.opts.index_bound = try indexBound(&env);
+     // TF_DSV41_IDX_SPLIT: the ranks agreed on it at the TP bootstrap (cuda_model.zig: tp.Config.family)
+     f.opts.idx_split = try idx_split.mode(&env);
++    f.opts.idx_iota = try idxIota(&env);
+     // TF_DSV41_BRANCHES: the side stream exists before any capture
+     if (f.branches == null) f.branches = try @import("branches.zig").install(f.gpa, f, rank);
+     // TF_DSV41_PF_OVERLAP: the pieces' exchanges go on the branches' side stream (one peer: TP=2)
+@@ -98,6 +100,7 @@ pub fn apply(f: *Forward, a: std.mem.Allocator, io: std.Io, rank: u32) !void {
+     log.info("KV norm/store fusion: {s}", .{if (f.opts.kv_norm_store) "on" else "off"});
+     log.info("router grouping/rotation fusion: {s}", .{if (f.opts.router_group_rot) "on" else "off"});
+     if (f.opts.index_bound) log.info("index bound: decode index scores stop at each row's own keys (_scores_b)", .{});
++    if (f.opts.idx_iota) log.info("index iota: an index layer whose top-k takes all its entries skips its query and scores", .{});
+     if (f.opts.x3ld_epi) log.info("x3ld epilogues: gateup_epilogue / down_combine fused into the decode expert streamer (TF_DSV41_X3LD_EPI)", .{});
+     if (f.opts.idx_split != .off) log.info("index split: prefill selections split by rows over the two ranks ({t}: {s}), int32 rows gathered", .{ f.opts.idx_split, if (f.opts.idx_split == .auto) "rows x keys past 4,096 x 65,536" else "every segment of 256 rows or more" });
+     if (f.opts.stream_rb == 1) log.info("stream top-k: _stream_pf (the next tile's key loads issued ahead)", .{});
+diff --git a/zig/src/families/deepseek_v41/serve_knobs_test.zig b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+index 4ef89bdd955ce5315a86d4c7f57e89395990215e..10d833ad138a3dbb49da635d79735b062c174c3a 100644
+--- a/zig/src/families/deepseek_v41/serve_knobs_test.zig
++++ b/zig/src/families/deepseek_v41/serve_knobs_test.zig
+@@ -17,6 +17,7 @@ test {
+     _ = @import("pfovl_test.zig");
+     _ = @import("pftbo_test.zig");
+     _ = @import("streamrb_test.zig");
++    _ = @import("idx_iota_test.zig"); // TF_DSV41_IDX_IOTA on the decode emitter and the top-k twin
+ }
+ 
+ const Fake = struct {
