@@ -1,0 +1,1688 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 22:48:53 +0700
+Subject: [PATCH 075/207] In-model runner: graph backend for one-operation
+ integer cells, runner guide knob
+
+TF_DSV41_RUNNER_BACKEND=graph loads T1's bank at boot (TF_DSV41_RUNNER_GRAPH_BANK) and runs one integer
+operation within 62 digits as a named plan; calc and ELF programs stay on the circuit, by job id.
+TF_DSV41_RUNNER_GUIDE=1 adds T5's RUNNER-GUIDE.md text to the system message. Both default off.
+The graph code keeps the steps-v1 evaluator copies T2 pinned it to.
+---
+ zig/build/cuda.zig                            |   1 +
+ zig/src/core/lane_host_tests.zig              |   1 +
+ zig/src/core/runner.zig                       |  12 +-
+ zig/src/core/runner_api.zig                   |   2 +-
+ zig/src/core/runner_circuit.zig               |   1 +
+ zig/src/core/runner_graph_bank.zig            |   2 +-
+ zig/src/core/runner_graph_binary.zig          |   8 +-
+ zig/src/core/runner_graph_machine.zig         |   4 +-
+ zig/src/core/runner_graph_pack.zig            |   4 +-
+ zig/src/core/runner_graph_route.zig           | 225 +++++++++
+ zig/src/core/runner_open.zig                  |  38 +-
+ zig/src/core/runner_test.zig                  |   5 +
+ zig/src/core/steps_v1/runner_circuit_eval.zig | 175 +++++++
+ zig/src/core/steps_v1/runner_circuit_load.zig | 458 ++++++++++++++++++
+ .../core/steps_v1/runner_circuit_model.zig    | 272 +++++++++++
+ .../core/steps_v1/runner_circuit_state.zig    | 160 ++++++
+ zig/src/server/chat.zig                       |   6 +-
+ zig/src/server/root.zig                       |   1 +
+ zig/src/server/runner_guide.zig               |  56 +++
+ 19 files changed, 1414 insertions(+), 17 deletions(-)
+ create mode 100644 zig/src/core/runner_graph_route.zig
+ create mode 100644 zig/src/core/steps_v1/runner_circuit_eval.zig
+ create mode 100644 zig/src/core/steps_v1/runner_circuit_load.zig
+ create mode 100644 zig/src/core/steps_v1/runner_circuit_model.zig
+ create mode 100644 zig/src/core/steps_v1/runner_circuit_state.zig
+ create mode 100644 zig/src/server/runner_guide.zig
+
+diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
+index b6af2a05d7c84a93b8b390a645ac0bc9f8d90e2f..1f06add27664a7e714a5c304f7af4a870322c2b2 100644
+--- a/zig/build/cuda.zig
++++ b/zig/build/cuda.zig
+@@ -421,6 +421,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+     media_gate.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = mods.core, .filters = &.{ "qwen_vl", "video" } })).step);
+     b.step("test-http-limits-host", "Total HTTP read deadlines and connection admission without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"HTTP limits:"} })).step);
+     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
++    b.step("test-runner-guide-host", "TF_DSV41_RUNNER_GUIDE: T5's guide text in a chat's system message").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runner guide:"} })).step);
+     b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     const server_test = b.addRunArtifact(b.addTest(.{ .root_module = server_tests }));
+     b.step("test-done-times-host", "Request-local done line times and lane admission on the CPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"done times:"} })).step);
+diff --git a/zig/src/core/lane_host_tests.zig b/zig/src/core/lane_host_tests.zig
+index 8791e7564aa79dfd297d488252e799e414fc420f..08f25ba0dc36ec66531670af5ac9a0ad71daeee4 100644
+--- a/zig/src/core/lane_host_tests.zig
++++ b/zig/src/core/lane_host_tests.zig
+@@ -33,4 +33,5 @@ test {
+     _ = @import("runner_test.zig");
+     _ = @import("runner_proof_test.zig");
+     _ = @import("runner_place_test.zig");
++    _ = @import("runner_graph_route.zig");
+ }
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 187eb1266283fe432ae5b87e7c5c8bc253a3c560..db631d9b2754a283c8c987315cd2c99769e1bedc 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -13,9 +13,12 @@ pub const Config = struct {
+     max_tokens: u32 = 512, // owned result tokens before the cut note
+     workers: u8 = 2,
+     device: enum { cpu, cuda } = .cpu,
+-    circuit: []const u8 = "",
++    circuit: []const u8 = "", // calc and ELF programs run here (with the graph backend too)
++    backend: enum { circuit, graph } = .circuit,
++    graph_bank: []const u8 = "", // PREFIX_GRAPH_BANK: T1's bank manifest, loaded at boot (backend graph)
+     exact: bool = false, // `calc` / `exact` cells (firmware exact rationals, not any language's print) run
+     place: place.Config = .{}, // PREFIX_CPUS / PREFIX_NICE: where the runner's threads run (core/runner_place.zig)
++    guide: bool = false, // PREFIX_GUIDE=1: chats get RUNNER-GUIDE.md in their system message (server/runner_guide.zig)
+ 
+     /// PREFIX "1" enables (unset, "" or "0": null); PREFIX_* knobs override defaults; a bad value is error.BadKnob.
+     pub fn parse(get: *const fn ([]const u8) ?[]const u8, comptime prefix: []const u8) error{BadKnob}!?Config {
+@@ -23,7 +26,11 @@ pub const Config = struct {
+         if (on.len == 0 or std.mem.eql(u8, on, "0")) return null;
+         if (!std.mem.eql(u8, on, "1")) return bad(prefix, on);
+         var c: Config = .{};
+-        if (get(prefix ++ "_BACKEND")) |b| if (b.len > 0 and !std.mem.eql(u8, b, "circuit")) return bad(prefix ++ "_BACKEND", b);
++        if (get(prefix ++ "_BACKEND")) |b| if (b.len > 0) {
++            c.backend = std.meta.stringToEnum(@TypeOf(c.backend), b) orelse return bad(prefix ++ "_BACKEND", b);
++        };
++        c.graph_bank = get(prefix ++ "_GRAPH_BANK") orelse "";
++        if (c.backend == .graph and c.graph_bank.len == 0) return bad(prefix ++ "_GRAPH_BANK", "(unset)");
+         c.circuit = get(prefix ++ "_CIRCUIT") orelse "";
+         if (c.circuit.len == 0) return bad(prefix ++ "_CIRCUIT", "(unset)");
+         if (get(prefix ++ "_DEVICE")) |d| if (d.len > 0) {
+@@ -33,6 +40,7 @@ pub const Config = struct {
+         c.max_steps = try knob(u64, get, prefix ++ "_MAX_STEPS", c.max_steps, 1, 1 << 40);
+         c.max_tokens = try knob(u32, get, prefix ++ "_MAX_TOKENS", c.max_tokens, 1, 1 << 20);
+         c.exact = try knob(u1, get, prefix ++ "_EXACT", 0, 0, 1) == 1;
++        c.guide = try knob(u1, get, prefix ++ "_GUIDE", 0, 0, 1) == 1;
+         c.place = try place.Config.parse(get, prefix);
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
+         c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
+diff --git a/zig/src/core/runner_api.zig b/zig/src/core/runner_api.zig
+index 77b05ab1bbba7e46d15a0a6b369d7f3ad683b36a..ebacea7aa4061cc8a1964329fbe669dc3ff7fee3 100644
+--- a/zig/src/core/runner_api.zig
++++ b/zig/src/core/runner_api.zig
+@@ -18,7 +18,7 @@ pub const Cell = struct {
+ 
+ /// What the circuit runs. calc: an ASCII expression for the calc firmware. elf: an rv32im_zba ELF image.
+ pub const Program = struct {
+-    kind: enum { calc, elf },
++    kind: enum { calc, elf, graph },
+     bytes: []const u8,
+ };
+ 
+diff --git a/zig/src/core/runner_circuit.zig b/zig/src/core/runner_circuit.zig
+index c5536fb9caa5c5074a96ec27752e093691ccafe2..88fbcb0e4a80a0aaf8dbf246895461dbe16354de 100644
+--- a/zig/src/core/runner_circuit.zig
++++ b/zig/src/core/runner_circuit.zig
+@@ -36,6 +36,7 @@ pub const Machine = struct {
+                 try patchInput(&s, program.bytes);
+             },
+             .elf => try elf.load(&s, program.bytes),
++            .graph => return error.CircuitProgramKind, // graph packets run on the graph backend (T1)
+         }
+         return .{ .state = s, .next = c.go };
+     }
+diff --git a/zig/src/core/runner_graph_bank.zig b/zig/src/core/runner_graph_bank.zig
+index 3a67b24a7982cee3eecd1aba9642afebe0b5aca2..2902072adcf8ba86f181e4f5ae6beeb46683ef68 100644
+--- a/zig/src/core/runner_graph_bank.zig
++++ b/zig/src/core/runner_graph_bank.zig
+@@ -1,6 +1,6 @@
+ //! Boot-loaded immutable prepared weights, logical table slots and validated named binding plans.
+ const std = @import("std");
+-const model = @import("runner_circuit_model.zig");
++const model = @import("steps_v1/runner_circuit_model.zig");
+ const binary = @import("runner_graph_binary.zig");
+ const packet = @import("runner_graph_packet.zig");
+ const Allocator = std.mem.Allocator;
+diff --git a/zig/src/core/runner_graph_binary.zig b/zig/src/core/runner_graph_binary.zig
+index de591cbfb153ca2bc4ea2c55a6fbd9bb124e96f2..0e78da94ffa877918d01c400a801a8d38148e63a 100644
+--- a/zig/src/core/runner_graph_binary.zig
++++ b/zig/src/core/runner_graph_binary.zig
+@@ -1,7 +1,7 @@
+ //! Offline prepared circuit encoding; boot restores exact runtime fields without compiling graph IR.
+ const std = @import("std");
+ const builtin = @import("builtin");
+-const model = @import("runner_circuit_model.zig");
++const model = @import("steps_v1/runner_circuit_model.zig");
+ const Allocator = std.mem.Allocator;
+ const Hash = std.crypto.hash.sha2.Sha256;
+ const header = 80;
+@@ -53,9 +53,9 @@ pub fn schemaHash() [32]u8 {
+     var h = Hash.init(.{});
+     h.update("runner-graph-prepared-v1-rle:");
+     h.update(builtin.zig_version_string);
+-    h.update(@embedFile("runner_circuit_model.zig"));
+-    h.update(@embedFile("runner_circuit_state.zig"));
+-    h.update(@embedFile("runner_circuit_eval.zig"));
++    h.update(@embedFile("steps_v1/runner_circuit_model.zig"));
++    h.update(@embedFile("steps_v1/runner_circuit_state.zig"));
++    h.update(@embedFile("steps_v1/runner_circuit_eval.zig"));
+     schema(Prepared, &h);
+     return h.finalResult();
+ }
+diff --git a/zig/src/core/runner_graph_machine.zig b/zig/src/core/runner_graph_machine.zig
+index 605442b1b45ee3887b36a2b7c5cc13f342a5104e..3a6498706052f09c762597b70221d096420d7c3e 100644
+--- a/zig/src/core/runner_graph_machine.zig
++++ b/zig/src/core/runner_graph_machine.zig
+@@ -1,8 +1,8 @@
+ //! A fresh binding machine replays immutable template calls and transfers raw typed tensor rows.
+ const std = @import("std");
+ const api = @import("runner_api.zig");
+-const State = @import("runner_circuit_state.zig").State;
+-const eval = @import("runner_circuit_eval.zig");
++const State = @import("steps_v1/runner_circuit_state.zig").State;
++const eval = @import("steps_v1/runner_circuit_eval.zig");
+ const bank_mod = @import("runner_graph_bank.zig");
+ const packet = @import("runner_graph_packet.zig");
+ const Allocator = std.mem.Allocator;
+diff --git a/zig/src/core/runner_graph_pack.zig b/zig/src/core/runner_graph_pack.zig
+index 16d081bc8c828dce23d9c45b729e83b226eb428b..0e329da6d4c1f5498c616320cffd317f54ef5078 100644
+--- a/zig/src/core/runner_graph_pack.zig
++++ b/zig/src/core/runner_graph_pack.zig
+@@ -1,8 +1,8 @@
+ //! Offline CLI: runner-graph-pack INPUT.tfimr OUTPUT.tfgp; runtime never uses this compiler path.
+ const std = @import("std");
+-const model = @import("runner_circuit_model.zig");
++const model = @import("steps_v1/runner_circuit_model.zig");
+ const binary = @import("runner_graph_binary.zig");
+-const loader = @import("runner_circuit_load.zig");
++const loader = @import("steps_v1/runner_circuit_load.zig");
+ const Identity = struct { experimental: struct { kind: []const u8, contract: struct { op: []const u8, width: u8 } } };
+ 
+ pub fn main(init: std.process.Init) !void {
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1a6046ba3083869d3fb34b1edae6e436bb5ba67
+--- /dev/null
++++ b/zig/src/core/runner_graph_route.zig
+@@ -0,0 +1,225 @@
++//! TF_DSV41_RUNNER_BACKEND=graph: one integer operation runs on T1's graph bank, the rest on the frontend and circuit.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const graph = @import("runner_graph.zig");
++const Family = @import("runner_graph_packet.zig").Family;
++const Allocator = std.mem.Allocator;
++
++/// `A op B` over integer literals with a result within 62 digits: its packet (by source shape only), else null.
++pub fn packet(a: Allocator, cell: api.Cell) Allocator.Error!?[]u8 {
++    if (cell.form == .fence or !std.mem.eql(u8, cell.lang, "python")) return null;
++    const src = std.mem.trim(u8, cell.code, " \t\n");
++    var i: usize = 0;
++    const lhs = number(src, &i) orelse return null;
++    skip(src, &i);
++    const op = operator(src, &i, cell.form) orelse return null;
++    skip(src, &i);
++    const rhs = number(src, &i) orelse return null;
++    if (i != src.len) return null;
++    const dl = lhs.len - @intFromBool(lhs[0] == '-');
++    const dr = rhs.len - @intFromBool(rhs[0] == '-');
++    const fits = switch (op) {
++        .add, .sub => @max(dl, dr) + 1 <= 62,
++        .mul => dl + dr <= 62,
++        .div, .mod => !std.mem.eql(u8, rhs, "0") and !std.mem.eql(u8, rhs, "-0"),
++        .pow => blk: {
++            const k = std.fmt.parseInt(u16, rhs, 10) catch break :blk false;
++            break :blk k <= 999 and dl * @as(usize, k) <= 62;
++        },
++    };
++    if (!fits) return null;
++    return graph.Builder.binary(a, op, lhs, rhs) catch |e| switch (e) {
++        error.OutOfMemory => error.OutOfMemory,
++        else => null,
++    };
++}
++
++fn skip(src: []const u8, i: *usize) void {
++    while (i.* < src.len and (src[i.*] == ' ' or src[i.*] == '\t')) i.* += 1;
++}
++
++/// An optionally negative decimal literal without leading zeros.
++fn number(src: []const u8, i: *usize) ?[]const u8 {
++    const start = i.*;
++    if (i.* < src.len and src[i.*] == '-') i.* += 1;
++    const digits = i.*;
++    while (i.* < src.len and std.ascii.isDigit(src[i.*])) i.* += 1;
++    const n = i.* - digits;
++    if (n == 0 or n > 62 or (n > 1 and src[digits] == '0')) return null;
++    return src[start..i.*];
++}
++
++fn operator(src: []const u8, i: *usize, form: api.Form) ?Family {
++    const ops = [_]struct { []const u8, Family, bool }{
++        .{ "**", .pow, true },
++        .{ "//", .div, true },
++        .{ "×", .mul, true },
++        .{ "−", .sub, true },
++        .{ "^", .pow, true },
++        .{ "+", .add, true },
++        .{ "-", .sub, true },
++        .{ "*", .mul, true },
++        .{ "%", .mod, false },
++    };
++    // inline `/` and `%` are exact division and percent; in Python `^` is XOR
++    for (ops) |o| if (std.mem.startsWith(u8, src[i.*..], o[0])) {
++        if (form == .inline_expr and !o[2]) return null;
++        if (form == .repl and std.mem.eql(u8, o[0], "^")) return null;
++        if (form == .repl and (std.mem.eql(u8, o[0], "×") or std.mem.eql(u8, o[0], "−"))) return null;
++        i.* += o[0].len;
++        return o[1];
++    };
++    return null;
++}
++
++/// A frontend that tries the graph route first, then `inner`.
++pub const Routed = struct {
++    inner: api.Frontend,
++
++    pub fn frontend(r: *Routed) api.Frontend {
++        return .{ .ctx = r, .translate = translate };
++    }
++
++    fn translate(ctx: ?*anyopaque, a: Allocator, cell: api.Cell) Allocator.Error!api.Translation {
++        const r: *Routed = @ptrCast(@alignCast(ctx.?));
++        if (try packet(a, cell)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
++        return r.inner.translate(r.inner.ctx, a, cell);
++    }
++};
++
++/// Graph programs to the graph backend, calc and ELF to the circuit; graph job ids carry the top bit.
++pub const Dispatch = struct {
++    circuit: api.Backend,
++    graph: api.Backend,
++
++    const tag: api.JobId = 1 << 63;
++
++    pub fn backend(d: *Dispatch) api.Backend {
++        return .{ .ctx = d, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(ctx: *anyopaque, stream: u64, p: api.Program, budget: u64) error{ OutOfMemory, Busy }!api.JobId {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        if (p.kind == .graph) return tag | try d.graph.start(stream, p, budget);
++        return d.circuit.start(stream, p, budget);
++    }
++    fn poll(ctx: *anyopaque, job: api.JobId) api.Poll {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        return if (job & tag != 0) d.graph.poll(job & ~tag) else d.circuit.poll(job);
++    }
++    fn cancel(ctx: *anyopaque, job: api.JobId) void {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        if (job & tag != 0) d.graph.cancel(job & ~tag) else d.circuit.cancel(job);
++    }
++    fn release(ctx: *anyopaque, stream: u64) void {
++        const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        d.graph.release(stream);
++        d.circuit.release(stream);
++    }
++};
++
++test "runner graph route: one integer operation within 62 digits becomes a named plan" {
++    const a = std.testing.allocator;
++    for ([_]struct { api.Form, []const u8, []const u8 }{
++        .{ .inline_expr, "47 * 83", "{\"version\":1,\"values\":[\"47\",\"83\"],\"plan\":\"mul-4\",\"ops\":[],\"result\":0}" },
++        .{ .inline_expr, "2^37", "{\"version\":1,\"values\":[\"2\"],\"plan\":\"pow-37-62\",\"ops\":[],\"result\":0}" },
++        .{ .inline_expr, "9876 − 4321", "{\"version\":1,\"values\":[\"9876\",\"4321\"],\"plan\":\"sub-8\",\"ops\":[],\"result\":0}" },
++        .{ .repl, "314159 * 271828", "{\"version\":1,\"values\":[\"314159\",\"271828\"],\"plan\":\"mul-16\",\"ops\":[],\"result\":0}" },
++        .{ .repl, "-7 // 2", "{\"version\":1,\"values\":[\"-7\",\"2\"],\"plan\":\"div-1\",\"ops\":[],\"result\":0}" },
++        .{ .repl, "1071 % 462", "{\"version\":1,\"values\":[\"1071\",\"462\"],\"plan\":\"mod-4\",\"ops\":[],\"result\":0}" },
++    }) |c| {
++        const got = (try packet(a, .{ .form = c[0], .lang = "python", .code = c[1] })) orelse return error.TestExpectedRoute;
++        defer a.free(got);
++        try std.testing.expectEqualStrings(c[2], got);
++    }
++}
++
++test "runner graph route: everything else stays with the frontend and the circuit" {
++    const a = std.testing.allocator;
++    for ([_]struct { api.Form, []const u8 }{
++        .{ .inline_expr, "1/2" },
++        .{ .inline_expr, "50 % 3" },
++        .{ .inline_expr, "1.5 * 2" },
++        .{ .inline_expr, "2 * 3 * 4" },
++        .{ .inline_expr, "(2 + 3)" },
++        .{ .inline_expr, "007 + 1" },
++        .{ .inline_expr, "2**100" },
++        .{ .inline_expr, "2 ** -1" },
++        .{ .repl, "2 ^ 10" },
++        .{ .repl, "7 // 0" },
++        .{ .repl, "1/2" },
++        .{ .repl, "x * 2" },
++        .{ .repl, "12345678901234567890123456789012 * 123456789012345678901234567890123" },
++        .{ .fence, "print(2 * 3)" },
++    }) |c| {
++        if (try packet(a, .{ .form = c[0], .lang = "python", .code = c[1] })) |got| {
++            defer a.free(got);
++            std.debug.print("routed: {s}\n", .{c[1]});
++            return error.TestUnexpectedRoute;
++        }
++    }
++}
++
++test "runner graph route: graph programs reach the graph backend, the rest the circuit, by job id" {
++    const Fake = struct {
++        name: u8,
++        started: u32 = 0,
++        released: u32 = 0,
++        fn backend(f: *@This()) api.Backend {
++            return .{ .ctx = f, .vtable = &.{ .start = st, .poll = pl, .cancel = cn, .release = rl } };
++        }
++        fn st(ctx: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            f.started += 1;
++            return 7;
++        }
++        fn pl(ctx: *anyopaque, job: api.JobId) api.Poll {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            return .{ .done = .{ .status = .ok, .out = if (f.name == 'g') "graph" else "circuit", .steps = job } };
++        }
++        fn cn(_: *anyopaque, _: api.JobId) void {}
++        fn rl(ctx: *anyopaque, _: u64) void {
++            const f: *@This() = @ptrCast(@alignCast(ctx));
++            f.released += 1;
++        }
++    };
++    var c: Fake = .{ .name = 'c' };
++    var g: Fake = .{ .name = 'g' };
++    var d: Dispatch = .{ .circuit = c.backend(), .graph = g.backend() };
++    const b = d.backend();
++    const gj = try b.start(1, .{ .kind = .graph, .bytes = "{}" }, 10);
++    const cj = try b.start(1, .{ .kind = .calc, .bytes = "2*3" }, 10);
++    try std.testing.expectEqualStrings("graph", b.poll(gj).done.out);
++    try std.testing.expectEqual(@as(u64, 7), b.poll(gj).done.steps);
++    try std.testing.expectEqualStrings("circuit", b.poll(cj).done.out);
++    b.release(1);
++    try std.testing.expect(c.started == 1 and g.started == 1 and c.released == 1 and g.released == 1);
++}
++
++test "runner graph route: routed cells give Python's values on the boot-loaded bank (TF_RUNNER_GRAPH_BANK)" {
++    const a = std.testing.allocator;
++    const path = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    var bank = try graph.Bank.load(a, std.mem.span(path));
++    defer bank.deinit();
++    const b = try graph.backend(a, &bank, 1);
++    defer graph.destroy(b);
++    for ([_]struct { api.Form, []const u8, []const u8 }{
++        .{ .inline_expr, "47 * 83", "3901" }, .{ .inline_expr, "2^37", "137438953472" },
++        .{ .inline_expr, "9876 − 4321", "5555" },
++        .{ .repl, "-7 // 2", "-4" },          .{ .repl, "1071 % 462", "147" },
++        .{ .repl, "-7 % 3", "2" },            .{ .repl, "314159 * 271828", "85397212652" },
++        .{ .inline_expr, "3 - 10", "-7" },    .{ .inline_expr, "99999999999999999999999999999999 * 99999999999999999999999999999", "9999999999999999999999999999899900000000000000000000000000001" },
++    }) |c| {
++        const bytes = (try packet(a, .{ .form = c[0], .lang = "python", .code = c[1] })) orelse {
++            std.debug.print("not routed: {s}\n", .{c[1]});
++            continue;
++        };
++        defer a.free(bytes);
++        const job = try b.start(1, .{ .kind = .graph, .bytes = bytes }, 4_000_000);
++        const r = while (true) switch (b.poll(job)) {
++            .running => std.Thread.yield() catch {},
++            .done => |r| break r,
++        };
++        try std.testing.expectEqual(api.Status.ok, r.status);
++        try std.testing.expectEqualStrings(c[2], std.mem.trimEnd(u8, r.out, "\n"));
++    }
++}
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index 5cc2a5b98b06a325c577fdbcfc5ca1d90b562ffb..54255686a2755ce99671bb0905da11ba821a5eaa 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -2,6 +2,8 @@
+ const std = @import("std");
+ const runner = @import("runner.zig");
+ const circuit = @import("runner_circuit.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
+ const Allocator = std.mem.Allocator;
+ const log = std.log.scoped(.runner);
+ 
+@@ -10,7 +12,14 @@ pub const Runner = runner.Runner;
+ pub const Text = runner.Text;
+ pub const place = runner.place;
+ 
+-const Opened = struct { runner: Runner, circuit: circuit.Circuit, placer: runner.place.Placer };
++const Opened = struct {
++    runner: Runner,
++    circuit: circuit.Circuit,
++    placer: runner.place.Placer,
++    bank: graph.Bank = undefined,
++    routed: route.Routed = undefined,
++    dispatch: route.Dispatch = undefined,
++};
+ 
+ /// The runner for `cfg` (from Config.parse); lives as long as the engine. CUDA waits for its backend (DESIGN T4).
+ pub fn open(gpa: Allocator, cfg: Config) !*Runner {
+@@ -20,14 +29,35 @@ pub fn open(gpa: Allocator, cfg: Config) !*Runner {
+     }
+     const o = try gpa.create(Opened);
+     errdefer gpa.destroy(o);
++    o.* = .{ .runner = undefined, .circuit = undefined, .placer = .{ .cfg = cfg.place } };
+     o.circuit = circuit.Circuit.load(gpa, cfg.circuit) catch |e| {
+         log.err("TF_DSV41_RUNNER_CIRCUIT={s}: {t}", .{ cfg.circuit, e });
+         return e;
+     };
+     errdefer o.circuit.deinit(gpa);
+-    o.placer = .{ .cfg = cfg.place };
+     const back = try @import("runner_circuit_backend.zig").placed(gpa, &o.circuit, cfg.workers, &o.placer);
+-    o.runner = .{ .gpa = gpa, .cfg = cfg, .frontend = @import("runner_frontend.zig").frontend(), .backend = back, .placer = &o.placer };
+-    log.info("in-model runner: circuit {s}, cpu, {d} workers, {d} steps a run", .{ cfg.circuit, cfg.workers, cfg.max_steps });
++    var frontend = @import("runner_frontend.zig").frontend();
++    var backend = back;
++    // backend graph: T1's bank loads once here; one integer operation runs on it, calc and ELF on the circuit
++    if (cfg.backend == .graph) {
++        const t0 = nowNs();
++        o.bank = graph.Bank.load(gpa, cfg.graph_bank) catch |e| {
++            log.err("TF_DSV41_RUNNER_GRAPH_BANK={s}: {t}", .{ cfg.graph_bank, e });
++            return e;
++        };
++        o.routed = .{ .inner = frontend };
++        o.dispatch = .{ .circuit = back, .graph = try graph.backend(gpa, &o.bank, cfg.workers) };
++        frontend = o.routed.frontend();
++        backend = o.dispatch.backend();
++        log.info("in-model runner: graph bank {s} loaded in {d} ms", .{ cfg.graph_bank, (nowNs() - t0) / std.time.ns_per_ms });
++    }
++    o.runner = .{ .gpa = gpa, .cfg = cfg, .frontend = frontend, .backend = backend, .placer = &o.placer };
++    log.info("in-model runner: circuit {s}, cpu, {d} workers, {d} steps a run, backend {t}", .{ cfg.circuit, cfg.workers, cfg.max_steps, cfg.backend });
+     return &o.runner;
+ }
++
++fn nowNs() u64 {
++    var ts: std.c.timespec = undefined;
++    _ = std.c.clock_gettime(.MONOTONIC, &ts);
++    return @as(u64, @intCast(ts.sec)) * std.time.ns_per_s + @as(u64, @intCast(ts.nsec));
++}
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 0d8b400772e77d4eb8a13cba0a1c7048d4ada87b..7d4049b6994016551d130c9c305a6cfe4b143b76 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -386,6 +386,11 @@ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_BACKEND", "sandbox" } };
+     try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_BACKEND", "graph" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_BACKEND", "graph" }, .{ "TF_R_GRAPH_BANK", "/b/bank.json" }, .{ "TF_R_GUIDE", "1" } };
++    const g = (try runner.Config.parse(&K.get, "TF_R")).?;
++    try std.testing.expect(g.backend == .graph and std.mem.eql(u8, g.graph_bank, "/b/bank.json") and g.guide and !c.guide);
+ }
+ 
+ test {
+diff --git a/zig/src/core/steps_v1/runner_circuit_eval.zig b/zig/src/core/steps_v1/runner_circuit_eval.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..5bef406c7ac531e2cfba29fd595f1a09e1a8d752
+--- /dev/null
++++ b/zig/src/core/steps_v1/runner_circuit_eval.zig
+@@ -0,0 +1,175 @@
++//! Exact CPU evaluation of one circuit step: token features, SwiGLU units, one-hot DeltaNet heads, output code.
++const std = @import("std");
++const model = @import("runner_circuit_model.zig");
++const State = @import("runner_circuit_state.zig").State;
++
++const Scalar = model.Scalar;
++const hd = model.hd;
++
++/// The residual a token starts from: dim 0 is one, each feature dim a function of the token's family and payload.
++pub fn embed(s: *State, token: u32) !void {
++    const c = s.circuit;
++    const fam, const pay = c.split(token) orelse return error.CircuitUnknownToken;
++    s.clearResidual();
++    s.x[0] = 1;
++    s.touch(0);
++    for (c.features) |f| {
++        const v = f.value(fam, pay, c.family_bits);
++        if (v == 0) continue;
++        s.x[f.dim] = v;
++        s.touch(f.dim);
++    }
++}
++
++/// Feeds one token through every batch in stored node order and returns the token the output code names.
++pub fn step(s: *State, token: u32) !u32 {
++    const c = s.circuit;
++    try embed(s, token);
++    for (c.batches) |*b| switch (b.*) {
++        .ffn => |*f| ffn(s, f),
++        .heads => |*h| try heads(s, h),
++    };
++    s.steps += 1;
++    return decode(c, s.x);
++}
++
++fn commit(s: *State, outs: []const model.Out, values: []const Scalar) void {
++    for (outs, values) |o, v| {
++        s.x[o.dim] = if (o.into) s.x[o.dim] + v else v;
++        s.touch(o.dim);
++    }
++}
++
++/// Silent units (gate <= 0) add exactly zero; each form's units are sorted by constant, so the walk stops early.
++fn ffn(s: *State, f: *const model.Ffn) void {
++    const y = s.work[0..f.outs.len];
++    const up = s.work[f.outs.len..][0..f.up.forms.outputs];
++    const gate = s.work[f.outs.len + up.len ..][0..f.gate.forms.outputs];
++    @memset(y, 0);
++    f.up.forms.apply(s.x, s.active.items, up);
++    f.gate.forms.apply(s.x, s.active.items, gate);
++    for (gate, f.starts[0 .. f.starts.len - 1], f.starts[1..]) |v, lo, hi| for (f.order[lo..hi]) |t| {
++        const g = f.gate.bias[t] + v;
++        if (!(g > 0)) break;
++        unit(f, t, g, up, y);
++    };
++    for (f.always) |t| unit(f, t, f.gate.bias[t], up, y);
++    commit(s, f.outs, y);
++}
++
++fn unit(f: *const model.Ffn, t: u32, g: Scalar, up: []const Scalar, y: []Scalar) void {
++    const uf = f.up.form[t];
++    const u = if (uf == model.no_form) f.up.bias[t] else f.up.bias[t] + up[uf];
++    y[f.slot[t]] += f.coef[t] * u * g;
++}
++
++fn heads(s: *State, h: *const model.Heads) !void {
++    const width = h.proj.columns();
++    const p = s.work[0..width];
++    const values = s.work[width..][0..h.outs.len];
++    const rest = s.work[width + h.outs.len ..];
++    const v = rest[2 * hd .. 3 * hd];
++    const z = rest[3 * hd .. 4 * hd];
++    const o = rest[4 * hd .. 5 * hd];
++    h.proj.eval(s.x, s.active.items, rest[5 * hd ..][0..h.proj.forms.outputs], p);
++    for (p[0..h.channels], h.taps, 0..) |*e, t, i| {
++        const past = s.channelHistory(h.first_channel + @as(u32, @intCast(i)));
++        const now = e.*;
++        e.* = @max(t[0] * now + t[1] * past[0] + t[2] * past[1] + t[3] * past[2], 0);
++        past[2] = past[1];
++        past[1] = past[0];
++        past[0] = now;
++    }
++    for (h.heads) |*head| {
++        var key: ?u32 = null;
++        for (head.k) |k| if (p[k.column] > 0) {
++            if (key != null) return error.CircuitKeyNotOneHot;
++            key = k.at;
++        };
++        var rows: [hd]u32 = undefined;
++        var n: usize = 0;
++        for (head.q) |q| if (p[q.column] > 0) {
++            rows[n] = q.at;
++            n += 1;
++        };
++        for (head.value_heads) |*vh| {
++            if (vh.a) |col| try decay(s, vh.table, p[col]);
++            if (key) |r| if (try writeEnabled(vh.beta, p)) {
++                scatter(vh.v, p, v, false);
++                try s.writeRow(vh.table, r, v);
++            };
++            const out = values[vh.out_first..][0..vh.out_cols.len];
++            if (!try read(s, vh.table, rows[0..n], o)) {
++                @memset(out, 0);
++                continue;
++            }
++            scatter(vh.z, p, z, true);
++            for (vh.out_cols, vh.out_w, out) |col, w, *y| y.* = o[col] * z[col] * w;
++        }
++    }
++    commit(s, h.outs, values);
++}
++
++fn scatter(picks: []const model.Pick, p: []const Scalar, into: []Scalar, rectify: bool) void {
++    @memset(into, 0);
++    for (picks) |k| into[k.at] = if (rectify) @max(p[k.column], 0) else p[k.column];
++}
++
++/// beta: absent is 1; 1 writes, an integer <= 0 does not, anything else breaks the circuit's exact range.
++fn writeEnabled(beta: ?u32, p: []const Scalar) !bool {
++    const b = p[beta orelse return true];
++    if (b == 1) return true;
++    if (b <= 0 and b == @round(b)) return false;
++    return error.CircuitWriteGate;
++}
++
++fn decay(s: *State, table: u32, selector: Scalar) !void {
++    if (selector == model.keep_selector) return;
++    if (!s.writable(table)) return error.CircuitTableReadOnly;
++    if (selector == model.halve_selector) {
++        var live = s.present[table];
++        while (live != 0) : (live &= live - 1) {
++            for (s.row(table, @ctz(live))) |*e| e.* *= 0.5;
++        }
++        return;
++    }
++    if (selector != model.clear_selector) return error.CircuitDecaySelector;
++    @memset(s.tables[table], 0);
++    s.present[table] = 0;
++}
++
++/// Sum of the rows a multi-hot query selects over the ballast norm o / sqrt((o0^2 + o1^2) / hd); false if none.
++fn read(s: *State, table: u32, rows: []const u32, o: []Scalar) !bool {
++    var any = false;
++    for (rows) |r| {
++        if (!s.rowPresent(table, r)) continue;
++        if (!any) @memset(o, 0);
++        for (o, s.row(table, r)) |*a, b| a.* += b;
++        any = true;
++    }
++    if (!any) return false;
++    const ref = o[0] * o[0] + o[1] * o[1];
++    if (ref == 0) {
++        for (o) |a| if (a != 0) return error.CircuitReadBallast;
++        return false;
++    }
++    const norm = @sqrt(ref / @as(Scalar, hd));
++    for (o) |*a| a.* /= norm;
++    return true;
++}
++
++/// The output code: family bits then 16 payload bits, each the sign of a code dim (+kappa is 1, -kappa is 0).
++pub fn decode(c: *const model.Circuit, x: []const Scalar) !u32 {
++    var code: u64 = 0;
++    for (c.code_dims, 0..) |d, i| {
++        if (x[d] == 0 or !std.math.isFinite(x[d])) return error.CircuitOutputCode;
++        code |= @as(u64, @intFromBool(x[d] > 0)) << @intCast(i);
++    }
++    const mask = (@as(u64, 1) << @intCast(c.family_bits)) - 1;
++    const fam = code & mask;
++    const pay: u32 = @intCast(code >> @intCast(c.family_bits));
++    if (fam >= c.families.len) return error.CircuitOutputFamily;
++    const f = c.families[@intCast(fam)];
++    if (pay >= f.size) return error.CircuitOutputPayload;
++    return f.base + pay;
++}
+diff --git a/zig/src/core/steps_v1/runner_circuit_load.zig b/zig/src/core/steps_v1/runner_circuit_load.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..d84f21703447a43897341c311d96a9c3f0294c0c
+--- /dev/null
++++ b/zig/src/core/steps_v1/runner_circuit_load.zig
+@@ -0,0 +1,458 @@
++//! Reads a TFIMR001 circuit container (CIRCUIT-FORMAT.md v1) into batched, hazard-checked runtime form.
++const std = @import("std");
++const model = @import("runner_circuit_model.zig");
++
++const Scalar = model.Scalar;
++const hd = model.hd;
++const header_bytes = 64;
++
++const Term = struct { u32, f64 };
++const Expr = []const Term;
++const Chan = struct { expr: Expr, taps: [model.lags]f64 };
++const ChanAt = struct { u32, Chan };
++const ExprAt = struct { u32, Expr };
++const OutAt = struct { u32, u32, f64 };
++const InitRow = struct { u32, []const Term };
++const JValueHead = struct { v: []const ChanAt, a: Expr, beta: ?Expr, z: []const ExprAt, out: []const OutAt, into: bool, init: []const InitRow };
++const JNode = struct {
++    kind: []const u8,
++    name: []const u8 = "",
++    out: ?u32 = null,
++    into: ?bool = null,
++    terms: ?[]const struct { f64, Expr, Expr } = null,
++    n_cols: ?u32 = null,
++    levels: ?[]const u8 = null,
++    q: ?[]const ChanAt = null,
++    k: ?[]const ChanAt = null,
++    value_heads: ?[]const JValueHead = null,
++};
++const JFeature = struct { dim: u32, kind: []const u8, family: ?u32 = null, bit: ?u32 = null, digit: ?u32 = null, qs_family: ?u32 = null, qd_family: ?u32 = null, family_bits: ?u32 = null, amplitude: ?f64 = null };
++const JFamily = struct { name: []const u8, base: u32, size: u32 };
++const Doc = struct {
++    format: []const u8,
++    version: u32,
++    stats: struct { dims: u32 },
++    constants: struct { one_dim: u32, head_dim: u32, a_ref: f64, a_bit: f64, ref_cols: [2]u32 },
++    dims: []const struct { name: []const u8 },
++    features: []const JFeature,
++    nodes: []const JNode,
++    tokens: struct { vocab: u32, families: []const JFamily, go: u32, halt: u32, byte_family: u32 },
++    output: struct { family_bits: u32, payload_bits: u32, code_dims: []const u32, families: []const JFamily },
++    program: struct { kind: []const u8, input_address: u32, input_capacity: u32, entry: u32, rom_le_hex: []const u8, drom_hex: []const u8, ram_hex: []const u8 },
++};
++
++/// The checked JSON payload of a container: magic, version, sizes, flags and SHA-256 all as the format requires.
++pub fn payload(bytes: []const u8) !struct { []const u8, [32]u8 } {
++    if (bytes.len < header_bytes) return error.CircuitTruncated;
++    if (!std.mem.eql(u8, bytes[0..8], "TFIMR001")) return error.CircuitMagic;
++    const r = std.mem.readInt;
++    if (r(u32, bytes[8..12], .little) != 1 or r(u32, bytes[12..16], .little) != header_bytes) return error.CircuitVersion;
++    if (r(u32, bytes[24..28], .little) != 0 or r(u32, bytes[28..32], .little) != 0) return error.CircuitFlags;
++    if (r(u64, bytes[16..24], .little) != bytes.len - header_bytes) return error.CircuitTruncated;
++    const body = bytes[header_bytes..];
++    var digest: [32]u8 = undefined;
++    std.crypto.hash.sha2.Sha256.hash(body, &digest, .{});
++    if (!std.mem.eql(u8, &digest, bytes[32..64])) return error.CircuitChecksum;
++    return .{ body, digest };
++}
++
++/// Reads a container file; at most 1 GiB.
++pub fn fromPath(gpa: std.mem.Allocator, path: []const u8) !model.Circuit {
++    var threaded: std.Io.Threaded = .init_single_threaded;
++    const io = threaded.io();
++    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 30));
++    defer gpa.free(bytes);
++    return fromBytes(gpa, bytes);
++}
++
++/// Parses and compiles a whole container; the circuit owns everything through its arena.
++pub fn fromBytes(gpa: std.mem.Allocator, bytes: []const u8) !model.Circuit {
++    const body, const digest = try payload(bytes);
++    var parse_arena = std.heap.ArenaAllocator.init(gpa);
++    defer parse_arena.deinit();
++    const doc = std.json.parseFromSliceLeaky(Doc, parse_arena.allocator(), body, .{ .ignore_unknown_fields = true }) catch
++        return error.CircuitJson;
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    errdefer arena.deinit();
++    var c = try compile(arena.allocator(), parse_arena.allocator(), &doc);
++    c.payload_sha256 = digest;
++    c.arena = arena;
++    return c;
++}
++
++fn exact(v: f64) !Scalar {
++    if (!std.math.isFinite(v)) return error.CircuitNumber;
++    const s: Scalar = @floatCast(v);
++    if (@as(f64, s) != v) return error.CircuitNotExact;
++    return s;
++}
++
++fn compile(a: std.mem.Allocator, tmp: std.mem.Allocator, doc: *const Doc) !model.Circuit {
++    if (!std.mem.eql(u8, doc.format, "tensorfold.runner.p2") or doc.version != 1) return error.CircuitVersion;
++    const dims: u32 = @intCast(doc.dims.len);
++    const k = doc.constants;
++    if (dims == 0 or dims != doc.stats.dims or k.one_dim != 0 or k.head_dim != hd) return error.CircuitDims;
++    if (k.ref_cols[0] != 0 or k.ref_cols[1] != 1) return error.CircuitDims;
++    const families = try a.alloc(model.Family, doc.tokens.families.len);
++    var end: u32 = 0;
++    for (doc.tokens.families, doc.output.families, families) |f, g, *out| {
++        if (f.base != end or f.size == 0 or f.size > 1 << 16 or f.base != g.base or f.size != g.size) return error.CircuitFamilies;
++        out.* = .{ .base = f.base, .size = f.size };
++        end += f.size;
++    }
++    if (doc.tokens.families.len != doc.output.families.len or end != doc.tokens.vocab) return error.CircuitFamilies;
++    const o = doc.output;
++    if (o.family_bits == 0 or o.family_bits > 16 or o.payload_bits != 16 or o.code_dims.len != o.family_bits + 16) return error.CircuitOutputCode;
++    if (@as(usize, 1) << @intCast(o.family_bits) < families.len) return error.CircuitOutputCode;
++    for (o.code_dims) |d| if (d >= dims) return error.CircuitIndex;
++    if (doc.tokens.go >= end or doc.tokens.halt >= end or doc.tokens.byte_family >= families.len) return error.CircuitTokens;
++    var b: Builder = .{ .a = a, .tmp = tmp, .dims = dims };
++    for (doc.nodes) |*n| try b.node(n);
++    try b.flush();
++    return .{
++        .dims = dims,
++        .batches = b.batches.items,
++        .features = try features(a, doc, dims, @intCast(families.len)),
++        .families = families,
++        .family_bits = o.family_bits,
++        .code_dims = try a.dupe(u32, o.code_dims),
++        .go = doc.tokens.go,
++        .halt = doc.tokens.halt,
++        .byte_family = doc.tokens.byte_family,
++        .fault_family = for (doc.tokens.families, 0..) |f, i| {
++            if (std.mem.eql(u8, f.name, "FLT")) break @intCast(i);
++        } else null,
++        .tables = b.tables.items,
++        .table_names = b.names.items,
++        .channels = b.channels,
++        .nodes = @intCast(doc.nodes.len),
++        .program = try program(a, doc, b.names.items, b.tables.items),
++        .payload_sha256 = undefined,
++        .arena = undefined,
++    };
++}
++
++fn features(a: std.mem.Allocator, doc: *const Doc, dims: u32, n_families: u32) ![]model.Feature {
++    const out = try a.alloc(model.Feature, doc.features.len);
++    for (doc.features, out) |f, *g| {
++        if (f.dim == 0 or f.dim >= dims) return error.CircuitFeatures;
++        const kind = std.meta.stringToEnum(model.Feature.Kind, f.kind) orelse return error.CircuitFeatures;
++        g.* = .{ .dim = f.dim, .kind = kind };
++        switch (kind) {
++            .family, .payload_bit => {
++                g.family = f.family orelse return error.CircuitFeatures;
++                if (kind == .payload_bit) g.bit = f.bit orelse return error.CircuitFeatures;
++                if (g.family >= n_families or g.bit >= 16) return error.CircuitFeatures;
++            },
++            .next_digit => {
++                g.digit = f.digit orelse return error.CircuitFeatures;
++                g.family = f.qs_family orelse return error.CircuitFeatures;
++                g.qd_family = f.qd_family orelse return error.CircuitFeatures;
++                if (g.digit >= 8 or g.family >= n_families or g.qd_family >= n_families) return error.CircuitFeatures;
++            },
++            .code_bit => {
++                g.bit = f.bit orelse return error.CircuitFeatures;
++                g.amplitude = try exact(f.amplitude orelse return error.CircuitFeatures);
++                if (f.family_bits != doc.output.family_bits or g.bit >= doc.output.family_bits + 16) return error.CircuitFeatures;
++            },
++        }
++    }
++    return out;
++}
++
++fn unhex(a: std.mem.Allocator, text: []const u8, len: usize) ![]u8 {
++    if (text.len % 2 != 0 or text.len / 2 > len) return error.CircuitProgram;
++    const out = try a.alloc(u8, len);
++    @memset(out, 0);
++    _ = std.fmt.hexToBytes(out[0 .. text.len / 2], text) catch return error.CircuitProgram;
++    return out;
++}
++
++fn program(a: std.mem.Allocator, doc: *const Doc, names: []const []const u8, tables: []const model.Table) !model.Program {
++    const p = doc.program;
++    const rom_bytes = try unhex(a, p.rom_le_hex, 4 << 16);
++    if (p.rom_le_hex.len != 2 * rom_bytes.len or p.ram_hex.len != 2 * (4 << 13)) return error.CircuitProgram;
++    const rom = try a.alloc(u32, 1 << 16);
++    for (rom, 0..) |*w, i| w.* = std.mem.readInt(u32, rom_bytes[4 * i ..][0..4], .little);
++    a.free(rom_bytes);
++    var out: model.Program = .{
++        .kind = if (std.mem.eql(u8, p.kind, "calc")) .calc else if (std.mem.eql(u8, p.kind, "elf")) .elf else return error.CircuitProgram,
++        .input_address = p.input_address,
++        .input_capacity = p.input_capacity,
++        .ram_tables = @splat(std.math.maxInt(u32)),
++        .a_ref = try exact(doc.constants.a_ref),
++        .a_bit = try exact(doc.constants.a_bit),
++        .image = .{ .rom = rom, .drom = try unhex(a, p.drom_hex, 4 << 15), .ram = try unhex(a, p.ram_hex, 4 << 13), .entry = p.entry },
++    };
++    for (names, 0..) |name, t| {
++        if (!std.mem.startsWith(u8, name, "ram")) continue;
++        const h = std.fmt.parseInt(u5, name[3..], 10) catch continue;
++        if (out.ram_tables[h] == std.math.maxInt(u32)) out.ram_tables[h] = @intCast(t);
++    }
++    for (out.ram_tables) |t| {
++        if (t == std.math.maxInt(u32)) continue;
++        if (t + 1 >= tables.len or !tables[t].writable or !tables[t + 1].writable) return error.CircuitProgram;
++    }
++    return out;
++}
++
++/// Accumulates nodes into batches: a batch ends at a kind change or at a read of a dim the batch already wrote.
++const Builder = struct {
++    a: std.mem.Allocator,
++    tmp: std.mem.Allocator,
++    dims: u32,
++    batches: std.ArrayList(model.Batch) = .empty,
++    tables: std.ArrayList(model.Table) = .empty,
++    names: std.ArrayList([]const u8) = .empty,
++    channels: u32 = 0,
++    pending: std.ArrayList(*const JNode) = .empty,
++    pending_heads: bool = false,
++    written: std.DynamicBitSetUnmanaged = .{},
++
++    fn node(b: *Builder, n: *const JNode) !void {
++        if (b.written.bit_length == 0) b.written = try .initEmpty(b.tmp, b.dims);
++        const is_head = std.mem.eql(u8, n.kind, "head");
++        if (!is_head and !std.mem.eql(u8, n.kind, "ffn")) return error.CircuitNodeKind;
++        var reads: std.ArrayList(u32) = .empty;
++        var writes: std.ArrayList(u32) = .empty;
++        if (is_head) try headDims(b, n, &reads, &writes) else try ffnDims(b, n, &reads, &writes);
++        var hazard = b.pending.items.len > 0 and is_head != b.pending_heads;
++        for (reads.items) |d| hazard = hazard or b.written.isSet(d);
++        if (hazard) try b.flush();
++        b.pending_heads = is_head;
++        try b.pending.append(b.tmp, n);
++        for (writes.items) |d| b.written.set(d);
++    }
++
++    fn check(b: *Builder, e: Expr, reads: *std.ArrayList(u32)) !void {
++        for (e, 0..) |t, i| {
++            if (t[0] >= b.dims) return error.CircuitIndex;
++            for (e[0..i]) |u| if (u[0] == t[0]) return error.CircuitDuplicateDim;
++            _ = try exact(t[1]);
++            try reads.append(b.tmp, t[0]);
++        }
++    }
++
++    fn ffnDims(b: *Builder, n: *const JNode, reads: *std.ArrayList(u32), writes: *std.ArrayList(u32)) !void {
++        const out = n.out orelse return error.CircuitNode;
++        if (out == 0 or out >= b.dims or n.into == null) return error.CircuitIndex;
++        for (n.terms orelse return error.CircuitNode) |t| {
++            _ = try exact(t[0]);
++            try b.check(t[1], reads);
++            try b.check(t[2], reads);
++        }
++        try writes.append(b.tmp, out);
++    }
++
++    fn headDims(b: *Builder, n: *const JNode, reads: *std.ArrayList(u32), writes: *std.ArrayList(u32)) !void {
++        if (n.n_cols != hd) return error.CircuitHeadShape;
++        for ([_]?[]const ChanAt{ n.q, n.k }) |chans| for (chans orelse return error.CircuitNode) |ch| try b.channel(ch, reads);
++        for (n.value_heads orelse return error.CircuitNode) |*vh| {
++            const own = writes.items.len;
++            var mine: std.ArrayList(u32) = .empty;
++            for (vh.v) |ch| try b.channel(ch, &mine);
++            try b.check(vh.a, &mine);
++            if (vh.beta) |e| try b.check(e, &mine);
++            for (vh.z) |z| {
++                if (z[0] >= hd) return error.CircuitIndex;
++                try b.check(z[1], &mine);
++            }
++            for (mine.items) |d| for (writes.items[0..own]) |w| if (d == w) return error.CircuitHazard;
++            try reads.appendSlice(b.tmp, mine.items);
++            for (vh.out) |t| {
++                if (t[0] >= hd or t[1] == 0 or t[1] >= b.dims) return error.CircuitIndex;
++                _ = try exact(t[2]);
++                try writes.append(b.tmp, t[1]);
++            }
++        }
++    }
++
++    fn channel(b: *Builder, ch: ChanAt, reads: *std.ArrayList(u32)) !void {
++        if (ch[0] >= hd) return error.CircuitIndex;
++        try b.check(ch[1].expr, reads);
++        for (ch[1].taps) |t| _ = try exact(t);
++    }
++
++    fn flush(b: *Builder) !void {
++        if (b.pending.items.len == 0) return;
++        const batch: model.Batch = if (b.pending_heads) .{ .heads = try b.headBatch() } else .{ .ffn = try b.ffnBatch() };
++        try b.batches.append(b.a, batch);
++        b.pending.clearRetainingCapacity();
++        b.written.unsetAll();
++    }
++
++    fn ffnBatch(b: *Builder) !model.Ffn {
++        var up: FormSet = .{};
++        var gate: FormSet = .{};
++        var coef: std.ArrayList(Scalar) = .empty;
++        var slot: std.ArrayList(u32) = .empty;
++        const outs = try b.a.alloc(model.Out, b.pending.items.len);
++        for (b.pending.items, outs, 0..) |n, *out, s| {
++            out.* = .{ .dim = n.out.?, .into = n.into.? };
++            for (n.terms.?) |t| {
++                try coef.append(b.a, try exact(t[0]));
++                try slot.append(b.a, @intCast(s));
++                try up.add(b, t[1]);
++                try gate.add(b, t[2]);
++            }
++        }
++        const g = try gate.finish(b);
++        const starts = try b.a.alloc(u32, gate.forms + 1);
++        @memset(starts, 0);
++        var always: std.ArrayList(u32) = .empty;
++        for (g.form, g.bias, 0..) |f, c, t| {
++            if (f != model.no_form) starts[f + 1] += 1 else if (c > 0) try always.append(b.a, @intCast(t));
++        }
++        for (1..starts.len) |i| starts[i] += starts[i - 1];
++        const order = try b.a.alloc(u32, starts[gate.forms]);
++        const fill = try b.tmp.dupe(u32, starts[0..gate.forms]);
++        for (g.form, 0..) |f, t| if (f != model.no_form) {
++            order[fill[f]] = @intCast(t);
++            fill[f] += 1;
++        };
++        for (0..gate.forms) |f| std.mem.sort(u32, order[starts[f]..starts[f + 1]], g.bias, struct {
++            fn gt(bias: []const Scalar, x: u32, y: u32) bool {
++                return bias[x] > bias[y] or (bias[x] == bias[y] and x < y);
++            }
++        }.gt);
++        return .{ .terms = @intCast(coef.items.len), .up = try up.finish(b), .gate = g, .coef = coef.items, .slot = slot.items, .outs = outs, .order = order, .starts = starts, .always = always.items };
++    }
++
++    fn headBatch(b: *Builder) !model.Heads {
++        var cols: FormSet = .{};
++        var taps: std.ArrayList([model.lags]Scalar) = .empty;
++        for (b.pending.items) |n| {
++            for ([_][]const ChanAt{ n.q.?, n.k.? }) |chans| for (chans) |ch| try b.addChannel(&cols, &taps, ch[1]);
++            for (n.value_heads.?) |vh| for (vh.v) |ch| try b.addChannel(&cols, &taps, ch[1]);
++        }
++        const channels: u32 = @intCast(taps.items.len);
++        var column = channels;
++        var chan: u32 = 0;
++        var outs: std.ArrayList(model.Out) = .empty;
++        const heads = try b.a.alloc(model.Head, b.pending.items.len);
++        for (b.pending.items, heads) |n, *h| {
++            const q = try b.picks(n.q.?, &chan);
++            const kk = try b.picks(n.k.?, &chan);
++            const vhs = try b.a.alloc(model.ValueHead, n.value_heads.?.len);
++            for (n.value_heads.?, vhs) |*jv, *vh| {
++                const table: u32 = @intCast(b.tables.items.len);
++                try b.tables.append(b.a, try initTable(b.a, jv, kk.len > 0 or jv.a.len > 0));
++                try b.names.append(b.a, try b.a.dupe(u8, n.name));
++                vh.* = .{ .table = table, .v = try b.picks(jv.v, &chan), .a = null, .beta = null, .z = &.{}, .out_first = @intCast(outs.items.len), .out_cols = &.{}, .out_w = &.{} };
++                if (jv.a.len > 0) vh.a = try plain(b, &cols, jv.a, &column);
++                if (jv.beta) |e| vh.beta = try plain(b, &cols, e, &column);
++                const z = try b.a.alloc(model.Pick, jv.z.len);
++                for (jv.z, z) |e, *p| p.* = .{ .at = e[0], .column = try plain(b, &cols, e[1], &column) };
++                vh.z = z;
++                const out_cols = try b.a.alloc(u32, jv.out.len);
++                const ws = try b.a.alloc(Scalar, jv.out.len);
++                for (jv.out, out_cols, ws) |t, *c, *x| {
++                    c.* = t[0];
++                    x.* = try exact(t[2]);
++                    try outs.append(b.a, .{ .dim = t[1], .into = jv.into });
++                }
++                vh.out_cols = out_cols;
++                vh.out_w = ws;
++            }
++            h.* = .{ .q = q, .k = kk, .value_heads = vhs };
++        }
++        const first = b.channels;
++        b.channels += channels;
++        return .{
++            .proj = try cols.finish(b),
++            .channels = channels,
++            .first_channel = first,
++            .taps = taps.items,
++            .heads = heads,
++            .outs = outs.items,
++        };
++    }
++
++    fn addChannel(b: *Builder, cols: *FormSet, taps: *std.ArrayList([model.lags]Scalar), ch: Chan) !void {
++        try cols.add(b, ch.expr);
++        var t: [model.lags]Scalar = undefined;
++        for (&t, ch.taps) |*x, v| x.* = try exact(v);
++        try taps.append(b.a, t);
++    }
++
++    fn picks(b: *Builder, chans: []const ChanAt, next: *u32) ![]model.Pick {
++        const out = try b.a.alloc(model.Pick, chans.len);
++        for (chans, out, 0..) |ch, *p, i| {
++            for (chans[0..i]) |prev| if (prev[0] == ch[0]) return error.CircuitDuplicateChannel;
++            p.* = .{ .at = ch[0], .column = next.* };
++            next.* += 1;
++        }
++        return out;
++    }
++};
++
++fn plain(b: *Builder, cols: *FormSet, e: Expr, column: *u32) !u32 {
++    try cols.add(b, e);
++    column.* += 1;
++    return column.* - 1;
++}
++
++/// Columns as distinct linear forms (keyed by their sorted non-constant terms) plus each column's constant.
++const FormSet = struct {
++    keys: std.StringHashMapUnmanaged(u32) = .empty,
++    src: std.ArrayList(u32) = .empty,
++    dst: std.ArrayList(u32) = .empty,
++    w: std.ArrayList(Scalar) = .empty,
++    form: std.ArrayList(u32) = .empty,
++    bias: std.ArrayList(Scalar) = .empty,
++    forms: u32 = 0,
++
++    fn add(fs: *FormSet, b: *Builder, e: Expr) !void {
++        const terms = try b.tmp.dupe(Term, e);
++        std.mem.sort(Term, terms, {}, struct {
++            fn lt(_: void, x: Term, y: Term) bool {
++                return x[0] < y[0];
++            }
++        }.lt);
++        var key: std.ArrayList(u8) = .empty;
++        var bias: Scalar = 0;
++        for (terms) |t| {
++            const w = try exact(t[1]);
++            if (t[0] == 0) {
++                bias += w;
++                continue;
++            }
++            try key.appendSlice(b.tmp, std.mem.asBytes(&t[0]));
++            try key.appendSlice(b.tmp, std.mem.asBytes(&w));
++        }
++        try fs.bias.append(b.a, bias);
++        if (key.items.len == 0) return fs.form.append(b.a, model.no_form);
++        const got = try fs.keys.getOrPut(b.tmp, key.items);
++        if (!got.found_existing) {
++            got.value_ptr.* = fs.forms;
++            for (terms) |t| if (t[0] != 0) {
++                try fs.src.append(b.tmp, t[0]);
++                try fs.dst.append(b.tmp, fs.forms);
++                try fs.w.append(b.tmp, try exact(t[1]));
++            };
++            fs.forms += 1;
++        }
++        try fs.form.append(b.a, got.value_ptr.*);
++    }
++
++    fn finish(fs: *FormSet, b: *Builder) !model.Shared {
++        return .{ .forms = try model.sparse(b.a, b.dims, fs.forms, fs.src.items, fs.dst.items, fs.w.items), .form = fs.form.items, .bias = fs.bias.items };
++    }
++};
++
++fn initTable(a: std.mem.Allocator, vh: *const JValueHead, writable: bool) !model.Table {
++    const rows = try a.alloc(Scalar, hd * hd);
++    @memset(rows, 0);
++    var present: u128 = 0;
++    for (vh.init) |r| {
++        if (r[0] >= hd) return error.CircuitIndex;
++        const bit = @as(u128, 1) << @intCast(r[0]);
++        if (present & bit != 0) return error.CircuitDuplicateRow;
++        present |= bit;
++        for (r[1]) |cv| {
++            if (cv[0] >= hd) return error.CircuitIndex;
++            rows[r[0] * hd + cv[0]] = try exact(cv[1]);
++        }
++    }
++    return .{ .present = present, .rows = rows, .writable = writable };
++}
+diff --git a/zig/src/core/steps_v1/runner_circuit_model.zig b/zig/src/core/steps_v1/runner_circuit_model.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a8cc683223a28e03e9993520b112b5fcd167c6ef
+--- /dev/null
++++ b/zig/src/core/steps_v1/runner_circuit_model.zig
+@@ -0,0 +1,272 @@
++//! A compiled circuit in memory: batched SwiGLU units and one-hot DeltaNet heads in stored node order.
++const std = @import("std");
++
++/// Evaluation precision; the loader refuses any weight or state value this type cannot hold exactly.
++pub const Scalar = f32;
++/// Key/value head width and the rows a one-hot key can address.
++pub const hd: u32 = 128;
++/// Conv taps of a q/k/v channel: projections at t, t-1, t-2, t-3.
++pub const lags: u32 = 4;
++/// Decay selectors (Qwenputer's DECAY with dt_bias -110): keep, halve, clear.
++pub const keep_selector: Scalar = 0;
++pub const halve_selector: Scalar = 110;
++pub const clear_selector: Scalar = 238;
++
++/// y = x * W over the nonzeros, stored by source so zero inputs cost nothing.
++pub const Sparse = struct {
++    sources: u32,
++    outputs: u32,
++    starts: []const u32,
++    dst: []const u32,
++    w: []const Scalar,
++    /// Sources with at least one entry, ascending.
++    used: []const u32,
++
++    /// y = x * W: zeroes y, then scatters the inputs listed in `active` (every other input is zero).
++    pub fn apply(m: *const Sparse, x: []const Scalar, active: []const u32, y: []Scalar) void {
++        @memset(y, 0);
++        for (if (m.used.len < active.len) m.used else active) |i| {
++            const v = x[i];
++            if (v == 0) continue;
++            for (m.starts[i]..m.starts[i + 1]) |e| y[m.dst[e]] += v * m.w[e];
++        }
++    }
++
++    pub fn nonzeros(m: *const Sparse) usize {
++        return m.dst.len;
++    }
++};
++
++/// Where a node's value lands: x[dim] = value, or x[dim] += value when `into`.
++pub const Out = struct { dim: u32, into: bool };
++
++pub const no_form = std.math.maxInt(u32);
++
++/// A batch's expressions as distinct linear forms: column c = bias[c] + forms[form[c]], the constant dim folded out.
++pub const Shared = struct {
++    forms: Sparse,
++    form: []const u32,
++    bias: []const Scalar,
++
++    pub fn columns(s: *const Shared) usize {
++        return s.form.len;
++    }
++
++    /// `scratch` holds forms.outputs values.
++    pub fn eval(s: *const Shared, x: []const Scalar, active: []const u32, scratch: []Scalar, y: []Scalar) void {
++        s.forms.apply(x, active, scratch);
++        for (y, s.form, s.bias) |*o, f, c| o.* = if (f == no_form) c else c + scratch[f];
++    }
++};
++
++/// Consecutive FFN nodes with no read of a dim written earlier in the batch: y = sum c * up * max(gate, 0).
++pub const Ffn = struct {
++    terms: u32,
++    up: Shared,
++    gate: Shared,
++    coef: []const Scalar,
++    slot: []const u32,
++    outs: []const Out,
++    /// Terms grouped by gate form (starts has forms + 1 entries), each group by gate constant, largest first.
++    order: []const u32,
++    starts: []const u32,
++    /// Terms whose gate is a positive constant; terms with a constant gate <= 0 never fire and are dropped.
++    always: []const u32,
++};
++
++/// (row or column, projection column) of a channel or expression.
++pub const Pick = struct { at: u32, column: u32 };
++
++pub const ValueHead = struct {
++    table: u32,
++    v: []const Pick,
++    a: ?u32,
++    beta: ?u32,
++    z: []const Pick,
++    out_first: u32,
++    out_cols: []const u32,
++    out_w: []const Scalar,
++};
++
++pub const Head = struct {
++    q: []const Pick,
++    k: []const Pick,
++    value_heads: []const ValueHead,
++};
++
++/// Consecutive head nodes. Projection columns [0, channels) are conv channels with taps; the rest are plain exprs.
++pub const Heads = struct {
++    proj: Shared,
++    channels: u32,
++    first_channel: u32,
++    taps: []const [lags]Scalar,
++    heads: []const Head,
++    outs: []const Out,
++};
++
++pub const Batch = union(enum) { ffn: Ffn, heads: Heads };
++
++/// One input feature: its dim's value is a function of the token's family id and payload.
++pub const Feature = struct {
++    dim: u32,
++    kind: Kind,
++    family: u32 = 0,
++    bit: u32 = 0,
++    digit: u32 = 0,
++    qd_family: u32 = 0,
++    amplitude: Scalar = 0,
++
++    pub const Kind = enum { family, payload_bit, next_digit, code_bit };
++
++    pub fn value(f: Feature, fam: u32, pay: u32, family_bits: u32) Scalar {
++        return switch (f.kind) {
++            .family => @floatFromInt(@intFromBool(fam == f.family)),
++            .payload_bit => if (fam == f.family) @floatFromInt(pay >> @intCast(f.bit) & 1) else 0,
++            .next_digit => @floatFromInt(@intFromBool((fam == f.family and pay == f.digit) or
++                (f.digit > 0 and fam == f.qd_family and pay >> 4 == f.digit - 1))),
++            .code_bit => blk: {
++                const code = @as(u64, fam) | @as(u64, pay) << @intCast(family_bits);
++                break :blk if (code >> @intCast(f.bit) & 1 == 1) f.amplitude else -f.amplitude;
++            },
++        };
++    }
++};
++
++pub const Family = struct { base: u32, size: u32 };
++
++/// A head's initial table: present rows (bit mask) of hd columns each, row-major hd x hd.
++pub const Table = struct {
++    present: u128,
++    rows: []const Scalar,
++    writable: bool,
++};
++
++/// A static program's memory: ROM instruction words, DROM bytes, RAM bytes and the entry address.
++pub const Image = struct {
++    rom: []u32,
++    drom: []u8,
++    ram: []u8,
++    entry: u32,
++
++    pub fn deinit(img: Image, a: std.mem.Allocator) void {
++        a.free(img.rom);
++        a.free(img.drom);
++        a.free(img.ram);
++    }
++};
++
++/// Where the calc firmware takes its expression, the RAM tables (ram<h>) the patch edits, and the boot image.
++pub const Program = struct {
++    kind: enum { calc, elf },
++    input_address: u32,
++    input_capacity: u32,
++    ram_tables: [32]u32,
++    a_ref: Scalar,
++    a_bit: Scalar,
++    image: Image,
++};
++
++pub const Circuit = struct {
++    dims: u32,
++    batches: []const Batch,
++    features: []const Feature,
++    families: []const Family,
++    family_bits: u32,
++    code_dims: []const u32,
++    go: u32,
++    halt: u32,
++    byte_family: u32,
++    fault_family: ?u32,
++    tables: []const Table,
++    table_names: []const []const u8,
++    channels: u32,
++    nodes: u32,
++    program: Program,
++    payload_sha256: [32]u8,
++    arena: std.heap.ArenaAllocator,
++
++    /// Reads and checks a circuit file (CIRCUIT-FORMAT.md v1).
++    pub fn load(gpa: std.mem.Allocator, path: []const u8) !Circuit {
++        return @import("runner_circuit_load.zig").fromPath(gpa, path);
++    }
++
++    /// The arena owns everything; `gpa` is the allocator `load` was given.
++    pub fn deinit(c: *Circuit, gpa: std.mem.Allocator) void {
++        _ = gpa;
++        c.arena.deinit();
++        c.* = undefined;
++    }
++
++    /// The family id and payload of token t, or null when t is outside the vocabulary.
++    pub fn split(c: *const Circuit, t: u32) ?struct { u32, u32 } {
++        var lo: usize = 0;
++        var hi: usize = c.families.len;
++        while (lo < hi) {
++            const mid = (lo + hi) / 2;
++            const f = c.families[mid];
++            if (t < f.base) hi = mid else if (t - f.base >= f.size) lo = mid + 1 else return .{ @intCast(mid), t - f.base };
++        }
++        return null;
++    }
++
++    /// Weights the evaluator reads per step, for sizing and reports.
++    pub fn nonzeros(c: *const Circuit) usize {
++        var n: usize = 0;
++        for (c.batches) |*b| n += switch (b.*) {
++            .ffn => |*f| f.up.forms.nonzeros() + f.gate.forms.nonzeros(),
++            .heads => |*h| h.proj.forms.nonzeros(),
++        };
++        return n;
++    }
++};
++
++/// Builds a Sparse from (source, output, weight) triples in any order; a source's entries keep their input order.
++pub fn sparse(a: std.mem.Allocator, sources: u32, outputs: u32, src: []const u32, dst_in: []const u32, w_in: []const Scalar) !Sparse {
++    if (src.len != dst_in.len or src.len != w_in.len) return error.CircuitSparseShape;
++    const starts = try a.alloc(u32, sources + 1);
++    @memset(starts, 0);
++    for (src) |s| {
++        if (s >= sources) return error.CircuitIndex;
++        starts[s + 1] += 1;
++    }
++    for (1..starts.len) |i| starts[i] += starts[i - 1];
++    const fill = try a.dupe(u32, starts[0..sources]);
++    defer a.free(fill);
++    const dst = try a.alloc(u32, src.len);
++    const w = try a.alloc(Scalar, src.len);
++    for (src, dst_in, w_in) |s, d, v| {
++        if (d >= outputs) return error.CircuitIndex;
++        dst[fill[s]] = d;
++        w[fill[s]] = v;
++        fill[s] += 1;
++    }
++    var used: std.ArrayList(u32) = .empty;
++    for (0..sources) |i| if (starts[i + 1] > starts[i]) try used.append(a, @intCast(i));
++    return .{ .sources = sources, .outputs = outputs, .starts = starts, .dst = dst, .w = w, .used = used.items };
++}
++
++test "sparse apply skips zero inputs and adds repeated entries" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const m = try sparse(arena.allocator(), 3, 2, &.{ 0, 2, 2, 1 }, &.{ 1, 0, 0, 1 }, &.{ 2, 3, 4, 5 });
++    var y = [_]Scalar{ 7, 7 };
++    m.apply(&.{ 1, 0, 2 }, &.{ 0, 1, 2 }, &y);
++    try std.testing.expectEqualSlices(Scalar, &.{ 14, 2 }, &y);
++    m.apply(&.{ 1, 0, 2 }, &.{2}, &y);
++    try std.testing.expectEqualSlices(Scalar, &.{ 14, 0 }, &y);
++    try std.testing.expectError(error.CircuitIndex, sparse(arena.allocator(), 3, 2, &.{3}, &.{0}, &.{1}));
++}
++
++test "features follow the format's token-bus encodings" {
++    const nd: Feature = .{ .dim = 1, .kind = .next_digit, .family = 9, .qd_family = 10, .digit = 0 };
++    try std.testing.expectEqual(@as(Scalar, 1), nd.value(9, 0, 5));
++    try std.testing.expectEqual(@as(Scalar, 0), nd.value(10, 0xff, 5));
++    const nd3: Feature = .{ .dim = 1, .kind = .next_digit, .family = 9, .qd_family = 10, .digit = 3 };
++    try std.testing.expectEqual(@as(Scalar, 1), nd3.value(10, 2 << 4 | 7, 5));
++    const cb: Feature = .{ .dim = 1, .kind = .code_bit, .bit = 6, .amplitude = 128 };
++    try std.testing.expectEqual(@as(Scalar, 128), cb.value(3, 2, 5));
++    try std.testing.expectEqual(@as(Scalar, -128), cb.value(3, 1, 5));
++    const pb: Feature = .{ .dim = 1, .kind = .payload_bit, .family = 4, .bit = 2 };
++    try std.testing.expectEqual(@as(Scalar, 1), pb.value(4, 4, 5));
++    try std.testing.expectEqual(@as(Scalar, 0), pb.value(5, 4, 5));
++}
+diff --git a/zig/src/core/steps_v1/runner_circuit_state.zig b/zig/src/core/steps_v1/runner_circuit_state.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..96b48af62ac8d9d6a3522b59e054f0426f4444c0
+--- /dev/null
++++ b/zig/src/core/steps_v1/runner_circuit_state.zig
+@@ -0,0 +1,160 @@
++//! Per-machine circuit state: the DeltaNet tables (the RAM op's rows), per-channel conv history and canonical bytes.
++const std = @import("std");
++const model = @import("runner_circuit_model.zig");
++
++const Scalar = model.Scalar;
++const hd = model.hd;
++const table_floats = hd * hd;
++const history = model.lags - 1;
++
++/// Read-only tables stay shared with the circuit; tables a key or decay can change are copied per machine.
++pub const State = struct {
++    gpa: std.mem.Allocator,
++    circuit: *const model.Circuit,
++    tables: [][]Scalar,
++    owned: []bool,
++    present: []u128,
++    history: []Scalar,
++    steps: u64 = 0,
++    x: []Scalar,
++    active: std.ArrayList(u32),
++    seen: []bool,
++    work: []Scalar,
++
++    pub fn init(gpa: std.mem.Allocator, c: *const model.Circuit) !State {
++        const tables = try gpa.alloc([]Scalar, c.tables.len);
++        errdefer gpa.free(tables);
++        var copied: usize = 0;
++        errdefer for (c.tables[0..copied], tables[0..copied]) |t, s| if (t.writable) gpa.free(s);
++        for (c.tables, tables) |t, *s| {
++            s.* = if (t.writable) try gpa.dupe(Scalar, t.rows) else @constCast(t.rows);
++            copied += 1;
++        }
++        const owned = try gpa.alloc(bool, c.tables.len);
++        errdefer gpa.free(owned);
++        for (c.tables, owned) |t, *o| o.* = t.writable;
++        const present = try gpa.alloc(u128, c.tables.len);
++        errdefer gpa.free(present);
++        for (c.tables, present) |t, *p| p.* = t.present;
++        const hist = try gpa.alloc(Scalar, @as(usize, c.channels) * history);
++        errdefer gpa.free(hist);
++        @memset(hist, 0);
++        const x = try gpa.alloc(Scalar, c.dims);
++        errdefer gpa.free(x);
++        @memset(x, 0);
++        const seen = try gpa.alloc(bool, c.dims);
++        errdefer gpa.free(seen);
++        @memset(seen, false);
++        var active: std.ArrayList(u32) = .empty;
++        try active.ensureTotalCapacity(gpa, c.dims);
++        errdefer active.deinit(gpa);
++        const work = try gpa.alloc(Scalar, workSize(c));
++        return .{ .gpa = gpa, .circuit = c, .tables = tables, .owned = owned, .present = present, .history = hist, .x = x, .active = active, .seen = seen, .work = work };
++    }
++
++    pub fn deinit(s: *State) void {
++        for (s.owned, s.tables) |o, rows| if (o) s.gpa.free(rows);
++        s.gpa.free(s.tables);
++        s.gpa.free(s.owned);
++        s.gpa.free(s.present);
++        s.gpa.free(s.history);
++        s.gpa.free(s.x);
++        s.gpa.free(s.seen);
++        s.active.deinit(s.gpa);
++        s.gpa.free(s.work);
++        s.* = undefined;
++    }
++
++    /// Zeroes the residual for a new step; only listed dims can be nonzero.
++    pub fn clearResidual(s: *State) void {
++        for (s.active.items) |d| {
++            s.x[d] = 0;
++            s.seen[d] = false;
++        }
++        s.active.clearRetainingCapacity();
++    }
++
++    /// Lists dim d as possibly nonzero (capacity is the dim count, so this never allocates).
++    pub fn touch(s: *State, d: u32) void {
++        if (s.seen[d]) return;
++        s.seen[d] = true;
++        s.active.appendAssumeCapacity(d);
++    }
++
++    pub fn writable(s: *const State, table: u32) bool {
++        return s.circuit.tables[table].writable;
++    }
++
++    pub fn row(s: *State, table: u32, r: u32) []Scalar {
++        return s.tables[table][r * hd ..][0..hd];
++    }
++
++    pub fn rowPresent(s: *const State, table: u32, r: u32) bool {
++        return s.present[table] >> @intCast(r) & 1 == 1;
++    }
++
++    /// Copies a shared table into this machine before the host rewrites it (an ELF boot's ROM and DROM).
++    pub fn own(s: *State, table: u32) !void {
++        if (s.owned[table]) return;
++        s.tables[table] = try s.gpa.dupe(Scalar, s.tables[table]);
++        s.owned[table] = true;
++    }
++
++    /// Replaces one row (the RAM op's write) of a table this machine owns.
++    pub fn writeRow(s: *State, table: u32, r: u32, values: []const Scalar) !void {
++        if (!s.owned[table]) return error.CircuitTableReadOnly;
++        if (r >= hd or values.len != hd) return error.CircuitIndex;
++        @memcpy(s.row(table, r), values);
++        s.present[table] |= @as(u128, 1) << @intCast(r);
++    }
++
++    pub fn clearRow(s: *State, table: u32, r: u32) !void {
++        if (!s.owned[table]) return error.CircuitTableReadOnly;
++        if (r >= hd) return error.CircuitIndex;
++        @memset(s.row(table, r), 0);
++        s.present[table] &= ~(@as(u128, 1) << @intCast(r));
++    }
++
++    /// The last three pre-convolution projections of global channel i, newest first.
++    pub fn channelHistory(s: *State, i: u32) *[history]Scalar {
++        return s.history[i * history ..][0..history];
++    }
++
++    /// Bytes this machine owns beyond the shared circuit (copied tables, history, scratch), for admission.
++    pub fn ownedBytes(s: *const State) usize {
++        var n: usize = (s.history.len + s.x.len + s.work.len) * @sizeOf(Scalar);
++        for (s.owned) |o| n += if (o) table_floats * @sizeOf(Scalar) else 0;
++        return n;
++    }
++
++    /// Canonical bytes: steps, then every table and every channel history as binary64 LE, absent rows as zeros.
++    pub fn canonical(s: *const State, gpa: std.mem.Allocator) ![]u8 {
++        const n = 8 + (s.tables.len * table_floats + s.history.len) * 8;
++        const out = try gpa.alloc(u8, n);
++        std.mem.writeInt(u64, out[0..8], s.steps, .little);
++        var at: usize = 8;
++        for (s.tables, s.present) |t, p| for (0..hd) |r| {
++            const live = p >> @intCast(r) & 1 == 1;
++            for (t[r * hd ..][0..hd]) |v| {
++                const w: f64 = if (live) v else 0;
++                std.mem.writeInt(u64, out[at..][0..8], @bitCast(w + 0), .little);
++                at += 8;
++            }
++        };
++        for (s.history) |v| {
++            const w: f64 = v;
++            std.mem.writeInt(u64, out[at..][0..8], @bitCast(w + 0), .little);
++            at += 8;
++        }
++        return out;
++    }
++};
++
++fn workSize(c: *const model.Circuit) usize {
++    var n: usize = 0;
++    for (c.batches) |*b| n = @max(n, switch (b.*) {
++        .ffn => |*f| f.outs.len + f.up.forms.outputs + f.gate.forms.outputs,
++        .heads => |*h| h.proj.columns() + h.outs.len + 5 * hd + h.proj.forms.outputs,
++    });
++    return n;
++}
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 0fef083387563be1f99f2aa431970adb4662416d..919a89555f49204d9971466f79452ae369818e9a 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -95,8 +95,12 @@ pub const Prepared = struct {
+ };
+ 
+ /// Render ``input`` and run every check that can refuse it, before anything reaches the client or the engine.
+-pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepared {
++pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepared {
+     const a = cx.a;
++    var input = given;
++    if (srv.info.runner) |r| if (r.cfg.guide and input.prompt == null) {
++        input.messages = try @import("runner_guide.zig").with(a, input.messages);
++    };
+     const io = srv.io;
+     const received = nowNs(io);
+     const f = input.fields;
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 06c50212f9b1ac4cffe676869854bb1e2051cb88..fcda55de64973519b82bdfd3e51ae4acc7aa6678 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -33,6 +33,7 @@ test {
+     _ = @import("idle_unload.zig");
+     _ = @import("idle_unload_test.zig");
+     _ = @import("name_priority_http_test.zig");
++    _ = @import("runner_guide.zig");
+     @import("std").testing.refAllDecls(@This());
+     _ = @import("json");
+     _ = @import("std_options.zig");
+diff --git a/zig/src/server/runner_guide.zig b/zig/src/server/runner_guide.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..23e0a3c46b29c2b5965d09bf7047940f6e78f318
+--- /dev/null
++++ b/zig/src/server/runner_guide.zig
+@@ -0,0 +1,56 @@
++//! TF_DSV41_RUNNER_GUIDE: RUNNER-GUIDE.md (T5) in a chat's system message, so the model asks for exact results early.
++const std = @import("std");
++const json = @import("json");
++const Value = json.Value;
++
++/// RUNNER-GUIDE.md without its final newline (76 tokens on DeepSeek V4.1).
++pub const text = "Exact computation is available. Write the full expression inline as `<expr> =`, or a Python fenced cell with `print(<expr>)` followed by a `Result:` header. The exact value will follow. Request the whole computation early; wait for the result instead of working digits, loops, carries or long division by hand. Unsupported requests leave your own continuation.";
++
++/// `messages` with the guide after the first system message's text, or in a new system message before the rest.
++pub fn with(a: std.mem.Allocator, messages: Value) std.mem.Allocator.Error!Value {
++    if (messages != .array) return messages;
++    const out = try a.alloc(Value, messages.array.len + 1);
++    if (messages.array.len > 0) if (messages.array[0].strField("role")) |role| if (std.mem.eql(u8, role, "system")) {
++        if (messages.array[0].get("content")) |content| if (content == .string) {
++            const m = try json.newObject(a);
++            var it = messages.array[0].object.iterator();
++            while (it.next()) |e| try m.put(a, e.key_ptr.*, e.value_ptr.*);
++            try m.put(a, "content", .{ .string = try std.mem.concat(a, u8, &.{ content.string, "\n\n", text }) });
++            out[0] = .{ .object = m };
++            @memcpy(out[1..messages.array.len], messages.array[1..]);
++            return .{ .array = out[0..messages.array.len] };
++        };
++    };
++    const m = try json.newObject(a);
++    try m.put(a, "role", .{ .string = "system" });
++    try m.put(a, "content", .{ .string = text });
++    out[0] = .{ .object = m };
++    @memcpy(out[1..], messages.array);
++    return .{ .array = out };
++}
++
++test "runner guide: T5's RUNNER-GUIDE.md bytes; joins a system message or leads the chat" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var digest: [32]u8 = undefined;
++    std.crypto.hash.sha2.Sha256.hash(text ++ "\n", &digest, .{});
++    try std.testing.expectEqualStrings("b99224b5ebf6f7e9323bfc011200073211e1fc9381968e067f1a336893a8a7bb", &std.fmt.bytesToHex(digest, .lower));
++    const user = try json.newObject(a);
++    try user.put(a, "role", .{ .string = "user" });
++    try user.put(a, "content", .{ .string = "What is 47*83?" });
++    var one = [_]Value{.{ .object = user }};
++    const led = try with(a, .{ .array = &one });
++    try std.testing.expectEqual(@as(usize, 2), led.array.len);
++    try std.testing.expectEqualStrings("system", led.array[0].strField("role").?);
++    try std.testing.expectEqualStrings(text, led.array[0].get("content").?.string);
++    try std.testing.expectEqualStrings("user", led.array[1].strField("role").?);
++    const sys = try json.newObject(a);
++    try sys.put(a, "role", .{ .string = "system" });
++    try sys.put(a, "content", .{ .string = "Be brief." });
++    var two = [_]Value{ .{ .object = sys }, .{ .object = user } };
++    const joined = try with(a, .{ .array = &two });
++    try std.testing.expectEqual(@as(usize, 2), joined.array.len);
++    try std.testing.expectEqualStrings("Be brief.\n\n" ++ text, joined.array[0].get("content").?.string);
++    try std.testing.expectEqualStrings("Be brief.", two[0].get("content").?.string); // the request is not changed
++}

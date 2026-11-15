@@ -1,0 +1,170 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 04:25:41 +0700
+Subject: [PATCH 148/207] Allow bounded opt-in runner guide request sizes
+
+Add TF_DSV41_RUNNER_GUIDE_MAX_BYTES with a 512-byte default and a
+2048-byte maximum. Apply the configured limit at server boot and name
+it in request refusals while preserving guide injection and off behavior.
+
+(cherry picked from commit 5fe733335d30b302c4728fee4e202a11eb44cb6d, applied from T5's patch)
+---
+ zig/src/core/runner.zig         |  2 ++
+ zig/src/core/runner_test.zig    |  9 ++++++
+ zig/src/server/chat.zig         |  2 +-
+ zig/src/server/runner_guide.zig | 57 +++++++++++++++++++++++++++++++--
+ zig/src/server/server.zig       |  1 +
+ 5 files changed, 68 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 7181b628e675103b9ce12d2a2ce15c6573caee94..0227d241a7ddd7293a27d629f03de1d68bebcdb3 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -23,6 +23,7 @@ pub const Config = struct {
+     place: place.Config = .{}, // PREFIX_CPUS / PREFIX_NICE: where the runner's threads run (core/runner_place.zig)
+     settle_us: u32 = 0, // PREFIX_SETTLE_US: a held tick waits this long for its cell; 0: one stage per tick (as before)
+     guide: []const u8 = "", // PREFIX_GUIDE: "1" RUNNER-GUIDE.md, else a file, as chats' default guide (server/runner_guide.zig)
++    guide_max_bytes: usize = 512, // PREFIX_GUIDE_MAX_BYTES: request guide cap, opt-in up to 2048 bytes
+     compile: bool = true, // false: the frontend never builds an ELF (no clang); calc and graph programs only (S3)
+     sync_graph: bool = false, // PREFIX_SYNC_GRAPH: a graph result settles at its trigger token, in that round (no hold)
+     cells: bool = true, // PREFIX_CELLS: the receipt records each owned cell's span, route and landed value (runner_receipt.zig)
+@@ -54,6 +55,7 @@ pub const Config = struct {
+         c.cells = try knob(u1, get, prefix ++ "_CELLS", 1, 0, 1) == 1;
+         c.guide = get(prefix ++ "_GUIDE") orelse "";
+         if (std.mem.eql(u8, c.guide, "0")) c.guide = "";
++        c.guide_max_bytes = try knob(usize, get, prefix ++ "_GUIDE_MAX_BYTES", c.guide_max_bytes, 512, 2048);
+         c.place = try place.Config.parse(get, prefix);
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
+         c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 51beaa38cec7c13de0f65151b86437dec5f9c02f..b163ab7a9481d6c4d73089e3221c5edc42d1b76b 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -460,6 +460,15 @@ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     try std.testing.expectEqualStrings("/g/a.md", (try runner.Config.parse(&K.get, "TF_R")).?.guide);
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_GUIDE", "0" } };
+     try std.testing.expectEqualStrings("", (try runner.Config.parse(&K.get, "TF_R")).?.guide);
++    try std.testing.expectEqual(@as(usize, 512), (try runner.Config.parse(&K.get, "TF_R")).?.guide_max_bytes);
++    for ([_][]const u8{ "512", "586", "1024", "2048" }) |value| {
++        K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_GUIDE_MAX_BYTES", value } };
++        try std.testing.expectEqual(try std.fmt.parseInt(usize, value, 10), (try runner.Config.parse(&K.get, "TF_R")).?.guide_max_bytes);
++    }
++    for ([_][]const u8{ "0", "511", "2049", "-1", "bogus" }) |value| {
++        K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_GUIDE_MAX_BYTES", value } };
++        try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    }
+ }
+ 
+ test {
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 7927d6e7ed163986d402af2dad3e2b328a2c275b..727ee30f21b314805cffefb65f076326113dd290 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -101,7 +101,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     var input = given;
+     // the runner guide (runner_guide.zig): the request's "runner_guide" or the boot default, with the runner on
+     const guided = @import("runner_guide.zig").apply(a, if (srv.info.runner != null and input.prompt == null) &srv.guides else null, input.fields.get("runner_guide"), input.messages) catch |e| switch (e) {
+-        error.BadGuide => return cx.refuse("runner_guide must be a string of at most 512 bytes"),
++        error.BadGuide => return cx.refuse(try srv.guides.refusal(a)),
+         error.OutOfMemory => return error.OutOfMemory,
+     };
+     input.messages = guided.messages;
+diff --git a/zig/src/server/runner_guide.zig b/zig/src/server/runner_guide.zig
+index 0621224a0237c3b968ba5fc64b9c7a5204f62672..5b837a59866bbd77c2e9ac010af3db385d3ae3fb 100644
+--- a/zig/src/server/runner_guide.zig
++++ b/zig/src/server/runner_guide.zig
+@@ -15,6 +15,7 @@ pub const max_request = 512;
+ /// The server's default guide, read once at boot from TF_DSV41_RUNNER_GUIDE: "1" is `text`, any other value a file.
+ pub const Set = struct {
+     default: []const u8 = "", // "": chats get no guide unless they ask
++    max_request_bytes: usize = max_request,
+ 
+     pub fn load(a: std.mem.Allocator, io: std.Io, knob: []const u8) !Set {
+         if (knob.len == 0) return .{};
+@@ -23,8 +24,12 @@ pub const Set = struct {
+         return .{ .default = trim(bytes) };
+     }
+ 
++    pub fn refusal(s: Set, a: std.mem.Allocator) std.mem.Allocator.Error![]const u8 {
++        return std.fmt.allocPrint(a, "runner_guide must be a string of at most {d} bytes", .{s.max_request_bytes});
++    }
++
+     pub fn describe(s: Set) void {
+-        @import("log.zig").line("runner guide: default {d} bytes", .{s.default.len});
++        @import("log.zig").line("runner guide: default {d} bytes, request limit {d} bytes", .{ s.default.len, s.max_request_bytes });
+     }
+ };
+ 
+@@ -43,7 +48,7 @@ pub fn apply(a: std.mem.Allocator, set: ?*const Set, asked: ?Value, messages: Va
+     const s = set orelse return .{ .messages = messages, .guide = null };
+     const chosen = if (asked) |v| switch (v) {
+         .null => s.default,
+-        .string => |t| if (t.len <= max_request) trim(t) else return error.BadGuide,
++        .string => |t| if (t.len <= s.max_request_bytes) trim(t) else return error.BadGuide,
+         else => return error.BadGuide,
+     } else s.default;
+     return .{ .messages = if (chosen.len > 0) try with(a, messages, chosen) else messages, .guide = chosen };
+@@ -197,3 +202,51 @@ test "runner guide: boot default, a request's override, an empty one and the run
+     _ = try apply(a, &builtin, .{ .string = long[0..max_request] }, chat);
+     try std.testing.expectError(error.BadGuide, apply(a, &builtin, .{ .bool = true }, chat));
+ }
++
++test "runner guide: opt-in request byte boundaries preserve injection and off behavior" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const user = try json.newObject(a);
++    try user.put(a, "role", .{ .string = "user" });
++    try user.put(a, "content", .{ .string = "Compute 47*83." });
++    var one = [_]Value{.{ .object = user }};
++    const chat: Value = .{ .array = &one };
++    const bytes = try a.alloc(u8, 2049);
++    @memset(bytes, 'x');
++    const Case = struct { limit: usize, len: usize, accept: bool };
++    for ([_]Case{
++        .{ .limit = 512, .len = 512, .accept = true },
++        .{ .limit = 512, .len = 586, .accept = false },
++        .{ .limit = 1024, .len = 586, .accept = true },
++        .{ .limit = 2048, .len = 512, .accept = true },
++        .{ .limit = 2048, .len = 586, .accept = true },
++        .{ .limit = 2048, .len = 2048, .accept = true },
++        .{ .limit = 2048, .len = 2049, .accept = false },
++    }) |c| {
++        const set: Set = .{ .default = "Boot guide", .max_request_bytes = c.limit };
++        try std.testing.expectEqualStrings(try std.fmt.allocPrint(a, "runner_guide must be a string of at most {d} bytes", .{c.limit}), try set.refusal(a));
++        const asked: Value = .{ .string = bytes[0..c.len] };
++        if (c.accept) {
++            const got = try apply(a, &set, asked, chat);
++            try std.testing.expectEqualStrings(bytes[0..c.len], got.guide.?);
++            try std.testing.expectEqualStrings(bytes[0..c.len], got.messages.array[0].strField("content").?);
++            try std.testing.expectEqualStrings("Compute 47*83.", got.messages.array[1].strField("content").?);
++        } else try std.testing.expectError(error.BadGuide, apply(a, &set, asked, chat));
++        const off = try apply(a, null, asked, chat);
++        try std.testing.expect(off.guide == null);
++        try std.testing.expectEqualStrings(try json.stringify(a, chat, .{}), try json.stringify(a, off.messages, .{}));
++        try std.testing.expectEqualStrings("Boot guide", (try apply(a, &set, .null, chat)).guide.?);
++        try std.testing.expectEqualStrings("", (try apply(a, &set, .{ .string = "" }, chat)).guide.?);
++    }
++    const capped: Set = .{ .max_request_bytes = 2048 };
++    @memset(bytes, ' ');
++    try std.testing.expectError(error.BadGuide, apply(a, &capped, .{ .string = bytes }, chat));
++    for (0..1024) |i| {
++        bytes[2 * i] = 0xc3;
++        bytes[2 * i + 1] = 0xa9;
++    }
++    bytes[2048] = 'x';
++    try std.testing.expectEqual(@as(usize, 2048), (try apply(a, &capped, .{ .string = bytes[0..2048] }, chat)).guide.?.len);
++    try std.testing.expectError(error.BadGuide, apply(a, &capped, .{ .string = bytes }, chat));
++}
+diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
+index c0ba5c557f8a8fe41d661945e322dbcbb8abc2d2..1366ecf307ae0b988876f10c62db6dd5c5e60e1a 100644
+--- a/zig/src/server/server.zig
++++ b/zig/src/server/server.zig
+@@ -197,6 +197,7 @@ pub const Server = struct {
+         if (srv.info.runner) |r| {
+             try @import("runner_text.zig").attach(srv.arena.allocator(), text, r);
+             srv.guides = try @import("runner_guide.zig").Set.load(srv.arena.allocator(), io, r.cfg.guide);
++            srv.guides.max_request_bytes = r.cfg.guide_max_bytes;
+             srv.guides.describe();
+         }
+         if (config.cortheon) srv.cortheon = try cortheon.State.init(gpa, io, "TensorFold-Cortheon (+https://github.com/ashhart/TensorFold)", config.cortheon_search_key);

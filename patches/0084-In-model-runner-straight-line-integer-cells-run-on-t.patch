@@ -1,0 +1,467 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 05:06:10 +0700
+Subject: [PATCH 084/207] In-model runner: straight-line integer cells run on
+ the graph bank
+
+A fence or REPL cell of assignments, q, r = divmod(x, y), ';' and prints of integer expressions or one
+== / != runs as graph packets in turn: names expand to their definitions by text, so each print is literals
+only, and x == y is bank arithmetic on x - y printed as True or False. This owns the whole-problem cell the
+runner guide elicits (S1 d_mirror, big-number-019).
+---
+ zig/src/core/runner_graph_program.zig | 154 ++++++++++++++++++++++++++
+ zig/src/core/runner_graph_route.zig   | 127 +++++++++++++++++++--
+ zig/src/core/runner_open.zig          |   2 +-
+ zig/src/core/runner_proof_test.zig    |  68 +++++++++++-
+ 4 files changed, 341 insertions(+), 10 deletions(-)
+ create mode 100644 zig/src/core/runner_graph_program.zig
+
+diff --git a/zig/src/core/runner_graph_program.zig b/zig/src/core/runner_graph_program.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..22d5f30bf15d15fe593f3f876eaa17a8386a09dc
+--- /dev/null
++++ b/zig/src/core/runner_graph_program.zig
+@@ -0,0 +1,154 @@
++//! TF_DSV41_RUNNER_BACKEND=graph: a straight-line integer cell (assignments, divmod, prints) as graph packets.
++const std = @import("std");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const Allocator = std.mem.Allocator;
++
++/// A straight-line cell's prints run as packets in turn; each piece is `<I|B><N|S> <packet>` on its own line.
++pub const seq_magic = "TFGS1\n";
++
++/// Straight-line integer Python (assignments, divmod, `;`, prints) as graph bytes over literals; null: other shapes.
++pub fn program(a: Allocator, bank: *const graph.Bank, code: []const u8) Allocator.Error!?[]u8 {
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    if (code.len > 4096 or std.mem.indexOfAny(u8, code, "'\"\\[]{}.:") != null) return null;
++    var defs: std.StringHashMapUnmanaged([]const u8) = .empty;
++    var pieces: std.ArrayList(u8) = .empty;
++    var n_pieces: usize = 0;
++    var lone: ?[]const u8 = null;
++    var lines = std.mem.splitScalar(u8, code, '\n');
++    while (lines.next()) |raw| {
++        const line = raw[0 .. std.mem.indexOfScalar(u8, raw, '#') orelse raw.len];
++        if (line.len > 0 and (line[0] == ' ' or line[0] == '\t') and std.mem.trim(u8, line, " \t\r").len > 0) return null;
++        var stmts = std.mem.splitScalar(u8, line, ';');
++        while (stmts.next()) |st| {
++            const t = std.mem.trim(u8, st, " \t\r");
++            if (t.len == 0) continue;
++            if (std.mem.startsWith(u8, t, "print(") and t[t.len - 1] == ')') {
++                const args = try splitArgs(arena, t[6 .. t.len - 1]) orelse return null;
++                if (args.len == 0) return null;
++                for (args, 0..) |arg, i| {
++                    const last = i + 1 == args.len;
++                    const one = try piece(arena, bank, &defs, arg) orelse return null;
++                    if (n_pieces >= 16) return null;
++                    try pieces.print(arena, "{c}{c} {s}\n", .{ one.kind, @as(u8, if (last) 'N' else 'S'), one.packet });
++                    lone = if (n_pieces == 0 and one.kind == 'I' and last) one.packet else null;
++                    n_pieces += 1;
++                }
++                continue;
++            }
++            const eq = std.mem.indexOfScalar(u8, t, '=') orelse return null;
++            if (eq + 1 < t.len and t[eq + 1] == '=') return null;
++            const lhs = std.mem.trim(u8, t[0..eq], " \t()");
++            const rhs = std.mem.trim(u8, t[eq + 1 ..], " \t");
++            if (std.mem.indexOfScalar(u8, lhs, ',')) |comma| {
++                // q, r = divmod(x, y): Python's floor quotient and remainder
++                const q = std.mem.trim(u8, lhs[0..comma], " \t");
++                const rem = std.mem.trim(u8, lhs[comma + 1 ..], " \t");
++                if (!name(q) or !name(rem) or !std.mem.startsWith(u8, rhs, "divmod(") or rhs[rhs.len - 1] != ')') return null;
++                const args = try splitArgs(arena, rhs[7 .. rhs.len - 1]) orelse return null;
++                if (args.len != 2) return null;
++                const x = try expand(arena, &defs, args[0]) orelse return null;
++                const y = try expand(arena, &defs, args[1]) orelse return null;
++                try defs.put(arena, q, try std.mem.concat(arena, u8, &.{ "(", x, "//", y, ")" }));
++                try defs.put(arena, rem, try std.mem.concat(arena, u8, &.{ "(", x, "%", y, ")" }));
++                continue;
++            }
++            if (!name(lhs)) return null;
++            const v = try expand(arena, &defs, rhs) orelse return null;
++            // a plain literal stays bare, so it can still be an exponent
++            const bare = v.len > 0 and for (v) |c| {
++                if (!std.ascii.isDigit(c)) break false;
++            } else true;
++            try defs.put(arena, lhs, if (bare) v else try std.mem.concat(arena, u8, &.{ "(", v, ")" }));
++        }
++    }
++    if (n_pieces == 0) return null;
++    if (n_pieces == 1) if (lone) |p| return try a.dupe(u8, p);
++    return try std.mem.concat(a, u8, &.{ seq_magic, pieces.items });
++}
++
++const Piece = struct { kind: u8, packet: []const u8 };
++
++/// One print argument: an integer expression ('I'), or one `==`/`!=` printed as True/False ('B').
++fn piece(arena: Allocator, bank: *const graph.Bank, defs: anytype, arg: []const u8) Allocator.Error!?Piece {
++    const cmp = std.mem.indexOf(u8, arg, "==") orelse std.mem.indexOf(u8, arg, "!=");
++    if (cmp == null) {
++        const e = try expand(arena, defs, arg) orelse return null;
++        return .{ .kind = 'I', .packet = try route.lower(arena, bank, e) orelse return null };
++    }
++    const at = cmp.?;
++    const l = try expand(arena, defs, arg[0..at]) orelse return null;
++    const r = try expand(arena, defs, arg[at + 2 ..]) orelse return null;
++    if (std.mem.indexOfAny(u8, l, "=!<>") != null or std.mem.indexOfAny(u8, r, "=!<>") != null) return null;
++    // d = l - r; with M = 10^D above |d|: (d+M-1)//M is 1 for d > 0, (-d+M-1)//M is 1 for d < 0, both 0 at d = 0
++    const d = try std.mem.concat(arena, u8, &.{ "(", l, ")-(", r, ")" });
++    const nodes = try route.shape(arena, d) orelse return null;
++    const digits = nodes[nodes.len - 1].digits;
++    if (digits > 57) return null;
++    const m = try arena.alloc(u8, digits + 1);
++    m[0] = '1';
++    @memset(m[1..], '0');
++    const nz = try std.mem.concat(arena, u8, &.{ "(", d, "+", m, "-1)//", m, "+((", r, ")-(", l, ")+", m, "-1)//", m });
++    const e = if (arg[at] == '=') try std.mem.concat(arena, u8, &.{ "1-(", nz, ")" }) else nz;
++    return .{ .kind = 'B', .packet = try route.lower(arena, bank, e) orelse return null };
++}
++
++/// `src` with every name replaced by its definition and blanks dropped (calc input); null for an undefined name.
++fn expand(arena: Allocator, defs: anytype, src: []const u8) Allocator.Error!?[]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    var i: usize = 0;
++    while (i < src.len) {
++        const c = src[i];
++        if (std.ascii.isAlphabetic(c) or c == '_') {
++            const start = i;
++            while (i < src.len and (std.ascii.isAlphanumeric(src[i]) or src[i] == '_')) i += 1;
++            try out.appendSlice(arena, defs.get(src[start..i]) orelse return null);
++            continue;
++        }
++        if (c != ' ' and c != '\t') try out.append(arena, c);
++        i += 1;
++    }
++    return if (out.items.len == 0) null else out.items;
++}
++
++/// Top-level comma-separated arguments; null for unbalanced parentheses.
++fn splitArgs(arena: Allocator, src: []const u8) Allocator.Error!?[]const []const u8 {
++    var out: std.ArrayList([]const u8) = .empty;
++    var depth: usize = 0;
++    var start: usize = 0;
++    for (src, 0..) |c, i| switch (c) {
++        '(' => depth += 1,
++        ')' => depth = std.math.sub(usize, depth, 1) catch return null,
++        ',' => if (depth == 0) {
++            try out.append(arena, std.mem.trim(u8, src[start..i], " \t"));
++            start = i + 1;
++        },
++        else => {},
++    };
++    if (depth != 0) return null;
++    const last = std.mem.trim(u8, src[start..], " \t");
++    if (last.len > 0) try out.append(arena, last) else if (out.items.len > 0) return null;
++    return out.items;
++}
++
++fn name(s: []const u8) bool {
++    if (s.len == 0 or !(std.ascii.isAlphabetic(s[0]) or s[0] == '_')) return false;
++    for (s) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
++    for ([_][]const u8{ "print", "divmod", "True", "False", "None" }) |k| if (std.mem.eql(u8, s, k)) return false;
++    return true;
++}
++
++/// Whether earlier cells rebind `print` or `divmod`, which this cell's meaning depends on.
++pub fn shadowed(prior: []const []const u8) bool {
++    for (prior) |code| for ([_][]const u8{ "print", "divmod" }) |k| {
++        var at: usize = 0;
++        while (std.mem.indexOfPos(u8, code, at, k)) |i| : (at = i + 1) {
++            const rest = std.mem.trimStart(u8, code[i + k.len ..], " \t");
++            if (rest.len > 0 and (rest[0] == '=' and (rest.len == 1 or rest[1] != '=')) or std.mem.startsWith(u8, rest, ",")) return true;
++            if (i >= 4 and std.mem.eql(u8, code[i - 4 .. i], "def ")) return true;
++        }
++    };
++    return false;
++}
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index 0bef67b19da51ab318a6b764af665e72019cb696..e6c5f4615bc50dfbee78fbfd37a18aa997f184b9 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -5,6 +5,8 @@ const graph = @import("runner_graph.zig");
+ const packet = @import("runner_graph_packet.zig");
+ const Family = packet.Family;
+ const Allocator = std.mem.Allocator;
++const prog = @import("runner_graph_program.zig");
++pub const program = prog.program;
+ 
+ /// One node of the program, children first; `digits` bounds its value's decimal digits from syntax alone.
+ const Node = struct {
+@@ -113,7 +115,8 @@ const Parser = struct {
+         const digits = switch (f) {
+             .add, .sub => @max(dl, dr) + 1,
+             .mul => dl + dr,
+-            .div => dl,
++            // |a // b| < 10^(da-db+1), plus one for the floor; never more than |a| itself
++            .div => @min(dl, @max(1, (dl + 2) -| dr)),
+             .mod => dr,
+             .pow => unreachable,
+         };
+@@ -178,7 +181,7 @@ fn constantText(a: Allocator, v: *const packet.Value) ![]u8 {
+ }
+ 
+ /// The plan names, children first, for calc input `src`; null when any part is not a graph route.
+-fn shape(arena: Allocator, src: []const u8) Allocator.Error!?[]const Node {
++pub fn shape(arena: Allocator, src: []const u8) Allocator.Error!?[]const Node {
+     if (src.len == 0 or src.len > 4096) return null;
+     var p: Parser = .{ .a = arena, .src = src };
+     _ = p.expr() catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
+@@ -283,6 +286,8 @@ pub const Routed = struct {
+ 
+     fn translate(ctx: ?*anyopaque, a: Allocator, cell: api.Cell) Allocator.Error!api.Translation {
+         const r: *Routed = @ptrCast(@alignCast(ctx.?));
++        if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and !prog.shadowed(cell.prior))
++            if (try prog.program(a, r.bank, cell.code)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         const t = try r.inner.translate(r.inner.ctx, a, cell);
+         if (t != .program or t.program.kind != .calc) return t;
+         const bytes = try lower(a, r.bank, t.program.bytes) orelse return t;
+@@ -290,31 +295,137 @@ pub const Routed = struct {
+     }
+ };
+ 
+-/// Graph programs to the graph backend, calc and ELF to the circuit; graph job ids carry the top bit.
++/// Graph programs to the graph backend (a sequence's packets in turn), calc and ELF to the circuit, by job id bits.
+ pub const Dispatch = struct {
++    gpa: Allocator,
+     circuit: api.Backend,
+     graph: api.Backend,
++    seqs: std.ArrayList(*Seq) = .empty,
++    next_seq: api.JobId = 1,
+ 
+     const tag: api.JobId = 1 << 63;
++    const seq_tag: api.JobId = 1 << 62;
++
++    const Seq = struct {
++        id: api.JobId,
++        stream: u64,
++        lines: []const u8, // the pieces still to run
++        budget: u64,
++        job: ?api.JobId = null,
++        out: std.ArrayList(u8) = .empty,
++        steps: u64 = 0,
++        exec_ns: u64 = 0,
++        end: ?api.Result = null,
++        delivered: bool = false,
++        bytes: []u8,
++    };
+ 
+     pub fn backend(d: *Dispatch) api.Backend {
+         return .{ .ctx = d, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
+     }
++    pub fn deinit(d: *Dispatch) void {
++        for (d.seqs.items) |q| d.free(q);
++        d.seqs.deinit(d.gpa);
++    }
++    fn free(d: *Dispatch, q: *Seq) void {
++        if (q.job) |j| d.graph.cancel(j);
++        q.out.deinit(d.gpa);
++        d.gpa.free(q.bytes);
++        d.gpa.destroy(q);
++    }
++    /// A stream's delivered sequences: their `out` lives until its next call.
++    fn forget(d: *Dispatch, stream: u64, all: bool) void {
++        var i: usize = 0;
++        while (i < d.seqs.items.len) {
++            const q = d.seqs.items[i];
++            if (q.stream == stream and (all or q.delivered)) d.free(d.seqs.swapRemove(i)) else i += 1;
++        }
++    }
+     fn start(ctx: *anyopaque, stream: u64, p: api.Program, budget: u64) error{ OutOfMemory, Busy }!api.JobId {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        if (p.kind == .graph) return tag | try d.graph.start(stream, p, budget);
+-        return d.circuit.start(stream, p, budget);
++        if (p.kind != .graph) return d.circuit.start(stream, p, budget);
++        if (!std.mem.startsWith(u8, p.bytes, prog.seq_magic)) return tag | try d.graph.start(stream, p, budget);
++        d.forget(stream, false);
++        const q = try d.gpa.create(Seq);
++        errdefer d.gpa.destroy(q);
++        const bytes = try d.gpa.dupe(u8, p.bytes);
++        errdefer d.gpa.free(bytes);
++        q.* = .{ .id = d.next_seq, .stream = stream, .lines = bytes[prog.seq_magic.len..], .budget = budget, .bytes = bytes };
++        try d.seqs.append(d.gpa, q);
++        d.next_seq += 1;
++        d.step(q);
++        return seq_tag | q.id;
++    }
++    /// Starts or collects the current piece; the sequence ends at its last piece or at the first that is not ok.
++    fn step(d: *Dispatch, q: *Seq) void {
++        while (q.end == null) {
++            if (q.job == null) {
++                const nl = std.mem.indexOfScalar(u8, q.lines, '\n') orelse {
++                    q.end = .{ .status = .ok, .out = q.out.items, .steps = q.steps, .exec_ns = q.exec_ns };
++                    return;
++                };
++                const line = q.lines[0..nl];
++                if (line.len < 4 or line[2] != ' ') {
++                    q.end = .{ .status = .fault };
++                    return;
++                }
++                q.job = d.graph.start(q.stream, .{ .kind = .graph, .bytes = line[3..] }, q.budget -| q.steps) catch return;
++            }
++            const r = switch (d.graph.poll(q.job.?)) {
++                .running => return,
++                .done => |r| r,
++            };
++            q.job = null;
++            q.steps += r.steps;
++            q.exec_ns += r.exec_ns;
++            const nl = std.mem.indexOfScalar(u8, q.lines, '\n').?;
++            const kind = q.lines[0];
++            const sep: u8 = if (q.lines[1] == 'S') ' ' else '\n';
++            q.lines = q.lines[nl + 1 ..];
++            if (r.status != .ok) {
++                q.end = .{ .status = r.status, .abstain = r.abstain, .steps = q.steps, .exec_ns = q.exec_ns };
++                return;
++            }
++            const v = std.mem.trimEnd(u8, r.out, "\n");
++            // a comparison's graph prints 1 or 0; Python prints the bool
++            const text = if (kind == 'I') v else if (std.mem.eql(u8, v, "1")) "True" else if (std.mem.eql(u8, v, "0")) "False" else {
++                q.end = .{ .status = .fault, .steps = q.steps };
++                return;
++            };
++            q.out.appendSlice(d.gpa, text) catch {
++                q.end = .{ .status = .abstain, .abstain = .too_big };
++                return;
++            };
++            q.out.append(d.gpa, sep) catch {};
++        }
++    }
++    fn find(d: *Dispatch, id: api.JobId) ?*Seq {
++        for (d.seqs.items) |q| if (q.id == id) return q;
++        return null;
+     }
+     fn poll(ctx: *anyopaque, job: api.JobId) api.Poll {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        return if (job & tag != 0) d.graph.poll(job & ~tag) else d.circuit.poll(job);
++        if (job & tag != 0) return d.graph.poll(job & ~tag);
++        if (job & seq_tag == 0) return d.circuit.poll(job);
++        const q = d.find(job & ~seq_tag) orelse return .{ .done = .{ .status = .abstain, .abstain = .unsupported } };
++        d.step(q);
++        var r = q.end orelse return .running;
++        r.out = q.out.items;
++        q.delivered = true;
++        return .{ .done = r };
+     }
+     fn cancel(ctx: *anyopaque, job: api.JobId) void {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
+-        if (job & tag != 0) d.graph.cancel(job & ~tag) else d.circuit.cancel(job);
++        if (job & tag != 0) return d.graph.cancel(job & ~tag);
++        if (job & seq_tag == 0) return d.circuit.cancel(job);
++        for (d.seqs.items, 0..) |q, i| if (q.id == job & ~seq_tag) {
++            d.free(d.seqs.swapRemove(i));
++            return;
++        };
+     }
+     fn release(ctx: *anyopaque, stream: u64) void {
+         const d: *Dispatch = @ptrCast(@alignCast(ctx));
++        d.forget(stream, true);
+         d.graph.release(stream);
+         d.circuit.release(stream);
+     }
+@@ -407,7 +518,7 @@ test "runner graph route: graph programs reach the graph backend, the rest the c
+     };
+     var c: Fake = .{ .name = 'c' };
+     var g: Fake = .{ .name = 'g' };
+-    var d: Dispatch = .{ .circuit = c.backend(), .graph = g.backend() };
++    var d: Dispatch = .{ .gpa = std.testing.allocator, .circuit = c.backend(), .graph = g.backend() };
+     const b = d.backend();
+     const gj = try b.start(1, .{ .kind = .graph, .bytes = "{}" }, 10);
+     const cj = try b.start(1, .{ .kind = .calc, .bytes = "2*3" }, 10);
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index aef3fa5f2d95f6cf42337050b3ee61af0cc57309..c25780b83f48ce48e89bbf237fe33e4ef58f80f9 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -46,7 +46,7 @@ pub fn open(gpa: Allocator, cfg: Config) !*Runner {
+             return e;
+         };
+         o.routed = .{ .inner = frontend, .bank = &o.bank };
+-        o.dispatch = .{ .circuit = back, .graph = try graph.backend(gpa, &o.bank, cfg.workers) };
++        o.dispatch = .{ .gpa = gpa, .circuit = back, .graph = try graph.backend(gpa, &o.bank, cfg.workers) };
+         frontend = o.routed.frontend();
+         backend = o.dispatch.backend();
+         log.info("in-model runner: graph bank {s} loaded in {d} ms", .{ cfg.graph_bank, (nowNs() - t0) / std.time.ns_per_ms });
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 81c832159e19377552fa65ff06d957a439917c78..e870d5e6334f69b7cbd5bb089632da2c6373b551 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -125,7 +125,8 @@ test "runner proof: a REPL bignum cell takes the graph route and gives the calc
+     var calc_fallback: Count = .{ .inner = both.calc };
+     var on_graph: Count = .{ .inner = both.graph };
+     var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
+-    var dispatch: route.Dispatch = .{ .circuit = calc_fallback.backend(), .graph = on_graph.backend() };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend() };
++    defer dispatch.deinit();
+     const graph_texts = try rt.replies(&models, .{ .frontend = routed.frontend(), .backend = dispatch.backend(), .wait_s = 600 }, &fake);
+     defer rt.freeAll(graph_texts);
+     // one character per token, so equal texts are equal token sequences
+@@ -180,3 +181,68 @@ test "runner proof: pure-integer calc programs print Python's value on the graph
+         }
+     }
+ }
++
++/// S1's d_mirror reply to big-number-019 (s1-guide-20261101T194134Z): the whole problem as one cell, in the content.
++const divmod_cell = "```python\na = 314159265358979323846264338327950288419716939937510\nb = 271828182845904523536\nq, r = divmod(a, b)\nprint(q)\nprint(r)\nprint(q*b + r == a)\n```\n\nResult:\n";
++
++test "runner proof: a whole-problem divmod cell with a bool print is owned on the graph bank (S1 d_mirror)" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    var fake: rt.Back = .{};
++    defer fake.deinit();
++    var models = [_]rt.Model{.{ .lead = divmod_cell }};
++    var calc_fallback: Count = .{ .inner = both.calc };
++    var on_graph: Count = .{ .inner = both.graph };
++    var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = calc_fallback.backend(), .graph = on_graph.backend() };
++    defer dispatch.deinit();
++    const texts = try rt.replies(&models, .{ .frontend = routed.frontend(), .backend = dispatch.backend(), .wait_s = 600 }, &fake);
++    defer rt.freeAll(texts);
++    try std.testing.expectStringStartsWith(texts[0], divmod_cell ++ "1155727349790921717910215407028\n23663814570294126502\nTrue\n");
++    try std.testing.expectEqual(@as(u32, 3), on_graph.started);
++    try std.testing.expectEqual(@as(u32, 0), calc_fallback.started);
++}
++
++test "runner proof: straight-line integer cells print Python's lines on the graph bank; other shapes refuse" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph };
++    defer dispatch.deinit();
++    const b = dispatch.backend();
++    for ([_][2][]const u8{
++        .{ divmod_cell[10 .. divmod_cell.len - 14], "1155727349790921717910215407028\n23663814570294126502\nTrue\n" },
++        .{ "a = 17\nb = 5\nq, r = divmod(a, b); print(q, r)\nprint(q*b + r != a)", "3 2\nFalse\n" },
++        .{ "x = -7\nprint(x // 2); print(x % 3)  # floor", "-4\n2\n" },
++        .{ "print(2**64 == 18446744073709551616)", "True\n" },
++        .{ "a=10\nprint(a == 11)", "False\n" },
++        .{ "n = 37\nprint(2**n - 1, n)", "137438953471 37\n" },
++        .{ "a = 2**10\nprint(a)", "1024\n" },
++        .{ "s = 2 + 3\nprint(s * 4)", "20\n" },
++    }) |c| {
++        const bytes = (try route.program(gpa, &both.bank, c[0])) orelse {
++            std.debug.print("not lowered: {s}\n", .{c[0]});
++            return error.TestExpectedRoute;
++        };
++        defer gpa.free(bytes);
++        const r = finish(b, try b.start(1, .{ .kind = .graph, .bytes = bytes }, 4_000_000));
++        if (r.status != .ok or !std.mem.eql(u8, c[1], r.out)) {
++            std.debug.print("{s}: {t} '{s}'\n", .{ c[0], r.status, r.out });
++            return error.TestExpectedEqual;
++        }
++    }
++    b.release(1);
++    for ([_][]const u8{
++        "print(a)",                         "a = 1.5\nprint(a)",             "print(divmod(7, 2))",
++        "for i in range(3):\n    print(i)", "a = 7\nprint(a / 2)",           "print('x')",
++        "a = 1\nprint(a < 2)",              "q, r = divmod(7, 0)\nprint(q)", "a = 1\nb = a == 1\nprint(b)",
++        "print(1 == 1 == 1)",               "x = 5",                         "print = 3\nprint(print)",
++    }) |src| if (try route.program(gpa, &both.bank, src)) |got| {
++        gpa.free(got);
++        std.debug.print("lowered: {s}\n", .{src});
++        return error.TestUnexpectedRoute;
++    };
++}

@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 00:35:54 +0700
+Subject: [PATCH 034/207] deepseek: agree on pool growth only when a window
+ maps a new page
+
+874b0e96d made every rank vote before each window and prefill segment so an asymmetric PoolExhausted rolls back on all ranks. Slot.ensure returns before any check when the end's pages are already mapped, and every rank holds the same lockstep slot lengths, so a window within its mapped pages cannot refuse anywhere; such windows now skip the vote and its two stream drains. Growth past a page boundary still votes and rolls back uniformly. The host test counts votes across mapped and growing ends.
+---
+ zig/src/families/deepseek_v41/pool_growth.zig |  8 ++++++
+ .../deepseek_v41/pool_growth_test.zig         | 28 +++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/zig/src/families/deepseek_v41/pool_growth.zig b/zig/src/families/deepseek_v41/pool_growth.zig
+index cfb3db68aa9f6b41ebe6efbc769b467ceec8a63d..c2d936b39ffe6b48a292930c99bdc7abd4478081 100644
+--- a/zig/src/families/deepseek_v41/pool_growth.zig
++++ b/zig/src/families/deepseek_v41/pool_growth.zig
+@@ -20,6 +20,8 @@ pub fn reserve(agree: ?lockstep.Agree, needs: []const Need) !void {
+         origin[i] = n.slot.origin;
+         for (needs[0..i]) |prior| if (prior.slot == n.slot) return error.Slots;
+     }
++    // No new page: ensure cannot refuse on any rank, so skip the vote; the lockstep lengths make this rank-symmetric.
++    if (!grows(needs)) return;
+     var ok = true;
+     for (needs) |n| {
+         // Unadmitted callers may grow only into pages that no live request reserved.
+@@ -47,3 +49,9 @@ pub fn reserve(agree: ?lockstep.Agree, needs: []const Need) !void {
+         n.slot.over = over[i];
+     };
+ }
++
++/// Some need maps a page past its slot's mapped length (Slot.ensure's own test), the only case a rank can refuse.
++pub fn grows(needs: []const Need) bool {
++    for (needs) |n| if (sessions.pool.pagesFor(n.end, n.slot.pool.page) > n.slot.len) return true;
++    return false;
++}
+diff --git a/zig/src/families/deepseek_v41/pool_growth_test.zig b/zig/src/families/deepseek_v41/pool_growth_test.zig
+index 41837c1ee0d493d39fa9e7dcd7343f1351fe9596..0492b3981b7c4ac10968e8bffb3f6d7dd3dc0c25 100644
+--- a/zig/src/families/deepseek_v41/pool_growth_test.zig
++++ b/zig/src/families/deepseek_v41/pool_growth_test.zig
+@@ -116,3 +116,31 @@ test "pool growth: an unadmitted caller cannot consume another active request's
+     try growth.reserve(null, &.{.{ .slot = other, .end = 512 }});
+     _ = try other.releaseAll();
+ }
++
++test "pool growth: a need within mapped pages skips the rank vote and leaves ownership, quota and overage as they were" {
++    var pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 2, 0);
++    defer pool.deinit();
++    const slot = try pool.newSlot(512);
++    try slot.ensure(100);
++    const Count = struct {
++        n: u32 = 0,
++        fn all(ptr: *anyopaque, ok: bool) anyerror!bool {
++            const c: *@This() = @ptrCast(@alignCast(ptr));
++            c.n += 1;
++            return ok;
++        }
++    };
++    var votes: Count = .{};
++    const agree: @import("lockstep.zig").Agree = .{ .ctx = &votes, .all = Count.all };
++    const free = pool.freePages();
++    for ([_]u64{ 1, 100, 112 }) |end| try growth.reserve(agree, &.{.{ .slot = slot, .end = end }});
++    try t.expectEqual(@as(u32, 0), votes.n);
++    try t.expectEqual(@as(u32, 7), slot.len);
++    try t.expect(slot.quota == null);
++    try t.expectEqual(@as(u32, 0), slot.over);
++    try t.expectEqual(free, pool.freePages());
++    try growth.reserve(agree, &.{.{ .slot = slot, .end = 113 }});
++    try t.expectEqual(@as(u32, 1), votes.n);
++    try t.expectEqual(@as(u32, 8), slot.len);
++    _ = try slot.releaseAll();
++}

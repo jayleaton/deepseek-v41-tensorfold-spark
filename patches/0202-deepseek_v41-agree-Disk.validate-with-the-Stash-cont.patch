@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Sergey Tretyak <2425845+goshi@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 22:59:15 +0000
+Subject: [PATCH 202/207] deepseek_v41: agree Disk.validate with the Stash
+ contract and the replay drafter
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+## Disk.validate rejects every NVMe session restore under the replay profile
+
+Fixes the read side of the NVMe session tier: `Disk.validate` enforces two invariants that nothing else in the engine maintains, so under `TF_DSV41_PREFILL=replay` **every** disk restore is rejected with `BadBlob` and the prompt pays a full re-prefill. Reported as [jayleaton/deepseek-v41-tensorfold-spark#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86).
+
+### The two false invariants
+
+**1. the stash span bound.** `forward_types.zig` documents what a stash holds:
+
+```zig
+/// positions [max(from, hi - keep), hi), ids.
+pub fn lo(s: *const Stash) u64 { return @max(s.from, s.hi -| keep); }   // keep = 127
+```
+
+`extend()` never clamps `from`, and the writer agrees (`kv/sess.zig`: `stashRows(pos, from) = pos -| @max(from, pos -| keep)`). So `hi - from` may be arbitrarily large, while `ced.ring` is a compile-time `128` sized for the `ids` array only. This file is the only place in the tree requiring that bound, and it rejects the normal case: a prompt ingested as one segment (`from=0`, `hi=pos`).
+
+**2. the `ds_rings` coupling.** `Sessions.init` gives a slot drafter rings only when `!replay and shape.ds_blocks > 0`, but `Sessions.snapshot` writes `ds` whenever `measure.ds_blocks > 0`, and `sessions_gpu.zig` consumes it exactly in that mode (`s.ds_valid[cur()] = m.pos - m.ds`, read by `validStart()` when `ds_rings` is false). Forbidding `ds != 0` without rings rejects the only value this mode produces.
+
+Both were confirmed by serving an instrumented build of `20ad77878` and reading the failing operands on a live TP2 pair:
+
+```
+stash check: from=0 hi=59776 pos=59776 span=59776 ring=128
+ds check:    ds=128 pos=59616 window=128 ds_rings=0
+```
+
+### Why the test suite is green here
+
+`zig build test` at this pin: 5506/5537 pass, 29 skipped, 2 failed — both failures are qwen4 bf16-ULP logit ties in `test-cuda-host`, unrelated to sessions and present before and after this change. No session test fails: they ingest short segments, so `hi - from` never exceeds 128 and the `replay` × `ds_blocks > 0` combination never occurs.
+
+### The change
+
+Three lines, all making the validator agree with the type and with the writer — no check is deleted, and `!s.measure.replay and (from|hi != 0)` is untouched:
+
+```diff
+-    if (m.stash.from > m.stash.hi or m.stash.hi > pos or m.stash.hi - m.stash.from > ced.ring) return error.BadBlob;
++    if (m.stash.from > m.stash.hi or m.stash.hi > pos) return error.BadBlob;
+-    var at = m.stash.from;
++    var at = @max(m.stash.from, m.stash.hi -| ced.keep);
+-    if (m.ds > pos or m.ds > s.measure.window or (!s.ds_rings and m.ds != 0)) return error.BadBlob;
++    if (m.ds > pos or m.ds > s.measure.window) return error.BadBlob;
+```
+
+The ids loop now walks the held window instead of the whole logical range — previously it ran ~59.8k iterations across a 128-slot ring, i.e. it validated rows a recycled slot no longer holds.
+
+### Measured on a 2×GB10 TP2 pair (production profile, 1024 MiB RAM tier)
+
+| | before | after |
+|---|---|---|
+| `resumed … from NVMe` | 0 | 9 |
+| `BadBlob` | every restore | 0 |
+| recall TTFT, ~319k-token conversations | 155–178 s (own cold prefill) | 1.2–1.4 s |
+
+Answers after an NVMe restore are byte-identical to the cold full prefill, including a codeword buried deep in the prefix; `from RAM` was counted separately in the same run, so these came off the disk tier.
+
+### Not covered by this change
+
+- non-replay profiles (where `ds_rings` is on) — the two dropped conjuncts are only ever violated under replay, so we expect no effect there, but that is inference, not a measurement;
+- the alternative remedy — clamping `from` in `Stash.extend()` on the writer side — is equally defensible; we picked the reader because `lo()` and `stashRows()` already define the window by `keep`, and `extend()` not clamping `from` reads as deliberate.
+
+(cherry picked from commit f1402df753a0e2b890b396037d07570686ac10e3)
+
+Upstream: ashhart/TensorFold#2182 (merged as 1a441128f)
+---
+ zig/src/families/deepseek_v41/session_codec.zig | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/session_codec.zig b/zig/src/families/deepseek_v41/session_codec.zig
+index 308512d663967a3e2c4aaccf6ff32239abf0c688..181f74e5633f417e40f181d500652bbda6236823 100644
+--- a/zig/src/families/deepseek_v41/session_codec.zig
++++ b/zig/src/families/deepseek_v41/session_codec.zig
+@@ -32,11 +32,11 @@ pub fn validate(s: *const sg.Sessions, bs: []const Blob) !Metadata {
+     const c = bytes[sg.Sessions.ced_at..];
+     m.stash.from = std.mem.readInt(u64, c[0..8], .little);
+     m.stash.hi = std.mem.readInt(u64, c[8..16], .little);
+-    if (m.stash.from > m.stash.hi or m.stash.hi > pos or m.stash.hi - m.stash.from > ced.ring) return error.BadBlob;
++    if (m.stash.from > m.stash.hi or m.stash.hi > pos) return error.BadBlob;
+     if (!s.measure.replay and (m.stash.from != 0 or m.stash.hi != 0)) return error.BadBlob;
+     for (&m.stash.ids, 0..) |*t, i| t.* = std.mem.readInt(u32, c[16 + 4 * i ..][0..4], .little);
+-    var at = m.stash.from;
++    var at = @max(m.stash.from, m.stash.hi -| ced.keep);
+     while (at < m.stash.hi) : (at += 1) if (m.stash.ids[@intCast(at % ced.ring)] >= s.f.cfg.vocab) return error.BadBlob;
+-    if (m.ds > pos or m.ds > s.measure.window or (!s.ds_rings and m.ds != 0)) return error.BadBlob;
++    if (m.ds > pos or m.ds > s.measure.window) return error.BadBlob;
+     return m;
+ }

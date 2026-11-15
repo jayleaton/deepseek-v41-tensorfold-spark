@@ -1,0 +1,771 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 14:04:17 +0700
+Subject: [PATCH 173/207] runner: stream each cell record as it lands, so a cut
+ stream keeps a record per write
+
+A reply cut before its final chunk (a client deadline or close) had no runner records: they came only in the
+finished receipt. The lane host now sends each record new or grown since its last send (Event.cells, from
+runner_receipt.notes) ahead of the tokens that land it. The server keeps each record's versions until a newer
+one is fully shown and streams, beside the choices as tensorfold.runner.cells (live: true), the records whose
+landed bytes the client already has, never fewer than it sent. The finished receipt is unchanged; with records
+off no note is made and the stream is byte for byte as before.
+
+(cherry picked from commit 05aa3debe4e893baf904b548e32ba7a24238f39c)
+---
+ zig/build/cuda.zig                     |   1 +
+ zig/src/core/engine_api.zig            |   2 +-
+ zig/src/core/lane_host.zig             |   2 +
+ zig/src/core/lane_host_frame_test.zig  |   2 +-
+ zig/src/core/lane_host_recall_test.zig |   2 +-
+ zig/src/core/lane_host_reuse_test.zig  |   8 +-
+ zig/src/core/lane_host_rows_test.zig   |   2 +-
+ zig/src/core/runner_receipt.zig        |  63 +++++++--
+ zig/src/core/runner_receipt_test.zig   |  68 +++++++++
+ zig/src/core/runner_test.zig           |  16 ++-
+ zig/src/server/compute_segments.zig    |   2 +-
+ zig/src/server/generation.zig          |  32 +++++
+ zig/src/server/mailbox.zig             |  32 +++++
+ zig/src/server/openai.zig              |   7 +-
+ zig/src/server/root.zig                |   1 +
+ zig/src/server/runner_live_test.zig    | 183 +++++++++++++++++++++++++
+ 16 files changed, 394 insertions(+), 29 deletions(-)
+ create mode 100644 zig/src/server/runner_live_test.zig
+
+diff --git a/zig/build/cuda.zig b/zig/build/cuda.zig
+index 1f06add27664a7e714a5c304f7af4a870322c2b2..828559ea7b53a6d80db1fd80af8f2ab22d64aec0 100644
+--- a/zig/build/cuda.zig
++++ b/zig/build/cuda.zig
+@@ -422,6 +422,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
+     b.step("test-http-limits-host", "Total HTTP read deadlines and connection admission without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"HTTP limits:"} })).step);
+     b.step("test-server-recovery-host", "Incomplete replies, token allocation and bounded SSE storage without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Server recovery:"} })).step);
+     b.step("test-runner-guide-host", "TF_DSV41_RUNNER_GUIDE: T5's guide text in a chat's system message").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runner guide:"} })).step);
++    b.step("test-runner-live-host", "Runner records streamed as they land: a client that leaves mid-write keeps them").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"runner live records:"} })).step);
+     b.step("test-prompt-interior-host", "Last-user metadata excludes later messages without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"interior prompt:"} })).step);
+     const server_test = b.addRunArtifact(b.addTest(.{ .root_module = server_tests }));
+     b.step("test-done-times-host", "Request-local done line times and lane admission on the CPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"done times:"} })).step);
+diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
+index 552855a06b10cf8b63fb33dce552a00edc7c9030..d251c2e89e2ff18f801c70b0a6306ba2a220584d 100644
+--- a/zig/src/core/engine_api.zig
++++ b/zig/src/core/engine_api.zig
+@@ -143,7 +143,6 @@ pub const SpeechRequest = @import("speech_api.zig").SpeechRequest;
+ pub const SpeechResult = @import("speech_api.zig").SpeechResult;
+ pub const SpeechInfo = @import("speech_api.zig").SpeechInfo;
+ pub const SpeechSubmitError = error{ Closed, Busy, InvalidRequest, Unsupported };
+-
+ pub const Reason = enum { stop, length, cancelled, failed, silence };
+ pub const speech_guard = @import("speech_guard.zig");
+ 
+@@ -178,6 +177,7 @@ pub const Event = union(enum) {
+     /// Tokens committed for this request, in order; valid only during the call.
+     tokens: []const u32,
+     audio: usize,
++    cells: []const @import("runner_receipt.zig").Note, // runner records new or grown, ahead of the tokens they land; valid during the call
+     /// The reply ended; nothing follows. ``message`` says why a failed reply failed.
+     finished: struct { reason: Reason, stats: Stats = .{}, message: []const u8 = "", runner: []const u8 = "" },
+ };
+diff --git a/zig/src/core/lane_host.zig b/zig/src/core/lane_host.zig
+index 3efd3a3bcf9d13f741a102fd89050f56d74baedc..4782a5a0febcc0e026f04d61c32a058cb403e89a 100644
+--- a/zig/src/core/lane_host.zig
++++ b/zig/src/core/lane_host.zig
+@@ -231,6 +231,8 @@ pub const LaneHost = struct {
+     pub fn send(h: *LaneHost, job: *Job) void {
+         const all = job.stream.emitted();
+         const emitted = all[0 .. all.len - @intFromBool(job.stream.runner_eos_pending)];
++        // the runner records as they stand (records on), ahead of the tokens they land: a cut stream keeps them
++        if (job.runner) |rs| if (@import("runner_receipt.zig").notes(rs)) |n| emit(job, .{ .cells = n });
+         if (emitted.len > job.delivered) {
+             if (job.stream.logprobs != null) emit(job, .{ .logprobs = job.stream.rows.items[job.delivered..emitted.len] });
+             emit(job, .{ .tokens = emitted[job.delivered..] });
+diff --git a/zig/src/core/lane_host_frame_test.zig b/zig/src/core/lane_host_frame_test.zig
+index 879a0135c5ae41acfc7be8ad11e176daa03a17ea..f35fdfa8b8af591304bad3858ec64cd21a14014b 100644
+--- a/zig/src/core/lane_host_frame_test.zig
++++ b/zig/src/core/lane_host_frame_test.zig
+@@ -56,7 +56,7 @@ test "Frame cache: identical image content under another frame cannot resume its
+             defer b.mutex.unlock(std.testing.io);
+             switch (e.*) {
+                 .prefilled => |c| b.cached = c,
+-                .logprobs, .prompt_logprobs, .audio => {},
++                .logprobs, .prompt_logprobs, .audio, .cells => {},
+                 .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                 .finished => |f| b.done = f.reason,
+             }
+diff --git a/zig/src/core/lane_host_recall_test.zig b/zig/src/core/lane_host_recall_test.zig
+index 6c57ac4aa451b128a2af7f961b70b6e61dca8e78..7982889cafac85cb627eb305cf52c458ae83f478 100644
+--- a/zig/src/core/lane_host_recall_test.zig
++++ b/zig/src/core/lane_host_recall_test.zig
+@@ -26,7 +26,7 @@ const Box = struct {
+         defer b.mutex.unlock(std.testing.io);
+         switch (e.*) {
+             .prefilled => |c| b.cached = c,
+-            .logprobs, .prompt_logprobs, .audio => {},
++            .logprobs, .prompt_logprobs, .audio, .cells => {},
+             .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+             .finished => |f| {
+                 b.rounds = f.stats.rounds;
+diff --git a/zig/src/core/lane_host_reuse_test.zig b/zig/src/core/lane_host_reuse_test.zig
+index 0ca10c20408e9531e3942f7573084809e3216404..914a99f0c87205fe5168d5c7bd308fec70a66122 100644
+--- a/zig/src/core/lane_host_reuse_test.zig
++++ b/zig/src/core/lane_host_reuse_test.zig
+@@ -51,7 +51,7 @@ test "a lane host resumes a conversation from its kept prompt state and reports
+             defer b.mutex.unlock(std.testing.io);
+             switch (e.*) {
+                 .prefilled => |c| b.cached = c,
+-                .logprobs, .prompt_logprobs, .audio => {},
++                .logprobs, .prompt_logprobs, .audio, .cells => {},
+                 .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                 .finished => |f| b.done = f.reason,
+             }
+@@ -149,7 +149,7 @@ test "an image's placeholders are cached by its content: another image under the
+             defer b.mutex.unlock(std.testing.io);
+             switch (e.*) {
+                 .prefilled => |c| b.cached = c,
+-                .logprobs, .prompt_logprobs, .audio => {},
++                .logprobs, .prompt_logprobs, .audio, .cells => {},
+                 .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                 .finished => |f| b.done = f.reason,
+             }
+@@ -250,7 +250,7 @@ test "a turn's mark evicting the state it resumed from: the hit is reported firs
+             defer b.mutex.unlock(std.testing.io);
+             switch (e.*) {
+                 .prefilled => |c| b.cached = c,
+-                .logprobs, .prompt_logprobs, .audio => {},
++                .logprobs, .prompt_logprobs, .audio, .cells => {},
+                 .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                 .finished => |f| b.done = f.reason,
+             }
+@@ -368,7 +368,7 @@ test "a learn step that moves the weights drops every kept state: the next turn
+             defer b.mutex.unlock(std.testing.io);
+             switch (e.*) {
+                 .prefilled => |c| b.cached = c,
+-                .logprobs, .prompt_logprobs, .audio => {},
++                .logprobs, .prompt_logprobs, .audio, .cells => {},
+                 .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                 .finished => |f| b.done = f.reason,
+             }
+diff --git a/zig/src/core/lane_host_rows_test.zig b/zig/src/core/lane_host_rows_test.zig
+index 06595814177e830441b85d98e87dddf777ee7007..8474a02df11eb19b1d626d6aed4671260bcab373 100644
+--- a/zig/src/core/lane_host_rows_test.zig
++++ b/zig/src/core/lane_host_rows_test.zig
+@@ -68,7 +68,7 @@ const Box = struct {
+         defer b.mutex.unlock(std.testing.io);
+         switch (e.*) {
+             .prefilled => |c| b.cached = c,
+-            .logprobs, .prompt_logprobs, .audio => {},
++            .logprobs, .prompt_logprobs, .audio, .cells => {},
+             .tokens => |t| b.tokens.appendSlice(std.testing.allocator, t) catch {},
+             .finished => |f| b.done = f.reason,
+         }
+diff --git a/zig/src/core/runner_receipt.zig b/zig/src/core/runner_receipt.zig
+index 9d648bc322f73f8824712bbb8654fc4d36be6121..68b669a8098294d232854579ef871c2201334357 100644
+--- a/zig/src/core/runner_receipt.zig
++++ b/zig/src/core/runner_receipt.zig
+@@ -17,8 +17,12 @@ const Record = struct {
+     drafted: u32 = 0, // of those, committed in the trigger's own commit: the model's verify agreed (sync, never held)
+     sync: bool = false, // settled at its trigger (sync_graph), else held and forced after the hold
+     value: std.ArrayList(u8) = .empty, // the landed tokens' bytes
++    told: ?u32 = null, // landed when `notes` last gave it to the stream (null: never)
+ };
+ 
++/// A record as it stands, for the stream (`notes`): its field, the field's bytes through its last landed byte, JSON.
++pub const Note = struct { index: u32, content: bool, end: u64, json: []const u8 };
++
+ /// The records and the counters they need; every committed token passes through `token` (Session.feed).
+ pub const Log = struct {
+     on: bool = true,
+@@ -29,6 +33,8 @@ pub const Log = struct {
+     writing: bool = false, // the last record's tokens are still landing
+     records: std.ArrayList(Record) = .empty,
+     out: std.ArrayList(u8) = .empty, // the receipt JSON (write)
++    live: std.ArrayList(u8) = .empty, // the JSON `notes` gave last
++    notes: std.ArrayList(Note) = .empty,
+ 
+     /// A committed token: counted in its field, and matched against a write still landing.
+     pub fn token(l: *Log, gpa: Allocator, id: u32, bytes: []const u8, think_open: bool) Allocator.Error!void {
+@@ -70,6 +76,8 @@ pub const Log = struct {
+         }
+         l.records.deinit(gpa);
+         l.out.deinit(gpa);
++        l.live.deinit(gpa);
++        l.notes.deinit(gpa);
+     }
+ };
+ 
+@@ -81,6 +89,30 @@ pub fn write(s: anytype) []const u8 {
+     return l.out.items;
+ }
+ 
++/// Session `s`'s records new or grown since the last call (null: none, or records off), for a stream cut early.
++pub fn notes(s: anytype) ?[]const Note {
++    const l = &s.rec;
++    if (!l.on) return null;
++    fresh(s.cells.items, l, s.r.gpa) catch return null; // out of memory: the next call gives them again
++    return if (l.notes.items.len > 0) l.notes.items else null;
++}
++
++fn fresh(cells: anytype, l: *Log, gpa: Allocator) Allocator.Error!void {
++    l.notes.clearRetainingCapacity();
++    l.live.clearRetainingCapacity();
++    for (l.records.items, 0..) |r, i| if (r.told != r.landed) {
++        const from = l.live.items.len;
++        try record(&l.live, gpa, cells, r);
++        try l.notes.append(gpa, .{ .index = @intCast(i), .content = r.content, .end = r.at + r.value.items.len, .json = l.live.items[from..] });
++    };
++    var from: usize = 0;
++    for (l.notes.items) |*n| {
++        n.json = l.live.items[from..][0..n.json.len]; // the buffer may have moved as it grew
++        from += n.json.len;
++        l.records.items[n.index].told = l.records.items[n.index].landed;
++    }
++}
++
+ const form_names = [_][]const u8{ "fence", "repl", "inline", "trace" };
+ 
+ fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64) Allocator.Error!void {
+@@ -107,26 +139,31 @@ fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64) Al
+     if (l.on) {
+         try o.appendSlice(gpa, ",\"cells\":[");
+         for (l.records.items, 0..) |r, i| {
+-            const c = cells[r.cell];
+             if (i > 0) try o.append(gpa, ',');
+-            const route = if (c.translation == .program) @tagName(c.translation.program.kind) else "none";
+-            const status = if (c.result) |res| @tagName(res.status) else "none";
+-            try o.print(gpa, "{{\"cell\":{d},\"form\":\"{s}\",\"route\":\"{s}\",\"status\":\"{s}\",", .{ r.cell, form_names[if (c.stated != null) 3 else @backingInt(c.form)], route, status });
+-            try text(o, gpa, "lang", c.lang);
+-            if (c.code.len <= span_max) try text(o, gpa, "span", c.code) else {
+-                var digest: [32]u8 = undefined;
+-                std.crypto.hash.sha2.Sha256.hash(c.code, &digest, .{});
+-                try o.print(gpa, "\"span_sha256\":\"{s}\",\"span_len\":{d},", .{ std.fmt.bytesToHex(digest, .lower), c.code.len });
+-            }
+-            if (c.stated) |st| try text(o, gpa, "display", st.display);
+-            try text(o, gpa, "value", r.value.items);
+-            try o.print(gpa, "\"field\":\"{s}\",\"at\":{d},\"token\":{d},\"ids\":{d},\"landed\":{d},\"drafted\":{d},\"forced\":{d},\"path\":\"{s}\"}}", .{ if (r.content) "content" else "reasoning", r.at, r.token, r.want.len, r.landed, r.drafted, r.landed - r.drafted, if (r.sync) "sync" else "held" });
++            try record(o, gpa, cells, r);
+         }
+         try o.append(gpa, ']');
+     }
+     try o.append(gpa, '}');
+ }
+ 
++/// One record's JSON object, as the receipt's `cells` and the stream's notes give it.
++fn record(o: *std.ArrayList(u8), gpa: Allocator, cells: anytype, r: Record) Allocator.Error!void {
++    const c = cells[r.cell];
++    const route = if (c.translation == .program) @tagName(c.translation.program.kind) else "none";
++    const status = if (c.result) |res| @tagName(res.status) else "none";
++    try o.print(gpa, "{{\"cell\":{d},\"form\":\"{s}\",\"route\":\"{s}\",\"status\":\"{s}\",", .{ r.cell, form_names[if (c.stated != null) 3 else @backingInt(c.form)], route, status });
++    try text(o, gpa, "lang", c.lang);
++    if (c.code.len <= span_max) try text(o, gpa, "span", c.code) else {
++        var digest: [32]u8 = undefined;
++        std.crypto.hash.sha2.Sha256.hash(c.code, &digest, .{});
++        try o.print(gpa, "\"span_sha256\":\"{s}\",\"span_len\":{d},", .{ std.fmt.bytesToHex(digest, .lower), c.code.len });
++    }
++    if (c.stated) |st| try text(o, gpa, "display", st.display);
++    try text(o, gpa, "value", r.value.items);
++    try o.print(gpa, "\"field\":\"{s}\",\"at\":{d},\"token\":{d},\"ids\":{d},\"landed\":{d},\"drafted\":{d},\"forced\":{d},\"path\":\"{s}\"}}", .{ if (r.content) "content" else "reasoning", r.at, r.token, r.want.len, r.landed, r.drafted, r.landed - r.drafted, if (r.sync) "sync" else "held" });
++}
++
+ /// `"name":"bytes",` as a JSON string; bytes that are not UTF-8 (a cut mid-character) go as `"name_hex"` instead.
+ fn text(o: *std.ArrayList(u8), gpa: Allocator, name: []const u8, bytes: []const u8) Allocator.Error!void {
+     if (!std.unicode.utf8ValidateSlice(bytes)) {
+diff --git a/zig/src/core/runner_receipt_test.zig b/zig/src/core/runner_receipt_test.zig
+index 1206529fa7992bd8f97ac67d869120e592f35135..d060582c91444877d86404c945643201d165c2b2 100644
+--- a/zig/src/core/runner_receipt_test.zig
++++ b/zig/src/core/runner_receipt_test.zig
+@@ -134,3 +134,71 @@ test "runner receipt: escapes, a long span as sha256, bytes cut mid-character as
+     try off.rec.token(gpa, 1, "1", false);
+     try std.testing.expect(std.mem.endsWith(u8, records.write(&off), "\"resume_ms\":0}"));
+ }
++
++test "runner receipt: each record reaches the stream as it lands, byte for byte as the finished receipt writes it" {
++    var back: rt.Back = .{};
++    defer back.deinit();
++    var m = [_]rt.Model{ .{ .lead = rt.mul_cell }, .{ .lead = "Exact: 1.5+2.25 =" } };
++    var sums: [2][]u8 = undefined;
++    var live: [2][]u8 = undefined;
++    const texts = try rt.replies(&m, .{ .summaries = &sums, .live = &live, .inline_math = true }, &back);
++    defer rt.freeAll(texts);
++    for (sums, live) |sum, notes| {
++        defer gpa.free(sum);
++        defer gpa.free(notes);
++        try std.testing.expect(notes.len > 0);
++        const cells = try std.mem.concat(gpa, u8, &.{ "\"cells\":[", notes, "]}" });
++        defer gpa.free(cells);
++        try std.testing.expect(std.mem.endsWith(u8, sum, cells));
++    }
++    // records off: no note, and the same tokens
++    var off_sums: [2][]u8 = undefined;
++    var off_live: [2][]u8 = undefined;
++    const off = try rt.replies(&m, .{ .summaries = &off_sums, .live = &off_live, .inline_math = true, .cells = false }, &back);
++    defer rt.freeAll(off);
++    for (off_sums, off_live, texts, off) |sum, notes, on_text, off_text| {
++        defer gpa.free(sum);
++        defer gpa.free(notes);
++        try std.testing.expectEqual(0, notes.len);
++        try std.testing.expect(std.mem.indexOf(u8, sum, "\"cells\"") == null);
++        try std.testing.expectEqualStrings(on_text, off_text);
++    }
++}
++
++test "runner receipt: notes give a record when owned and each time it grows, never twice, none when records are off" {
++    var cell: FakeCell = .{};
++    var s: FakeSession = .{ .cells = .{ .items = &.{&cell} } };
++    defer s.rec.deinit(gpa);
++    try std.testing.expect(records.notes(&s) == null);
++    try s.rec.token(gpa, 1, "ab", true);
++    try s.rec.owned(gpa, 0, &.{ 7, 8 });
++    const owned = records.notes(&s).?;
++    try std.testing.expectEqual(1, owned.len);
++    try std.testing.expectEqual(2, owned[0].end); // nothing landed: it ends where it starts
++    try std.testing.expect(std.mem.indexOf(u8, owned[0].json, "\"value\":\"\",") != null);
++    try std.testing.expect(records.notes(&s) == null);
++    try s.rec.token(gpa, 7, "25", true);
++    const grown = records.notes(&s).?;
++    try std.testing.expectEqual(0, grown[0].index);
++    try std.testing.expectEqual(4, grown[0].end);
++    try std.testing.expect(!grown[0].content);
++    try std.testing.expect(std.mem.indexOf(u8, grown[0].json, "\"value\":\"25\",") != null);
++    try std.testing.expect(std.mem.indexOf(u8, grown[0].json, "\"landed\":1,") != null);
++    try std.testing.expect(records.notes(&s) == null);
++    try s.rec.token(gpa, 3, "!", true); // not the result's: the record stops growing
++    try std.testing.expect(records.notes(&s) == null);
++    try s.rec.owned(gpa, 0, &.{9});
++    try s.rec.token(gpa, 9, "6", true);
++    const second = records.notes(&s).?;
++    try std.testing.expectEqual(1, second.len);
++    try std.testing.expectEqual(1, second[0].index);
++    const receipt = records.write(&s);
++    const tail = try std.mem.concat(gpa, u8, &.{ second[0].json, "]}" });
++    defer gpa.free(tail);
++    try std.testing.expect(std.mem.endsWith(u8, receipt, tail));
++    var off: FakeSession = .{ .cells = .{ .items = &.{&cell} }, .rec = .{ .on = false } };
++    defer off.rec.deinit(gpa);
++    try off.rec.owned(gpa, 0, &.{1});
++    try off.rec.token(gpa, 1, "1", false);
++    try std.testing.expect(records.notes(&off) == null);
++}
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 963a52a76c11baa9e480e3999085bc39c6641b59..0acb9a9054d171b2069330d387e8dba29b9c2f6f 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -132,12 +132,20 @@ const Box = struct {
+     done: ?Reason = null,
+     cells: [8192]u8 = undefined, // the finished event's runner receipt
+     cells_len: usize = 0,
++    keep: bool = false, // keep `live` (Opts.live): the caller frees it
++    live: [32][]u8 = @splat(&.{}), // each record's newest Event.cells note (gpa)
++    live_n: usize = 0,
+     fn event(ctx: *anyopaque, _: api.Id, e: *const api.Event) void {
+         const b: *@This() = @ptrCast(@alignCast(ctx));
+         b.mutex.lockUncancelable(std.testing.io);
+         defer b.mutex.unlock(std.testing.io);
+         switch (e.*) {
+             .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
++            .cells => |notes| for (notes) |n| if (b.keep and n.index < b.live.len) {
++                gpa.free(b.live[n.index]);
++                b.live[n.index] = gpa.dupe(u8, n.json) catch &.{};
++                b.live_n = @max(b.live_n, n.index + 1);
++            },
+             .finished => |f| {
+                 @memcpy(b.cells[0..f.runner.len], f.runner);
+                 b.cells_len = f.runner.len;
+@@ -161,7 +169,7 @@ const Box = struct {
+ };
+ 
+ /// `frontend`/`backend`: real ones in place of the fakes (the proof test).
+-pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_mark: bool = false, result_tokens: u32 = 512, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null };
++pub const Opts = struct { runner: bool = true, run_cells: bool = true, delay: u32 = 0, planner: bool = false, streams: usize = 1, max_tokens: u32 = 400, frontend: ?rapi.Frontend = null, backend: ?rapi.Backend = null, wait_s: u32 = 20, exact: bool = false, inline_mark: bool = false, result_tokens: u32 = 512, inline_math: bool = false, trace: bool = false, trace_ask: runner.TraceAsk = .{}, placer: ?*runner.place.Placer = null, summaries: ?[][]u8 = null, cells: bool = true, live: ?[][]u8 = null };
+ 
+ /// Runs `models` (one request each, concurrently) on one host; the reply texts.
+ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+@@ -176,7 +184,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     defer core.deinit();
+     var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 4 });
+     back.delay = o.delay;
+-    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .inline_mark = o.inline_mark, .max_tokens = o.result_tokens, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
++    var run: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .exact = o.exact, .inline_mark = o.inline_mark, .max_tokens = o.result_tokens, .cells = o.cells, .scan = .{ .inline_math = o.inline_math, .trace = o.trace } }, .frontend = o.frontend orelse .{ .translate = translate }, .backend = o.backend orelse back.backend(), .text = .{ .bytes = tokenBytes, .encode = encode }, .placer = o.placer };
+     if (o.runner) host.runner = &run;
+     const boxes = try gpa.alloc(Box, models.len);
+     defer gpa.free(boxes);
+@@ -188,7 +196,7 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     try host.start();
+     defer host.stop();
+     for (models, 0..) |_, i| {
+-        boxes[i] = .{};
++        boxes[i] = .{ .keep = o.live != null };
+         prompts[i] = prompt ++ [_]u32{@intCast(i)}; // the router tells the streams apart by their last prompt token
+         requests[i] = .{ .prompt = &prompts[i], .max_tokens = o.max_tokens, .eos = &.{EOS}, .run_cells = o.run_cells, .run_trace = o.trace_ask };
+         try e.submit(@intCast(i + 1), &requests[i], .{ .ctx = &boxes[i], .event = Box.event });
+@@ -201,6 +209,8 @@ pub fn replies(models: []Model, o: Opts, back: *Back) ![][]u8 {
+     }
+     for (boxes, 0..) |*b, i| {
+         if (o.summaries) |s| s[i] = try gpa.dupe(u8, b.cells[0..b.cells_len]);
++        if (o.live) |s| s[i] = try std.mem.join(gpa, ",", b.live[0..b.live_n]);
++        for (b.live[0..b.live_n]) |n| gpa.free(n);
+     }
+     return out;
+ }
+diff --git a/zig/src/server/compute_segments.zig b/zig/src/server/compute_segments.zig
+index 1ffb815b76503029b3580c8e00275efe5c558a11..078a45a4a42404f9f697f6083f0c889878786117 100644
+--- a/zig/src/server/compute_segments.zig
++++ b/zig/src/server/compute_segments.zig
+@@ -90,7 +90,7 @@ fn finish(g: *Generation, cx: *Cx, p: chat.Prepared) chat.Failure!chat.Reply {
+ /// The segment after an inserted result: the same reply, its first tokens the result's, its own text and calls.
+ fn next(g: *Generation, inserted: []const u32, left: usize) chat.Failure!*Generation {
+     const n = try g.a.create(Generation);
+-    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns };
++    n.* = .{ .srv = g.srv, .a = g.a, .box = g.box, .id = g.id, .reply_id = g.reply_id, .seed = g.seed, .sink = g.sink, .thinking = g.thinking, .stops = g.stops, .ignore_eos = g.ignore_eos, .max_tokens = @intCast(left), .tools = g.tools, .token_ids = g.token_ids, .loop_stop = g.loop_stop, .hold = true, .skip = inserted, .consumed = g.consumed, .chunk_index = g.chunk_index, .first_ns = g.first_ns, .wrote_ns = g.wrote_ns, .cells_sent = g.cells_sent, .cells_sig = g.cells_sig };
+     if (g.calls != null) n.calls = try tool_stream.Streamer.init(g.a, g.tools);
+     return n;
+ }
+diff --git a/zig/src/server/generation.zig b/zig/src/server/generation.zig
+index 1d5907709a453832509648377e1753113ab2b75c..41c98b59297ef7cd35d5bcd23efe8cf9491531cc 100644
+--- a/zig/src/server/generation.zig
++++ b/zig/src/server/generation.zig
+@@ -57,6 +57,8 @@ pub const Generation = struct {
+     hold: bool = false, // the engine holds the reply at an EOS (Request.hold_eos): this segment ends there
+     held: bool = false, // it did: the engine has not finished, and compute_turns.zig resumes or ends it
+     skip: []const u32 = &.{}, // a resumed segment's first tokens: the inserted tool result, checked and not shown
++    cells_sent: usize = 0, // the runner records the stream sent last: a prefix the client has every landed byte of
++    cells_sig: u64 = 0, // their Mailbox.covered sig
+ 
+     fn eos(g: *const Generation, t: u32) bool {
+         return !g.ignore_eos and std.mem.indexOfScalar(u32, g.srv.eos, t) != null;
+@@ -200,6 +202,7 @@ pub const Generation = struct {
+                 g.cancel();
+                 return error.Cancelled;
+             }
++            if (chunk == null) if (g.sink) |sink| try g.liveCells(sink);
+             if (chunk == null and @hasDecl(Gone, "beat")) {
+                 // queueing and a long prefill send nothing: a client that times out a silent stream would leave
+                 const now = nowNs(g.srv.io);
+@@ -212,10 +215,39 @@ pub const Generation = struct {
+             }
+             const tokens = try g.skipInserted(chunk orelse continue);
+             if (g.reason == null) try g.commit(tokens);
++            if (g.sink) |sink| try g.liveCells(sink);
+             if (g.held) return;
+         }
+     }
+ 
++    /// Sends the runner records whose bytes the client has (`tensorfold.runner.cells`), so a cut stream keeps them.
++    pub fn liveCells(g: *Generation, sink: Sink) Failure!void {
++        const m = g.box;
++        var text: std.ArrayList(u8) = .empty;
++        {
++            m.mutex.lockUncancelable(m.io);
++            defer m.mutex.unlock(m.io);
++            const got = m.covered(.{ g.streamed_reasoning.text.items.len, g.streamed.text.items.len });
++            // never fewer than sent: the text may have been replaced shorter (a stop string's held prefix)
++            if (got.n < g.cells_sent or got.sig == g.cells_sig) return; // records off: n 0, sig 0, so never
++            try text.appendSlice(g.a, "{\"runner\":{\"live\":true,\"cells\":[");
++            for (m.cells.items[0..got.n], 0..) |versions, i| {
++                if (i > 0) try text.append(g.a, ',');
++                try text.appendSlice(g.a, versions.items[0].json);
++            }
++            try text.appendSlice(g.a, "]}}");
++            g.cells_sent = got.n;
++            g.cells_sig = got.sig;
++        }
++        const v = switch (try json.parse(g.a, text.items)) {
++            .ok => |v| v,
++            .err => return,
++        };
++        const delta = try json.newObject(g.a);
++        try delta.put(g.a, "tensorfold", v); // openai.zig's chunk puts it beside the choices, as the final chunk's receipt
++        try g.emit(sink, .{ .object = delta });
++    }
++
+     /// Drops the inserted result that opens a resumed segment; a different token there fails the reply.
+     fn skipInserted(g: *Generation, tokens: []u32) Failure![]u32 {
+         const n = @min(tokens.len, g.skip.len);
+diff --git a/zig/src/server/mailbox.zig b/zig/src/server/mailbox.zig
+index 3ab03235f26f4717ca0b017a8ec9bafbd91c633c..23d78a9d530631dad4d8e0fa2ff57b4633a61864 100644
+--- a/zig/src/server/mailbox.zig
++++ b/zig/src/server/mailbox.zig
+@@ -23,6 +23,10 @@ pub const Mailbox = struct {
+     telemetry: []u8 = "",
+     runner: []u8 = "",
+     message: []u8 = "",
++    cells: std.ArrayList(std.ArrayList(Cell)) = .empty, // the runner's records by index, versions oldest first (Event.cells)
++
++    /// A runner record's version: its field, the field's bytes through its last landed byte, its JSON (gpa).
++    pub const Cell = struct { content: bool, end: u64, json: []u8 };
+ 
+     pub fn onEvent(ctx: *anyopaque, _: api.Id, event: *const api.Event) void {
+         const m: *Mailbox = @ptrCast(@alignCast(ctx));
+@@ -40,6 +44,7 @@ pub const Mailbox = struct {
+                 m.chunks.append(m.gpa, m.tokens.items.len) catch {};
+             },
+             .audio => |n| m.audio = n,
++            .cells => |notes| for (notes) |n| m.note(n) catch {},
+             .finished => |f| {
+                 m.finished = true;
+                 m.reason = f.reason;
+@@ -54,7 +59,34 @@ pub const Mailbox = struct {
+         m.cond.signal(m.io);
+     }
+ 
++    fn note(m: *Mailbox, n: anytype) Allocator.Error!void {
++        const json = try m.gpa.dupe(u8, n.json);
++        errdefer m.gpa.free(json);
++        while (m.cells.items.len <= n.index) try m.cells.append(m.gpa, .empty);
++        try m.cells.items[n.index].append(m.gpa, .{ .content = n.content, .end = n.end, .json = json });
++    }
++
++    /// Drops versions older than each record's newest fully `shown` one; n: records up to one with none (lock held).
++    pub fn covered(m: *Mailbox, shown: [2]usize) struct { n: usize, sig: u64 } {
++        var sig: u64 = 0;
++        for (m.cells.items, 0..) |*versions, n| {
++            var k = versions.items.len;
++            while (k > 0 and versions.items[k - 1].end > shown[@intFromBool(versions.items[k - 1].content)]) k -= 1;
++            if (k == 0) return .{ .n = n, .sig = sig };
++            for (versions.items[0 .. k - 1]) |old| m.gpa.free(old.json);
++            std.mem.copyForwards(Cell, versions.items, versions.items[k - 1 ..]);
++            versions.items.len -= k - 1;
++            sig += versions.items[0].end + 1;
++        }
++        return .{ .n = m.cells.items.len, .sig = sig };
++    }
++
+     pub fn deinit(m: *Mailbox) void {
++        for (m.cells.items) |*versions| {
++            for (versions.items) |c| m.gpa.free(c.json);
++            versions.deinit(m.gpa);
++        }
++        m.cells.deinit(m.gpa);
+         m.tokens.deinit(m.gpa);
+         m.chunks.deinit(m.gpa);
+         m.rows.deinit(m.gpa);
+diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
+index dfd37df28d6ae331ce437c88a4c40da7a280b9f6..c187deb30782e045edeadd5a9ada34fe50517db4 100644
+--- a/zig/src/server/openai.zig
++++ b/zig/src/server/openai.zig
+@@ -279,6 +279,7 @@ const Run = struct {
+         try o.put(a, "object", .{ .string = if (r.is_chat) "chat.completion.chunk" else "text_completion" });
+         try o.put(a, "created", try json.intValue(a, r.created));
+         try o.put(a, "model", .{ .string = r.plan.named });
++        if (delta) |v| if (v == .object) if (v.object.fetchOrderedRemove("tensorfold")) |kv| try o.put(a, kv.key, kv.value); // live records
+         const choice = try json.newObject(a);
+         try choice.put(a, "index", .{ .int = "0" });
+         if (r.is_chat) {
+@@ -294,9 +295,7 @@ const Run = struct {
+             try choice.put(a, "finish_reason", if (finish) |f| .{ .string = f } else .null);
+             try choice.put(a, "logprobs", if (rows) |v| try @import("logprobs.zig").legacy(a, v, &r.text_offset) else .null);
+         }
+-        const list = try a.alloc(Value, 1);
+-        list[0] = .{ .object = choice };
+-        try o.put(a, "choices", .{ .array = list });
++        try o.put(a, "choices", .{ .array = try a.dupe(Value, &.{.{ .object = choice }}) });
+         return .{ .object = o };
+     }
+ 
+@@ -461,7 +460,7 @@ const Run = struct {
+             if (!s.opened) return s.pending.append(r.a, delta) catch error.Closed;
+             if (!s.tools) {
+                 // completions stream text only, with its logprob rows when asked
+-                if (!r.is_chat and delta != .string and (delta != .object or delta.object.get("content") == null)) return;
++                if (!r.is_chat and delta != .string and (delta != .object or (delta.object.get("content") == null and delta.object.get("tensorfold") == null))) return;
+                 return r.emit(r.chunk(delta, null) catch return error.Closed);
+             }
+             const filtered = r.policyDelta(delta) catch return error.Closed;
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index fcda55de64973519b82bdfd3e51ae4acc7aa6678..82d063c6785bb3b31939c5f17afee1675dd10614 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -28,6 +28,7 @@ test {
+     _ = @import("embedding_service_test.zig");
+     _ = @import("http_limits_test.zig");
+     _ = @import("done_times_test.zig");
++    _ = @import("runner_live_test.zig");
+     _ = @import("drain_test.zig");
+     _ = @import("keepalive_test.zig");
+     _ = @import("idle_unload.zig");
+diff --git a/zig/src/server/runner_live_test.zig b/zig/src/server/runner_live_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..7bfaf2e1d860af8f0bebcee8cf9d6f63fd3c783f
+--- /dev/null
++++ b/zig/src/server/runner_live_test.zig
+@@ -0,0 +1,183 @@
++//! The runner's live records (Generation.liveCells): a stream the client leaves mid-write keeps a record per write.
++const std = @import("std");
++const api = @import("engine_api");
++const json = @import("json");
++const server = @import("server.zig");
++const chat = @import("chat.zig");
++const model_text = @import("model_text.zig");
++const Cx = @import("errors.zig").Cx;
++const Note = @typeInfo(@FieldType(api.Event, "cells")).pointer.child;
++
++const gpa = std.testing.allocator;
++
++/// One byte a token.
++const Bytes = struct {
++    fn text(t: *Bytes) model_text.Text {
++        return .{ .ctx = t, .vtable = &.{ .encode = encode, .decode = decode, .token_id = tokenId, .token_string = tokenString, .vocab_size = vocab, .eos_ids = eos, .render = render, .template_source = template } };
++    }
++    fn encode(_: *anyopaque, a: std.mem.Allocator, input: []const u8, _: bool) model_text.Error![]u32 {
++        const ids = try a.alloc(u32, input.len);
++        for (input, ids) |byte, *id| id.* = byte;
++        return ids;
++    }
++    fn decode(_: *anyopaque, a: std.mem.Allocator, ids: []const u32) std.mem.Allocator.Error![]u8 {
++        const out = try a.alloc(u8, ids.len);
++        for (out, ids) |*v, id| v.* = @intCast(id);
++        return out;
++    }
++    fn tokenId(_: *anyopaque, _: []const u8) ?u32 {
++        return null;
++    }
++    fn tokenString(_: *anyopaque, a: std.mem.Allocator, id: u32) ![]u8 {
++        return std.fmt.allocPrint(a, "{d}", .{id});
++    }
++    fn vocab(_: *anyopaque) u32 {
++        return 256;
++    }
++    fn eos(_: *anyopaque) []const u32 {
++        return &.{};
++    }
++    fn render(_: *anyopaque, a: std.mem.Allocator, _: json.Value, _: model_text.RenderOptions, _: *[]const u8) model_text.Error!model_text.Rendered {
++        return .{ .text = try a.dupe(u8, "prompt") };
++    }
++    fn template(_: *anyopaque) []const u8 {
++        return "";
++    }
++};
++
++/// What the engine gives in one round: the records as they stand, then the tokens that land them (LaneHost.send).
++const Step = struct { notes: []const Note = &.{}, tokens: []const u8 };
++
++const a0 = "{\"cell\":0,\"form\":\"inline\",\"value\":\"\",\"field\":\"content\",\"at\":9,\"ids\":2,\"landed\":0}";
++const a1 = "{\"cell\":0,\"form\":\"inline\",\"value\":\" 6\",\"field\":\"content\",\"at\":9,\"ids\":2,\"landed\":2}";
++const b0 = "{\"cell\":1,\"form\":\"inline\",\"value\":\"\",\"field\":\"content\",\"at\":22,\"ids\":3,\"landed\":0}";
++const b1 = "{\"cell\":1,\"form\":\"inline\",\"value\":\" 2\",\"field\":\"content\",\"at\":22,\"ids\":3,\"landed\":1}";
++const b2 = "{\"cell\":1,\"form\":\"inline\",\"value\":\" 2!\",\"field\":\"content\",\"at\":22,\"ids\":3,\"landed\":2}";
++
++/// `x = 2*3 = 6. y = 4*5 = 2` then a `!` the stream holds back (stop `!!`): the client leaves inside the second write.
++const steps = [_]Step{
++    .{ .notes = &.{.{ .index = 0, .content = true, .end = 9, .json = a0 }}, .tokens = "x = 2*3 =" },
++    .{ .notes = &.{.{ .index = 0, .content = true, .end = 11, .json = a1 }}, .tokens = " 6" },
++    .{ .notes = &.{.{ .index = 1, .content = true, .end = 22, .json = b0 }}, .tokens = ". y = 4*5 =" },
++    .{ .notes = &.{.{ .index = 1, .content = true, .end = 24, .json = b1 }}, .tokens = " 2" },
++    .{ .notes = &.{.{ .index = 1, .content = true, .end = 25, .json = b2 }}, .tokens = "!" },
++};
++
++/// An engine that gives a round each time the request's thread checks on its client, then sees the client leave.
++const Script = struct {
++    records: bool,
++    sink: ?api.Sink = null,
++    id: api.Id = 0,
++    next: usize = 0,
++    fn engine(s: *Script) api.Engine {
++        return .{ .ctx = s, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory } };
++    }
++    fn info(_: *anyopaque) api.Info {
++        return .{ .context_window = 8192 };
++    }
++    fn submit(ctx: *anyopaque, id: api.Id, _: *const api.Request, sink: api.Sink) api.SubmitError!void {
++        const s: *Script = @ptrCast(@alignCast(ctx));
++        s.sink = sink;
++        s.id = id;
++        sink.event(sink.ctx, id, &.{ .prefilled = 0 });
++        s.round();
++    }
++    fn round(s: *Script) void {
++        const step = steps[s.next];
++        s.next += 1;
++        const sink = s.sink.?;
++        if (s.records) sink.event(sink.ctx, s.id, &.{ .cells = step.notes });
++        var tokens: [16]u32 = undefined;
++        for (step.tokens, 0..) |b, i| tokens[i] = b;
++        sink.event(sink.ctx, s.id, &.{ .tokens = tokens[0..step.tokens.len] });
++    }
++    fn cancel(ctx: *anyopaque, _: api.Id) void {
++        const s: *Script = @ptrCast(@alignCast(ctx));
++        const sink = s.sink.?;
++        sink.event(sink.ctx, s.id, &.{ .finished = .{ .reason = .cancelled } });
++    }
++    fn status(_: *anyopaque, out: *api.Status, _: []u32) void {
++        out.* = .{};
++    }
++    fn memory(_: *anyopaque, _: bool) ?api.Memory {
++        return null;
++    }
++};
++
++const Gone = struct {
++    s: *Script,
++    checks: *usize,
++    pub fn check(g: @This()) bool {
++        if (g.s.sink == null) return false; // chat.prepare looks before the engine has the request
++        g.checks.* += 1;
++        if (g.s.next < steps.len) {
++            g.s.round();
++            return false;
++        }
++        return g.checks.* > steps.len + 1; // one more look after the last round, then the client is gone
++    }
++};
++
++/// The client: the text it has, every other delta as JSON, and the newest records with any it got ahead of its bytes.
++const Client = struct {
++    a: std.mem.Allocator,
++    text: std.ArrayList(u8) = .empty,
++    plain: std.ArrayList([]const u8) = .empty,
++    last: ?json.Value = null,
++    sent: usize = 0,
++    ahead: usize = 0,
++    fn call(ctx: *anyopaque, delta: json.Value) error{Closed}!void {
++        const c: *Client = @ptrCast(@alignCast(ctx));
++        if (delta == .object) if (delta.get("tensorfold")) |tf| {
++            const run = tf.get("runner") orelse return error.Closed;
++            for ((run.get("cells") orelse return error.Closed).array) |cell| {
++                const at: usize = @intCast(cell.get("at").?.int64().?);
++                const len = cell.strField("value").?.len;
++                if (at + len > c.text.items.len) c.ahead += 1;
++            }
++            c.last = run;
++            c.sent += 1;
++            return;
++        };
++        c.plain.append(c.a, json.stringify(c.a, delta, .{}) catch return error.Closed) catch return error.Closed;
++        if (delta == .string) c.text.appendSlice(c.a, delta.string) catch return error.Closed;
++    }
++    fn sink(c: *Client) chat.Sink {
++        return .{ .ctx = c, .call = call };
++    }
++};
++
++fn stream(a: std.mem.Allocator, records: bool) !Client {
++    var script: Script = .{ .records = records };
++    var bytes: Bytes = .{};
++    const srv = try server.Server.init(gpa, std.testing.io, script.engine(), bytes.text(), .{ .served_name = "test", .model_ids = &.{"test"}, .enable_thinking = false }, null);
++    defer srv.deinit();
++    var client: Client = .{ .a = a };
++    var checks: usize = 0;
++    var cx: Cx = .{ .a = a };
++    const fields = try json.newObject(a);
++    try fields.put(a, "stop", .{ .string = "!!" });
++    const input: chat.Input = .{ .id = "chatcmpl-live", .prompt = .{ .text = "prompt" }, .max_tokens = 100, .fields = .{ .object = fields } };
++    try std.testing.expectError(error.Cancelled, chat.run(srv, &cx, input, client.sink(), Gone{ .s = &script, .checks = &checks }));
++    try std.testing.expectEqual(steps.len, script.next);
++    return client;
++}
++
++test "runner live records: a client that leaves inside a write has a record for each write it was shown" {
++    var arena: std.heap.ArenaAllocator = .init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const on = try stream(a, true);
++    try std.testing.expectEqualStrings("x = 2*3 = 6. y = 4*5 = 2", on.text.items);
++    try std.testing.expectEqual(0, on.ahead); // never a record whose bytes the client did not yet have
++    try std.testing.expectEqual(4, on.sent); // a0; a1; a1 b0; a1 b1 (not b2: its `!` is held back)
++    const last = on.last.?;
++    try std.testing.expect(last.get("live").?.bool);
++    const want = try json.parse(a, "[" ++ a1 ++ "," ++ b1 ++ "]");
++    try std.testing.expectEqualStrings(try json.stringify(a, want.ok, .{}), try json.stringify(a, last.get("cells").?, .{}));
++    // records off: no records chunk, and every other delta byte for byte the same
++    const off = try stream(a, false);
++    try std.testing.expectEqual(0, off.sent);
++    try std.testing.expectEqual(on.plain.items.len, off.plain.items.len);
++    for (on.plain.items, off.plain.items) |x, y| try std.testing.expectEqualStrings(x, y);
++}

@@ -1,0 +1,320 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 06:52:51 +0700
+Subject: [PATCH 093/207] Merge T2 4db74834a (boot frontend self-check)
+
+Squashed merge of 1 commits:
+- runner: probe the circuit route at boot and in the image check (Jay Leaton)
+---
+ packaging/runner/README.md                 |   2 +
+ packaging/runner/check-image.sh            |   9 +-
+ zig/src/core/runner.zig                    |   1 +
+ zig/src/core/runner_frontend_boot_main.zig |  35 ++++-
+ zig/src/core/runner_open.zig               |  19 +++
+ zig/src/core/runner_probe.zig              | 144 +++++++++++++++++++++
+ 6 files changed, 207 insertions(+), 3 deletions(-)
+ create mode 100644 zig/src/core/runner_probe.zig
+
+diff --git a/packaging/runner/README.md b/packaging/runner/README.md
+index 9510e2ae2beb9f3b10b058421058e8a39c762ab5..eb466a70093481976c692b2849fac2eea5e42464 100644
+--- a/packaging/runner/README.md
++++ b/packaging/runner/README.md
+@@ -11,6 +11,8 @@ Use a derived serving base that already contains the engine and its lane Python
+ 
+ At every container boot, `tf-runner-frontend-check` compiles a tiny freestanding C program through the production frontend and validates its RV32IM+Zba ELF. It never runs that ELF on the host. The Docker build runs the same check with `--require` so an image without a functioning RISC-V toolchain is rejected.
+ 
++An image that ships a circuit also proves the route the compiled programs take. `tf-runner-frontend-check --require --circuit PATH` compiles the cells in `zig/src/core/runner_probe.zig` (Python loops with `*`, `//` and `%`, and a C string read from ROM bytes) and runs them on that circuit; any output but the expected one, or a run past 100,000 steps, exits 1. `check-image.sh` runs it on `/opt/tensorfold/share/runner/calc.tfpc` when the image has one, and a serving image's Dockerfile should run it as a `RUN` step after copying its circuit. The engine runs the same probe when it opens the runner (`TF_DSV41_RUNNER=1`) and refuses to start on a wrong output (about a second at boot).
++
+ At runtime, a missing or broken compiler/linker reports unavailable and allows ordinary boot when `TF_DSV41_RUNNER` is unset, empty, 0, false, off or no. Any other runner value requires a successful check and fails boot otherwise. `TF_RUNNER_CLANG` and `TF_RUNNER_LLD` override compiler/linker paths for deployment and diagnostics. The production frontend also independently abstains if compilation is unavailable; boot does not turn a missing optional dependency into model output.
+ 
+ Runner threads (each cell's translation, which also starts clang and ld.lld, and each circuit run) leave the engine thread's CPU pin when they start. `TF_DSV41_RUNNER_CPUS` sets where they run: `auto` (default) takes the container's cpuset, removes the CPUs the engine pins (the TP plan link's, `TF_TP_PLAN_PIN`, and the RoCE proxy's, `TF_TP_ROCE_CPU`) and, when core sizes differ (smallest capacity under 80% of the largest), keeps the small cores; on a GB10 rank with the plan link on CPU 19 that is 0-4,10-14. `inherit` keeps the previous behaviour (the engine thread's CPU); a list such as `0-4,10-14` is used as given. `TF_DSV41_RUNNER_NICE` (default 10, 0-19) is the least niceness they run at; a higher inherited niceness is kept. The engine logs the resolved set at the first run (`in-model runner threads: CPUs ...`), and the threads are named `tf-runner`. `zig build test-runner-host` checks the placement; `zig build bench-runner-place` measures an engine host-loop stand-in beside the runner at full load (`runner-place-bench ENGINE_CPU SECONDS WORKERS ROUNDS`, `TF_RUNNER_CIRCUIT` for a real circuit).
+diff --git a/packaging/runner/check-image.sh b/packaging/runner/check-image.sh
+index 097cdfcc821d55aecf3fea6218a6dc922e20ac79..19c80af58b8cbc810f5e199ada33750b4c2cfea7 100755
+--- a/packaging/runner/check-image.sh
++++ b/packaging/runner/check-image.sh
+@@ -15,4 +15,11 @@ rc=0
+ run -e TF_RUNNER_CLANG=/bin/true -e TF_DSV41_RUNNER=1 "$tag" /bin/true || rc=$?
+ [[ $rc != 0 ]] || { echo 'FAIL: compiler success without an ELF was accepted' >&2; exit 1; }
+ run "$tag" /bin/sh -c 'test "$1" = "hello world"' sh 'hello world'
+-echo 'RUNNER_IMAGE_CHECK: compile/ELF validation, optional fallback, required failure, and argv preservation PASS'
++circuit=/opt/tensorfold/share/runner/calc.tfpc
++probed=no
++if run "$tag" test -f "$circuit"; then
++ run --entrypoint /opt/tensorfold/bin/tf-runner-frontend-check "$tag" --require --circuit "$circuit" ||
++  { echo "FAIL: the image's circuit route (compiled probe cells on $circuit) is wrong" >&2; exit 1; }
++ probed=yes
++fi
++echo "RUNNER_IMAGE_CHECK: compile/ELF validation, optional fallback, required failure, argv preservation, circuit route ($probed) PASS"
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index ec71776aa5f88ad856d7bba2649752a0f8c62830..853a57aeeeb16da6439474562dfbd39c5a30103c 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -473,4 +473,5 @@ test {
+     _ = @import("runner_api.zig");
+     _ = @import("runner_trace_test.zig");
+     _ = @import("runner_settle_test.zig");
++    _ = @import("runner_probe.zig");
+ }
+diff --git a/zig/src/core/runner_frontend_boot_main.zig b/zig/src/core/runner_frontend_boot_main.zig
+index 172de455de5a7c8342723cc5a032e7dd175af11e..504d227df72ee2f1e74b2d439e50e2a4c66c58c0 100644
+--- a/zig/src/core/runner_frontend_boot_main.zig
++++ b/zig/src/core/runner_frontend_boot_main.zig
+@@ -1,11 +1,12 @@
+ //! Standalone compiler boot probe; enabling the runner requires a working RV32 toolchain.
+ const std = @import("std");
+ const boot = @import("runner_frontend_boot.zig");
+-const usage = "Usage: tf-runner-frontend-check [--require] [--clang PATH] [--linker PATH] [--help]\n";
++const usage = "Usage: tf-runner-frontend-check [--require] [--clang PATH] [--linker PATH] [--circuit PATH] [--help]\n";
+ 
+ const Options = struct {
+     config: boot.Config = .{},
+     help: bool = false,
++    circuit: ?[]const u8 = null, // also run the loop probe (core/runner_probe.zig) on this circuit: wrong is exit 1
+ };
+ 
+ pub fn main(init: std.process.Init) !u8 {
+@@ -32,6 +33,32 @@ pub fn main(init: std.process.Init) !u8 {
+         "runner compiler: available (rv32im_zba ELF validated)\n"
+     else
+         "runner compiler: unavailable (optional; clang/lld RV32 ELF check failed)\n");
++    if (options.circuit) |path| return probe(init.gpa, init.io, &output.interface, path, options.config.compiler, available);
++    return 0;
++}
++
++/// The image's circuit route: the probe cells compiled here and run on `path` must print what Python or C prints.
++fn probe(gpa: std.mem.Allocator, io: std.Io, out: *std.Io.Writer, path: []const u8, compiler: @import("runner_frontend_program.zig").Config, available: bool) !u8 {
++    if (!available) {
++        try out.print("runner circuit {s}: not probed (no RV32 compiler)\n", .{path});
++        return 1;
++    }
++    var c = @import("runner_circuit.zig").Circuit.load(gpa, path) catch |e| {
++        try out.print("runner circuit {s}: does not load ({t})\n", .{ path, e });
++        return 1;
++    };
++    defer c.deinit(gpa);
++    const backend = @import("runner_circuit_backend.zig");
++    const b = try backend.backend(gpa, &c, 1);
++    defer backend.destroy(b);
++    var ctx: @import("runner_frontend.zig").Context = .{ .io = io, .compiler = compiler };
++    var why: [256]u8 = undefined;
++    const got = try @import("runner_probe.zig").run(gpa, ctx.frontend(), b, true, &why);
++    if (got.wrong) |w| {
++        try out.print("runner circuit {s}: WRONG: {s}\n", .{ path, w });
++        return 1;
++    }
++    try out.print("runner circuit {s}: {d} probe cells print the right output in {d} steps\n", .{ path, got.ran, got.steps });
+     return 0;
+ }
+ 
+@@ -59,12 +86,14 @@ fn parseWith(args: []const [:0]const u8, initial: Options) error{InvalidArgument
+             options.config.required = true;
+         } else if (std.mem.eql(u8, arg, "--help")) {
+             options.help = true;
+-        } else if (std.mem.eql(u8, arg, "--clang") or std.mem.eql(u8, arg, "--linker")) {
++        } else if (std.mem.eql(u8, arg, "--clang") or std.mem.eql(u8, arg, "--linker") or std.mem.eql(u8, arg, "--circuit")) {
+             i += 1;
+             if (i == args.len or args[i].len == 0 or std.mem.startsWith(u8, args[i], "--"))
+                 return error.InvalidArguments;
+             if (std.mem.eql(u8, arg, "--clang")) {
+                 options.config.compiler.clang = args[i];
++            } else if (std.mem.eql(u8, arg, "--circuit")) {
++                options.circuit = args[i];
+             } else {
+                 options.config.compiler.linker = args[i];
+             }
+@@ -79,6 +108,8 @@ test "CLI defaults optional and passes explicit toolchain paths to the boot prob
+     try std.testing.expect(options.config.required);
+     try std.testing.expectEqualStrings("/missing/clang", options.config.compiler.clang);
+     try std.testing.expectEqualStrings("/missing/ld.lld", options.config.compiler.linker.?);
++    try std.testing.expectEqualStrings("/c.tfpc", (try parse(&.{ "--circuit", "/c.tfpc" })).circuit.?);
++    try std.testing.expectEqual(null, options.circuit);
+ }
+ 
+ test "CLI refuses missing toolchain paths and unknown arguments" {
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+index 2f7e1b408cc79d014d747bcd388a2aea41174a16..3334878de94a378792d713a35d2dfe3a2debace7 100644
+--- a/zig/src/core/runner_open.zig
++++ b/zig/src/core/runner_open.zig
+@@ -35,6 +35,7 @@ pub fn open(gpa: Allocator, cfg: Config) !*Runner {
+         return e;
+     };
+     errdefer o.circuit.deinit(gpa);
++    try probe(gpa, &o.circuit);
+     const back = try @import("runner_circuit_backend.zig").placed(gpa, &o.circuit, cfg.workers, &o.placer);
+     var frontend = @import("runner_frontend.zig").frontend();
+     var backend = back;
+@@ -58,6 +59,24 @@ pub fn open(gpa: Allocator, cfg: Config) !*Runner {
+     return &o.runner;
+ }
+ 
++/// The circuit route at boot (served compiler, this circuit, unplaced): a wrong loop value refuses the runner.
++fn probe(gpa: Allocator, c: *const circuit.Circuit) !void {
++    const t0 = nowNs();
++    var threaded = std.Io.Threaded.init(gpa, .{});
++    defer threaded.deinit();
++    const compiler = try @import("runner_frontend_boot.zig").selfTest(gpa, threaded.io(), .{});
++    const back = try @import("runner_circuit_backend.zig").backend(gpa, c, 1);
++    defer @import("runner_circuit_backend.zig").destroy(back);
++    var why: [256]u8 = undefined;
++    const got = try @import("runner_probe.zig").run(gpa, @import("runner_frontend.zig").frontend(), back, compiler, &why);
++    if (got.wrong) |w| {
++        log.err("in-model runner probe: {s}; the runner refuses this circuit and compiler", .{w});
++        return error.RunnerProbe;
++    }
++    if (!compiler) return log.info("in-model runner probe: no RV32 compiler, the circuit route abstains", .{});
++    log.info("in-model runner probe: {d} probe cells print the right output on the circuit in {d} steps ({d} ms)", .{ got.ran, got.steps, (nowNs() - t0) / std.time.ns_per_ms });
++}
++
+ fn nowNs() u64 {
+     var ts: std.c.timespec = undefined;
+     _ = std.c.clock_gettime(.MONOTONIC, &ts);
+diff --git a/zig/src/core/runner_probe.zig b/zig/src/core/runner_probe.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..7b16d716dad781042e4ca89dc3b092d0cdfabc23
+--- /dev/null
++++ b/zig/src/core/runner_probe.zig
+@@ -0,0 +1,144 @@
++//! Boot probe of the circuit route: known cells through the frontend, the compiler and the loaded circuit.
++const std = @import("std");
++const api = @import("runner_api.zig");
++
++/// Loops compiled to RV32 and CPython's (or C's) output: sums, // and %, a product, a string read from ROM bytes.
++pub const cells = [_]struct { lang: []const u8 = "python", code: []const u8, want: []const u8 }{
++    .{ .code = "total = 0\nfor i in range(10):\n    total += i * i\nprint(total)\n", .want = "285\n" },
++    .{ .code = "print(sum(i*i for i in range(10)))\n", .want = "285\n" },
++    .{ .code = "print(sum(1000003//d for d in range(3, 40)))\n", .want = "2753534\n" },
++    .{ .code = "print(sum(1000003%d for d in range(3, 40)))\n", .want = "357\n" },
++    .{ .code = "f = 1\nfor i in range(1, 13):\n    f *= i\nprint(f)\n", .want = "479001600\n" },
++    .{ .lang = "c", .code = "int main(void) { puts(\"circuit route\"); return 0; }\n", .want = "circuit route\n" },
++};
++
++/// Steps a probe run may take (each cell needs far fewer): a circuit that loops is wrong, not slow.
++pub const steps = 100_000;
++
++pub const Outcome = struct {
++    ran: u32 = 0, // cells run and right
++    steps: u64 = 0, // their steps, summed
++    wrong: ?[]const u8 = null, // the first cell that abstained, did not start or printed anything but Python's (in `why`)
++};
++
++/// Every cell when the compiler works (else none), up to the first that is wrong.
++pub fn run(a: std.mem.Allocator, fe: api.Frontend, back: api.Backend, compiler: bool, why: []u8) !Outcome {
++    var o: Outcome = .{};
++    if (!compiler) return o;
++    const stream = std.math.maxInt(u64); // no reply's (sessions count up from 1)
++    defer back.release(stream);
++    for (cells, 0..) |c, i| {
++        var arena = std.heap.ArenaAllocator.init(a);
++        defer arena.deinit();
++        const t = try fe.translate(fe.ctx, arena.allocator(), .{ .form = .fence, .lang = c.lang, .code = c.code });
++        const p = switch (t) {
++            .program => |p| p,
++            .abstain => |no| {
++                o.wrong = std.fmt.bufPrint(why, "probe cell {d} did not translate ({t}) though the compiler works", .{ i, no }) catch why;
++                return o;
++            },
++        };
++        const job = back.start(stream, p, steps) catch |e| {
++            o.wrong = std.fmt.bufPrint(why, "probe cell {d} ({t}) did not start: {t}", .{ i, p.kind, e }) catch why;
++            return o;
++        };
++        const r = wait(back, job);
++        if (r.status != .ok or !std.mem.eql(u8, r.out, c.want)) {
++            o.wrong = std.fmt.bufPrint(why, "probe cell {d} ({t}, {d} bytes) gave {t} '{f}' after {d} steps, not '{f}'", .{ i, p.kind, p.bytes.len, r.status, std.ascii.hexEscape(r.out[0..@min(r.out.len, 64)], .lower), r.steps, std.ascii.hexEscape(c.want, .lower) }) catch why;
++            return o;
++        }
++        o.ran += 1;
++        o.steps += r.steps;
++    }
++    return o;
++}
++
++fn wait(back: api.Backend, job: api.JobId) api.Result {
++    while (true) switch (back.poll(job)) {
++        .running => {
++            var ts: std.c.timespec = .{ .sec = 0, .nsec = std.time.ns_per_ms };
++            _ = std.c.nanosleep(&ts, null);
++        },
++        .done => |r| return r,
++    };
++}
++
++const gpa = std.testing.allocator;
++
++/// Every cell becomes an ELF of its code; the backend prints the cell's own want, or `out` for every cell.
++const Fake = struct {
++    out: ?[]const u8 = null,
++    which: usize = 0,
++    abstain: bool = false,
++    started: u32 = 0,
++    released: u32 = 0,
++
++    fn frontend(f: *Fake) api.Frontend {
++        return .{ .ctx = f, .translate = translate };
++    }
++    fn translate(ctx: ?*anyopaque, a: std.mem.Allocator, cell: api.Cell) std.mem.Allocator.Error!api.Translation {
++        const f: *Fake = @ptrCast(@alignCast(ctx.?));
++        if (f.abstain) return .{ .abstain = .unsupported };
++        return .{ .program = .{ .kind = .elf, .bytes = try a.dupe(u8, cell.code) } };
++    }
++    fn backend(f: *Fake) api.Backend {
++        return .{ .ctx = f, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(ctx: *anyopaque, _: u64, p: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++        const f: *Fake = @ptrCast(@alignCast(ctx));
++        for (cells, 0..) |c, i| if (std.mem.eql(u8, c.code, p.bytes)) {
++            f.which = i;
++        };
++        f.started += 1;
++        return f.started;
++    }
++    fn poll(ctx: *anyopaque, _: api.JobId) api.Poll {
++        const f: *Fake = @ptrCast(@alignCast(ctx));
++        return .{ .done = .{ .status = .ok, .out = f.out orelse cells[f.which].want, .steps = 599 } };
++    }
++    fn cancel(_: *anyopaque, _: api.JobId) void {}
++    fn release(ctx: *anyopaque, _: u64) void {
++        const f: *Fake = @ptrCast(@alignCast(ctx));
++        f.released += 1;
++    }
++};
++
++test "runner probe: Python's output passes; a wrong value or a translation that abstains refuses; no compiler skips" {
++    var why: [256]u8 = undefined;
++    var ok: Fake = .{};
++    const got = try run(gpa, ok.frontend(), ok.backend(), true, &why);
++    try std.testing.expect(got.wrong == null and got.ran == cells.len and got.steps == 599 * cells.len);
++    try std.testing.expectEqual(@as(u32, 1), ok.released);
++    // the failure the probe exists for: a circuit (or compiler) that runs the loop to a different value
++    var wrong: Fake = .{ .out = "284\n" };
++    const bad = try run(gpa, wrong.frontend(), wrong.backend(), true, &why);
++    try std.testing.expectEqualStrings("probe cell 0 (elf, 62 bytes) gave ok '284\\x0a' after 599 steps, not '285\\x0a'", bad.wrong.?);
++    var unlinked: Fake = .{ .abstain = true };
++    const no = try run(gpa, unlinked.frontend(), unlinked.backend(), true, &why);
++    try std.testing.expectEqualStrings("probe cell 0 did not translate (unsupported) though the compiler works", no.wrong.?);
++    var none: Fake = .{ .out = "284\n" };
++    const skipped = try run(gpa, none.frontend(), none.backend(), false, &why);
++    try std.testing.expect(skipped.wrong == null and skipped.ran == 0 and none.started == 0);
++}
++
++test "runner probe: the cells on the real frontend and the circuit at TF_RUNNER_CIRCUIT (with TF_RUNNER_LLD)" {
++    const path = std.c.getenv("TF_RUNNER_CIRCUIT") orelse return error.SkipZigTest;
++    const circuit = @import("runner_circuit.zig");
++    const backend = @import("runner_circuit_backend.zig");
++    const frontend = @import("runner_frontend.zig");
++    var c = try circuit.Circuit.load(gpa, std.mem.span(path));
++    defer c.deinit(gpa);
++    const b = try backend.backend(gpa, &c, 1);
++    defer backend.destroy(b);
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    // with TF_RUNNER_CIRCUIT set, a host without the RV32 toolchain fails here by name, not as a missing 285
++    const compiler = try @import("runner_frontend_boot.zig").selfTest(gpa, std.testing.io, .{ .compiler = ctx.compiler });
++    if (!compiler) std.debug.print("runner probe: clang {s} with linker {s} cannot build RV32 ELF\n", .{ ctx.compiler.clang, ctx.compiler.linker orelse "-fuse-ld=lld" });
++    try std.testing.expect(compiler);
++    var why: [256]u8 = undefined;
++    const got = try run(gpa, ctx.frontend(), b, true, &why);
++    if (got.wrong) |w| std.debug.print("runner probe: {s}\n", .{w});
++    std.debug.print("runner probe: {d} probe cells = Python's output in {d} steps on {s}\n", .{ got.ran, got.steps, std.mem.span(path) });
++    try std.testing.expectEqual(@as(u32, cells.len), got.ran);
++}

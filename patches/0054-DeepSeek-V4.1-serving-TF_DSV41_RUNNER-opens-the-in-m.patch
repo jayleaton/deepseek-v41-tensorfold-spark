@@ -1,0 +1,232 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 13:52:42 +0700
+Subject: [PATCH 054/207] DeepSeek V4.1 serving: TF_DSV41_RUNNER opens the
+ in-model runner; chats run their cells
+
+The engine loads the circuit file and its CPU backend; the server gives the
+runner its tokenizer (token bytes once, plain encoding of results) and sets
+run_cells on chat requests while the runner is on. Needs the frontend
+(core/runner_frontend.zig) from the frontend track to build.
+---
+ zig/src/core/engine_api.zig                   |  8 ++---
+ zig/src/core/runner.zig                       | 18 ++++++-----
+ zig/src/core/runner_open.zig                  | 31 +++++++++++++++++++
+ .../families/deepseek_v41/serve_engine.zig    |  5 +++
+ zig/src/server/chat.zig                       |  2 ++
+ zig/src/server/runner_text.zig                | 31 +++++++++++++++++++
+ zig/src/server/server.zig                     |  1 +
+ 7 files changed, 85 insertions(+), 11 deletions(-)
+ create mode 100644 zig/src/core/runner_open.zig
+ create mode 100644 zig/src/server/runner_text.zig
+
+diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
+index b3e66d388656aee03cec0eeaefa8ed9b57fa7392..865f40b01b18e8f6ab683ed01e8a4661fdfb3322 100644
+--- a/zig/src/core/engine_api.zig
++++ b/zig/src/core/engine_api.zig
+@@ -198,13 +198,11 @@ pub const Info = struct {
+     embeddings: ?lanes.embedding.Info = null,
+     speech: ?SpeechInfo = null,
+     lanes: u32 = 1,
+-    /// Prompt plus reply tokens one request may use (0: no limit).
+-    context_window: u32 = 0,
++    context_window: u32 = 0, // prompt plus reply tokens one request may use (0: no limit)
+     context_fitted: bool = false,
+     /// What the engine enforces; the server refuses requests that need more.
+     call_gates: bool = false,
+-    /// The engine observes loop_guard requests in its lane stream.
+-    loop_guard: bool = false,
++    loop_guard: bool = false, // the engine observes loop_guard requests in its lane stream
+     /// The engine enforces a token budget while the think block is open.
+     thinking_budget: bool = true,
+     /// The engine stops the reply after the think block at Request.answer_max (every lane engine: Info.ofLanes).
+@@ -245,6 +243,7 @@ pub const Info = struct {
+     /// Whether a request's caches fit beside the running streams' now (null: a free lane does); else it waits in order.
+     admit: ?Admit = null,
+     compute: ?compute_lane.Config = null, // the family's built-in code execution: replies hold at EOS for its results
++    runner: ?*runner.Runner = null, // the in-model runner: the server gives it the tokenizer and chats set run_cells
+ 
+     /// What a lane engine's streams enforce themselves (core/lanes/stream.zig): loop guards and answer limits.
+     pub fn ofLanes(i: Info) Info {
+@@ -254,6 +253,7 @@ pub const Info = struct {
+         return out;
+     }
+ };
++pub const runner = @import("runner_open.zig");
+ pub const compute_lane = @import("compute_lane.zig");
+ /// A held reply's result tokens (empty: it ends at its EOS), forced after the EOS between rounds.
+ pub const Resume = lanes.hold.Resume;
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 2bb9f40db67a91193daeec6a8433eef3c2729c21..7bac74bad7888538da3530568c33088163fa542c 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -65,16 +65,18 @@ pub const Text = struct {
+     encode: *const fn (ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32,
+ };
+ 
+-/// The server-wide runner: one frontend, one backend, the tokenizer; sessions are per reply.
++/// The server-wide runner: a frontend, a backend and the server's tokenizer (set at its start); sessions are per reply.
+ pub const Runner = struct {
+     gpa: Allocator,
+     cfg: Config,
+     frontend: api.Frontend,
+     backend: api.Backend,
+-    text: Text,
++    text: ?Text = null,
+     next_id: u64 = 1,
+ 
+-    pub fn session(r: *Runner) Allocator.Error!*Session {
++    /// A reply's session; null until the server has given the runner its tokenizer.
++    pub fn session(r: *Runner) Allocator.Error!?*Session {
++        if (r.text == null) return null;
+         const s = try r.gpa.create(Session);
+         s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = r.cfg.scan } };
+         r.next_id += 1;
+@@ -118,7 +120,8 @@ pub const Session = struct {
+     }
+ 
+     fn feed(s: *Session, token: u32, think_open: bool, can_hold: bool) Allocator.Error!bool {
+-        const ev = try s.scan.feed(s.r.gpa, s.r.text.bytes(s.r.text.ctx, token), think_open);
++        const tx = s.r.text.?;
++        const ev = try s.scan.feed(s.r.gpa, tx.bytes(tx.ctx, token), think_open);
+         if (ev.closed) |c| try s.open(c);
+         const t = ev.trigger orelse return false;
+         if (!can_hold or t.index >= s.cells.items.len) return false;
+@@ -197,6 +200,7 @@ pub const Session = struct {
+     /// The owned text for a settled run (INTERFACES.md §5), as token ids within the token cap.
+     fn owned(s: *Session, res: api.Result, fenced: bool) Allocator.Error![]u32 {
+         const gpa = s.r.gpa;
++        const tx = s.r.text.?;
+         var body: std.ArrayList(u8) = .empty;
+         defer body.deinit(gpa);
+         const out = if (std.mem.endsWith(u8, res.out, "\n")) res.out[0 .. res.out.len - 1] else res.out;
+@@ -206,11 +210,11 @@ pub const Session = struct {
+             .budget => try body.print(gpa, "\n[stopped after {d} steps]", .{res.steps}),
+             .fault => try body.appendSlice(gpa, "\n[machine fault]"),
+         }
+-        const ids = try s.r.text.encode(s.r.text.ctx, gpa, body.items);
++        const ids = try tx.encode(tx.ctx, gpa, body.items);
+         defer gpa.free(ids);
+-        const tail = try s.r.text.encode(s.r.text.ctx, gpa, if (fenced) "\n```\n" else "\n");
++        const tail = try tx.encode(tx.ctx, gpa, if (fenced) "\n```\n" else "\n");
+         defer gpa.free(tail);
+-        const note = if (ids.len > s.r.cfg.max_tokens) try s.r.text.encode(s.r.text.ctx, gpa, "\n[output cut]") else try gpa.alloc(u32, 0);
++        const note = if (ids.len > s.r.cfg.max_tokens) try tx.encode(tx.ctx, gpa, "\n[output cut]") else try gpa.alloc(u32, 0);
+         defer gpa.free(note);
+         const keep = ids[0..@min(ids.len, s.r.cfg.max_tokens)];
+         return std.mem.concat(gpa, u32, &.{ keep, note, tail });
+diff --git a/zig/src/core/runner_open.zig b/zig/src/core/runner_open.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..b054b64aa1e0bc0114b100df71c504514f4ef8f0
+--- /dev/null
++++ b/zig/src/core/runner_open.zig
+@@ -0,0 +1,31 @@
++//! The served in-model runner: knobs to a circuit file, its CPU backend and the frontend, for a family's engine.
++const std = @import("std");
++const runner = @import("runner.zig");
++const circuit = @import("runner_circuit.zig");
++const Allocator = std.mem.Allocator;
++const log = std.log.scoped(.runner);
++
++pub const Config = runner.Config;
++pub const Runner = runner.Runner;
++pub const Text = runner.Text;
++
++const Opened = struct { runner: Runner, circuit: circuit.Circuit };
++
++/// The runner for `cfg` (from Config.parse); lives as long as the engine. CUDA waits for its backend (DESIGN T4).
++pub fn open(gpa: Allocator, cfg: Config) !*Runner {
++    if (cfg.device != .cpu) {
++        log.err("TF_DSV41_RUNNER_DEVICE=cuda: the CUDA circuit backend is not in this build", .{});
++        return error.BadKnob;
++    }
++    const o = try gpa.create(Opened);
++    errdefer gpa.destroy(o);
++    o.circuit = circuit.Circuit.load(gpa, cfg.circuit) catch |e| {
++        log.err("TF_DSV41_RUNNER_CIRCUIT={s}: {t}", .{ cfg.circuit, e });
++        return e;
++    };
++    errdefer o.circuit.deinit(gpa);
++    const back = try @import("runner_circuit_backend.zig").backend(gpa, &o.circuit, cfg.workers);
++    o.runner = .{ .gpa = gpa, .cfg = cfg, .frontend = @import("runner_frontend.zig").frontend(), .backend = back };
++    log.info("in-model runner: circuit {s}, cpu, {d} workers, {d} steps a run", .{ cfg.circuit, cfg.workers, cfg.max_steps });
++    return &o.runner;
++}
+diff --git a/zig/src/families/deepseek_v41/serve_engine.zig b/zig/src/families/deepseek_v41/serve_engine.zig
+index e02ea2d377b3ef97537c165b198a6b1a2a69dfaa..0acb051fe2e60d4b512b38ac2cd0132404d06788 100644
+--- a/zig/src/families/deepseek_v41/serve_engine.zig
++++ b/zig/src/families/deepseek_v41/serve_engine.zig
+@@ -135,6 +135,11 @@ pub const Served = struct {
+         s.host = api.LaneHost.init(gpa, io, &s.core, .{ .name = "dsv41-cuda", .lanes = m.slots, .context_window = window, .prefill_step = m.gt.prefill_rows, .structures = m.grammar_masks != null });
+         // TF_DSV41_COMPUTE_LANE=1: built-in code runs on the CPU while its reply holds at EOS (core/compute_lane.zig)
+         s.host.info_.compute = try api.compute_lane.Config.parse(&@import("serve_knobs.zig").env, "TF_DSV41_COMPUTE_LANE");
++        // TF_DSV41_RUNNER=1: code cells a reply writes run on the compiled circuit, results in place (core/runner.zig)
++        if (try api.runner.Config.parse(&@import("serve_knobs.zig").env, "TF_DSV41_RUNNER")) |rc| {
++            s.host.runner = try api.runner.open(gpa, rc);
++            s.host.info_.runner = s.host.runner;
++        }
+         // the lanes run on LaneHost's thread: the model's CUDA context must be current there
+         s.host.on_thread = .{ .ctx = m, .run = bindContext };
+         // /metrics' device memory: bytes this rank holds in cuda.DeviceBuffers (weights, KV pool, staging), peak
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 81c8b8e8bb47d124489f2aa46b4aa291d3647e70..0fef083387563be1f99f2aa431970adb4662416d 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -175,6 +175,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
+     request.prompt_logprobs = input.prompt_logprobs;
+     // the compute lane: a reply offered the built-in tool holds at each EOS for its results (not with stop strings)
+     request.hold_eos = stops_opt.strings.len == 0 and @import("compute_turns.zig").arms(srv, input, &request);
++    // the in-model runner (TF_DSV41_RUNNER): code cells this reply writes run, their results owned in place
++    request.run_cells = srv.info.runner != null;
+     return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .effort = effort, .sampled = sampling != null, .drafts = drafts, .token_ids = flag(f, "return_token_ids") orelse false, .stops = stops_opt, .preparing = preparing };
+ }
+ 
+diff --git a/zig/src/server/runner_text.zig b/zig/src/server/runner_text.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a35a9bf20818c2fd16fb6002851dac44a2ba3a48
+--- /dev/null
++++ b/zig/src/server/runner_text.zig
+@@ -0,0 +1,31 @@
++//! The in-model runner's tokenizer: every token's bytes once at start, and plain encoding of owned result text.
++const std = @import("std");
++const api = @import("engine_api");
++const model_text = @import("model_text.zig");
++const Allocator = std.mem.Allocator;
++
++const Table = struct { text: model_text.Text, bytes: [][]const u8 };
++
++/// Gives `r` the server's tokenizer (allocated from `arena`); without token bytes the runner stays off.
++pub fn attach(arena: Allocator, text: model_text.Text, r: *api.runner.Runner) !void {
++    if (text.vtable.token_bytes == null) return std.log.warn("in-model runner off: this tokenizer cannot give token bytes", .{});
++    const t = try arena.create(Table);
++    t.* = .{ .text = text, .bytes = try arena.alloc([]const u8, text.vocabSize()) };
++    // a token with no bytes of its own (an added token) is never part of a cell's code
++    for (t.bytes, 0..) |*b, i| b.* = (try text.tokenBytes(arena, @intCast(i))) orelse "";
++    r.text = .{ .ctx = t, .bytes = bytes, .encode = encode };
++}
++
++fn bytes(ctx: ?*anyopaque, token: u32) []const u8 {
++    const t: *const Table = @ptrCast(@alignCast(ctx.?));
++    return if (token < t.bytes.len) t.bytes[token] else "";
++}
++
++/// Plain text: a result spelling a special token stays text, never the token.
++fn encode(ctx: ?*anyopaque, a: Allocator, text: []const u8) Allocator.Error![]u32 {
++    const t: *const Table = @ptrCast(@alignCast(ctx.?));
++    return t.text.encodePlain(a, text) catch |e| switch (e) {
++        error.OutOfMemory => error.OutOfMemory,
++        else => error.OutOfMemory, // the reply fails rather than owning text it could not encode
++    };
++}
+diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
+index 571d42da02d1df93c3b7ad1505ce27511dc0713a..1b63031c63056d5d71f8c78a161b9a7121091f02 100644
+--- a/zig/src/server/server.zig
++++ b/zig/src/server/server.zig
+@@ -187,6 +187,7 @@ pub const Server = struct {
+             return srv;
+         }
+         if (srv.info.compute) |c| srv.compute = try @import("compute_turns.zig").open(srv, c);
++        if (srv.info.runner) |r| try @import("runner_text.zig").attach(srv.arena.allocator(), text, r);
+         if (config.cortheon) srv.cortheon = try cortheon.State.init(gpa, io, "TensorFold-Cortheon (+https://github.com/ashhart/TensorFold)", config.cortheon_search_key);
+         if (config.keep_warm_s > 0) if (engine.keepaliveTarget()) |target| {
+             srv.keepalive = api.keepalive.Keepalive.start(gpa, io, target, @as(i64, config.keep_warm_s) * std.time.ns_per_s) catch |e| blk: {

@@ -1,0 +1,279 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 00:25:50 +0700
+Subject: [PATCH 140/207] =?UTF-8?q?Merge=20lane=20dd4137415=20(bare=200x?=
+ =?UTF-8?q?=E2=80=A6=20inline=20cells=20as=20Horner's=20rule=20on=20the=20?=
+ =?UTF-8?q?bank;=20on=204d96c3db6)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Squashed merge of 1 commits:
+- runner: a bare `0x…` inline cell runs as Horner's rule on the bank (S1 R4 d_mirror hex-a, hex) (Jay Leaton)
+---
+ zig/src/core/runner.zig                 |   1 +
+ zig/src/core/runner_graph_route.zig     |  35 +++++++
+ zig/src/core/runner_inline_hex_test.zig | 124 ++++++++++++++++++++++++
+ zig/src/core/runner_proof_test.zig      |   1 +
+ zig/src/core/runner_scan.zig            |   2 +-
+ zig/src/core/runner_scan_inline.zig     |  23 +++++
+ 6 files changed, 185 insertions(+), 1 deletion(-)
+ create mode 100644 zig/src/core/runner_inline_hex_test.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 9dead104b117ba6d8d38d5bff1b7b7cde6efb3a1..932710abc833130932979744c23773635fbec2d9 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -582,4 +582,5 @@ test {
+     _ = @import("runner_inline_chain_test.zig");
+     _ = @import("runner_receipt_test.zig");
+     _ = @import("runner_inline_context_test.zig");
++    _ = @import("runner_inline_hex_test.zig");
+ }
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index e6aa8d8ee3a5d60040121bb3163831530f89a7bd..81e078045c2937fa910c1adef06a37fb935873bd 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -339,6 +339,40 @@ const Map = struct {
+     }
+ };
+ 
++/// The most hex digits a bare literal cell converts: 16^100 has 121 decimal digits, under the bank's 128.
++pub const max_hex = 100;
++
++/// A bare hex literal cell (`0xFEDC… =`): Horner's rule on the bank over its digits, so the circuit does the radix.
++pub fn hexLiteral(a: Allocator, bank: *const graph.Bank, cell: api.Cell) Allocator.Error!?[]u8 {
++    if ((cell.form != .inline_expr and cell.form != .repl) or !std.mem.eql(u8, cell.lang, "python")) return null;
++    const src = std.mem.trim(u8, cell.code, " \t");
++    if (src.len < 4 or src.len > 2 + max_hex or src[0] != '0' or (src[1] != 'x' and src[1] != 'X')) return null;
++    const hex = src[2..];
++    for (hex) |c| if (!std.ascii.isHex(c)) return null;
++    var arena_state = std.heap.ArenaAllocator.init(a);
++    defer arena_state.deinit();
++    const arena = arena_state.allocator();
++    const values = try arena.alloc([]const u8, hex.len + 1);
++    values[0] = "16";
++    for (hex, 1..) |c, i| values[i] = try std.fmt.allocPrint(arena, "{d}", .{std.fmt.charToDigit(c, 16) catch unreachable});
++    var ops: std.ArrayList(packet.Op) = .empty;
++    var acc: u32 = 1;
++    for (2..values.len) |k| {
++        // after k digits the value is below 16^k: at most k*1.21 + 1 decimal digits (log10 16 < 1.21)
++        const w = for ([_]u8{ 1, 2, 4, 8, 16, 32, 62, 128 }) |x| {
++            if (k * 121 / 100 + 1 <= x) break x;
++        } else return null;
++        if (bank.find("mul", w) == null or bank.find("add", w) == null) return null;
++        const digit: u32 = @intCast(k);
++        const product: u32 = @intCast(values.len + ops.items.len);
++        try ops.append(arena, .{ .op = "mul", .width = w, .args = try arena.dupe(u32, &.{ acc, 0 }), .checked = true });
++        try ops.append(arena, .{ .op = "add", .width = w, .args = try arena.dupe(u32, &.{ product, digit }), .checked = true });
++        acc = product + 1;
++    }
++    _ = bank.validate(values.len, ops.items, acc) catch return null;
++    return packet.Builder.program(a, values, ops.items, &.{.{ .ref = acc }}) catch |e| return if (e == error.OutOfMemory) error.OutOfMemory else null;
++}
++
+ /// A frontend that runs `inner`, then moves a pure-integer calc program onto the graph bank; calc and ELF otherwise.
+ pub const Routed = struct {
+     inner: api.Frontend,
+@@ -350,6 +384,7 @@ pub const Routed = struct {
+ 
+     /// The graph steps before the inner frontend (no compile): T1's binding, a straight-line program, a whole script.
+     fn graphFirst(r: *const Routed, a: Allocator, cell: api.Cell) Allocator.Error!?[]u8 {
++        if (try hexLiteral(a, r.bank, cell)) |bytes| return bytes;
+         if (try graph.bindCell(a, r.bank, cell)) |bytes| return bytes;
+         if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and !prog.shadowed(cell.prior))
+             if (try prog.program(a, r.bank, cell.code)) |bytes| return bytes;
+diff --git a/zig/src/core/runner_inline_hex_test.zig b/zig/src/core/runner_inline_hex_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ef83fd3bdbcc6af6565d74a616c5ad0321e0a9e
+--- /dev/null
++++ b/zig/src/core/runner_inline_hex_test.zig
+@@ -0,0 +1,124 @@
++//! Bare hex literal cells (S1 round 4 d_mirror hex-a and hex): the scanner closes `0x… =`; the bank does the radix.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const frontend = @import("runner_frontend.zig");
++const scan = @import("runner_scan.zig");
++const t = std.testing;
++
++/// The inline cell `text` closes on one scanner has code `want` (null: no inline cell).
++fn closes(cfg: scan.Config, text: []const u8, want: ?[]const u8) !void {
++    var s: scan.Scanner = .{ .cfg = cfg };
++    defer s.deinit(t.allocator);
++    const e = try s.feed(t.allocator, text, true);
++    const got: ?[]const u8 = if (e.closed) |c| (if (c.form == .inline_expr and e.trigger != null) c.code else null) else null;
++    if (want == null and got != null) std.debug.print("hex cell closed: {s} -> {s}\n", .{ text, got.? });
++    if (want) |w| try t.expectEqualStrings(w, got orelse "<none>") else try t.expect(got == null);
++}
++
++test "runner scan: a bare `0x…` literal ending its line at `=` is a whole inline cell; operands and glued words are not" {
++    const on: scan.Config = .{ .inline_math = true };
++    // live R4 lines, then partial conversions the same replies wrote
++    try closes(on, "Known decimal? 0xABCDEF0123456789 =", "0xABCDEF0123456789");
++    try closes(on, "I recall 0xFEDCBA9876543210 =", "0xFEDCBA9876543210");
++    try closes(on, "Compute using Python mentally or derive. 0xFFFFFFFFFFFFFFFF =", "0xFFFFFFFFFFFFFFFF");
++    try closes(on, "Low 0x23456789. Compute: 0x23=", "0x23");
++    try closes(on, "0xabcdef01 = ", "0xabcdef01");
++    for ([_][]const u8{
++        "Hex = 0x123456789ABCDEF012345 =", "#0xFF =",        "-0xFF =",     "x0xFF =",    "0xF =",         "0x =",
++        "0xFG =",                          "200 mod 0xFF =", "17 % 0x10 =", "0x1F + 1 =", "0xFF == 255 =",
++    }) |line| try closes(on, line, null);
++    // an operand of the expression the model is closing: the replay's live 0633, 0492 and 0506 lines
++    for ([_][]const u8{
++        "Let's add: 0xFFFFFFFFFFFFFFFF - 0xFEDCBA9876543210 =",
++        "[exact: 0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF =",
++        "Add 0xFF =",
++        "2 × 0xFF =",
++        "(0xFF =",
++    }) |line| try closes(on, line, null);
++    try closes(.{ .inline_math = true, .inline_arith = false }, "I recall 0xFEDCBA9876543210 =", null);
++}
++
++fn bankPath() ![]const u8 {
++    return std.mem.span(std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest);
++}
++
++fn python(code: []const u8) ![]u8 {
++    const r = try std.process.run(t.allocator, t.io, .{ .argv = &.{ "/usr/bin/python3", "-I", "-S", "-c", code }, .stdout_limit = .limited(4096), .stderr_limit = .limited(4096) });
++    defer t.allocator.free(r.stderr);
++    errdefer t.allocator.free(r.stdout);
++    try t.expect(r.term.success());
++    return r.stdout;
++}
++
++fn run(bank: *const graph.Bank, bytes: []const u8) ![]u8 {
++    var m = try @import("runner_graph_machine.zig").Machine.boot(t.allocator, bank, bytes);
++    defer m.deinit();
++    var out: std.ArrayList(u8) = .empty;
++    errdefer out.deinit(t.allocator);
++    const end = try m.run(4_000_000, &out, null);
++    try t.expect(end.end == .halted);
++    return out.toOwnedSlice(t.allocator);
++}
++
++const ff64 = "0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF";
++
++test "runner proof: a bare hex literal cell runs on the bank and prints CPython's int (TF_RUNNER_GRAPH_BANK)" {
++    var bank = try graph.Bank.load(t.allocator, try bankPath());
++    defer bank.deinit();
++    var context: frontend.Context = .{ .io = t.io, .compiler = .{ .clang = "/nonexistent-hex-clang" } };
++    var routed: route.Routed = .{ .inner = context.frontend(), .bank = &bank };
++    const f = routed.frontend();
++    for ([_][]const u8{ "0xFEDCBA9876543210", "0xABCDEF0123456789", "0x123456789ABCDEF012345", "0xFFFFFFFFFFFFFFFF", "0x23", "0xabcdef01", ff64 }) |hex| {
++        const code = try std.fmt.allocPrint(t.allocator, "print({s})", .{hex});
++        defer t.allocator.free(code);
++        const want = try python(code);
++        defer t.allocator.free(want);
++        for ([_]api.Form{ .inline_expr, .repl }) |form| {
++            // the route's own Horner program, not T1's binder (which would read the literal on the host)
++            const own = try route.hexLiteral(t.allocator, &bank, .{ .form = form, .lang = "python", .code = hex });
++            defer if (own) |b| t.allocator.free(b);
++            try t.expect(own != null);
++            const r = try f.translate(f.ctx, t.allocator, .{ .form = form, .lang = "python", .code = hex });
++            defer if (r == .program) t.allocator.free(r.program.bytes);
++            try t.expect(r == .program and r.program.kind == .graph);
++            try t.expectEqualStrings(own.?, r.program.bytes);
++            const out = try run(&bank, r.program.bytes);
++            defer t.allocator.free(out);
++            try t.expectEqualStrings(want, out);
++        }
++    }
++    for ([_]api.Cell{
++        .{ .form = .inline_expr, .lang = "python", .code = "0x" },
++        .{ .form = .inline_expr, .lang = "python", .code = "0x7" },
++        .{ .form = .inline_expr, .lang = "python", .code = "0xG1" },
++        .{ .form = .inline_expr, .lang = "python", .code = ">>> 0xff" },
++        .{ .form = .inline_expr, .lang = "python", .code = "0x1F+1" },
++        .{ .form = .inline_expr, .lang = "python", .code = "0x11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111" },
++        .{ .form = .fence, .lang = "python", .code = "0xff" },
++        .{ .form = .inline_expr, .lang = "c", .code = "0xff" },
++    }) |c| try t.expectEqual(@as(?[]u8, null), try route.hexLiteral(t.allocator, &bank, c));
++}
++
++test "runner proof: the circuit owns the radix: a mutated digit or base input prints CPython's mutated int (TF_RUNNER_GRAPH_BANK)" {
++    var bank = try graph.Bank.load(t.allocator, try bankPath());
++    defer bank.deinit();
++    const bytes = (try route.hexLiteral(t.allocator, &bank, .{ .form = .inline_expr, .lang = "python", .code = "0xFEDCBA9876543210" })).?;
++    defer t.allocator.free(bytes);
++    const digits = "[15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]";
++    for ([_][3][]const u8{
++        .{ "\"13\"", "\"4\"", "print(0xFE4CBA9876543210)" }, // the digit D read as 4
++        .{ "\"16\"", "\"10\"", "a = 0\nfor d in " ++ digits ++ ":\n    a = a * 10 + d\nprint(a)" }, // the base read as 10
++    }) |m| {
++        try t.expectEqual(@as(usize, 1), std.mem.count(u8, bytes, m[0]));
++        const mutated = try std.mem.replaceOwned(u8, t.allocator, bytes, m[0], m[1]);
++        defer t.allocator.free(mutated);
++        const want = try python(m[2]);
++        defer t.allocator.free(want);
++        const out = try run(&bank, mutated);
++        defer t.allocator.free(out);
++        if (!std.mem.eql(u8, want, out)) std.debug.print("host-owned: {s} -> {s}: '{s}', CPython '{s}'\n", .{ m[0], m[1], out, want });
++        try t.expectEqualStrings(want, out);
++    }
++}
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index d8c0400166f0b725d155888156b366a471577c17..82e35c8c5449e997d1eb5cd76d83872c132f6baf 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -425,4 +425,5 @@ comptime {
+     _ = @import("runner_inline_arith_test.zig");
+     _ = @import("runner_inline_chain_test.zig");
+     _ = @import("runner_inline_context_test.zig");
++    _ = @import("runner_inline_hex_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 3d7fcd913b5c74ae72cfef5c4d29da6b888bba2e..79c2808a21fa43fb7a227983b9d5b960e4f575ef 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -13,7 +13,7 @@ pub const Config = struct {
+     reasoning_only: bool = false, // triggers only while the think block is open
+     inline_math: bool = false, // `A op B =` at a line's end: the value after `=` (exact math semantics)
+     inline_mod: bool = true, // with inline_math: `A mod M =` and `A % M =` on literals, after any earlier `=`
+-    inline_arith: bool = true, // with inline_math: thousands commas (`147,000+73`) and a whole `gcd(a, b)` on literals
++    inline_arith: bool = true, // with inline_math: thousands commas (`147,000+73`), a whole `gcd(a, b)` or `0xFF`
+     inline_chain: bool = false, // opt-in, T5 decides: the last `<expr> =` after an earlier `=` statement
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+diff --git a/zig/src/core/runner_scan_inline.zig b/zig/src/core/runner_scan_inline.zig
+index f871c70c556c5bcd07652ba47dd943a117f8b40f..777cc35a8a27f0346acf287451cc793b2dc44b32 100644
+--- a/zig/src/core/runner_scan_inline.zig
++++ b/zig/src/core/runner_scan_inline.zig
+@@ -20,6 +20,8 @@ pub fn inlineExpr(line: []const u8, arith: bool, chain: bool) ?struct { expr: []
+     }
+     if (std.mem.indexOfAny(u8, before, "<>!") != null) return null;
+     if (arith and seg_from == 0) if (gcdCall(before)) |g| return .{ .expr = g, .space = space, .call = true };
++    // live R4 d_mirror hex-a and hex: `0xABCDEF0123456789 =`, the whole conversion as one Python literal
++    if (arith and seg_from == 0) if (hexLiteral(before)) |h| return .{ .expr = h, .space = space, .call = true };
+     var start = before.len;
+     var period_stop = false;
+     while (start > seg_from) {
+@@ -441,6 +443,27 @@ fn gcdCall(before: []const u8) ?[]const u8 {
+     return s[at..];
+ }
+ 
++/// A bare `0x…` literal of 2 to 100 hex digits ending the text, as its own word (not `#0xFF`, `-0xFF`, `mod 0xFF`).
++fn hexLiteral(before: []const u8) ?[]const u8 {
++    const s = std.mem.trimEnd(u8, before, " \t");
++    var at = s.len;
++    while (at > 0 and std.ascii.isHex(s[at - 1])) at -= 1;
++    if (s.len - at < 2 or s.len - at > 100 or at < 2 or s[at - 2] != '0' or (s[at - 1] != 'x' and s[at - 1] != 'X'))
++        return null;
++    const from = at - 2;
++    if (from > 0 and s[from - 1] != ' ' and s[from - 1] != '\t') return null;
++    const word = std.mem.trimEnd(u8, s[0..from], " \t");
++    if (word.len > 0) {
++        const w = word[word.len - 1];
++        // an operand of a bigger expression (live 0633: `0xFFFFFFFFFFFFFFFF - 0xFEDC… =`), of mod or of a total
++        if (std.ascii.isDigit(w) or w >= 0x80 or std.mem.indexOfScalar(u8, "+-*/^%(,&|<>~", w) != null) return null;
++        if (std.mem.endsWith(u8, word, "mod") and (word.len == 3 or !std.ascii.isAlphanumeric(word[word.len - 4])))
++            return null;
++        if (runningOperand(std.mem.trimEnd(u8, word, ":"))) return null;
++    }
++    return s[from..];
++}
++
+ /// A nonzero literal modulus: digits, `b^k`, `b**k`, `dek` (1e9), or thousands groups.
+ fn literalModulus(m: []const u8) bool {
+     // a zero or a leading zero (0, 007, 0^3, 0e5, 0,000): Python raises or reads it otherwise

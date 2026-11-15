@@ -1,0 +1,378 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 21:07:50 +0700
+Subject: [PATCH 133/207] Merge lane 923887522 (opt-in inline chain,
+ TF_DSV41_RUNNER_INLINE_CHAIN, default 0)
+
+Squashed merge of 1 commits:
+- runner: opt-in inline chain, the last `<expr> =` after complete earlier statements (TF_DSV41_RUNNER_INLINE_CHAIN) (Jay Leaton)
+---
+ zig/src/core/runner.zig                   |   2 +
+ zig/src/core/runner_inline_chain_test.zig | 139 ++++++++++++++++++++++
+ zig/src/core/runner_proof_test.zig        |   1 +
+ zig/src/core/runner_scan.zig              |   3 +-
+ zig/src/core/runner_scan_inline.zig       | 126 +++++++++++++++++++-
+ 5 files changed, 264 insertions(+), 7 deletions(-)
+ create mode 100644 zig/src/core/runner_inline_chain_test.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 881292b4c468323c29e42010f0891a280f711fdb..7e30238b4566e2c7ca0a7da456768c6eb4ca85d9 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -54,6 +54,7 @@ pub const Config = struct {
+         c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
+         c.scan.inline_mod = try knob(u1, get, prefix ++ "_INLINE_MOD", 1, 0, 1) == 1;
+         c.scan.inline_arith = try knob(u1, get, prefix ++ "_INLINE_ARITH", 1, 0, 1) == 1;
++        c.scan.inline_chain = try knob(u1, get, prefix ++ "_INLINE_CHAIN", 0, 0, 1) == 1;
+         c.scan.trace_window = try knob(u32, get, prefix ++ "_TRACE_WINDOW", c.scan.trace_window, 1, 65536);
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+@@ -583,4 +584,5 @@ test {
+     _ = @import("runner_graph_table_test.zig");
+     _ = @import("runner_inline_mod_test.zig");
+     _ = @import("runner_inline_arith_test.zig");
++    _ = @import("runner_inline_chain_test.zig");
+ }
+diff --git a/zig/src/core/runner_inline_chain_test.zig b/zig/src/core/runner_inline_chain_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..9471423c805956ff4ecf033b55a3e692dc1af31c
+--- /dev/null
++++ b/zig/src/core/runner_inline_chain_test.zig
+@@ -0,0 +1,139 @@
++//! Opt-in inline chain (TF_DSV41_RUNNER_INLINE_CHAIN): the last `<expr> =` after an earlier `=` statement.
++const std = @import("std");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const frontend = @import("runner_frontend.zig");
++const scan = @import("runner_scan.zig");
++const t = std.testing;
++
++const on: scan.Config = .{ .inline_math = true, .inline_chain = true };
++
++/// The line up to the model's `=`, the cell code, and CPython's value of it (`^` read as `**`).
++const Golden = struct { []const u8, []const u8, []const u8 };
++
++/// bn-011 smoke r0-583d0cd875f6: the ten steps the no-chain rule refused, each where the model then wrote this value.
++pub const goldens = [_]Golden{
++    .{ "Check modulo 2^18= 262144. Last? R mod 262144. Since 10^18 divisible by 262144? 10^18 =", "10^18", "1000000000000000000" },
++    .{ "1000^3 = 1000000000 mod 262144. 262144*3814=", "262144*3814", "999817216" },
++    .{ "1000^3 = 1000000000 mod 262144. 262144*3814=262144*(3800+14)=996,147,200+3,670,016=999,817,216; remainder 182,784. Or 213568*1000 mod. 213,568,000 /262144. 262144*814=", "262144*814", "213385216" },
++    .{ "1000^4 = 1000000000000 mod? 182,784*1000=", "182784*1000", "182784000" },
++    .{ "3^16= 43046721 mod 262144. 262144*164=", "262144*164", "42991616" },
++    .{ "3^64 = 3433683820292512484657849089281 mod 262144. Square 147,073 mod. 147,073^2. (147,000+73)^2=", "(147000+73)^2", "21630467329" },
++    .{ "3^128 = 11790184577738583171520872861412518665678211592275841109096961 mod. Square 179,457 mod 262144. 179,457^2. (179,000+457)^2=", "(179000+457)^2", "32204814849" },
++    .{ "3^256 = 139008452377144732764939786789661303114218850808529137991604824430036072629766435941001769154109609521811665540548899435521 mod. Square 162,305 mod 262144. 162,305^2. (162,000+305)^2=", "(162000+305)^2", "26342913025" },
++    .{ "Check modulo 5^18 maybe. R mod 5^18 should equal 3^400 mod 5^18. Let's verify maybe. 5^18=", "5^18", "3814697265625" },
++    .{ "3^32 = 1853020188851841 mod M5. Need reduce. M5*? 3,814,697,265,625 * 485? Let's compute. 3^32 =", "3^32", "1853020188851841" },
++    // other live replies, then the clause breaks it reads
++    .{ "Term3: 30,292 * 65,536. Since 65,536 = 2^16. 30,292*65,536 = ", "30292*65536", "1985216512" },
++    .{ "12 * 4 = 48; 48 * 7 =", "48 * 7", "336" },
++    .{ "So 2^10 = 1024: 1024*3 =", "1024*3", "3072" },
++    // a stop glued to the earlier value (`= 5.`), then a space
++    .{ "2+3 = 5. 3*4 =", "3*4", "12" },
++    .{ "So 7 * 8 = 56.  7*8 =", "7*8", "56" },
++};
++
++/// Lines no cell may open with the chain knob on.
++const refused = [_][]const u8{
++    // the right side of the earlier statement continues (T5's no-chain cases) or no clause ends
++    "a = 3*4 =",
++    "15*16 = 240*17 =",
++    "x = 5, y = 3+4 =",
++    "2ab = 2*512,484,657*849,089,281 =",
++    // a running multiplier, a part of something, or an operand word
++    "69,663^2 = 4,852,933,569. Times 10^6 =",
++    "849^2=720,801; times 10^12 =",
++    "This is 3+4*9=39 digits? Last 18 digits of 3^100 =",
++    "High sum = 1,119,392,629,836,636. Multiply by 10^15 =",
++    // congruence: a residue chain or a `≡`
++    "10^3=1000 mod97=30. 10^6=",
++    "10^3 = 1000 mod 97 = 30. 10^6 =",
++    "2^10 = 1024 % 1000 = 24. 2^20 =",
++    "r = 9*10^11 + 90. Since 10^11 ≡ -10 mod r? Because 9*10^11 + 90 =",
++    // names beside an earlier `=`
++    "We have a6=7^64=23,859,541. Need 7^128 =",
++    "Need 7^128 = a6^2 mod M. Then 7^123 =",
++    "r16 =746,814,714. Check: 977,326,736 * 3 =",
++    // digit counts and concatenation
++    "So 9 + 6*3 = 27. It has 7 groups (20 digits? 70 +6*3=",
++    "So 3+4*9 = 39. Concatenate: 79 + 228162514 =",
++    // CPython's value would differ or fail: floats, zero-led literals, power towers, negative exponents
++    "Total 19783 s. 19783 = 5*3600 + 1783. Convert: 19783 /3600=",
++    "i=8: 985+014+0=",
++    "3^20=3,486,784,401. But 3^20^20 =",
++    "spacing = 2^-53. So 1 - 2^-53 =",
++    "Then 37*19.95 = 738.15? 19.95*30=",
++    "11/2 = 5.5 * 2 =",
++    "2+3 = 5.5*2 =",
++    // the modulus of a mod step, either case
++    "3^20=3,486,784,401. Mod 5^18 =",
++    "So Mod 10^9 =",
++    // comparisons anywhere on the line, and `==`
++    "4e9 <3.8e12. Then 3*4 =",
++    "x == 3. 4*5 =",
++};
++
++fn cellOf(a: std.mem.Allocator, line: []const u8, cfg: scan.Config) !?[]u8 {
++    var s: scan.Scanner = .{ .cfg = cfg };
++    defer s.deinit(a);
++    const e = try s.feed(a, line, true);
++    const c = e.closed orelse return null;
++    if (c.form != .inline_expr or e.trigger == null or e.trigger.?.inline_space == null) return null;
++    return try a.dupe(u8, c.code);
++}
++
++test "runner scan: the inline chain knob opens the last expression after a complete earlier statement" {
++    for (goldens) |g| {
++        const got = try cellOf(t.allocator, g[0], on) orelse {
++            std.debug.print("no cell: {s}\n", .{g[0]});
++            return error.TestExpectedInline;
++        };
++        defer t.allocator.free(got);
++        try t.expectEqualStrings(g[1], got);
++    }
++    for (refused) |line| if (try cellOf(t.allocator, line, on)) |got| {
++        defer t.allocator.free(got);
++        std.debug.print("opened, must not: {s} -> {s}\n", .{ line, got });
++        return error.TestUnexpectedInline;
++    };
++}
++
++test "runner scan: the inline chain is off by default; T5's no-chain rule stands" {
++    for (goldens[0..10]) |g| {
++        // the period-glued `5^18=` has no earlier `=`, but needs the chain knob's full stop too
++        try t.expectEqual(@as(?[]u8, null), try cellOf(t.allocator, g[0], .{ .inline_math = true }));
++    }
++    try t.expect(!(scan.Config{}).inline_chain);
++}
++
++fn bankPath() ![]const u8 {
++    const p = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    return std.mem.span(p);
++}
++
++test "runner proof: inline chain lines scan to cells that run on the graph bank and print CPython's value (TF_RUNNER_GRAPH_BANK)" {
++    var bank = try graph.Bank.load(t.allocator, try bankPath());
++    defer bank.deinit();
++    var context: frontend.Context = .{ .io = t.io, .compiler = .{ .clang = "/nonexistent-inline-chain-clang" } };
++    var routed: route.Routed = .{ .inner = context.frontend(), .bank = &bank };
++    const f = routed.frontend();
++    for (goldens) |g| {
++        const code = try cellOf(t.allocator, g[0], on) orelse return error.TestExpectedInline;
++        defer t.allocator.free(code);
++        const result = try f.translate(f.ctx, t.allocator, .{ .form = .inline_expr, .lang = "python", .code = code });
++        defer if (result == .program) t.allocator.free(result.program.bytes);
++        if (result != .program or result.program.kind != .graph) {
++            std.debug.print("not on the graph: {s}: {any}\n", .{ code, result });
++            return error.TestExpectedGraph;
++        }
++        var machine = try @import("runner_graph_machine.zig").Machine.boot(t.allocator, &bank, result.program.bytes);
++        defer machine.deinit();
++        var out: std.ArrayList(u8) = .empty;
++        defer out.deinit(t.allocator);
++        const end = try machine.run(4_000_000, &out, null);
++        try t.expect(end.end == .halted);
++        std.testing.expectEqualStrings(g[2], std.mem.trimEnd(u8, out.items, "\n")) catch |e| {
++            std.debug.print("inline chain value: {s}\n", .{code});
++            return e;
++        };
++    }
++}
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 974183f0ecf22a9357f5a9363a0b396e8c2b2f72..430a2a8b6a1969a778b5350bb00f5fa04edc3594 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -423,4 +423,5 @@ comptime {
+     _ = @import("runner_frontend_inline_regression_test.zig");
+     _ = @import("runner_inline_mod_test.zig");
+     _ = @import("runner_inline_arith_test.zig");
++    _ = @import("runner_inline_chain_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 2919c0c0541d6fb84afd79eed2524e3fc9177aec..09b8f37c0030462c57fffb6856ddec286f10c33b 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -14,6 +14,7 @@ pub const Config = struct {
+     inline_math: bool = false, // `A op B =` at a line's end: the value after `=` (exact math semantics)
+     inline_mod: bool = true, // with inline_math: `A mod M =` and `A % M =` on literals, after any earlier `=`
+     inline_arith: bool = true, // with inline_math: thousands commas (`147,000+73`) and a whole `gcd(a, b)` on literals
++    inline_chain: bool = false, // opt-in, T5 decides: the last `<expr> =` after an earlier `=` statement
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+     trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
+@@ -125,7 +126,7 @@ pub const Scanner = struct {
+                 // Python reads 1e9 as a float: a reply reasoning in floats keeps its own value
+                 ev.closed.?.float_context = floats and std.mem.indexOfScalar(u8, m.modulus, 'e') != null;
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = m.space };
+-            } else if (inline_scan.inlineExpr(s.line.items, s.cfg.inline_arith)) |x| {
++            } else if (inline_scan.inlineExpr(s.line.items, s.cfg.inline_arith, s.cfg.inline_chain)) |x| {
+                 s.lang.clearRetainingCapacity();
+                 try s.lang.appendSlice(a, "python");
+                 s.code.clearRetainingCapacity();
+diff --git a/zig/src/core/runner_scan_inline.zig b/zig/src/core/runner_scan_inline.zig
+index 92d74148cfd77f92baa38c4f1cfbf639728c9821..9689cdec9d2f0ebd76574fcf7948412e44a9a8f7 100644
+--- a/zig/src/core/runner_scan_inline.zig
++++ b/zig/src/core/runner_scan_inline.zig
+@@ -2,8 +2,8 @@
+ const std = @import("std");
+ const Allocator = std.mem.Allocator;
+ 
+-/// A whole arithmetic expression ending the line at `=` or `= ` (no chain, comparison, word or gap).
+-pub fn inlineExpr(line: []const u8, arith: bool) ?struct { expr: []const u8, space: bool, call: bool = false } {
++/// A whole arithmetic expression ending the line at `=` or `= ` (no comparison, word, gap; chain only with `chain`).
++pub fn inlineExpr(line: []const u8, arith: bool, chain: bool) ?struct { expr: []const u8, space: bool, call: bool = false } {
+     var t = line;
+     var space = true;
+     if (std.mem.endsWith(u8, t, " ")) {
+@@ -12,11 +12,23 @@ pub fn inlineExpr(line: []const u8, arith: bool) ?struct { expr: []const u8, spa
+     }
+     if (t.len < 4 or t[t.len - 1] != '=') return null;
+     const before = t[0 .. t.len - 1];
+-    if (std.mem.indexOfAny(u8, before, "=<>!") != null) return null;
+-    if (arith) if (gcdCall(before)) |g| return .{ .expr = g, .space = space, .call = true };
++    // chain (opt-in): only the text after the last `=`, when that `=` ends a statement of its own (`chained` below)
++    var seg_from: usize = 0;
++    if (std.mem.lastIndexOfScalar(u8, before, '=')) |k| {
++        if (!chain or (k > 0 and before[k - 1] == '=')) return null;
++        seg_from = k + 1;
++    }
++    if (std.mem.indexOfAny(u8, before, "<>!") != null) return null;
++    if (arith and seg_from == 0) if (gcdCall(before)) |g| return .{ .expr = g, .space = space, .call = true };
+     var start = before.len;
+-    while (start > 0) {
++    var period_stop = false;
++    while (start > seg_from) {
+         const b = before[start - 1];
++        // chain: `… = 5. 3*4 =`, a full stop before a space ends the sentence, not a decimal
++        if (chain and b == '.' and start < before.len and (before[start] == ' ' or before[start] == '\t')) {
++            period_stop = true;
++            break;
++        }
+         if (std.ascii.isDigit(b) or std.mem.indexOfScalar(u8, " \t+-*/^().", b) != null) {
+             start -= 1;
+         } else if (arith and b == ',' and start >= 2 and std.ascii.isDigit(before[start - 2]) and start + 3 <= before.len and
+@@ -44,7 +56,7 @@ pub fn inlineExpr(line: []const u8, arith: bool) ?struct { expr: []const u8, spa
+         // after a word, an unspaced "12-20" is a range ("positions 12-20 ="), not a subtraction
+         const word = std.mem.trimEnd(u8, lead, " \t");
+         // the modulus of `A mod M` or `A % M` is not the whole expression (live bn-011: `3^400 mod 10^18 =`)
+-        if (std.mem.endsWith(u8, word, "%") or (std.mem.endsWith(u8, word, "mod") and
++        if (std.mem.endsWith(u8, word, "%") or (word.len >= 3 and std.ascii.eqlIgnoreCase(word[word.len - 3 ..], "mod") and
+             (word.len == 3 or !std.ascii.isAlphanumeric(word[word.len - 4])))) return null;
+         // `1, 234 + 5 =`: the expression is the next item of a number list
+         if (word.len >= 2 and word[word.len - 1] == ',' and std.ascii.isDigit(word[word.len - 2])) return null;
+@@ -66,6 +78,9 @@ pub fn inlineExpr(line: []const u8, arith: bool) ?struct { expr: []const u8, spa
+     // integers only with commas, so the value is CPython's: `/` and a point would be floats there
+     if (std.mem.indexOfScalar(u8, expr, ',') != null and
+         (std.mem.indexOfAny(u8, expr, "./") != null or std.mem.indexOf(u8, expr, "÷") != null)) return null;
++    // a cell only the chain knob opens: integers only, and its `=` statement must stand alone
++    if ((seg_from > 0 or period_stop) and chainUnsafe(expr)) return null;
++    if (seg_from > 0 and (!clauseBreak(before[seg_from..start]) or chainContext(lead))) return null;
+     var depth: i32 = 0;
+     var ops: u32 = 0;
+     var prev: enum { none, num, op, open, close } = .none;
+@@ -231,6 +246,105 @@ fn grouped(text: []const u8) bool {
+     return true;
+ }
+ 
++/// A `.`, `;`, `?` or `:` ending a clause between an earlier `=` and the expression: not that statement's right side.
++fn clauseBreak(gap: []const u8) bool {
++    for (gap, 0..) |c, i| {
++        if (std.mem.indexOfScalar(u8, ".;?:", c) != null and (i + 1 == gap.len or gap[i + 1] == ' ' or gap[i + 1] == '\t'))
++            return true;
++    }
++    return false;
++}
++
++fn powAt(e: []const u8, i: usize) ?usize {
++    if (i < e.len and e[i] == '^') return 1;
++    if (i + 1 < e.len and e[i] == '*' and e[i + 1] == '*') return 2;
++    return null;
++}
++
++fn blank(e: []const u8, i: usize) usize {
++    var j = i;
++    while (j < e.len and (e[j] == ' ' or e[j] == '\t')) j += 1;
++    return j;
++}
++
++/// Not CPython's integer: a float (`.`, `/`, `÷`, `2^-53`), a zero-led literal (`014`) or a power tower (`3^20^20`).
++fn chainUnsafe(e: []const u8) bool {
++    if (std.mem.indexOfAny(u8, e, "./") != null or std.mem.indexOf(u8, e, "÷") != null) return true;
++    for (e, 0..) |c, i| {
++        const after_digit = i > 0 and (std.ascii.isDigit(e[i - 1]) or e[i - 1] == ',');
++        if (c == '0' and i + 1 < e.len and std.ascii.isDigit(e[i + 1]) and !after_digit) return true;
++    }
++    for (0..e.len) |i| {
++        const w = powAt(e, i) orelse continue;
++        var j = blank(e, i + w);
++        if (j < e.len and e[j] == '-') return true;
++        const d = j;
++        while (j < e.len and std.ascii.isDigit(e[j])) j += 1;
++        if (j > d and powAt(e, blank(e, j)) != null) return true;
++    }
++    return false;
++}
++
++fn wordChar(c: u8) bool {
++    return std.ascii.isAlphanumeric(c) or c == '_';
++}
++
++/// `mod 97 =` or `% 97 =`: an earlier residue chain, where `=` means congruent.
++fn residueChain(t: []const u8) bool {
++    for (0..t.len) |i| {
++        var j: usize = if (t[i] == '%') i + 1 else if (i + 3 <= t.len and std.ascii.eqlIgnoreCase(t[i .. i + 3], "mod") and
++            (i == 0 or !wordChar(t[i - 1]))) i + 3 else continue;
++        j = blank(t, j);
++        const d = j;
++        while (j < t.len and (std.ascii.isDigit(t[j]) or std.mem.indexOfScalar(u8, "^*e,", t[j]) != null)) j += 1;
++        if (j > d and blank(t, j) < t.len and t[blank(t, j)] == '=') return true;
++    }
++    return false;
++}
++
++/// A name beside an earlier `=` (`a6=7^64`, `= a6^2`): variable or modular bookkeeping, not plain values.
++fn nameBeside(t: []const u8) bool {
++    for (t, 0..) |c, k| {
++        if (c != '=') continue;
++        var j = k;
++        while (j > 0 and (t[j - 1] == ' ' or t[j - 1] == '\t')) j -= 1;
++        var s = j;
++        while (s > 0 and wordChar(t[s - 1])) s -= 1;
++        if (s < j and (std.ascii.isAlphabetic(t[s]) or t[s] == '_')) return true;
++        var r = blank(t, k + 1);
++        if (r < t.len and t[r] == '-') r += 1;
++        if (r < t.len and (std.ascii.isAlphabetic(t[r]) or t[r] == '_')) return true;
++    }
++    return false;
++}
++
++/// Words before the expression that make it an operand of something else (`Times 10^6 =`, `digits of 3^100 =`).
++const chain_words = [_][]const u8{
++    "of",         "by",     "times",   "plus", "minus", "add",  "adding", "subtract", "subtracting", "multiply",
++    "multiplied", "divide", "divided", "than", "to",    "from", "with",   "into",     "over",
++};
++
++/// Whether `w` (lowercase ASCII) occurs in `text`, either case.
++fn containsIgnoreCase(text: []const u8, w: []const u8) bool {
++    if (text.len < w.len) return false;
++    for (0..text.len - w.len + 1) |i| if (std.ascii.eqlIgnoreCase(text[i..][0..w.len], w)) return true;
++    return false;
++}
++
++/// Before a chained expression: congruence (`≡`, a residue chain), names, digit counts or pieces, operand words.
++fn chainContext(lead: []const u8) bool {
++    if (std.mem.indexOf(u8, lead, "≡") != null or residueChain(lead) or nameBeside(lead)) return true;
++    for ([_][]const u8{ "digit", "group", "concaten", "append", "length" }) |w| {
++        if (containsIgnoreCase(lead, w)) return true;
++    }
++    const word = std.mem.trimEnd(u8, lead, " \t:");
++    var s = word.len;
++    while (s > 0 and std.ascii.isAlphabetic(word[s - 1])) s -= 1;
++    if (s == word.len) return false;
++    for (chain_words) |w| if (std.ascii.eqlIgnoreCase(word[s..], w)) return true;
++    return false;
++}
++
+ fn allDigits(text: []const u8) bool {
+     for (text) |c| if (!std.ascii.isDigit(c)) return false;
+     return text.len > 0;

@@ -1,0 +1,199 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 21:58:45 +0700
+Subject: [PATCH 070/207] In-model runner: inline decimals and fractions
+ abstain in a Python-float reply
+
+A code cell or a float cue (float, Decimal(, sum(, round(, 0.1+0.2) within TF_DSV41_RUNNER_FLOAT_WINDOW
+tokens (default 512) marks an inline span with . or / as float context; the runner abstains (context).
+Integer-only spans stay exact everywhere.
+---
+ zig/src/core/runner.zig      |  7 +++++
+ zig/src/core/runner_api.zig  |  2 +-
+ zig/src/core/runner_scan.zig | 58 ++++++++++++++++++++++++++++++++++--
+ zig/src/core/runner_test.zig | 13 ++++++++
+ 4 files changed, 77 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 64b2a182b3b89b393eeae0f9cf5d7701af2fddc6..d26c731f0310f77a472e5a9a32d4cb2158ab1340 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -35,6 +35,7 @@ pub const Config = struct {
+         c.exact = try knob(u1, get, prefix ++ "_EXACT", 0, 0, 1) == 1;
+         c.place = try place.Config.parse(get, prefix);
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
++        c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+             c.scan.repl = false;
+@@ -151,6 +152,12 @@ pub const Session = struct {
+         const prior = try cell.arena.allocator().alloc([]const u8, s.cells.items.len);
+         for (s.cells.items, prior) |p, *dst| dst.* = p.code;
+         try s.cells.append(gpa, cell);
++        // exact inline math would contradict a reply reasoning in Python floats
++        if (c.float_context) {
++            cell.translation = .{ .abstain = .context };
++            cell.translated.store(true, .release);
++            return;
++        }
+         if (!s.r.cfg.exact and (std.mem.eql(u8, cell.lang, "calc") or std.mem.eql(u8, cell.lang, "exact"))) {
+             cell.translation = .{ .abstain = .language };
+             cell.translated.store(true, .release);
+diff --git a/zig/src/core/runner_api.zig b/zig/src/core/runner_api.zig
+index c2a403669c0048e045c00bb2c73f44499c3fd5ad..77b05ab1bbba7e46d15a0a6b369d7f3ad683b36a 100644
+--- a/zig/src/core/runner_api.zig
++++ b/zig/src/core/runner_api.zig
+@@ -23,7 +23,7 @@ pub const Program = struct {
+ };
+ 
+ /// Why a frontend or backend declines; the model's own continuation then stands (nothing is owned).
+-pub const Abstain = enum { language, unsupported, syntax, name, too_long, too_big };
++pub const Abstain = enum { language, unsupported, syntax, name, too_long, too_big, context };
+ 
+ pub const Translation = union(enum) { program: Program, abstain: Abstain };
+ 
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index a36e2d62fe7d5401c89109e17f6865a19bc4eeab..572b85fc96ea3502d9ef78773fa16c13ebef413b 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -9,10 +9,14 @@ pub const Config = struct {
+     lookahead: u32 = 64, // tokens after a closed fence in which a result header counts
+     reasoning_only: bool = false, // triggers only while the think block is open
+     inline_math: bool = false, // `A op B =` at a line's end: the value after `=` (exact math semantics)
++    float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+ };
+ 
++/// Text that puts the reply in a language's float semantics, where exact inline math would contradict it.
++const float_cues = [_][]const u8{ "float", "Decimal(", "sum(", "round(", "0.1+0.2", "0.1 + 0.2" };
++
+ /// A closed cell; `lang` and `code` live in the scanner until the next `feed`.
+-pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8 };
++pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, float_context: bool = false };
+ 
+ /// Cell `index`'s result begins: `fenced` closes a fence after it; `inline_space` (inline: value only) adds a space.
+ pub const Trigger = struct { index: u32, fenced: bool = false, inline_space: ?bool = null };
+@@ -31,6 +35,10 @@ pub const Scanner = struct {
+     pending: u32 = 0, // the fence or REPL cell a result header refers to
+     since: u32 = 0, // tokens since the pending cell closed (state .after)
+     armed: ?Trigger = null, // a trigger this token set; later non-blank bytes in the same token spoil it
++    tokens: u32 = 0, // tokens fed
++    float_at: ?u32 = null, // the token of the last float cue or closed code cell
++    tail: [16]u8 = undefined, // the last bytes fed, for cues split across tokens
++    tail_len: usize = 0,
+ 
+     pub fn deinit(s: *Scanner, a: Allocator) void {
+         s.line.deinit(a);
+@@ -42,11 +50,13 @@ pub const Scanner = struct {
+     pub fn feed(s: *Scanner, a: Allocator, bytes: []const u8, think_open: bool) Allocator.Error!Events {
+         var ev: Events = .{};
+         s.armed = null;
++        s.tokens +|= 1;
+         if (s.state == .after) {
+             s.since += 1;
+             if (s.since > s.cfg.lookahead) s.state = .prose;
+         }
+         for (bytes) |b| {
++            s.cue(b);
+             if (s.armed != null and b != '\n' and b != ' ' and b != '\t' and b != '\r') s.armed = null;
+             if (b != '\n') {
+                 try s.line.append(a, b);
+@@ -66,6 +76,8 @@ pub const Scanner = struct {
+                 s.code.clearRetainingCapacity();
+                 try s.code.appendSlice(a, x.expr);
+                 ev.closed = s.close(.inline_expr);
++                ev.closed.?.float_context = s.float_at != null and s.tokens - s.float_at.? <= s.cfg.float_window and
++                    std.mem.indexOfAny(u8, x.expr, "./") != null;
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = x.space };
+             }
+         }
+@@ -112,9 +124,24 @@ pub const Scanner = struct {
+         }
+     }
+ 
++    fn cue(s: *Scanner, b: u8) void {
++        if (s.tail_len == s.tail.len) {
++            std.mem.copyForwards(u8, s.tail[0 .. s.tail.len - 1], s.tail[1..]);
++            s.tail_len -= 1;
++        }
++        s.tail[s.tail_len] = b;
++        s.tail_len += 1;
++        for (float_cues) |c| if (std.mem.endsWith(u8, s.tail[0..s.tail_len], c)) {
++            s.float_at = s.tokens;
++        };
++    }
++
+     fn close(s: *Scanner, form: api.Form) Closed {
+         const c: Closed = .{ .index = s.cells, .form = form, .lang = s.lang.items, .code = s.code.items };
+-        if (form != .inline_expr) s.pending = s.cells;
++        if (form != .inline_expr) {
++            s.pending = s.cells;
++            s.float_at = s.tokens;
++        }
+         s.cells += 1;
+         return c;
+     }
+@@ -394,6 +421,33 @@ test "runner scan: inline stays off by default, inside a fence and in the token
+     try std.testing.expect((try g.feed(a, "47 * 83 = 3901", true)).trigger == null);
+ }
+ 
++test "runner scan: a Python-float reply marks inline decimals and fractions, not integers (live run-check-014)" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{ .inline_math = true } };
++    defer s.deinit(a);
++    for ([_][]const u8{ "Actually Python:\n", ">>> sum([0.1]*10)\n", "0.9999999999999999\n", "I think yes. ", "Let's recall common: " }) |t|
++        _ = try s.feed(a, t, true);
++    const live = try s.feed(a, "0.1+0.2 =", true);
++    try std.testing.expect(live.closed.?.form == .inline_expr and live.closed.?.float_context);
++    _ = try s.feed(a, " 0.3\n", true);
++    for ([_][]const u8{ "7/12 =", "6 * 7 =" }, [_]bool{ true, false }) |t, want| {
++        const e = try s.feed(a, t, true);
++        try std.testing.expectEqual(want, e.closed.?.float_context);
++        _ = try s.feed(a, " 1\n", true);
++    }
++    var far: Scanner = .{ .cfg = .{ .inline_math = true, .float_window = 4 } };
++    defer far.deinit(a);
++    _ = try far.feed(a, "a flo", true);
++    _ = try far.feed(a, "at\n", true); // a cue split across tokens
++    try std.testing.expect((try far.feed(a, "1.5+2 =", true)).closed.?.float_context);
++    _ = try far.feed(a, " 3.5\n", true);
++    for (0..4) |_| _ = try far.feed(a, "ok\n", true);
++    try std.testing.expect(!(try far.feed(a, "1.5+2 =", true)).closed.?.float_context);
++    var plain: Scanner = .{ .cfg = .{ .inline_math = true } };
++    defer plain.deinit(a);
++    try std.testing.expect(!(try plain.feed(a, "Discount: 889.35*0.075 =", true)).closed.?.float_context);
++}
++
+ test "runner scan: a header after an inline cell still names the fence cell before it" {
+     const a = std.testing.allocator;
+     var s: Scanner = .{ .cfg = .{ .inline_math = true } };
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index 570776517f4091f8123f8c480945cada77719838..e18d32375b1ac8b771549153b0fdd7dcedf167fa 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -91,6 +91,7 @@ pub const Back = struct {
+         .{ "sum(i*i for i in range(10))", "285\n" },
+         .{ "2**100", "1267650600228229401496703205376\n" },
+         .{ "47 * 83", "3901" },
++        .{ "1.5+2.25", "3.75" },
+     };
+ 
+     fn backend(b: *Back) rapi.Backend {
+@@ -339,6 +340,18 @@ test "runner: an inline value is owned after `=`, and only with the inline form
+     try std.testing.expectEqualStrings("x = 47 * 83 =42\nDone.", chain);
+ }
+ 
++test "runner: an inline decimal abstains in a Python-float reply; integers stay exact there" {
++    const exact = try one("Exact: 1.5+2.25 =", .{ .inline_math = true });
++    defer gpa.free(exact);
++    try std.testing.expectEqualStrings("Exact: 1.5+2.25 = 3.75\nDone.", exact);
++    const float = try one("In Python, as a float: 1.5+2.25 =", .{ .inline_math = true });
++    defer gpa.free(float);
++    try std.testing.expectEqualStrings("In Python, as a float: 1.5+2.25 =42\nDone.", float);
++    const integer = try one("In Python, as a float: 47 * 83 =", .{ .inline_math = true });
++    defer gpa.free(integer);
++    try std.testing.expectEqualStrings("In Python, as a float: 47 * 83 = 3901\nDone.", integer);
++}
++
+ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     const K = struct {
+         var set: []const [2][]const u8 = &.{};

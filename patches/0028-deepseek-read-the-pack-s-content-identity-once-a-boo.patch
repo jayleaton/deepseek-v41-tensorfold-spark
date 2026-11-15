@@ -1,0 +1,92 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 12:13:34 +0700
+Subject: [PATCH 028/207] deepseek: read the pack's content identity once a
+ boot
+
+With TF_DSV41_PREPARED and TF_DSV41_SESSION_DISK both set, boot hashed
+every byte of the pack twice: once for the prepared cache key and again
+for the session store's checkpoint identity. On flash17 (190 GiB) that
+added minutes per rank before HTTP readiness, the second pass reading
+from disk after the weights evicted the page cache. The session store
+now takes the digest the open cache was keyed with; without a cache it
+still reads the pack once.
+
+Host test proves the cached identity is returned without opening the
+pack, and that the uncached path still reads it.
+---
+ zig/src/families/deepseek_v41/cuda_model.zig |  2 +-
+ zig/src/families/deepseek_v41/prepared.zig   | 29 +++++++++++++++++++-
+ 2 files changed, 29 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/cuda_model.zig b/zig/src/families/deepseek_v41/cuda_model.zig
+index 89232476d642215d4c5e38579d6844217ed9a505..c3b3a14bb01b75c62a7a2d71203590d185cf4bd9 100644
+--- a/zig/src/families/deepseek_v41/cuda_model.zig
++++ b/zig/src/families/deepseek_v41/cuda_model.zig
+@@ -404,7 +404,7 @@ pub const Model = struct {
+             // the drafter's blocks (the snapshot carries their rows: the RAM tier's measure)
+             var dsb: [8]u32 = undefined;
+             const ds_blocks: u32 = if (o.drafts) @intCast(dspark_emit.blocks(&m.cfg, &dsb).len) else 0;
+-            m.sessions = try sg.Sessions.init(gpa, io, &m.f, &bp, so, .{ .slots = m.slots, .ds_blocks = ds_blocks, .checkpoint = if (so.disk != null) try prepared.packDigest(io, &m.pack) else null });
++            m.sessions = try sg.Sessions.init(gpa, io, &m.f, &bp, so, .{ .slots = m.slots, .ds_blocks = ds_blocks, .checkpoint = if (so.disk != null) try prepared.packIdentity(io, &m.pack, if (cache) |*c| c else null) else null });
+         }
+         tr.step("engram host and sessions", cuda.usage(false));
+         m.gt = .{ .f = &m.f, .prefill_rows = o.prefill_rows, .max_rows = nb, .own_prefill = o.own_prefill, .sessions = m.sessions };
+diff --git a/zig/src/families/deepseek_v41/prepared.zig b/zig/src/families/deepseek_v41/prepared.zig
+index 6aa95a4044a2c0d839147e6df9ba56b3d93b9484..51b78c8555b7126db33d25ac5dd31a9a7b5359af 100644
+--- a/zig/src/families/deepseek_v41/prepared.zig
++++ b/zig/src/families/deepseek_v41/prepared.zig
+@@ -31,6 +31,8 @@ pub const Cache = struct {
+     root: []u8,
+     write: bool,
+     verify: bool,
++    /// The pack's content identity the key holds, for the other owners that need it (``packDigest`` reads every byte)
++    pack_digest: [32]u8,
+     stats: Stats = .{},
+ 
+     /// The cache TF_DSV41_PREPARED names, or null when unset.
+@@ -60,7 +62,7 @@ pub const Cache = struct {
+         const root = try std.fmt.allocPrint(gpa, "{s}/{s}/rank{d}", .{ dir, &hex, key.rank });
+         errdefer gpa.free(root);
+         if (write) try Io.Dir.cwd().createDirPath(io, root);
+-        return .{ .gpa = gpa, .io = io, .root = root, .write = write, .verify = verify };
++        return .{ .gpa = gpa, .io = io, .root = root, .write = write, .verify = verify, .pack_digest = pack_digest };
+     }
+ 
+     pub fn deinit(c: *Cache) void {
+@@ -151,6 +153,12 @@ pub fn packDigest(io: Io, p: *const pack_mod.Pack) ![32]u8 {
+     return digest;
+ }
+ 
++/// The pack's content digest: an open cache's, else read here (``packDigest`` reads every byte).
++pub fn packIdentity(io: Io, p: *const pack_mod.Pack, cache: ?*const Cache) ![32]u8 {
++    if (cache) |c| return c.pack_digest;
++    return packDigest(io, p);
++}
++
+ const Entry = extern struct {
+     kind: u8,
+     rank: u8,
+@@ -432,3 +440,22 @@ test "prepared metadata corruption is a clean miss with no partial publication"
+         }
+     }
+ }
++
++test "Pack identity: a boot with the prepared cache reads the pack's bytes once, not again for sessions" {
++    const a = std.testing.allocator;
++    const io = std.testing.io;
++    var tmp = std.testing.tmpDir(.{});
++    defer tmp.cleanup();
++    const root = try tmp.dir.realPathFileAlloc(io, ".", a);
++    defer a.free(root);
++    var pack = pack_mod.Pack.init(a);
++    defer pack.deinit();
++    pack.dir = "/nonexistent-dsv41-pack";
++    try pack.files.append(pack.arena.allocator(), "absent.safetensors");
++    const key: Key = .{ .rank = 0, .world = 1, .o_groups = 1, .blocks = &.{}, .dspark = false };
++    var cache = try Cache.open(a, io, root, @splat(7), key, false, false);
++    defer cache.deinit();
++    const want: [32]u8 = @splat(7);
++    try std.testing.expectEqualSlices(u8, &want, &try packIdentity(io, &pack, &cache));
++    try std.testing.expectError(error.FileNotFound, packIdentity(io, &pack, null));
++}

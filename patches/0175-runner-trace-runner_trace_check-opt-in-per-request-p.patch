@@ -1,0 +1,589 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 13:40:22 +0700
+Subject: [PATCH 175/207] runner trace: runner_trace_check (opt-in per request)
+ puts residues mod 9 and 1000 after the owned line
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A request's runner_trace_check: true appends ' check: <each literal's residue> ≡ <the value's> (mod 9), ... (mod 1000)'
+after the trace line when its display is decimal literals with + - * ^ and brackets (at most 4 literals, powers at
+most 4) or such a divmod (q*B + r ≡ A). The residues come from the engine's value; a value its own residues contradict
+is not owned. Off (the default) the line's bytes are unchanged. TraceAsk moves to runner_trace.zig (Ask).
+
+(cherry picked from commit 75119f4094de7de3a1b8eba81d27520efdb9c8d9)
+---
+ zig/src/core/runner.zig                   |  14 +-
+ zig/src/core/runner_proof_exact_test.zig  |   2 +-
+ zig/src/core/runner_trace.zig             |  44 +++--
+ zig/src/core/runner_trace_check.zig       | 198 ++++++++++++++++++++++
+ zig/src/core/runner_trace_check_test.zig  |  71 ++++++++
+ zig/src/core/runner_trace_divmod_test.zig |   2 +-
+ zig/src/core/runner_trace_named_test.zig  |   2 +-
+ zig/src/core/runner_trace_test.zig        |  28 ++-
+ zig/src/server/chat.zig                   |   2 +-
+ zig/src/server/openai.zig                 |   2 +-
+ zig/src/server/runner_guide.zig           |  12 +-
+ 11 files changed, 346 insertions(+), 31 deletions(-)
+ create mode 100644 zig/src/core/runner_trace_check.zig
+ create mode 100644 zig/src/core/runner_trace_check_test.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index bcf9a97bbc90697bf880347b6a09d61674cc2be0..3ce33f41dd18e69b5adf916f0699c6d7fc2e2b83 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -105,12 +105,8 @@ pub const Config = struct {
+ /// The engine's tokenizer as the runner needs it: one token's bytes, and text to token ids.
+ pub const Text = output.Text;
+ 
+-/// A request's say over form trace (chat fields "runner_trace", "runner_trace_format"); defaults change nothing.
+-pub const TraceAsk = struct {
+-    off: bool = false, // no trace cells in this reply, though the server's forms have trace
+-    format: []const u8 = "", // the owned line, `{}` for `<expr> = <value>` (validFormat); "": trace.default_format
+-    repeat: u8 = 0, // a restated, already owned line is owned again up to this many times (0..max_repeat)
+-};
++/// A request's say over form trace (runner_trace.zig); defaults change nothing.
++pub const TraceAsk = trace.Ask;
+ 
+ /// The server-wide runner: a frontend, a backend and the server's tokenizer (set at its start); sessions are per reply.
+ pub const Runner = struct {
+@@ -132,7 +128,7 @@ pub const Runner = struct {
+         var cfg = r.cfg.scan;
+         if (ask.off) cfg.trace = false;
+         cfg.trace_repeat = ask.repeat;
+-        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = cfg }, .format = format, .rec = .{ .on = r.cfg.cells } };
++        s.* = .{ .r = r, .id = r.next_id, .scan = .{ .cfg = cfg }, .format = format, .check = ask.check, .rec = .{ .on = r.cfg.cells } };
+         r.next_id += 1;
+         return s;
+     }
+@@ -177,6 +173,7 @@ pub const Session = struct {
+     broken: bool = false, // out of memory once: no more cells, no more holds
+     sync_ids: []u32 = &.{}, // cfg.sync_graph: the result a trigger settled with, forced by the stream (hook.settled)
+     format: []u8, // TraceAsk.format, owned
++    check: bool = false, // TraceAsk.check
+     rec: records.Log = .{}, // the receipt's per-cell records
+ 
+     pub fn hook(s: *Session) lanes.stream.RunnerHook {
+@@ -400,7 +397,7 @@ pub const Session = struct {
+     fn ownTrace(s: *Session, c: *Cell, index: u32, held_ms: u64) Allocator.Error![]u32 {
+         const gpa = s.r.gpa;
+         const tx = s.r.text.?;
+-        const line = if (!c.abstained and c.result.?.status == .ok) try trace.owned(gpa, s.format, c.stated.?.display, c.stated.?.divmod, c.result.?.out) else null;
++        const line = if (!c.abstained and c.result.?.status == .ok) try trace.owned(gpa, s.format, c.stated.?.display, c.stated.?.divmod, c.result.?.out, s.check) else null;
+         if (line) |text| {
+             defer gpa.free(text);
+             const ids = try tx.encode(tx.ctx, gpa, text);
+@@ -596,5 +593,6 @@ test {
+     _ = @import("runner_trace_stated_test.zig");
+     _ = @import("runner_trace_divmod_test.zig");
+     _ = @import("runner_trace_named_test.zig");
++    _ = @import("runner_trace_check_test.zig");
+     _ = @import("runner_graph_edit.zig");
+ }
+diff --git a/zig/src/core/runner_proof_exact_test.zig b/zig/src/core/runner_proof_exact_test.zig
+index 15bcc6dd9030ae89cc93a01e9e824ae2c86745ef..100282bf21e95f3966fae90a4fb82308eb1f4851 100644
+--- a/zig/src/core/runner_proof_exact_test.zig
++++ b/zig/src/core/runner_proof_exact_test.zig
+@@ -87,7 +87,7 @@ test "runner proof: retained TRACE divmod and modulo requests on graph-v7 Dispat
+         defer run.release(1);
+         try std.testing.expectEqual(rapi.Status.ok, result.status);
+         try std.testing.expectEqualStrings(c.want, result.out);
+-        const owned = (try @import("runner_trace.zig").owned(gpa, "[exact: {}]", c.display, c.tuple, result.out)) orelse return error.TestExpectedOwned;
++        const owned = (try @import("runner_trace.zig").owned(gpa, "[exact: {}]", c.display, c.tuple, result.out, false)) orelse return error.TestExpectedOwned;
+         defer gpa.free(owned);
+         std.debug.print("TRACE Dispatch exact {s}: {s}", .{ c.code, result.out });
+     }
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index 0e087bcd690320fd6c743efa450d98dd78c8b634..274084462725de7868db990eb85c4435da18fc3a 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -3,6 +3,7 @@ const std = @import("std");
+ const text = @import("runner_trace_text.zig");
+ const expr = @import("runner_trace_expr.zig");
+ const value = @import("runner_trace_value.zig");
++const checks = @import("runner_trace_check.zig");
+ const Allocator = std.mem.Allocator;
+ const Expr = expr.Expr;
+ 
+@@ -274,23 +275,42 @@ pub fn validFormat(f: []const u8) bool {
+     return f.len <= max_format and std.mem.count(u8, f, "{}") == 1 and std.mem.indexOfAny(u8, f, "\r\n") == null;
+ }
+ 
+-/// `format` around "<display> = <value>\n" from a circuit's printed value, or null (not one integer, or not (q, r)).
+-pub fn owned(a: Allocator, format: []const u8, display: []const u8, divmod: bool, out: []const u8) Allocator.Error!?[]u8 {
++/// A request's say over form trace (chat fields "runner_trace", "runner_trace_format", ...); defaults change nothing.
++pub const Ask = struct {
++    off: bool = false, // no trace cells in this reply, though the server's forms have trace
++    format: []const u8 = "", // the owned line, `{}` for `<expr> = <value>` (validFormat); "": default_format
++    repeat: u8 = 0, // a restated, already owned line is owned again up to this many times (0..max_repeat)
++    check: bool = false, // residues mod 9 and 1000 follow the line where it takes them (runner_trace_check.zig)
++};
++
++/// `format` around "<display> = <value>" then `check`'s residues, or null (not one integer or (q, r), or contradicted).
++pub fn owned(a: Allocator, format: []const u8, display: []const u8, divmod: bool, out: []const u8, check: bool) Allocator.Error!?[]u8 {
+     const f = if (format.len > 0) format else default_format;
+     const at = std.mem.indexOf(u8, f, "{}").?;
+     const v = if (std.mem.endsWith(u8, out, "\n")) out[0 .. out.len - 1] else out;
+     if (v.len == 0 or std.mem.indexOfScalar(u8, v, '\n') != null) return null;
+-    if (!divmod) {
+-        if (!isInt(v)) return null;
+-        return try std.fmt.allocPrint(a, "{s}{s} = {s}{s}\n", .{ f[0..at], display, v, f[at + 2 ..] });
++    var q = v;
++    var r: ?[]const u8 = null;
++    if (divmod) {
++        if (v.len < 6 or v[0] != '(' or v[v.len - 1] != ')') return null;
++        const inner = v[1 .. v.len - 1];
++        const comma = std.mem.indexOf(u8, inner, ", ") orelse return null;
++        q = inner[0..comma];
++        r = inner[comma + 2 ..];
++        if (!isInt(r.?)) return null;
+     }
+-    if (v.len < 6 or v[0] != '(' or v[v.len - 1] != ')') return null;
+-    const inner = v[1 .. v.len - 1];
+-    const comma = std.mem.indexOf(u8, inner, ", ") orelse return null;
+-    const q = inner[0..comma];
+-    const r = inner[comma + 2 ..];
+-    if (!isInt(q) or !isInt(r)) return null;
+-    return try std.fmt.allocPrint(a, "{s}{s} = {s} remainder {s}{s}\n", .{ f[0..at], display, q, r, f[at + 2 ..] });
++    if (!isInt(q)) return null;
++    var line: std.ArrayList(u8) = .empty;
++    errdefer line.deinit(a);
++    try line.print(a, "{s}{s} = {s}", .{ f[0..at], display, q });
++    if (r) |rem| try line.print(a, " remainder {s}", .{rem});
++    try line.appendSlice(a, f[at + 2 ..]);
++    if (check and !try checks.append(a, &line, display, q, r)) {
++        line.deinit(a);
++        return null;
++    }
++    try line.append(a, '\n');
++    return try line.toOwnedSlice(a);
+ }
+ 
+ fn isInt(s: []const u8) bool {
+diff --git a/zig/src/core/runner_trace_check.zig b/zig/src/core/runner_trace_check.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..18e9de89d21cb9377f8ad31a83cb8bbbd86b24b5
+--- /dev/null
++++ b/zig/src/core/runner_trace_check.zig
+@@ -0,0 +1,198 @@
++//! The runner's `trace` form, opt-in per request (runner_trace_check): residues mod 9 and 1000 after the owned line.
++const std = @import("std");
++const Allocator = std.mem.Allocator;
++
++/// Casting out nines covers every digit; mod 1000 the last three.
++const moduli = [_]u64{ 9, 1000 };
++
++/// A check the model can confirm quickly: at most this many literals, and powers at most this.
++const max_literals = 4;
++const max_power = 4;
++
++/// Appends ` check: <residues> ≡ <value's> (mod 9), … (mod 1000)` if the line takes one; false: residues contradict q.
++pub fn append(a: Allocator, line: *std.ArrayList(u8), display: []const u8, q: []const u8, r: ?[]const u8) Allocator.Error!bool {
++    const start = line.items.len;
++    try line.appendSlice(a, " check: ");
++    for (moduli, 0..) |m, k| {
++        if (k > 0) try line.appendSlice(a, ", ");
++        const fits = if (r) |rem| try divmodPart(a, line, display, q, rem, m) else try plainPart(a, line, display, q, m);
++        switch (fits) {
++            .yes => try line.print(a, " (mod {d})", .{m}),
++            .none => {
++                line.shrinkRetainingCapacity(start);
++                return true;
++            },
++            .contradicted => {
++                line.shrinkRetainingCapacity(start);
++                return false;
++            },
++        }
++    }
++    return true;
++}
++
++const Fits = enum { yes, none, contradicted };
++
++/// `L ≡ v (mod m)`: the display with each literal (not an exponent) as its residue, and the value's residue.
++fn plainPart(a: Allocator, line: *std.ArrayList(u8), display: []const u8, v: []const u8, m: u64) Allocator.Error!Fits {
++    if (!checkable(display) or !digits(v)) return .none;
++    const dm = eval(display, m) orelse return .none;
++    if (dm != residue(v, m)) return .contradicted;
++    var prev: u8 = 0;
++    var i: usize = 0;
++    while (i < display.len) {
++        const c = display[i];
++        if (!std.ascii.isDigit(c)) {
++            try line.append(a, c);
++            if (c != ' ') prev = c;
++            i += 1;
++            continue;
++        }
++        var j = i;
++        while (j < display.len and std.ascii.isDigit(display[j])) j += 1;
++        const lit = display[i..j];
++        if (prev == '^') try line.appendSlice(a, lit) else try shown(a, line, lit, residue(lit, m), m);
++        prev = '0';
++        i = j;
++    }
++    try line.appendSlice(a, " ≡ ");
++    try shown(a, line, v, dm, m);
++    return .yes;
++}
++
++/// `q*B + r ≡ A (mod m)` for `A ÷ B = q remainder r`, each as its residue.
++fn divmodPart(a: Allocator, line: *std.ArrayList(u8), display: []const u8, q: []const u8, r: []const u8, m: u64) Allocator.Error!Fits {
++    const at = std.mem.indexOf(u8, display, " ÷ ") orelse return .none;
++    const x = display[0..at];
++    const y = display[at + " ÷ ".len ..];
++    if (!checkable(x) or !checkable(y) or !digits(q) or !digits(r)) return .none;
++    const xm = eval(x, m) orelse return .none;
++    const ym = eval(y, m) orelse return .none;
++    const qm = residue(q, m);
++    const rm = residue(r, m);
++    if ((qm * ym + rm) % m != xm) return .contradicted;
++    try shown(a, line, q, qm, m);
++    try line.append(a, '*');
++    try operand(a, line, y, ym, m);
++    try line.appendSlice(a, " + ");
++    try shown(a, line, r, rm, m);
++    try line.appendSlice(a, " ≡ ");
++    try operand(a, line, x, xm, m);
++    return .yes;
++}
++
++/// A residue as written: mod 1000 of a number with three or more digits keeps its last three (`012`).
++fn shown(a: Allocator, line: *std.ArrayList(u8), number: []const u8, v: u64, m: u64) Allocator.Error!void {
++    if (m == 1000 and number.len >= 3) try line.print(a, "{d:0>3}", .{v}) else try line.print(a, "{d}", .{v});
++}
++
++/// An operand of ÷: a lone literal (bracketed or not) shows as a literal's residue, an expression as a plain one.
++fn operand(a: Allocator, line: *std.ArrayList(u8), e: []const u8, v: u64, m: u64) Allocator.Error!void {
++    const lit = std.mem.trim(u8, e, "()");
++    if (digits(lit) and lit.len + 2 >= e.len) return shown(a, line, lit, v, m);
++    try line.print(a, "{d}", .{v});
++}
++
++/// Decimal literals with + - * ^ and brackets, at most `max_literals`, powers at most `max_power`, no unary minus.
++fn checkable(d: []const u8) bool {
++    var literals: usize = 0;
++    var prev: u8 = 0; // the last non-space byte, '0' for a whole literal
++    var i: usize = 0;
++    while (i < d.len) {
++        const c = d[i];
++        if (std.ascii.isDigit(c)) {
++            var j = i;
++            while (j < d.len and std.ascii.isDigit(d[j])) j += 1;
++            if (prev == '^') {
++                const k = std.fmt.parseInt(u32, d[i..j], 10) catch return false;
++                if (k > max_power) return false;
++            } else literals += 1;
++            prev = '0';
++            i = j;
++            continue;
++        }
++        if (std.mem.indexOfScalar(u8, " +-*^()", c) == null) return false;
++        if (c == '-' and prev != '0' and prev != ')') return false;
++        if (c != ' ') prev = c;
++        i += 1;
++    }
++    return literals >= 1 and literals <= max_literals;
++}
++
++fn digits(s: []const u8) bool {
++    if (s.len == 0) return false;
++    for (s) |c| if (!std.ascii.isDigit(c)) return false;
++    return true;
++}
++
++fn residue(number: []const u8, m: u64) u64 {
++    var v: u64 = 0;
++    for (number) |c| v = (v * 10 + (c - '0')) % m;
++    return v;
++}
++
++/// `d` mod m with Python's precedence (literals reduced, exponents as written); null if malformed.
++fn eval(d: []const u8, m: u64) ?u64 {
++    var p: Eval = .{ .s = d, .m = m };
++    const v = p.sum() orelse return null;
++    return if (p.peek() == 0) v else null;
++}
++
++const Eval = struct {
++    s: []const u8,
++    m: u64,
++    i: usize = 0,
++
++    /// The next non-space byte, 0 at the end.
++    fn peek(p: *Eval) u8 {
++        while (p.i < p.s.len and p.s[p.i] == ' ') p.i += 1;
++        return if (p.i < p.s.len) p.s[p.i] else 0;
++    }
++
++    fn sum(p: *Eval) ?u64 {
++        var v = p.term() orelse return null;
++        while (p.peek() == '+' or p.peek() == '-') {
++            const plus = p.s[p.i] == '+';
++            p.i += 1;
++            const r = p.term() orelse return null;
++            v = if (plus) (v + r) % p.m else (v + p.m - r) % p.m;
++        }
++        return v;
++    }
++
++    fn term(p: *Eval) ?u64 {
++        var v = p.power() orelse return null;
++        while (p.peek() == '*') {
++            p.i += 1;
++            v = v * (p.power() orelse return null) % p.m;
++        }
++        return v;
++    }
++
++    fn power(p: *Eval) ?u64 {
++        const b = p.atom() orelse return null;
++        if (p.peek() != '^') return b;
++        p.i += 1;
++        _ = p.peek();
++        const k0 = p.i;
++        while (p.i < p.s.len and std.ascii.isDigit(p.s[p.i])) p.i += 1;
++        const k = std.fmt.parseInt(u32, p.s[k0..p.i], 10) catch return null;
++        if (k > max_power) return null;
++        var v: u64 = 1 % p.m;
++        for (0..k) |_| v = v * b % p.m;
++        return v;
++    }
++
++    fn atom(p: *Eval) ?u64 {
++        if (p.peek() == '(') {
++            p.i += 1;
++            const v = p.sum() orelse return null;
++            if (p.peek() != ')') return null;
++            p.i += 1;
++            return v;
++        }
++        const d0 = p.i;
++        while (p.i < p.s.len and std.ascii.isDigit(p.s[p.i])) p.i += 1;
++        return if (p.i > d0) residue(p.s[d0..p.i], p.m) else null;
++    }
++};
+diff --git a/zig/src/core/runner_trace_check_test.zig b/zig/src/core/runner_trace_check_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..dfb2ff40e05d1e29aa976cfe5e35790ccfad83a0
+--- /dev/null
++++ b/zig/src/core/runner_trace_check_test.zig
+@@ -0,0 +1,71 @@
++//! Form trace's opt-in check (runner_trace_check): residues after the owned line, refusals, and the line unchanged off.
++const std = @import("std");
++const trace = @import("runner_trace.zig");
++
++const gpa = std.testing.allocator;
++const default = "[exact, computed by the engine: {}]";
++
++/// The owned line with the check on must be the line with it off, then `check` (S2 round 7's Python reference).
++fn expectCheck(display: []const u8, divmod: bool, out: []const u8, check: []const u8) !void {
++    const off = (try trace.owned(gpa, default, display, divmod, out, false)).?;
++    defer gpa.free(off);
++    const on = (try trace.owned(gpa, default, display, divmod, out, true)).?;
++    defer gpa.free(on);
++    const want = try std.mem.concat(gpa, u8, &.{ off[0 .. off.len - 1], check, "\n" });
++    defer gpa.free(want);
++    try std.testing.expectEqualStrings(want, on);
++}
++
++/// No check for this line: on and off are the same bytes.
++fn expectNone(display: []const u8, divmod: bool, out: []const u8) !void {
++    const off = (try trace.owned(gpa, default, display, divmod, out, false)).?;
++    defer gpa.free(off);
++    const on = (try trace.owned(gpa, default, display, divmod, out, true)).?;
++    defer gpa.free(on);
++    try std.testing.expectEqualStrings(off, on);
++}
++
++test "runner trace check: products, sums, powers and brackets show each literal's residue and the value's" {
++    try expectCheck("123456789012*987654321098", false, "121932631136585886175176\n", " check: 3*8 ≡ 6 (mod 9), 012*098 ≡ 176 (mod 1000)");
++    try expectCheck("320255973501901*65536 + 61185", false, "20988295479420645121\n", " check: 7*7 + 3 ≡ 7 (mod 9), 901*536 + 185 ≡ 121 (mod 1000)");
++    try expectCheck("12345678901^2", false, "152415787526596567801\n", " check: 1^2 ≡ 1 (mod 9), 901^2 ≡ 801 (mod 1000)");
++    try expectCheck("61185*(4000000000 + 294967296)", false, "262787574005760\n", " check: 3*(4 + 0) ≡ 3 (mod 9), 185*(000 + 296) ≡ 760 (mod 1000)");
++    try expectCheck("987654 * 137", false, "135308598\n", " check: 3 * 2 ≡ 6 (mod 9), 654 * 137 ≡ 598 (mod 1000)");
++    try expectCheck("(98765 - 4321)*(1000003)", false, "94444283332\n", " check: (8 - 1)*(4) ≡ 1 (mod 9), (765 - 321)*(003) ≡ 332 (mod 1000)");
++    // exponents stay as written
++    try expectCheck("7*11^3 + 2", false, "9319\n", " check: 7*2^3 + 2 ≡ 4 (mod 9), 7*11^3 + 2 ≡ 319 (mod 1000)");
++}
++
++test "runner trace check: divmod shows quotient times divisor plus remainder against the dividend" {
++    try expectCheck("314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536", true, "(1155727349790921717910215407028, 23663814570294126502)\n", " check: 0*3 + 4 ≡ 4 (mod 9), 028*536 + 502 ≡ 510 (mod 1000)");
++    try expectCheck("(123456789 + 1) ÷ 97", true, "(1272750, 40)\n", " check: 6*7 + 4 ≡ 1 (mod 9), 750*97 + 40 ≡ 790 (mod 1000)");
++}
++
++test "runner trace check: hex, mod, named problems, long or wide expressions and negatives take no check" {
++    try expectNone("0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF", false, "1\n");
++    try expectNone("7^123 mod 1000000007", false, "937329259\n");
++    try expectNone("gcd(12, 18)", false, "6\n");
++    try expectNone("isqrt(99)", false, "9\n");
++    try expectNone("edit_distance(\"ab\", \"a\")", false, "1\n");
++    try expectNone("1*2*3*4*5", false, "120\n"); // five literals
++    try expectNone("12^5", false, "248832\n"); // a power past 4
++    try expectNone("2^10", false, "1024\n");
++    try expectNone("5 - 100", false, "-95\n"); // a negative value
++    try expectNone("-5*3", false, "-15\n"); // unary minus
++    try expectNone("(10^30 - 1) ÷ 97", true, "(10309278350515463917525773195, 84)\n");
++}
++
++test "runner trace check: a value its own residues contradict is not owned with the check, and unchanged without it" {
++    const wrong = "121932631136585886175177\n";
++    try std.testing.expectEqual(null, try trace.owned(gpa, default, "123456789012*987654321098", false, wrong, true));
++    const off = (try trace.owned(gpa, default, "123456789012*987654321098", false, wrong, false)).?;
++    defer gpa.free(off);
++    try std.testing.expectEqualStrings("[exact, computed by the engine: 123456789012*987654321098 = 121932631136585886175177]\n", off);
++    try std.testing.expectEqual(null, try trace.owned(gpa, default, "(123456789 + 1) ÷ 97", true, "(1272750, 41)\n", true));
++}
++
++test "runner trace check: any wording's closing text comes before the check" {
++    const line = (try trace.owned(gpa, "{} (exact)", "987654 * 137", false, "135308598\n", true)).?;
++    defer gpa.free(line);
++    try std.testing.expectEqualStrings("987654 * 137 = 135308598 (exact) check: 3 * 2 ≡ 6 (mod 9), 654 * 137 ≡ 598 (mod 1000)\n", line);
++}
+diff --git a/zig/src/core/runner_trace_divmod_test.zig b/zig/src/core/runner_trace_divmod_test.zig
+index 9e83c2195d7f134d35ed490517b5570d9eded49c..8a1ad5cfa858ecbd8618662a4c4590a51a79a10b 100644
+--- a/zig/src/core/runner_trace_divmod_test.zig
++++ b/zig/src/core/runner_trace_divmod_test.zig
+@@ -117,7 +117,7 @@ test "runner proof: trace divmod: each R4 divmod cell runs on the bank and owns
+         defer gpa.free(out);
+         if (!std.mem.eql(u8, want, out)) std.debug.print("{s}: '{s}', CPython '{s}'\n", .{ code, out, want });
+         try std.testing.expectEqualStrings(want, out);
+-        const line = (try trace.owned(gpa, "[exact: {}]", code, true, out)) orelse return error.TestExpectedOwned;
++        const line = (try trace.owned(gpa, "[exact: {}]", code, true, out, false)) orelse return error.TestExpectedOwned;
+         defer gpa.free(line);
+         const golden = try ownedLine(code, want);
+         defer gpa.free(golden);
+diff --git a/zig/src/core/runner_trace_named_test.zig b/zig/src/core/runner_trace_named_test.zig
+index e7e2d6f00e8d68d00243cd1c5e7d47eed1000c11..2aca398d420fc5d18962eea66df1e89cd9bfa529 100644
+--- a/zig/src/core/runner_trace_named_test.zig
++++ b/zig/src/core/runner_trace_named_test.zig
+@@ -219,7 +219,7 @@ test "runner proof: trace stated: edit distance runs on the bank as a DP packet
+         std.debug.print("EDWALL\t{d}x{d}\ttranslate_ms={d:.1}\trun_ms={d:.1}\tbytes={d}\tout={s}", .{ c[0].len, c[1].len, @as(f64, @floatFromInt(t1 - t0)) / 1e6, @as(f64, @floatFromInt(t2 - t1)) / 1e6, tr.program.bytes.len, out });
+         const display = try std.fmt.allocPrint(gpa, "edit_distance(\"{s}\", \"{s}\")", .{ c[0], c[1] });
+         defer gpa.free(display);
+-        const line = (try trace.owned(gpa, "[exact: {}]", display, false, out)) orelse return error.TestExpectedOwned;
++        const line = (try trace.owned(gpa, "[exact: {}]", display, false, out, false)) orelse return error.TestExpectedOwned;
+         defer gpa.free(line);
+         const golden = try std.fmt.allocPrint(gpa, "[exact: {s} = {s}]\n", .{ display, std.mem.trimEnd(u8, want, "\n") });
+         defer gpa.free(golden);
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+index 1172cbbc348b8a2834a54fda4845dd6e0c4b7a9c..b9698fcb62aeb6bf560536c43bc03f9dbb796fd5 100644
+--- a/zig/src/core/runner_trace_test.zig
++++ b/zig/src/core/runner_trace_test.zig
+@@ -79,7 +79,7 @@ test "runner trace: the display line and the owned text" {
+     const f = (try t.line(bn019)).?;
+     try std.testing.expect(f.divmod);
+     try std.testing.expectEqualStrings("314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536", f.display);
+-    const line = (try trace.owned(gpa, "", f.display, true, "(1155727349790921717910215407028, 23663814570294126502)\n")).?;
++    const line = (try trace.owned(gpa, "", f.display, true, "(1155727349790921717910215407028, 23663814570294126502)\n", false)).?;
+     defer gpa.free(line);
+     try std.testing.expectEqualStrings("[exact, computed by the engine: 314159265358979323846264338327950288419716939937510 ÷ 271828182845904523536 = 1155727349790921717910215407028 remainder 23663814570294126502]\n", line);
+     const g = (try t.line(bn008)).?;
+@@ -88,8 +88,8 @@ test "runner trace: the display line and the owned text" {
+     defer fresh.deinit();
+     const h = (try fresh.line(bn015)).?;
+     try std.testing.expectEqualStrings("0xFEDCBA9876543210*2^64 + 0x0123456789ABCDEF", h.display);
+-    for ([_][]const u8{ "3.75\n", "1\n2\n", "", "(1, 2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", false, out));
+-    for ([_][]const u8{ "(1, 2, 3)\n", "7\n", "(1,2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", true, out));
++    for ([_][]const u8{ "3.75\n", "1\n2\n", "", "(1, 2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", false, out, false));
++    for ([_][]const u8{ "(1, 2, 3)\n", "7\n", "(1,2)\n" }) |out| try std.testing.expectEqual(null, try trace.owned(gpa, "", "x", true, out, false));
+ }
+ 
+ test "runner trace: doubts, lists, hypotheticals and two readings abstain" {
+@@ -408,11 +408,29 @@ test "runner trace: a request's wording frames the owned line; runner_trace fals
+     try std.testing.expectEqualStrings(mul_lead ++ "ok\nDone.", off);
+ }
+ 
++test "runner trace: a request's check follows the owned line; without it the reply is unchanged" {
++    const checked = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .check = true });
++    defer gpa.free(checked);
++    // the lane host's vocab is printable ASCII, so `≡` has no token here (runner_trace_check_test.zig pins the bytes)
++    try std.testing.expectEqualStrings(mul_lead ++ "[exact, computed by the engine: 987654 * 137 = 135308598] check: 3 * 2  6 (mod 9), 654 * 137  598 (mod 1000)\nDone.", checked);
++    const off = try tracedAsk(mul_lead, "ok", true, 0, false, .{ .check = false });
++    defer gpa.free(off);
++    const plain = try traced(mul_lead, "ok", true, 0, false);
++    defer gpa.free(plain);
++    try std.testing.expectEqualStrings(plain, off);
++    var r: runner.Runner = .{ .gpa = gpa, .cfg = .{ .circuit = "test", .scan = .{ .trace = true } }, .frontend = undefined, .backend = undefined, .text = .{ .bytes = undefined, .encode = undefined } };
++    const s = (try r.session(.{ .check = true })).?;
++    defer gpa.destroy(s);
++    defer gpa.free(s.format);
++    defer s.scan.deinit(gpa);
++    try std.testing.expect(s.check);
++}
++
+ test "runner trace: wording around divmod's quotient and remainder; a request's wording must be one line with {} once" {
+-    const line = (try trace.owned(gpa, "[exact, computed by the engine: {}]", "(10^30 - 1) ÷ 97", true, "(10309278350515463917525773195, 84)\n")).?;
++    const line = (try trace.owned(gpa, "[exact, computed by the engine: {}]", "(10^30 - 1) ÷ 97", true, "(10309278350515463917525773195, 84)\n", false)).?;
+     defer gpa.free(line);
+     try std.testing.expectEqualStrings("[exact, computed by the engine: (10^30 - 1) ÷ 97 = 10309278350515463917525773195 remainder 84]\n", line);
+-    const lead = (try trace.owned(gpa, "{} (exact)", "2^10", false, "1024\n")).?;
++    const lead = (try trace.owned(gpa, "{} (exact)", "2^10", false, "1024\n", false)).?;
+     defer gpa.free(lead);
+     try std.testing.expectEqualStrings("2^10 = 1024 (exact)\n", lead);
+     try std.testing.expect(trace.validFormat("[exact: {}]"));
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 473ee7ee71f6dddfc4768e49d7f88979ab3dd9c3..135dd6f78a95c0cfe38f5cda7773f7d6ac59b95d 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -188,7 +188,7 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     request.run_cells = srv.info.runner != null;
+     if (request.run_cells and thinking and srv.think_close.len > 0) request.think_end = srv.think_close_end;
+     if (request.run_cells) request.run_trace = @import("runner_guide.zig").traceAsk(f) catch
+-        return cx.refuse("runner_trace must be a boolean, runner_trace_format one line of at most 128 bytes with {} once, runner_trace_repeat 0 to 3");
++        return cx.refuse("runner_trace must be a boolean, runner_trace_format one line of at most 128 bytes with {} once, runner_trace_check a boolean, runner_trace_repeat 0 to 3");
+     const deadline: ?i96 = if (f.get("deadline_s")) |v| blk: {
+         const s = (if (v == .bool) null else v.float64()) orelse return cx.refuse("deadline_s must be a number of seconds");
+         if (!(s > 0 and s <= 1e6)) return cx.refuse("deadline_s must be more than 0 and at most 1000000 seconds");
+diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
+index c187deb30782e045edeadd5a9ada34fe50517db4..bd336b8d128715b12b692e681a900526c50a0982 100644
+--- a/zig/src/server/openai.zig
++++ b/zig/src/server/openai.zig
+@@ -152,7 +152,7 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value) errors.Refused!Plan {
+         input.temperature = if (t == .float) t.float else std.fmt.parseFloat(f64, t.int) catch 0;
+     };
+     const sampling = try json.newObject(cx.a);
+-    for ([_][]const u8{ "temperature", "top_p", "top_k", "min_p", "presence_penalty", "frequency_penalty", "seed", "priority", "model", "draft", "thinking_budget", "ignore_eos", "return_token_ids", "stop", "grammar_budget", "runner_guide", "runner_trace", "runner_trace_format", "runner_trace_repeat" } ++ grammar.fields) |k| if (body.get(k)) |v| try sampling.put(cx.a, k, v);
++    for ([_][]const u8{ "temperature", "top_p", "top_k", "min_p", "presence_penalty", "frequency_penalty", "seed", "priority", "model", "draft", "thinking_budget", "ignore_eos", "return_token_ids", "stop", "grammar_budget", "runner_guide", "runner_trace", "runner_trace_format", "runner_trace_check", "runner_trace_repeat" } ++ grammar.fields) |k| if (body.get(k)) |v| try sampling.put(cx.a, k, v);
+     try grammar.refusal(cx, body);
+     if (input.tools.len > 0 and try tool_specs.choiceRequiresCall(cx.a, body.get("tool_choice"))) try sampling.put(cx.a, "tool_call_required", .{ .bool = true });
+     if (body.field("parallel_tool_calls")) |p| if (p == .bool and !p.bool) try sampling.put(cx.a, "tool_call_single", .{ .bool = true });
+diff --git a/zig/src/server/runner_guide.zig b/zig/src/server/runner_guide.zig
+index 5b837a59866bbd77c2e9ac010af3db385d3ae3fb..e73964146906d9a7095f123ce0de953d8524cfe0 100644
+--- a/zig/src/server/runner_guide.zig
++++ b/zig/src/server/runner_guide.zig
+@@ -77,7 +77,7 @@ pub fn with(a: std.mem.Allocator, messages: Value, guide: []const u8) std.mem.Al
+     return .{ .array = out };
+ }
+ 
+-/// A chat's "runner_trace" (false: none), "runner_trace_format" (the line), "runner_trace_repeat"; null: as booted.
++/// A chat's "runner_trace" (false: none) and "runner_trace_format", "_check", "_repeat"; null: as booted.
+ pub fn traceAsk(fields: Value) error{BadTrace}!TraceAsk {
+     var ask: TraceAsk = .{};
+     if (fields.get("runner_trace")) |v| switch (v) {
+@@ -90,6 +90,11 @@ pub fn traceAsk(fields: Value) error{BadTrace}!TraceAsk {
+         .string => |t| ask.format = if (validTraceFormat(t)) t else return error.BadTrace,
+         else => return error.BadTrace,
+     };
++    if (fields.get("runner_trace_check")) |v| switch (v) {
++        .null => {},
++        .bool => |on| ask.check = on,
++        else => return error.BadTrace,
++    };
+     if (fields.get("runner_trace_repeat")) |v| switch (v) {
+         .null => {},
+         .int => ask.repeat = std.math.cast(u8, v.int64() orelse return error.BadTrace) orelse return error.BadTrace,
+@@ -121,6 +126,11 @@ test "runner guide: a chat's runner_trace and runner_trace_format, and their ref
+     try f.put(a, "runner_trace", .{ .string = "off" });
+     try std.testing.expectError(error.BadTrace, traceAsk(.{ .object = f }));
+     try f.put(a, "runner_trace", .null);
++    try f.put(a, "runner_trace_check", .{ .bool = true });
++    try std.testing.expect((try traceAsk(.{ .object = f })).check);
++    try f.put(a, "runner_trace_check", .{ .string = "true" });
++    try std.testing.expectError(error.BadTrace, traceAsk(.{ .object = f }));
++    try f.put(a, "runner_trace_check", .null);
+     try f.put(a, "runner_trace_repeat", .{ .int = "1" });
+     try std.testing.expectEqual(@as(u8, 1), (try traceAsk(.{ .object = f })).repeat);
+     for ([_]Value{ .{ .int = "4" }, .{ .int = "-1" }, .{ .int = "300" }, .{ .string = "1" }, .{ .bool = true } }) |bad| {

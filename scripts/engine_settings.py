@@ -13,7 +13,8 @@ Commands (names arrive on stdin, one per line; values are never read from argv):
                         that come from the calling shell rather than $CONFIG
   profile ARGV...       print the effective container environment of a docker run argv, marking
                         names that come from the calling shell rather than $CONFIG as [caller]
-  generate SRC [OUT]    write the manifest from an engine checkout at config/tensorfold.rev
+  generate SRC [OUT]    write the manifest from an engine checkout holding the patched engine tree
+                        (config/tensorfold.tree: config/tensorfold.rev with patches/ applied)
   check SRC             exit 1 when the manifest differs from the engine checkout
 """
 
@@ -27,6 +28,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "config/tensorfold-settings.txt"
 REV_FILE = ROOT / "config/tensorfold.rev"
+TREE_FILE = ROOT / "config/tensorfold.tree"
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 ENGINE_NAME = re.compile(r"(?:TF|TENSORFOLD)_[A-Z0-9_]+")
 ASSIGNED = re.compile(r"^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)=", re.M)
@@ -92,11 +94,24 @@ LEGACY = {
 }
 
 
+def manifest_tree(path=MANIFEST):
+    """The patched engine tree the checked-in manifest was generated from, or None."""
+    for line in Path(path).read_text().splitlines():
+        if line.startswith("tree "):
+            return line[5:].strip()
+    return None
+
+
+def pinned_tree():
+    """config/tensorfold.tree, or None when the recipe builds config/tensorfold.rev unpatched."""
+    return TREE_FILE.read_text().strip() if TREE_FILE.exists() else None
+
+
 def manifest(path=MANIFEST):
     """(revision, names) from the checked-in manifest."""
     revision, names = None, []
     for line in Path(path).read_text().splitlines():
-        if line.startswith("#") or not line.strip():
+        if line.startswith(("#", "tree ")) or not line.strip():
             continue
         if line.startswith("rev "):
             revision = line[4:].strip()
@@ -237,12 +252,13 @@ def engine_names(source, revision):
     return sorted(names | composed_names(grouped))
 
 
-def render(revision, names):
+def render(revision, names, tree=None):
     return ("# Every TF_* / TENSORFOLD_* name the pinned TensorFold reads: string literals in its\n"
             "# non-test zig/src, plus the prefix ++ \"_SUFFIX\" names of knob groups parsed under a literal prefix.\n"
-            "# Regenerate on every pin bump:\n"
-            "#   python3 scripts/engine_settings.py generate /path/to/tensorfold-checkout\n"
-            f"rev {revision}\n" + "".join(name + "\n" for name in names))
+            "# rev is the upstream commit, tree the engine tree with patches/ applied. Regenerate on every pin or\n"
+            "# patch change, from a checkout made by docker/zig/fetch-source.sh (docs/ENGINE.md):\n"
+            "#   python3 scripts/engine_settings.py generate /path/to/patched-checkout\n"
+            f"rev {revision}\n" + (f"tree {tree}\n" if tree else "") + "".join(name + "\n" for name in names))
 
 
 def main(argv):
@@ -253,13 +269,14 @@ def main(argv):
     if command == "profile":
         return profile_command(argv[1:])
     if command in ("generate", "check") and len(argv) in (2, 3):
-        revision = REV_FILE.read_text().strip()
-        names = engine_names(argv[1], revision)
+        revision, tree = REV_FILE.read_text().strip(), pinned_tree()
+        # The source is read at the patched tree when the recipe has a patch series.
+        names = engine_names(argv[1], tree or revision)
         if command == "generate":
-            Path(argv[2] if len(argv) == 3 else MANIFEST).write_text(render(revision, names))
+            Path(argv[2] if len(argv) == 3 else MANIFEST).write_text(render(revision, names, tree))
             return 0
         listed_revision, listed = manifest()
-        if listed_revision != revision or listed != set(names):
+        if listed_revision != revision or manifest_tree() != tree or listed != set(names):
             print("config/tensorfold-settings.txt differs from the engine source; regenerate it", file=sys.stderr)
             print("missing: " + " ".join(sorted(set(names) - listed)), file=sys.stderr)
             print("extra: " + " ".join(sorted(listed - set(names))), file=sys.stderr)

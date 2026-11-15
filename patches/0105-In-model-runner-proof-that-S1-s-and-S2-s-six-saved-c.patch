@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 11:23:09 +0700
+Subject: [PATCH 105/207] In-model runner: proof that S1's and S2's six saved
+ cells take the graph route with CPython's stdout
+
+---
+ zig/src/core/runner_proof_test.zig | 36 ++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 27ed92343dc4fc1549627bb1d0daf8711112acbe..ec4d8a2af6b9f26f4a06cc3cc5b62529d36ea1da 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -294,3 +294,39 @@ test "runner proof: big-number-020 past the frontend's 62 digits, inline and REP
+     }
+     both.graph.release(1);
+ }
++
++test "runner proof: S1's and S2's six saved cells take the graph route and print CPython's stdout (T1 direct binding)" {
++    var both: Both = undefined;
++    try both.open();
++    defer both.close();
++    var ctx: frontend.Context = .{ .io = std.testing.io };
++    if (std.c.getenv("TF_RUNNER_LLD")) |l| ctx.compiler.linker = std.mem.span(l);
++    var routed: route.Routed = .{ .inner = ctx.frontend(), .bank = &both.bank };
++    const front = routed.frontend();
++    var dispatch: route.Dispatch = .{ .gpa = gpa, .circuit = both.calc, .graph = both.graph };
++    defer dispatch.deinit();
++    const b = dispatch.backend();
++    // S1 d_mirror-c1-g2 cells (S1-UNOWNED-CELLS.md) verbatim; S2's saved 008/011/015 as printed cells
++    for ([_][2][]const u8{
++        .{ "import math\na=12345678901234567890\nb=98765432109876543210\nprint(math.gcd(a,b))", "900000000090\n" },
++        .{ "import math\nn = 123456789012345678901234\nr = math.isqrt(n)\nprint(r)\nprint(r*r)\nprint((r+1)*(r+1))\nprint(n - r*r)", "351364182882\n123456789012335541825924\n123456789013038270191689\n10137075310\n" },
++        .{ "print(pow(7, 83, 1000000007))", "269823221\n" },
++        .{ "print(7**123%1000000007)", "937329259\n" },
++        .{ "print(3**400%10**18)", "192443283334088001\n" },
++        .{ "print(0xFEDCBA9876543210*2**64+0x0123456789ABCDEF)", "338770000845734292516042252062085074415\n" },
++    }) |c| {
++        var arena = std.heap.ArenaAllocator.init(gpa);
++        defer arena.deinit();
++        const t = try front.translate(front.ctx, arena.allocator(), .{ .form = .fence, .lang = "python", .code = c[0] });
++        if (t != .program or t.program.kind != .graph) {
++            std.debug.print("not on the graph route: {s}: {any}\n", .{ c[0], t });
++            return error.TestExpectedRoute;
++        }
++        const r = finish(b, try b.start(1, t.program, 4_000_000));
++        if (r.status != .ok or !std.mem.eql(u8, c[1], r.out)) {
++            std.debug.print("{s}: {t} '{s}'\n", .{ c[0], r.status, r.out });
++            return error.TestExpectedEqual;
++        }
++    }
++    b.release(1);
++}

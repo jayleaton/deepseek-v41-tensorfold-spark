@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 10:52:57 +0700
+Subject: [PATCH 102/207] engine_api: back to 600 lines after the S3 merge
+ (alias declarations without blank lines)
+
+---
+ zig/src/core/engine_api.zig | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/zig/src/core/engine_api.zig b/zig/src/core/engine_api.zig
+index 6e0e897f9e8c982d559664cd1103624dd4b4f825..552855a06b10cf8b63fb33dce552a00edc7c9030 100644
+--- a/zig/src/core/engine_api.zig
++++ b/zig/src/core/engine_api.zig
+@@ -16,13 +16,10 @@ pub const embedding_vector = @import("embedding_vector.zig");
+ 
+ /// One image of a request (``Request.images``): the tower's input and the placeholder rows its output replaces.
+ pub const Image = lanes.stream.Image;
+-
+ /// A prompt's reproducible seed (``seed_for``), for requests that name none.
+ pub const seedFor = lanes.sampling.seedFor;
+-
+ /// A committed token's log probability under the target's raw distribution, with the best tokens at its position.
+ pub const LogprobRow = lanes.LogprobRow;
+-
+ /// The request's stop strings, checked on the engine's thread after each committed token (the server decodes the tail).
+ pub const Stop = struct {
+     ctx: *anyopaque,

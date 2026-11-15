@@ -5,7 +5,8 @@ limits and historical release provenance.
 
 | Path | Purpose |
 | --- | --- |
-| `config/tensorfold.rev` | one reviewed upstream engine revision |
+| `config/tensorfold.repo`, `config/tensorfold.rev` | the unmodified upstream TensorFold commit the engine starts from |
+| `patches/`, `config/tensorfold.patches`, `config/tensorfold.tree` | the recipe's engine patch series, how much of it is applied, and the engine tree it must give |
 | `config/tensorfold-settings.txt`, `scripts/engine_settings.py` | the pinned engine's setting names; launcher forwarding and legacy refusal |
 | `docker/zig/Dockerfile`, `scripts/build-native.sh` | native CUDA pair and runtime library checks |
 | `scripts/run-zig.sh`, `scripts/serve.sh` | per-rank launch, identity, assets and operations |

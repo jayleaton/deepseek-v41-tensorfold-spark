@@ -1,0 +1,689 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Wed, 28 Oct 2026 23:28:28 +0700
+Subject: [PATCH 012/207] deepseek: reserve full requests and agree on pool
+ growth
+
+Address tanchunsiong's issue #55 with ratulsarna's long-context concurrency corroboration. Reprice damaged cache hits, reserve complete prompt and reply ownership before work, and roll back recoverable growth uniformly across ranks before device-table mutation. Host tests cover asymmetric pressure, quota rollback and subsequent admission; reported GPU concurrency remains unqualified.
+---
+ zig/src/families/deepseek_v41/batch.zig       |   6 +-
+ zig/src/families/deepseek_v41/forward.zig     |   2 +-
+ .../families/deepseek_v41/forward_follow.zig  |  24 ++-
+ .../families/deepseek_v41/forward_prefill.zig |  23 ++-
+ .../deepseek_v41/forward_prefill_finish.zig   |  10 +-
+ zig/src/families/deepseek_v41/pf4k_test.zig   |   4 +
+ zig/src/families/deepseek_v41/pool_growth.zig |  49 +++++
+ .../deepseek_v41/pool_growth_test.zig         | 118 +++++++++++
+ .../deepseek_v41/request_admission.zig        |  36 ++++
+ .../deepseek_v41/request_admission_test.zig   | 190 ++++++++++++++++++
+ .../families/deepseek_v41/sessions_gpu.zig    |  21 +-
+ zig/src/families/deepseek_v41/target.zig      |  15 +-
+ 12 files changed, 465 insertions(+), 33 deletions(-)
+ create mode 100644 zig/src/families/deepseek_v41/pool_growth.zig
+ create mode 100644 zig/src/families/deepseek_v41/pool_growth_test.zig
+ create mode 100644 zig/src/families/deepseek_v41/request_admission.zig
+ create mode 100644 zig/src/families/deepseek_v41/request_admission_test.zig
+
+diff --git a/zig/src/families/deepseek_v41/batch.zig b/zig/src/families/deepseek_v41/batch.zig
+index 4d5aa349eb03360d50a79d187658557d8b962934..2ab1772c18df4a9919784fd12d08f9b2c75507a0 100644
+--- a/zig/src/families/deepseek_v41/batch.zig
++++ b/zig/src/families/deepseek_v41/batch.zig
+@@ -228,7 +228,11 @@ pub const Batch = struct {
+         pt.mark(.send);
+         // every slot's pages for its positions, the changed table rows up before the launches
+         const k = f.kv.?;
+-        for (mix) |m| try k.slots[m.slot].ensure(m.start + m.rows);
++        var needs: [16]@import("pool_growth.zig").Need = undefined;
++        for (mix, needs[0..mix.len]) |m, *need| {
++            need.* = .{ .slot = k.slots[m.slot], .end = m.start + m.rows };
++        }
++        try @import("forward_prefill.zig").reservePages(f, needs[0..mix.len]);
+         try k.dev.syncTables();
+         pt.mark(.tables);
+         const s = b.settings;
+diff --git a/zig/src/families/deepseek_v41/forward.zig b/zig/src/families/deepseek_v41/forward.zig
+index 3d1eb4e663f62de27ed3832fb890b92336d636e4..db6d95d2f9b1f74561c062bab75aacc45a8f0076 100644
+--- a/zig/src/families/deepseek_v41/forward.zig
++++ b/zig/src/families/deepseek_v41/forward.zig
+@@ -262,7 +262,6 @@ pub const Forward = struct {
+         // no embed of a window fills image rows (graphed: never; eager: no keep or bias), so image ids fail here
+         if (hooks.set.vision) |v| try v.checkWindow(ids);
+         // the pool's pages for the window's positions, their table entries up before the launches (every rank alike)
+-        if (f.kv) |kx| try kx.reserve(f.slot.pos + ids.len);
+         if (f.leads()) {
+             var msg: [2 + 128]i64 = undefined;
+             if (ids.len > 128) return error.BadWindow;
+@@ -271,6 +270,7 @@ pub const Forward = struct {
+             for (ids, 0..) |t, i| msg[2 + i] = t;
+             try f.link.?.send(msg[0 .. 2 + ids.len]);
+         }
++        try @import("forward_prefill.zig").reserve(f, f.slot.pos + ids.len);
+         const tf = ph.start(f.phases, .forward);
+         defer tf.stop();
+         f.runner.rows = @intCast(ids.len); // l2pf: wider windows skip the prefetch sites
+diff --git a/zig/src/families/deepseek_v41/forward_follow.zig b/zig/src/families/deepseek_v41/forward_follow.zig
+index 514513280d0c3e621ecdc60bcca3654698e086e1..26e396f85595064959a4ea0576636716b08473b5 100644
+--- a/zig/src/families/deepseek_v41/forward_follow.zig
++++ b/zig/src/families/deepseek_v41/forward_follow.zig
+@@ -226,8 +226,8 @@ pub fn follow(f: *Forward) !void {
+         var activity: @import("round_progress.zig").Progress.Scope = if (f.progress) |progress| progress.begin(.follower) else .{ .owner = null };
+         defer activity.end();
+         const ended = followOp(f, msg, &ids, &prompt, &picks) catch |e| {
+-            // Runner.guard failed the leader's same window before any launch: only its request fails
+-            if (e != error.MissingTritonVariant) return e;
++            // Only agreed pre-launch refusals leave the follower available for the leader's release/reset.
++            if (!recoverable(msg[0], e)) return e;
+             std.log.scoped(.dsv41).warn("rank {d}: operation {d} failed ({t}), as on rank 0: the next one", .{ f.comm.rank(), msg[0], e });
+             continue;
+         };
+@@ -354,3 +354,23 @@ fn followOp(f: *Forward, msg: []const i64, ids: *std.ArrayList(u32), prompt: *st
+     }
+     return false;
+ }
++
++fn recoverable(op: i64, err: anyerror) bool {
++    if (err == error.MissingTritonVariant) return true;
++    if (err != error.PoolExhausted) return false;
++    return switch (op) {
++        op_window, op_prefill, op_pf_multi, @import("slots.zig").op_rows => true,
++        else => false,
++    };
++}
++test "follower refusals: only agreed pre-launch pool operations continue; device and transport errors remain fatal" {
++    const t = std.testing;
++    for ([_]i64{ op_window, op_prefill, op_pf_multi, @import("slots.zig").op_rows }) |op| {
++        try t.expect(recoverable(op, error.PoolExhausted));
++        for ([_]anyerror{ error.CudaFailed, error.CudaContextLost, error.BackendFailed, error.PeerFailed, error.Timeout }) |err|
++            try t.expect(!recoverable(op, err));
++    }
++    try t.expect(!recoverable(op_sess_restore, error.PoolExhausted));
++    try t.expect(!recoverable(9999, error.PoolExhausted));
++    try t.expect(recoverable(op_window, error.MissingTritonVariant));
++}
+diff --git a/zig/src/families/deepseek_v41/forward_prefill.zig b/zig/src/families/deepseek_v41/forward_prefill.zig
+index 52d5f35a718d1c8fd2916ca92187782bdf36dd70..47382a25726eaf2640b8dea45f0f1987fb2de954 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill.zig
+@@ -347,7 +347,7 @@ fn segmentPair(f: *Forward, ia: []const u32, ib: []const u32) !bool {
+     };
+     const cs = try wsPair(a, plain, big);
+     try k4Acquire(f);
+-    if (f.kv) |kx| try kx.reserve(start + na + nb);
++    try reserve(f, start + na + nb);
+     // the micro-batches' host sides: B's Engram tail is the slot's after A's ids (tailOf, as A's commit leaves it)
+     var pair: Pair = .{ .a = .{ .ids = ia, .pending = .{ .start = start, .n = na }, .tail = .{} }, .b = .{ .ids = ib, .pending = .{ .start = start + na, .n = nb }, .tail = .{} } };
+     pair.a.tail.len = f.slot.tail_len;
+@@ -421,7 +421,7 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
+     const replay = st.mode == .replay;
+     const layers = if (replay) try encoderLayers(f, try f.backbone(a)) else try f.backbone(a);
+     const start = f.slot.pos;
+-    if (f.kv) |kx| try kx.reserve(start + n);
++    try reserve(f, start + n);
+     // TF_DSV41_PF_4K: a segment past the forward's rows runs in the workspace (its own roles: block_prefill.ownCalls)
+     const big = st.k4 and st.ws_ok and n > f.opts.prefill_rows;
+     const o = if (big) k4Options(image_opts.segmentOptions(f, ids)) else image_opts.segmentOptions(f, ids);
+@@ -458,6 +458,25 @@ fn segment(f: *Forward, ids: []const u32, head: bool) !void {
+     st.taps_rows = if (replay) 0 else n;
+ }
+ 
++/// Pool pages agreed before any device table upload or model launch, on the same stream as the program.
++pub fn reservePages(f: *Forward, needs: []const @import("pool_growth.zig").Need) !void {
++    const st = state(f);
++    var agree: ?@import("lockstep.zig").Agree = null;
++    if (f.comm.world() > 1) {
++        if (st.agreement == null) st.agreement = try graphs.Agreement.init(f.runner.d, f.comm, f.runner.stream);
++        const a = st.agreement.?.agree();
++        agree = .{ .ctx = a.ctx, .all = a.all };
++    }
++    try @import("pool_growth.zig").reserve(agree, needs);
++}
++
++/// One current slot's pages, then its changed table entries, before the segment's first launch.
++pub fn reserve(f: *Forward, end: u64) !void {
++    const kx = f.kv orelse return;
++    try reservePages(f, &.{.{ .slot = kx.slot, .end = end }});
++    try kx.dev.syncTables();
++}
++
+ pub const MultiSeg = ft.MultiSeg;
+ 
+ pub const Tail = ft.Tail;
+diff --git a/zig/src/families/deepseek_v41/forward_prefill_finish.zig b/zig/src/families/deepseek_v41/forward_prefill_finish.zig
+index 94e32cdfd91afdcc1fb47bba20378741c4c92433..fee6b3c51486c678b187df496d2cdef5a6e1a631 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill_finish.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill_finish.zig
+@@ -49,9 +49,13 @@ pub fn promptMulti(f: *Forward, segs: []const MultiSeg) !void {
+     const cs = try block_prefill.emitMulti(a, f.cfg, f.widths, f.opts, layers, spans, if (replay) .encoder else .whole);
+     try ready(f);
+     // the pages of every segment's positions, before any launch (each on its slot's table)
+-    for (segs) |sg| {
+-        try sw.run(sw.ctx, sg.slot);
+-        if (f.kv) |kx| try kx.reserve(sg.start + sg.ids.len);
++    if (f.kv) |kx| {
++        var needs: [16]@import("pool_growth.zig").Need = undefined;
++        for (segs, needs[0..segs.len]) |sg, *need| {
++            need.* = .{ .slot = kx.slots[sg.slot], .end = sg.start + sg.ids.len };
++        }
++        try pf.reservePages(f, needs[0..segs.len]);
++        try kx.dev.syncTables();
+     }
+     var m: Multi = .{ .segs = segs, .row0 = row0, .tails = tails, .ids = all.items };
+     f.multi = &m;
+diff --git a/zig/src/families/deepseek_v41/pf4k_test.zig b/zig/src/families/deepseek_v41/pf4k_test.zig
+index 173d2717ca99517e8b51d26102aecab97c0d60aa..4e0ff7a9ab7057e835dac285cb194c9c5b1435ce 100644
+--- a/zig/src/families/deepseek_v41/pf4k_test.zig
++++ b/zig/src/families/deepseek_v41/pf4k_test.zig
+@@ -381,3 +381,7 @@ test "TF_DSV41_GM_GU2: 0 / 1, and a 4,096-row segment's gate / up at GU2 over it
+ test {
+     _ = @import("index_scratch_test.zig");
+ }
++
++test {
++    _ = @import("request_admission_test.zig");
++}
+diff --git a/zig/src/families/deepseek_v41/pool_growth.zig b/zig/src/families/deepseek_v41/pool_growth.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cfb3db68aa9f6b41ebe6efbc769b467ceec8a63d
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/pool_growth.zig
+@@ -0,0 +1,49 @@
++//! A pre-launch pool transaction: every rank maps its rows or every rank restores the previous page ownership.
++
++const sessions = @import("kv").sessions;
++const lockstep = @import("lockstep.zig");
++
++pub const Need = struct { slot: *sessions.Slot, end: u64 };
++
++/// No device table or model state is changed here; failed agreement retains ownership for fatal teardown.
++pub fn reserve(agree: ?lockstep.Agree, needs: []const Need) !void {
++    if (needs.len > 16) return error.Slots;
++    var before: [16]u64 = undefined;
++    var over: [16]u32 = undefined;
++    var quota: [16]?u32 = undefined;
++    var origin: [16]@TypeOf(@as(sessions.Slot, undefined).origin) = undefined;
++    for (needs, 0..) |n, i| {
++        if (n.end > @as(u64, n.slot.max_pages) * n.slot.pool.page) return error.PastCapacity;
++        before[i] = n.slot.tokens();
++        over[i] = n.slot.over;
++        quota[i] = n.slot.quota;
++        origin[i] = n.slot.origin;
++        for (needs[0..i]) |prior| if (prior.slot == n.slot) return error.Slots;
++    }
++    var ok = true;
++    for (needs) |n| {
++        // Unadmitted callers may grow only into pages that no live request reserved.
++        if (n.slot.quota == null) n.slot.reserve(n.slot.len);
++        n.slot.ensure(n.end) catch |err| switch (err) {
++            error.PoolExhausted => {
++                ok = false;
++                break;
++            },
++            else => return err,
++        };
++    }
++    if (agree) |a| ok = try a.all(a.ctx, ok);
++    if (!ok) {
++        for (needs, 0..) |n, i| {
++            _ = try n.slot.truncate(before[i]);
++            n.slot.reserve(quota[i]);
++            n.slot.over = over[i];
++            n.slot.origin = origin[i];
++        }
++        return error.PoolExhausted;
++    }
++    for (needs, 0..) |n, i| if (quota[i] == null) {
++        n.slot.reserve(null);
++        n.slot.over = over[i];
++    };
++}
+diff --git a/zig/src/families/deepseek_v41/pool_growth_test.zig b/zig/src/families/deepseek_v41/pool_growth_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..41837c1ee0d493d39fa9e7dcd7343f1351fe9596
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/pool_growth_test.zig
+@@ -0,0 +1,118 @@
++//! Real page owners under the production growth transaction with an in-process rank agreement.
++
++const std = @import("std");
++const t = std.testing;
++const sessions = @import("kv").sessions;
++const growth = @import("pool_growth.zig");
++const fams = [_]sessions.Family{.{ .name = "kv", .ratio = 1, .row_bytes = 1 }};
++
++const Pair = struct {
++    votes: [2]std.atomic.Value(u8) = .{ .init(0), .init(0) },
++    const Rank = struct {
++        pair: *Pair,
++        me: usize,
++        slot: *sessions.Slot,
++        err: ?anyerror = null,
++    };
++    fn all(ptr: *anyopaque, ok: bool) !bool {
++        const r: *Rank = @ptrCast(@alignCast(ptr));
++        r.pair.votes[r.me].store(if (ok) 1 else 2, .release);
++        var spins: u64 = 0;
++        while (r.pair.votes[1 - r.me].load(.acquire) == 0) : (spins += 1) {
++            if (spins > 1 << 32) return error.Timeout;
++            std.atomic.spinLoopHint();
++        }
++        return ok and r.pair.votes[1 - r.me].load(.acquire) == 1;
++    }
++    fn run(r: *Rank) void {
++        growth.reserve(.{ .ctx = r, .all = all }, &.{.{ .slot = r.slot, .end = 256 }}) catch |err| {
++            r.err = err;
++        };
++    }
++};
++
++test "pool growth: one rank out of pages rolls back both ranks before device table upload, then both retry" {
++    var pools: [2]sessions.Pool = undefined;
++    for (&pools, 0..) |*p, rank| p.* = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 2, @intCast(rank));
++    defer for (&pools) |*p| p.deinit();
++    const s0 = try pools[0].newSlot(512);
++    const s1 = try pools[1].newSlot(512);
++    const occupied = try pools[1].newSlot(512);
++    try occupied.ensure(384);
++    var pair: Pair = .{};
++    var ranks = [_]Pair.Rank{ .{ .pair = &pair, .me = 0, .slot = s0 }, .{ .pair = &pair, .me = 1, .slot = s1 } };
++    const a = try std.Thread.spawn(.{}, Pair.run, .{&ranks[0]});
++    const b = try std.Thread.spawn(.{}, Pair.run, .{&ranks[1]});
++    a.join();
++    b.join();
++    for (ranks) |r| {
++        try t.expectEqual(@as(?anyerror, error.PoolExhausted), r.err);
++        try t.expectEqual(@as(u32, 0), r.slot.len);
++        try t.expectEqual(@as(u32, 0), r.slot.over);
++    }
++    try t.expectEqual(@as(u32, 32), pools[0].freePages());
++    try t.expectEqual(@as(u32, 8), pools[1].freePages());
++    _ = try occupied.releaseAll();
++    pair = .{};
++    for (&ranks) |*r| r.err = null;
++    const c = try std.Thread.spawn(.{}, Pair.run, .{&ranks[0]});
++    const d = try std.Thread.spawn(.{}, Pair.run, .{&ranks[1]});
++    c.join();
++    d.join();
++    for (ranks) |r| {
++        try t.expect(r.err == null);
++        try t.expectEqual(@as(u32, 16), r.slot.len);
++        _ = try r.slot.releaseAll();
++    }
++}
++
++test "pool growth: batch refusal restores earlier tentative maps and preserves partial prefill ownership" {
++    var pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    const first = try pool.newSlot(512);
++    const second = try pool.newSlot(512);
++    try first.ensure(64);
++    try second.ensure(64);
++    const before = pool.freePages();
++    const needs = [_]growth.Need{ .{ .slot = first, .end = 256 }, .{ .slot = second, .end = 512 } };
++    try t.expectError(error.PoolExhausted, growth.reserve(null, &needs));
++    try t.expectEqual(before, pool.freePages());
++    try t.expectEqual(@as(u32, 4), first.len);
++    try t.expectEqual(@as(u32, 4), second.len);
++    _ = try first.releaseAll();
++    _ = try second.releaseAll();
++    try growth.reserve(null, &.{.{ .slot = first, .end = 512 }});
++    _ = try first.releaseAll();
++    try t.expectEqual(pool.npages, pool.available());
++}
++
++test "pool growth: a failed transport agreement propagates as fatal and retains the tentative owner" {
++    var pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    const slot = try pool.newSlot(512);
++    const Fail = struct {
++        fn all(_: *anyopaque, _: bool) anyerror!bool {
++            return error.PeerFailed;
++        }
++    };
++    var context: u8 = 0;
++    try t.expectError(error.PeerFailed, growth.reserve(.{ .ctx = &context, .all = Fail.all }, &.{.{ .slot = slot, .end = 128 }}));
++    try t.expectEqual(@as(u32, 8), slot.len);
++    _ = try slot.releaseAll();
++}
++
++test "pool growth: an unadmitted caller cannot consume another active request's reservation" {
++    var pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    const active = try pool.newSlot(512);
++    const other = try pool.newSlot(512);
++    active.reserve(24);
++    try t.expectError(error.PoolExhausted, growth.reserve(null, &.{.{ .slot = other, .end = 256 }}));
++    try t.expectEqual(@as(u32, 0), other.len);
++    try t.expect(other.quota == null);
++    try t.expectEqual(@as(u32, 8), pool.available());
++    try growth.reserve(null, &.{.{ .slot = active, .end = 384 }});
++    _ = try active.releaseAll();
++    try growth.reserve(null, &.{.{ .slot = other, .end = 512 }});
++    _ = try other.releaseAll();
++}
+diff --git a/zig/src/families/deepseek_v41/request_admission.zig b/zig/src/families/deepseek_v41/request_admission.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..a5edd09bc697b2719990e93a4b86d22142ca75be
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/request_admission.zig
+@@ -0,0 +1,36 @@
++//! Direct target admission uses the same full-request pool plan as the round planner, before restore or prefill.
++
++const std = @import("std");
++
++pub const Resumed = struct { at: u64 = 0, damaged: bool = false };
++
++/// A failed cache restore loses its shared-page credit; re-price the empty slot before any prompt row runs.
++pub fn resumeRequest(s: anytype, prompt: []const u32, max_new: u64) !Resumed {
++    const hit = try s.find(prompt);
++    const r = try apply(s, prompt, max_new, hit);
++    if (r.damaged) {
++        try afterMiss(s, prompt, max_new);
++    }
++    return r;
++}
++
++/// Called after an agreed restore miss, also by the round planner's pre-planned admission path.
++pub fn afterMiss(s: anytype, prompt: []const u32, max_new: u64) !void {
++    if (s.kx.slot.len != 0) return error.SlotNotEmpty;
++    const kv = @import("kv");
++    const covered = @as(u64, s.kx.slot.quota orelse 0) * s.kx.slot.pool.page;
++    const reply = covered -| (@as(u64, prompt.len) + kv.sess.slack);
++    s.kx.slot.reserve(null);
++    _ = try apply(s, prompt, @max(max_new, reply), @as(?kv.sessions.store.Hit, null));
++}
++
++fn apply(s: anytype, prompt: []const u32, max_new: u64, hit: anytype) !Resumed {
++    var spills: std.ArrayList(u32) = .empty;
++    defer spills.deinit(s.gpa);
++    const held: []const u32 = if (hit) |h| &.{h.id} else &.{};
++    const plan = try s.poolPlan(prompt.len, max_new, hit, held, 0, &spills);
++    // A direct target has no queue: refuse before sending operations, evicting entries or mutating the slot.
++    if (plan.wait) return error.PoolExhausted;
++    const r = try s.resumePlanned(prompt, plan.need, hit, spills.items);
++    return .{ .at = r.at, .damaged = r.damaged };
++}
+diff --git a/zig/src/families/deepseek_v41/request_admission_test.zig b/zig/src/families/deepseek_v41/request_admission_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..0b478ffa15944768b9af1b9647504a948a648d4e
+--- /dev/null
++++ b/zig/src/families/deepseek_v41/request_admission_test.zig
+@@ -0,0 +1,190 @@
++//! Host transport adapter around the actual target admission routine, shared store and reservation owner.
++
++const std = @import("std");
++const t = std.testing;
++const kv = @import("kv");
++const sessions = kv.sessions;
++const admission = @import("request_admission.zig");
++const fams = [_]sessions.Family{.{ .name = "kv", .ratio = 1, .row_bytes = 1 }};
++
++const Bound = struct {
++    released: bool = false,
++    fn bytes(_: *anyopaque) u64 {
++        return 1;
++    }
++    fn blobs(_: *anyopaque, _: std.mem.Allocator) ![]sessions.disk.Blob {
++        return error.Unused;
++    }
++    fn release(p: *anyopaque) void {
++        @as(*Bound, @ptrCast(@alignCast(p))).released = true;
++    }
++    fn value(b: *Bound) sessions.store.Bounded {
++        return .{ .ptr = b, .vtable = &.{ .nbytes = bytes, .blobs = blobs, .release = release } };
++    }
++};
++
++const Host = struct {
++    gpa: std.mem.Allocator,
++    store: *sessions.Store,
++    kx: struct { slot: *sessions.Slot },
++    sent: usize = 0,
++    spills: usize = 0,
++    damage: bool = false,
++    fail: ?anyerror = null,
++
++    pub fn find(h: *Host, prompt: []const u32) !?sessions.store.Hit {
++        const ids = try h.gpa.alloc(i32, prompt.len);
++        defer h.gpa.free(ids);
++        for (prompt, ids) |id, *out| out.* = @intCast(id);
++        return h.store.find(41, ids);
++    }
++    pub fn poolPlan(h: *Host, n: u64, max_new: u64, hit: ?sessions.store.Hit, held: []const u32, extra: u32, spills: *std.ArrayList(u32)) !kv.sess.Plan {
++        return kv.sess.admit(h.store, hit, n, max_new, h.kx.slot.capacity, held, extra, spills);
++    }
++    pub fn resumePlanned(h: *Host, _: []const u32, need: u32, hit: ?sessions.store.Hit, spills: []const u32) !admission.Resumed {
++        h.sent += 1;
++        if (h.fail) |err| return err;
++        for (spills) |id| _ = try h.store.evict(id);
++        try h.store.settleAll();
++        h.spills += spills.len;
++        h.kx.slot.reserve(need);
++        if (hit) |entry| {
++            if (h.damage) {
++                try h.store.drop(entry.id);
++                return .{ .damaged = true };
++            }
++            _ = try h.store.restoreRam(entry.id, h.kx.slot);
++            return .{ .at = entry.pos };
++        }
++        return .{};
++    }
++};
++
++fn save(store: *sessions.Store, slot: *sessions.Slot, ids: []const i32, bound: *Bound) !u32 {
++    try slot.ensure(ids.len);
++    const id = (try store.save(slot, bound.value(), ids, 41, 0)).?;
++    _ = try slot.releaseAll();
++    return id;
++}
++
++fn stockGrowth(world: u32, rank: u32) !void {
++    const a = t.allocator;
++    var pool = try sessions.Pool.init(a, .{ .families = &fams, .page = 512 }, 2100224, world, rank);
++    defer pool.deinit();
++    var host = try sessions.HostPool.init(a, &pool);
++    defer host.deinit();
++    var store = try sessions.Store.init(a, t.io, &pool, host.store(), null, .{ .ram_bytes = 1 << 30 });
++    defer store.deinit();
++    const idle = try pool.newSlot(2100224);
++    const active = try pool.newSlot(655360);
++    const next = try pool.newSlot(655360);
++    const ids = try a.alloc(i32, 1990000);
++    defer a.free(ids);
++    @memset(ids, 7);
++    var bound: Bound = .{};
++    _ = try save(&store, idle, ids, &bound);
++    const prompt = try a.alloc(u32, 117029);
++    defer a.free(prompt);
++    @memset(prompt, 9);
++    var h: Host = .{ .gpa = a, .store = &store, .kx = .{ .slot = active } };
++    try t.expect(pool.available() > 0 and @as(u64, pool.available()) * pool.page < prompt.len);
++    _ = try admission.resumeRequest(&h, prompt, 256);
++    try t.expect(h.spills > 0 and bound.released);
++    try t.expect(active.quota.? >= (prompt.len + 256 + kv.sess.slack + 511) / 512);
++    // A concurrent request cannot consume the active request's unmapped reservation.
++    var h2: Host = .{ .gpa = a, .store = &store, .kx = .{ .slot = next } };
++    _ = try admission.resumeRequest(&h2, prompt, 256);
++    try active.ensure(65536);
++    try next.ensure(65536);
++    try active.ensure(prompt.len + 256);
++    try next.ensure(prompt.len + 256);
++    _ = try active.releaseAll();
++    _ = try next.releaseAll();
++    try t.expectEqual(pool.npages, pool.available());
++}
++
++test "pool growth: stock 117029-token admission reclaims idle ownership before the first piece on each rank" {
++    try stockGrowth(1, 0);
++    try stockGrowth(2, 0);
++    try stockGrowth(2, 1);
++}
++
++test "pool growth: active reservations refuse without mutation, partial prefill rollback permits the next request" {
++    const a = t.allocator;
++    var pool = try sessions.Pool.init(a, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    var host = try sessions.HostPool.init(a, &pool);
++    defer host.deinit();
++    var store = try sessions.Store.init(a, t.io, &pool, host.store(), null, .{});
++    defer store.deinit();
++    const active = try pool.newSlot(512);
++    const next = try pool.newSlot(512);
++    var h: Host = .{ .gpa = a, .store = &store, .kx = .{ .slot = active } };
++    const prompt: [300]u32 = @splat(4);
++    _ = try admission.resumeRequest(&h, &prompt, 64);
++    try active.ensure(128);
++    const free = pool.freePages();
++    const available = pool.available();
++    var h2: Host = .{ .gpa = a, .store = &store, .kx = .{ .slot = next } };
++    try t.expectError(error.PoolExhausted, admission.resumeRequest(&h2, &prompt, 64));
++    try t.expectEqual(@as(usize, 0), h2.sent);
++    try t.expectEqual(free, pool.freePages());
++    try t.expectEqual(available, pool.available());
++    try t.expectEqual(@as(u32, 0), next.len);
++    try t.expect(next.quota == null);
++    // A refused growth leaves the partial prompt untouched, then release returns pages and its remaining quota.
++    try t.expectError(error.PoolExhausted, next.ensure(512));
++    try t.expectEqual(@as(u32, 8), active.len);
++    _ = try active.releaseAll();
++    _ = try admission.resumeRequest(&h2, &prompt, 64);
++    try next.ensure(prompt.len + 64);
++    _ = try next.releaseAll();
++    try t.expectEqual(pool.npages, pool.available());
++}
++
++test "pool growth: a damaged RAM hit re-prices its lost shared credit, device and transport errors propagate" {
++    const a = t.allocator;
++    var pool = try sessions.Pool.init(a, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    var host = try sessions.HostPool.init(a, &pool);
++    defer host.deinit();
++    var store = try sessions.Store.init(a, t.io, &pool, host.store(), null, .{});
++    defer store.deinit();
++    const idle = try pool.newSlot(512);
++    const active = try pool.newSlot(512);
++    const ids: [128]i32 = @splat(7);
++    var bound: Bound = .{};
++    _ = try save(&store, idle, &ids, &bound);
++    const prompt: [300]u32 = @splat(7);
++    var h: Host = .{ .gpa = a, .store = &store, .kx = .{ .slot = active }, .damage = true };
++    const r = try admission.resumeRequest(&h, &prompt, 64);
++    try t.expect(r.damaged and r.at == 0 and h.sent == 2);
++    try active.ensure(prompt.len + 64);
++    _ = try active.releaseAll();
++    for ([_]anyerror{ error.CudaFailed, error.PeerFailed }) |err| {
++        h.fail = err;
++        try t.expectError(err, admission.resumeRequest(&h, &prompt, 64));
++        try t.expectEqual(@as(u32, 0), active.len);
++    }
++}
++
++test {
++    _ = @import("pool_growth_test.zig");
++}
++
++test "pool growth: a planned restore miss preserves the original reply reservation" {
++    var pool = try sessions.Pool.init(t.allocator, .{ .families = &fams, .page = 16 }, 512, 1, 0);
++    defer pool.deinit();
++    var host = try sessions.HostPool.init(t.allocator, &pool);
++    defer host.deinit();
++    var store = try sessions.Store.init(t.allocator, t.io, &pool, host.store(), null, .{});
++    defer store.deinit();
++    const slot = try pool.newSlot(512);
++    slot.reserve(24);
++    var h: Host = .{ .gpa = t.allocator, .store = &store, .kx = .{ .slot = slot } };
++    const prompt: [128]u32 = @splat(7);
++    try admission.afterMiss(&h, &prompt, 0);
++    try t.expectEqual(@as(?u32, 24), slot.quota);
++    try slot.ensure(320);
++    _ = try slot.releaseAll();
++}
+diff --git a/zig/src/families/deepseek_v41/sessions_gpu.zig b/zig/src/families/deepseek_v41/sessions_gpu.zig
+index 5bc007a20f40437cf825b0e6cc0f8f30423b4476..c8a520fd8f46567bb78c3b7c7d56a795cd51baad 100644
+--- a/zig/src/families/deepseek_v41/sessions_gpu.zig
++++ b/zig/src/families/deepseek_v41/sessions_gpu.zig
+@@ -421,10 +421,7 @@ pub const Sessions = struct {
+     /// Admits the request, then restores the longest entry strictly prefixing `prompt`; its position (0: none).
+     pub fn resume_(s: *Sessions, prompt: []const u32, max_new: ?u64) !u64 {
+         if (s.f.slot.pos != 0 or s.kx.slot.len != 0) return error.SlotNotEmpty;
+-        const hit = try s.find(prompt);
+-        if (max_new) |mn| try s.admit(hit, prompt.len, mn);
+-        s.ds_valid[s.cur()] = 0;
+-        return (try s.resumeHit(prompt, hit)).at;
++        return (try @import("request_admission.zig").resumeRequest(s, prompt, max_new orelse 0)).at;
+     }
+ 
+     /// The longest saved entry that strictly prefixes `prompt` (a row must remain to prefill), null: none.
+@@ -465,22 +462,6 @@ pub const Sessions = struct {
+         return .{ .at = h.pos };
+     }
+ 
+-    /// The request's admission: every rank evicts the leader's picks and reserves pages, else goes on unreserved.
+-    fn admit(s: *Sessions, hit: ?sessions.store.Hit, n: usize, max_new: u64) !void {
+-        var spills: std.ArrayList(u32) = .empty;
+-        defer spills.deinit(s.gpa);
+-        const held: []const u32 = if (hit) |h| &.{h.id} else &.{};
+-        const plan = try kv.sess.admit(&s.store, hit, n, max_new, s.kx.slot.capacity, held, 0, &spills);
+-        s.stats.admits += 1;
+-        if (plan.wait) {
+-            s.stats.waits += 1;
+-            if (!quiet) std.log.scoped(.dsv41).warn("sessions: a {d}-token request (+{d}) needs {d} pool pages, {d} are free and unreserved even with every RAM entry gone; the reference server would queue it, it runs unreserved", .{ n, max_new, plan.want, s.kx.pool.available() });
+-            return;
+-        }
+-        try s.f.sendSessAdmit(plan.need, spills.items);
+-        try s.applyAdmit(plan.need, spills.items);
+-    }
+-
+     fn applyAdmit(s: *Sessions, need: u32, spills: []const u32) !void {
+         for (spills) |id| _ = try s.store.evict(id);
+         try s.store.settleAll();
+diff --git a/zig/src/families/deepseek_v41/target.zig b/zig/src/families/deepseek_v41/target.zig
+index c5352f5305a6e94d115c180d6d36b200b63bbc0a..bb7c0ec9a0b69045fceb5ab1d77e78e41791058e 100644
+--- a/zig/src/families/deepseek_v41/target.zig
++++ b/zig/src/families/deepseek_v41/target.zig
+@@ -108,7 +108,7 @@ pub const GpuTarget = struct {
+         if (slot < t.max_new.len) t.max_new[slot] = null;
+         // a failed prompt leaves the slot empty on every rank, its pages and reservation back
+         errdefer if (t.sessions != null) t.abandon(slot);
+-        const at: usize = if (t.sessions) |ss| @intCast(try ss.resume_(ids, max_new)) else 0;
++        const at: usize = if (t.sessions) |ss| @intCast((try @import("request_admission.zig").resumeRequest(ss, ids, max_new orelse 0)).at) else 0;
+         const rest = ids[at..];
+         if (t.own_prefill and t.prompt_tail == .verify) {
+             // the rows before the last token prefill; the last token is the pending row of the first verify window
+@@ -185,10 +185,11 @@ pub const GpuTarget = struct {
+         const ss = t.sessions orelse return .{};
+         if (planned) |a| {
+             const r = try ss.resumePlanned(ids, a.need, a.hit, a.spills);
++            if (r.damaged) try @import("request_admission.zig").afterMiss(ss, ids, max_new orelse 0);
+             return .{ .at = r.at, .damaged = r.damaged };
+         }
+         const before = ss.stats.damaged;
+-        const at = try ss.resume_(ids, max_new);
++        const at = (try @import("request_admission.zig").resumeRequest(ss, ids, max_new orelse 0)).at;
+         return .{ .at = at, .damaged = ss.stats.damaged != before };
+     }
+ 
+@@ -205,7 +206,10 @@ pub const GpuTarget = struct {
+         // the next round's piece of this prompt read ahead behind this one, up to the prompt's last token
+         const last = ids.len - 1;
+         if (end < last) try t.f.prefillAhead(ids[end..@min(last, end + (end - start))]);
+-        try t.f.prefill(ids[start..end]);
++        t.f.prefill(ids[start..end]) catch |err| {
++            if (err == error.PoolExhausted) t.abandon(slot);
++            return err;
++        };
+         const End = struct {
+             target: *GpuTarget,
+             slot: u32,
+@@ -216,7 +220,10 @@ pub const GpuTarget = struct {
+                 try e.target.handTaps(e.slot);
+             }
+         };
+-        try @import("piece_handoff.zig").finish(End{ .target = t, .slot = slot }, pf.state(t.f).mode == .full, save and end >= ced.session_min);
++        @import("piece_handoff.zig").finish(End{ .target = t, .slot = slot }, pf.state(t.f).mode == .full, save and end >= ced.session_min) catch |err| {
++            if (err == error.PoolExhausted) t.abandon(slot);
++            return err;
++        };
+     }
+ 
+     fn finish(p: *anyopaque, slot: u32, ids: []const u32, sampling: ?lanes.Sampling, draw: u64) anyerror!u32 {

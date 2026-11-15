@@ -1,0 +1,1365 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 22:56:57 +0700
+Subject: [PATCH 138/207] Merge T2 1eab2bae9 (loops, multi-statement defs and
+ digit reversal on the graph route; rebased on lane 3c3603793; sort networks
+ capped at 64 nodes)
+
+Squashed merge of 1 commits:
+- runner: loops, multi-statement defs and digit reversal on the graph route (Jay Leaton)
+---
+ zig/src/core/compute_circuit_proof_test.zig   |   8 +-
+ zig/src/core/runner_frontend_fraction.zig     |   2 +-
+ zig/src/core/runner_frontend_integer.zig      |   2 +-
+ zig/src/core/runner_frontend_integer_ast.zig  |  67 ++-
+ .../core/runner_frontend_integer_def_test.zig |   4 +-
+ .../core/runner_frontend_integer_digits.zig   | 140 +++++
+ zig/src/core/runner_frontend_integer_list.zig |  13 +-
+ .../runner_frontend_integer_loop_test.zig     | 184 +++++++
+ .../core/runner_frontend_integer_python.zig   |  87 ++-
+ .../core/runner_frontend_integer_suite.zig    | 516 ++++++++++++++++++
+ zig/src/core/runner_frontend_test.zig         |   1 +
+ 11 files changed, 977 insertions(+), 47 deletions(-)
+ create mode 100644 zig/src/core/runner_frontend_integer_digits.zig
+ create mode 100644 zig/src/core/runner_frontend_integer_loop_test.zig
+ create mode 100644 zig/src/core/runner_frontend_integer_suite.zig
+
+diff --git a/zig/src/core/compute_circuit_proof_test.zig b/zig/src/core/compute_circuit_proof_test.zig
+index 0c1f65cfe58a753b9fe06d9a43f8221429620a10..e143842606fa0006b9402ee09b142deaad49c483 100644
+--- a/zig/src/core/compute_circuit_proof_test.zig
++++ b/zig/src/core/compute_circuit_proof_test.zig
+@@ -18,10 +18,8 @@ const calc_owned = [_][]const u8{ "add30-06", "add30-11", "add30-22", "add30-23"
+ const bank_owned = [_][]const u8{"bignum-10"};
+ /// Floor division with divmod and Fraction, Decimal: the graph bank's, or an ELF's when compiling.
+ const graph_owned = [_][]const u8{ "div_big-04", "div_big-08", "div_big-20", "div_big-23", "div_big-32", "div_big-36", "mul_big-08", "mul_big-17", "mul_big-18" };
+-/// One-expression integer defs with asserts (mbpp-66 over a static int list): the bank's, an ELF's otherwise.
+-const def_owned = [_][]const u8{ "mbpp-80", "mbpp-86", "mbpp-66" };
+-/// MBPP functions only an ELF runs.
+-const elf_owned = [_][]const u8{"mbpp-56"};
++/// Integer defs with asserts (mbpp-66 over a static int list, mbpp-56 reversing digits): the bank's, else an ELF's.
++const def_owned = [_][]const u8{ "mbpp-80", "mbpp-86", "mbpp-66", "mbpp-56" };
+ 
+ test "compute runner proof: served S3 (no ELF): owned calls print the sandbox's bytes, never as an ELF" {
+     try proof(false);
+@@ -94,7 +92,7 @@ fn proof(elf: bool) !void {
+             .declined => |why| std.debug.print("{s}#{d}: code tool ({t})\n", .{ r.task, r.call, why }),
+         }
+         const must = listed(&calc_owned, r.task) or (listed(&bank_owned, r.task) and (with_bank != null or elf)) or
+-            (listed(&graph_owned, r.task) and (with_bank != null or elf)) or (listed(&elf_owned, r.task) and elf) or
++            (listed(&graph_owned, r.task) and (with_bank != null or elf)) or
+             (listed(&def_owned, r.task) and (with_bank != null or elf));
+         if (must and got != .owned) {
+             std.debug.print("  MUST OWN: {s} went to the code tool\n", .{r.task});
+diff --git a/zig/src/core/runner_frontend_fraction.zig b/zig/src/core/runner_frontend_fraction.zig
+index c14059ab9b1468461807f6f0dd738d8c5f2b4070..aa2a50ff635ce9b92c860793ea54a12947b30505 100644
+--- a/zig/src/core/runner_frontend_fraction.zig
++++ b/zig/src/core/runner_frontend_fraction.zig
+@@ -205,7 +205,7 @@ const Script = struct {
+     }
+ 
+     fn append(self: *Script, node: ast.Node) Invalid!usize {
+-        if (self.parser.count == self.parser.nodes.len) return error.Unsupported;
++        if (self.parser.count == self.parser.capacity) return error.Unsupported;
+         const root = self.parser.count;
+         self.parser.nodes[root] = node;
+         self.parser.proved[root] = true;
+diff --git a/zig/src/core/runner_frontend_integer.zig b/zig/src/core/runner_frontend_integer.zig
+index ecad61e8f835758f80b16b1b9daef1c4e28f1d14..1f1422a46c1f7cdf4c3329a1c831738fa969377f 100644
+--- a/zig/src/core/runner_frontend_integer.zig
++++ b/zig/src/core/runner_frontend_integer.zig
+@@ -8,7 +8,7 @@ pub const Lowered = struct { source: []u8, estimated_steps: ?usize, table: ?Tabl
+ 
+ /// A lowered script's DAG and ordered outputs, the data the runtime evaluates; literal text is dropped (use value).
+ pub const Table = struct {
+-    nodes: [64]ast.Node = undefined,
++    nodes: [ast.max_nodes]ast.Node = undefined,
+     count: usize = 0,
+     roots: [32]usize = undefined,
+     endings: [32]u8 = undefined, // ' ', '\n', or ',' between a printed list's elements
+diff --git a/zig/src/core/runner_frontend_integer_ast.zig b/zig/src/core/runner_frontend_integer_ast.zig
+index a7f126cb802ed3d3c269ec3fda4508e9409a6709..71549da5fbb06dbbce84fc2e09086af9e6441062 100644
+--- a/zig/src/core/runner_frontend_integer_ast.zig
++++ b/zig/src/core/runner_frontend_integer_ast.zig
+@@ -5,6 +5,10 @@ pub const Invalid = error{Unsupported};
+ pub const limit: i512 = std.math.pow(i512, 10, 62);
+ /// Elements all of a script's lists may hold together (each one a node, so the node budget binds first).
+ pub const max_items = 64;
++/// Nodes a whole script may make (loops unroll into them); other lowerings keep `capacity`'s 64, the C runtime's.
++pub const max_nodes = 512;
++/// A name bound but not yet assigned: a function's local before its first assignment (UnboundLocalError).
++pub const unbound = std.math.maxInt(usize);
+ pub const Op = enum(u8) { literal, neg, add, sub, mul, floor, mod, pow, powmod, digits, divmod, gcd, isqrt, factorial, range_product, digit_sum, eq, ne, lt, le, gt, ge };
+ pub const Node = struct {
+     op: Op,
+@@ -18,11 +22,12 @@ pub const Node = struct {
+ pub const Parser = struct {
+     source: []const u8,
+     pos: usize = 0,
+-    nodes: [64]Node = undefined,
++    nodes: [max_nodes]Node = undefined,
+     count: usize = 0,
+-    proved: [64]bool = @splat(false),
+-    names: [32][]const u8 = undefined,
+-    roots: [32]usize = undefined,
++    capacity: usize = 64,
++    proved: [max_nodes]bool = @splat(false),
++    names: [64][]const u8 = undefined,
++    roots: [64]usize = undefined,
+     binding_count: usize = 0,
+     require_math_import: bool = false,
+     math_module: bool = false,
+@@ -38,14 +43,19 @@ pub const Parser = struct {
+     item_count: usize = 0,
+     lists: [16]list.List = undefined,
+     list_count: usize = 0,
+-    kinds: [32]bool = undefined,
++    kinds: [64]bool = undefined,
+     module_count: usize = 0, // the module's names: bindings[0..module_count] outside any frame or comprehension
+     allow_lists: bool = false, // the whole-script lowering's lists and min/max; every other parser keeps its grammar
+     listed: bool = false, // a list or min/max parsed: the graph route's script only (calc and ELF keep their own)
+     asserted: bool = false, // an `assert` proved: like a def or a list, the graph route's script only
++    looped: bool = false, // a loop, a suite body or a digit reversal: the graph route's script only
++    calls: u8 = 0, // nested calls being inlined: a suite's recursion stops at 24
++    no_recurse: bool = false, // a branch tried only if it needs no recursion (a schedule's last level)
++    recursions: u32 = 0, // recursive calls inlined so far: a branch that recursed is not a schedule's last level
++    cut: bool = false, // a recursion no_recurse refused: the untaken branch is past the schedule, not unsupported
+ 
+     /// `def name(params): return <expr>`, inlined at each call; `body` borrows the script.
+-    pub const Function = struct { name: []const u8, params: [4][]const u8 = undefined, arity: usize = 0, body: []const u8 };
++    pub const Function = struct { name: []const u8, params: [4][]const u8 = undefined, arity: usize = 0, body: []const u8, suite: []const u8 = "" };
+     const Frame = struct { start: usize, globals: usize };
+     /// An int node, or a list's index in `lists`.
+     pub const Operand = struct { index: usize, list: bool };
+@@ -111,11 +121,13 @@ pub const Parser = struct {
+             self.check_only = false;
+         }
+         self.check_only = true;
+-        self.source = f.body;
+-        self.pos = 0;
+-        _ = try self.expr(0);
+-        self.space();
+-        if (self.pos != self.source.len) return error.Unsupported;
++        if (f.suite.len != 0) try @import("runner_frontend_integer_suite.zig").check(self, f.suite) else {
++            self.source = f.body;
++            self.pos = 0;
++            _ = try self.expr(0);
++            self.space();
++            if (self.pos != self.source.len) return error.Unsupported;
++        }
+         self.functions[self.function_count] = f;
+         self.function_count += 1;
+     }
+@@ -126,7 +138,7 @@ pub const Parser = struct {
+     }
+ 
+     /// A name's binding: a body's params, then module names (never a caller's); newest first, so targets shadow.
+-    fn slot(self: *const Parser, name: []const u8) ?usize {
++    pub fn slot(self: *const Parser, name: []const u8) ?usize {
+         const visible: [2][2]usize = if (self.frame) |f| .{ .{ f.start, self.binding_count }, .{ 0, f.globals } } else .{ .{ 0, self.binding_count }, .{ 0, 0 } };
+         for (visible) |range| {
+             var i = range[1];
+@@ -140,7 +152,7 @@ pub const Parser = struct {
+ 
+     fn lookup(self: *const Parser, name: []const u8) ?usize {
+         const s = self.slot(name) orelse return null;
+-        return if (self.kinds[s]) null else self.roots[s];
++        return if (self.kinds[s] or self.roots[s] == unbound) null else self.roots[s];
+     }
+ 
+     pub fn lookupList(self: *const Parser, name: []const u8) ?usize {
+@@ -152,7 +164,15 @@ pub const Parser = struct {
+     fn call(self: *Parser, index: usize, depth: usize) Invalid!usize {
+         const f = self.functions[index];
+         const bit = @as(u8, 1) << @intCast(index);
+-        if (self.active & bit != 0) return error.Unsupported;
++        // only a suite recurses, within its schedule (runner_frontend_integer_suite.zig)
++        if (self.active & bit != 0) {
++            if (f.suite.len == 0 or self.calls >= 24) return error.Unsupported;
++            if (self.no_recurse) {
++                self.cut = true;
++                return error.Unsupported;
++            }
++            self.recursions += 1;
++        }
+         var args: [4]Operand = undefined;
+         var n: usize = 0;
+         try self.need("(");
+@@ -164,9 +184,9 @@ pub const Parser = struct {
+             try self.need(",");
+         };
+         if (n != f.arity or self.binding_count + n > self.names.len) return error.Unsupported;
+-        const saved = .{ self.source, self.pos, self.binding_count, self.frame, self.active };
++        const saved = .{ self.source, self.pos, self.binding_count, self.frame, self.active, self.calls };
+         defer {
+-            self.source, self.pos, self.binding_count, self.frame, self.active = saved;
++            self.source, self.pos, self.binding_count, self.frame, self.active, self.calls = saved;
+         }
+         // read the outer frame before writing: a struct literal assigned in place may alias self.frame
+         const globals = if (self.frame) |outer| outer.globals else self.module_count;
+@@ -178,6 +198,8 @@ pub const Parser = struct {
+             self.binding_count += 1;
+         }
+         self.active |= bit;
++        self.calls += 1;
++        if (f.suite.len != 0) return @import("runner_frontend_integer_suite.zig").call(self, f.suite);
+         self.source = f.body;
+         self.pos = 0;
+         const root = try self.expr(depth + 1);
+@@ -198,7 +220,7 @@ pub const Parser = struct {
+ 
+     // Project both results from the original operands; proof values never become literal nodes.
+     pub fn divisionPair(self: *Parser, root: usize) Invalid![2]usize {
+-        if (root >= self.count or self.nodes[root].op != .divmod or self.count > self.nodes.len - 2)
++        if (root >= self.count or self.nodes[root].op != .divmod or self.count > self.capacity - 2)
+             return error.Unsupported;
+         _ = try self.prove(root, root);
+         const n = self.nodes[root];
+@@ -226,7 +248,7 @@ pub const Parser = struct {
+     }
+ 
+     pub fn add(self: *Parser, node: Node) Invalid!usize {
+-        if (self.count == self.nodes.len) return error.Unsupported;
++        if (self.count == self.capacity) return error.Unsupported;
+         self.nodes[self.count] = node;
+         self.proved[self.count] = false; // a reset may reuse the slot
+         self.count += 1;
+@@ -340,7 +362,7 @@ pub const Parser = struct {
+             if (self.textLength(depth)) |n| return n else |_| self.reset(m);
+             return list.length(self, depth);
+         }
+-        if (self.word("int")) return self.convert();
++        if (self.word("int")) return if (self.take("(str(")) @import("runner_frontend_integer_digits.zig").reversed(self, depth) else self.convert();
+         self.space();
+         if (self.pos < self.source.len and
+             (std.ascii.isAlphabetic(self.source[self.pos]) or self.source[self.pos] == '_'))
+@@ -370,6 +392,7 @@ pub const Parser = struct {
+     }
+ 
+     fn algorithm(self: *Parser, depth: usize) Invalid!?usize {
++        const start = self.pos;
+         const qualified = self.word("math");
+         if (qualified) try self.need(".");
+         const op: Op = if (self.word("gcd")) .gcd else if (self.word("isqrt")) .isqrt else if (self.word("factorial")) .factorial else if (self.word("prod")) .range_product else {
+@@ -384,7 +407,11 @@ pub const Parser = struct {
+                 .range_product => 8,
+                 else => unreachable,
+             };
+-            if (if (qualified) !self.math_module else self.math_imports & mask == 0) return error.Unsupported;
++            if (!qualified and self.math_imports & mask == 0) {
++                self.pos = start; // not imported: a def of that name, or nothing (the call refuses)
++                return null;
++            }
++            if (qualified and !self.math_module) return error.Unsupported;
+         }
+         try self.need("(");
+         if (op == .range_product) {
+diff --git a/zig/src/core/runner_frontend_integer_def_test.zig b/zig/src/core/runner_frontend_integer_def_test.zig
+index 0cb03711396e08a2d33fcbbf4e84c38248661a6a..376c8da2f889e13b0592b994ae3aa4864f9015ef 100644
+--- a/zig/src/core/runner_frontend_integer_def_test.zig
++++ b/zig/src/core/runner_frontend_integer_def_test.zig
+@@ -29,12 +29,10 @@ const refused = [_][]const u8{
+     // recursion, direct and mutual
+     "def f(n):\n    return f(n - 1)\nprint(f(3))\n",
+     "def f(n):\n    return g(n)\ndef g(n):\n    return f(n)\nprint(f(3))\n",
+-    // side effects or more than one statement in the body
++    // side effects in the body (multi-statement suites: runner_frontend_integer_loop_test.zig)
+     "def f(n):\n    print(n)\n    return n\nprint(f(3))\n",
+     "def f(n):\n    global k\n    return n\nprint(f(3))\n",
+-    "def f(n):\n    m = n * 2\n    return m\nprint(f(3))\n",
+     "def f(n): return n; k = 1\nprint(f(3))\n",
+-    "def f(n):\n    for i in range(n):\n        n += i\n    return n\nprint(f(3))\n",
+     "def f(n=2):\n    return n\nprint(f())\n",
+     "def f(*n):\n    return 1\nprint(f(3))\n",
+     "def f(n): return n\n    return 2\nprint(f(3))\n",
+diff --git a/zig/src/core/runner_frontend_integer_digits.zig b/zig/src/core/runner_frontend_integer_digits.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..b42b5a65057ec04e612f91dff3423bdcffc31352
+--- /dev/null
++++ b/zig/src/core/runner_frontend_integer_digits.zig
+@@ -0,0 +1,140 @@
++//! A number's digits in the integer lowering: int(str(x)[::-1]) and `while x > 0: ... x //= L`, unrolled by place.
++const std = @import("std");
++const ast = @import("runner_frontend_integer_ast.zig");
++const suite = @import("runner_frontend_integer_suite.zig");
++const Parser = ast.Parser;
++const Invalid = ast.Invalid;
++
++/// Decimal digits a reversal may unroll.
++const max_digits = 30;
++
++/// `int(str(x)[::-1])` after `int(str(`: x's digits read back, each one past the first gated by x >= 10^k.
++pub fn reversed(p: *Parser, depth: usize) Invalid!usize {
++    const x = try p.expr(depth + 1);
++    try p.need(")");
++    try p.need("[::-1]");
++    try p.need(")");
++    if (p.check_only) return x;
++    if (p.boolean(x)) return error.Unsupported;
++    const v = try p.prove(x, x);
++    if (v < 0) return error.Unsupported; // int("21-") raises ValueError
++    p.looped = true;
++    var exact: usize = 1;
++    var m = v;
++    while (m >= 10) : (m = @divTrunc(m, 10)) exact += 1;
++    if (exact > max_digits) return error.Unsupported;
++    // headroom, as a range loop's: a power of two of places, unless the graph route could not hold it
++    const spare = @min(max_digits, std.math.ceilPowerOfTwo(usize, @max(exact, 2)) catch max_digits);
++    const mark = p.mark();
++    if (spare > exact) {
++        if (horner(p, x, spare)) |root| {
++            if (!suite.heavy(p, root)) return root;
++        } else |_| {}
++        p.reset(mark);
++    }
++    return horner(p, x, exact);
++}
++
++/// r = x % 10, then r = r * (1 + 9c) + c * d for each further place: c = x >= 10^k, d = x // 10^k % 10.
++fn horner(p: *Parser, x: usize, places: usize) Invalid!usize {
++    const ten = try suite.literal(p, 10);
++    const nine = try suite.literal(p, 9);
++    const one = try suite.literal(p, 1);
++    var r = try suite.node(p, .mod, x, ten);
++    var place: i512 = 1;
++    for (1..places) |_| {
++        place *= 10;
++        const pk = try suite.literal(p, place);
++        const c = try suite.node(p, .ge, x, pk);
++        const d = try suite.node(p, .mod, try suite.node(p, .floor, x, pk), ten);
++        const grow = try suite.node(p, .add, one, try suite.node(p, .mul, c, nine));
++        r = try suite.node(p, .add, try suite.node(p, .mul, r, grow), try suite.node(p, .mul, c, d));
++    }
++    return r;
++}
++
++/// `while x > 0:` (`x >= 1`, `x != 0`, `0 < x`) with one `x //= L`: trip k runs where x0 >= L^k, reading x0 // L^k.
++pub fn whileDivides(r: *suite.Run, cond: []const u8, body: usize, end: usize) Invalid!bool {
++    const p = r.p;
++    // no trip's test reads another trip's state; anything else (false) is the general loop's
++    if (r.pred != null) return false;
++    var buf: [64]u8 = undefined;
++    const test_text = compact(&buf, cond) orelse return false;
++    const name = for ([_][]const u8{ ">0", ">=1", "!=0" }) |tail| {
++        if (std.mem.endsWith(u8, test_text, tail)) break test_text[0 .. test_text.len - tail.len];
++    } else if (std.mem.startsWith(u8, test_text, "0<")) test_text[2..] else return false;
++    if (!@import("runner_frontend_integer_python.zig").validBinding(name)) return false;
++    var at: ?usize = null;
++    var divisor: i512 = 0;
++    for (body..end) |i| {
++        const line = r.lines.items[i];
++        const target = suite.assigns(line.text) orelse continue;
++        if (!std.mem.eql(u8, target, name)) continue;
++        if (at != null or line.indent != r.lines.items[body].indent) return false;
++        var lbuf: [64]u8 = undefined;
++        const t = compact(&lbuf, line.text) orelse return false;
++        if (!std.mem.startsWith(u8, t, name) or !std.mem.startsWith(u8, t[name.len..], "//=")) return false;
++        const digits = t[name.len + 3 ..];
++        if (digits.len == 0 or digits.len > 18) return false;
++        for (digits) |c| if (!std.ascii.isDigit(c)) return false;
++        divisor = std.fmt.parseInt(i512, digits, 10) catch return false;
++        if (divisor < 2) return false;
++        at = i;
++    }
++    const line = at orelse return false;
++    const s = p.slot(name) orelse return false;
++    if (p.kinds[s] or p.roots[s] == ast.unbound) return false;
++    const x0 = p.roots[s];
++    var v = p.nodes[x0].value;
++    if (v < 0) return false; // `x != 0` would never end
++    var trips: usize = 0;
++    while (v > 0) : (v = @divFloor(v, divisor)) {
++        trips += 1;
++        if (trips > suite.max_trips) return error.Unsupported;
++    }
++    const mark = p.mark();
++    const saved = suite.Saved.take(p);
++    const spare = suite.schedule(trips);
++    if (spare > trips) {
++        if (unroll(r, name, x0, divisor, line, spare, body, end)) |_| {
++            if (!suite.heavy(p, null)) return true;
++        } else |_| {}
++        p.reset(mark);
++        saved.put(p);
++    }
++    try unroll(r, name, x0, divisor, line, trips, body, end);
++    return true;
++}
++
++fn unroll(r: *suite.Run, name: []const u8, x0: usize, divisor: i512, line: usize, count: usize, body: usize, end: usize) Invalid!void {
++    const p = r.p;
++    var place: i512 = 1;
++    for (0..count) |k| {
++        const pk = try suite.literal(p, place);
++        const c = try suite.node(p, .ge, x0, pk);
++        const xk = if (k == 0) x0 else try suite.node(p, .floor, x0, pk);
++        place = std.math.mul(i512, place, divisor) catch return error.Unsupported;
++        if (place > ast.limit) return error.Unsupported;
++        var inner = r.*;
++        inner.pred = c;
++        inner.divided = .{ .line = line, .name = name, .root = try suite.node(p, .floor, x0, try suite.literal(p, place)) };
++        try suite.store(r, name, xk);
++        if (try suite.exec(&inner, body, end, false) != null) return error.Unsupported;
++    }
++    // after the loop: 0 where it ran (the schedule covers its trips), x0 where it never did
++    const one = try suite.literal(p, 1);
++    const idle = try suite.node(p, .sub, one, try suite.node(p, .ge, x0, one));
++    try suite.store(r, name, try suite.node(p, .mul, idle, x0));
++}
++
++/// `text` without spaces or tabs, or null past the buffer.
++fn compact(buf: []u8, text: []const u8) ?[]const u8 {
++    var n: usize = 0;
++    for (text) |c| {
++        if (c == ' ' or c == '\t') continue;
++        if (n == buf.len) return null;
++        buf[n] = c;
++        n += 1;
++    }
++    return buf[0..n];
++}
+diff --git a/zig/src/core/runner_frontend_integer_list.zig b/zig/src/core/runner_frontend_integer_list.zig
+index 606dd65d4ec2d317f6191606c71445ced749047f..3474d38e871f2d9e4c3afb0ae34e6711dd1a65e1 100644
+--- a/zig/src/core/runner_frontend_integer_list.zig
++++ b/zig/src/core/runner_frontend_integer_list.zig
+@@ -6,7 +6,7 @@ const Invalid = ast.Invalid;
+ const node_cap = @typeInfo(@FieldType(Parser, "nodes")).array.len;
+ 
+ /// items[start..][0..len]; a range never prints here; a filtered list's 0/1 masks follow (its len is a circuit value).
+-pub const List = struct { start: usize = 0, len: usize = 0, range: bool = false, masked: bool = false };
++pub const List = struct { start: usize = 0, len: usize = 0, range: bool = false, masked: bool = false, literal: bool = false };
+ 
+ /// A list whose elements all exist: a filtered one only reaches sum() and len(), on the circuit.
+ pub fn plain(p: *const Parser, li: usize) Invalid!List {
+@@ -57,6 +57,7 @@ fn network(p: *Parser, elems: []usize, reverse: bool) Invalid!void {
+             const lo, const hi = try exchange(p, elems[c[0]], elems[c[1]]);
+             elems[c[0]], elems[c[1]] = if (reverse) .{ hi, lo } else .{ lo, hi };
+         }
++        if (p.count > network_nodes) return error.Unsupported;
+         return;
+     }
+     // odd-even transposition: n rounds
+@@ -67,8 +68,12 @@ fn network(p: *Parser, elems: []usize, reverse: bool) Invalid!void {
+             elems[i], elems[i + 1] = if (reverse) .{ hi, lo } else .{ lo, hi };
+         }
+     }
++    // the 64-node budget the networks were sized for (a packet's depth), though a whole script may make 512 nodes
++    if (p.count > network_nodes) return error.Unsupported;
+ }
+ 
++const network_nodes = 64;
++
+ /// Small literals the lowering itself makes (an index, a length): their text, as a literal node must carry one.
+ const digits = blk: {
+     @setEvalBranchQuota(20000);
+@@ -228,7 +233,9 @@ fn literal(p: *Parser, content: []const u8, depth: usize) Invalid!usize {
+         try p.need(",");
+         p.space();
+     }
+-    return make(p, elems[0..n], false);
++    const li = try make(p, elems[0..n], false);
++    p.lists[li].literal = true; // its length is the script's text, never a value's decision
++    return li;
+ }
+ 
+ /// range(n) is the literals 0..n-1; range(start, stop[, step]) is start, then each element before plus the step.
+@@ -531,7 +538,7 @@ fn separator(text: []const u8) ?usize {
+ }
+ 
+ /// The first whole word `w` at depth 0 from `from`.
+-fn top(text: []const u8, w: []const u8, from: usize) ?usize {
++pub fn top(text: []const u8, w: []const u8, from: usize) ?usize {
+     var depth: usize = 0;
+     var quote: u8 = 0;
+     var i = from;
+diff --git a/zig/src/core/runner_frontend_integer_loop_test.zig b/zig/src/core/runner_frontend_integer_loop_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..c91004e2a6f152634bdde64bc32aae17a4fe9de5
+--- /dev/null
++++ b/zig/src/core/runner_frontend_integer_loop_test.zig
+@@ -0,0 +1,184 @@
++//! Loops, multi-statement defs, digit reversal on the graph route: the ELF-only cells, CPython stdout, packet mutation.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const table = @import("runner_graph_table.zig");
++const integer_python = @import("runner_frontend_integer_python.zig");
++
++const gpa = std.testing.allocator;
++
++/// The ten ELF-only cells (t2-evidence/elf-vs-sandbox/elf10.jsonl, deduplicated), then loops; CPython 3's stdout.
++const cases = [_][2][]const u8{
++    .{ "def factorial(n):\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return result\n\nfor n in [0, 1, 5, 12]:\n    print(factorial(n))\n", "1\n1\n120\n479001600\n" },
++    .{ "def check(n):\n    rev = int(str(n)[::-1])\n    return n == 2 * rev - 1\n\nprint(check(70))\nprint(check(13))\nprint(check(0))\n", "False\nFalse\nFalse\n" },
++    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nassert pos_count([1, -2, 3, -4]) == 2\nprint(pos_count([1, -2, 3, -4]))", "2\n" },
++    .{ "def tetrahedral_number(n):\n    return n * (n + 1) * (n + 2) // 6\n\nassert tetrahedral_number(5) == 35\nprint(tetrahedral_number(5))", "35\n" },
++    .{ "def centered_hexagonal_number(n):\n    return 3 * n * (n - 1) + 1\n\nassert centered_hexagonal_number(10) == 271\nprint(centered_hexagonal_number(10))", "271\n" },
++    .{ "def square_perimeter(side):\n    return 4 * side\n\nassert square_perimeter(10) == 40\nprint(square_perimeter(10))", "40\n" },
++    .{ "s = 0\nfor i in range(1, 11):\n    s += i * i\nprint(s)\n", "385\n" },
++    .{ "t = 1\nfor i in range(10, 0, -3):\n    t *= i\nprint(t)\n", "280\n" },
++    .{ "def digits(n):\n    c = 0\n    while n > 0:\n        n //= 10\n        c += 1\n    return c\nprint(digits(98765), digits(7))\n", "5 1\n" },
++    .{ "def fact(n):\n    if n <= 1:\n        return 1\n    return n * fact(n - 1)\nprint(fact(6))\n", "720\n" },
++    .{ "def rev(n):\n    return int(str(n)[::-1])\nprint(rev(1200), rev(7), rev(123456789))\n", "21 7 987654321\n" },
++    .{ "def f(n):\n    m = n * 2\n    return m\nprint(f(3))\n", "6\n" },
++    .{ "def f(n):\n    for i in range(n):\n        n += i\n    return n\nprint(f(3))\n", "6\n" },
++    .{ "def tri(n):\n    \"\"\"Triangular number.\"\"\"\n    total = 0\n    for k in range(n + 1): total += k\n    return total\nprint(tri(10), tri(0))\n", "55 0\n" },
++    .{ "def g(n):\n    s = 0\n    for i in range(n):\n        for j in range(i):\n            s += j\n    return s\nprint(g(5))\n", "10\n" },
++    .{ "x = 7\nfor k in [3, 4]:\n    x -= k\n    print(x)\nprint(x)\n", "4\n0\n0\n" },
++    .{ "def p(b, e):\n    r = 1\n    for _ in range(e):\n        r *= b\n    return r\nprint(p(3, 7), p(-2, 5))\n", "2187 -32\n" },
++    .{ "def s(n):\n    total = 0\n    while n > 0:\n        total += n % 10\n        n //= 10\n    return total\nprint(s(4321))\n", "10\n" },
++    .{ "def f(n):\n    return 1 if n < 2 else n * f(n - 1)\nprint(f(5))\n", "120\n" },
++    // both branches recurse: every level but the base leaves is chosen on the graph
++    .{ "def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\nprint(fib(6))\n", "8\n" },
++    .{ "def avg(a, b):\n    s = a + b\n    s //= 2\n    return s\nprint(avg(7, 10))\n", "8\n" },
++};
++
++/// Shapes left to the sandbox: unbounded or over-budget loops, break/continue, floats, value-chosen prints.
++const refused = [_][]const u8{
++    // unbounded, or past the 32-trip / 24-call budget
++    "n = 5\nwhile n > 0:\n    n += 1\nprint(n)\n",
++    "def f(n):\n    while True:\n        n += 1\n    return n\nprint(f(1))\n",
++    "s = 0\nfor i in range(100):\n    s += i\nprint(s)\n",
++    "def fact(n):\n    if n <= 1:\n        return 1\n    return n * fact(n - 1)\nprint(fact(30))\n",
++    // break and continue, and an `if` inside a loop
++    "s = 0\nfor i in range(5):\n    if i == 3:\n        break\n    s += i\nprint(s)\n",
++    "s = 0\nfor i in range(5):\n    continue\nprint(s)\n",
++    "def f(n):\n    for i in range(n):\n        break\n    return n\nprint(f(3))\n",
++    // float accumulators
++    "s = 0.0\nfor i in range(3):\n    s += i\nprint(s)\n",
++    "s = 0\nfor i in range(3):\n    s += i / 2\nprint(s)\n",
++    // `%=` under a trip's test; truthiness tests; a value-chosen list to loop over
++    "x = 100\nfor i in range(3):\n    x %= 7\nprint(x)\n",
++    "def s(n):\n    t = 0\n    while n:\n        t += n % 10\n        n //= 10\n    return t\nprint(s(42))\n",
++    "for x in [y for y in [1, 2] if y > 1]:\n    print(x)\n",
++    "for x in range(3):\n    print(x)\n",
++    // recursion past the node budget; a guard whose other branch raises
++    "def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)\nprint(fib(20))\n",
++    "def f(n):\n    if n == 0:\n        return 0\n    return 10 // n\nprint(f(0))\n",
++    // Python raises: a local read before assignment, a negative int's reversed text, a zero step
++    "def f(n):\n    s += n\n    s = 0\n    return s\nprint(f(3))\n",
++    "print(int(str(-12)[::-1]))\n",
++    "s = 0\nfor i in range(1, 5, 0):\n    s += i\nprint(s)\n",
++    // a loop variable after a range loop; a return inside a loop; a print inside a def; a missing return
++    "for i in range(3):\n    pass\nprint(i)\n",
++    "def f(n):\n    for i in range(n):\n        return i\n    return 0\nprint(f(3))\n",
++    "def f(n):\n    print(n)\n    return n\nprint(f(3))\n",
++    "def f(n):\n    m = n\nprint(f(3))\n",
++    "def f(n):\n    if n > 0:\n        return 1\nprint(f(3))\n",
++    // math's factorial imported bare: a def of that name is not taken
++    "from math import factorial\ndef factorial(n):\n    return n\nprint(factorial(3))\n",
++};
++
++test "runner frontend integer loop: suites lower to CPython's proved values; other shapes refuse" {
++    var bad: usize = 0;
++    for (cases) |c| {
++        const lowered = try integer_python.lowerWithCost(gpa, c[0], 0) orelse {
++            std.debug.print("refused: {s}\n", .{c[0]});
++            bad += 1;
++            continue;
++        };
++        defer gpa.free(lowered.source);
++        const t = lowered.table.?;
++        var out: std.ArrayList(u8) = .empty;
++        defer out.deinit(gpa);
++        for (t.roots[0..t.outputs], t.endings[0..t.outputs]) |root, end| {
++            const n = t.nodes[root];
++            switch (n.op) {
++                .eq, .ne, .lt, .le, .gt, .ge => try out.appendSlice(gpa, if (n.value != 0) "True" else "False"),
++                else => try out.print(gpa, "{d}", .{n.value}),
++            }
++            try out.append(gpa, end);
++        }
++        try std.testing.expectEqualStrings(c[1], out.items);
++        try std.testing.expect(lowered.graph_only); // calc and ELF never take a loop
++    }
++    if (bad != 0) return error.TestExpectedLowering;
++    for (refused) |code| {
++        if (try integer_python.lowerWithCost(gpa, code, 0)) |g| {
++            gpa.free(g.source);
++            std.debug.print("lowered, must refuse: {s}\n", .{code});
++            return error.TestExpectedRefusal;
++        }
++    }
++}
++
++/// A script, a literal to change in its packet, and CPython's stdout for the script so changed (asserts dropped).
++const mutations = [_][4][]const u8{
++    .{ "def fact(n):\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return result\nprint(fact(37 - 30))\n", "37", "35", "120\n" },
++    // within the schedule's headroom: 6 trips run as 8, so a larger input still prints CPython's value
++    .{ "def fact(n):\n    result = 1\n    for i in range(2, n + 1):\n        result *= i\n    return result\nprint(fact(37 - 30))\n", "37", "38", "40320\n" },
++    .{ "def check(n):\n    rev = int(str(n)[::-1])\n    return n == 2 * rev - 1\n\nprint(check(70))\nprint(check(13))\nprint(check(0))\n", "70", "73", "True\nFalse\nFalse\n" },
++    .{ "def pos_count(numbers):\n    return sum(1 for number in numbers if number > 0)\n\nassert pos_count([1, -2, 3, -4]) == 2\nprint(pos_count([1, -2, 3, -4]))", "3", "0", "1\n" },
++    .{ "def digits(n):\n    c = 0\n    while n > 0:\n        n //= 10\n        c += 1\n    return c\nprint(digits(98765))\n", "98765", "432", "3\n" },
++    .{ "def fact(n):\n    if n <= 1:\n        return 1\n    return n * fact(n - 1)\nprint(fact(37 - 30))\n", "37", "35", "120\n" },
++    .{ "def rev(n):\n    return int(str(n)[::-1])\nprint(rev(1200))\n", "1200", "3400", "43\n" },
++    .{ "s = 0\nfor i in range(100, 140, 5):\n    s += i\nprint(s)\n", "140", "125", "550\n" },
++};
++
++/// A backend no test here may start (every program is a graph one).
++const Never = struct {
++    fn backend() api.Backend {
++        return .{ .ctx = undefined, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
++    }
++    fn start(_: *anyopaque, _: u64, _: api.Program, _: u64) error{ OutOfMemory, Busy }!api.JobId {
++        return error.Busy;
++    }
++    fn poll(_: *anyopaque, _: api.JobId) api.Poll {
++        unreachable;
++    }
++    fn cancel(_: *anyopaque, _: api.JobId) void {}
++    fn release(_: *anyopaque, _: u64) void {}
++};
++
++fn run(b: api.Backend, id: u64, bytes: []const u8, want: []const u8, code: []const u8) !void {
++    const job = try b.start(id, .{ .kind = .graph, .bytes = bytes }, 50_000_000);
++    const r = while (true) switch (b.poll(job)) {
++        .running => std.Thread.yield() catch {},
++        .done => |x| break x,
++    };
++    defer b.release(id);
++    if (r.status != .ok or !std.mem.eql(u8, r.out, want)) std.debug.print("{s}: {t} '{s}'\n", .{ code, r.status, r.out });
++    try std.testing.expectEqual(api.Status.ok, r.status);
++    try std.testing.expectEqualStrings(want, r.out);
++}
++
++test "runner frontend integer loop: the cells run on the real bank, and a changed packet value follows CPython (TF_RUNNER_GRAPH_BANK)" {
++    const g = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    var bank = try graph.Bank.load(gpa, std.mem.span(g));
++    defer bank.deinit();
++    const backend = try graph.backend(gpa, &bank, 2);
++    defer graph.destroy(backend);
++    var d: route.Dispatch = .{ .gpa = gpa, .circuit = Never.backend(), .graph = backend };
++    defer d.deinit();
++    const b = d.backend();
++    var missing: usize = 0;
++    for (cases, 0..) |c, i| {
++        const bytes = (try table.translate(gpa, &bank, c[0])) orelse {
++            std.debug.print("not on the bank: {s}\n", .{c[0]});
++            missing += 1;
++            continue;
++        };
++        defer gpa.free(bytes);
++        try run(b, i + 1, bytes, c[1], c[0]);
++    }
++    for (mutations, 0..) |m, i| {
++        const bytes = (try table.translate(gpa, &bank, m[0])) orelse {
++            std.debug.print("not on the bank: {s}\n", .{m[0]});
++            missing += 1;
++            continue;
++        };
++        defer gpa.free(bytes);
++        const from = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m[1]});
++        defer gpa.free(from);
++        const to = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m[2]});
++        defer gpa.free(to);
++        // the value must be in the packet: a folded decision would leave nothing to change
++        try std.testing.expect(std.mem.indexOf(u8, bytes, from) != null);
++        const changed = try std.mem.replaceOwned(u8, gpa, bytes, from, to);
++        defer gpa.free(changed);
++        try run(b, 100 + i, changed, m[3], m[0]);
++    }
++    for (refused) |code| try std.testing.expectEqual(null, try table.translate(gpa, &bank, code));
++    if (missing != 0) return error.TestExpectedRoute;
++}
+diff --git a/zig/src/core/runner_frontend_integer_python.zig b/zig/src/core/runner_frontend_integer_python.zig
+index b0b6bc0b8060a62b2f8efb4c5bf5f0ac49ba49cd..41adcb4538dc283ed3f5b7a989ae5bcd88923e4d 100644
+--- a/zig/src/core/runner_frontend_integer_python.zig
++++ b/zig/src/core/runner_frontend_integer_python.zig
+@@ -32,8 +32,8 @@ fn checked(a: Allocator, code: []const u8, budget: usize) Failure!integer.Lowere
+     const endings = script.endings[0..script.count];
+     var t = integer.table(parser, roots, endings, null, null);
+     @memcpy(t.brackets[0..script.count], script.brackets[0..script.count]);
+-    // lists, defs, asserts or over eight outputs: only the graph route's table (calc and ELF keep their routes)
+-    if (parser.listed or parser.function_count != 0 or parser.asserted or script.count > 8) {
++    // lists, defs, asserts, loops, over 64 nodes or 8 outputs: only the graph route's table (calc, ELF keep theirs)
++    if (parser.listed or parser.function_count != 0 or parser.asserted or parser.looped or parser.count > 64 or script.count > 8) {
+         if (budget != 0) return error.Unsupported;
+         return .{ .source = try a.alloc(u8, 0), .estimated_steps = null, .table = t, .graph_only = true };
+     }
+@@ -44,7 +44,8 @@ fn checked(a: Allocator, code: []const u8, budget: usize) Failure!integer.Lowere
+ // Shares whole-script validation with the RV32 path, including unused assignments and import gates.
+ pub fn lowerCalc(a: Allocator, code: []const u8) Allocator.Error!?[]u8 {
+     var script = parseScript(code) catch return null;
+-    if (script.parser.listed or script.parser.function_count != 0 or script.parser.asserted) return null;
++    const p = &script.parser;
++    if (p.listed or p.function_count != 0 or p.asserted or p.looped or p.count > 64) return null;
+     return @import("runner_frontend_integer_calc.zig").lower(a, &script.parser, script.root);
+ }
+ 
+@@ -63,11 +64,12 @@ const Outputs = struct {
+     count: usize = 0,
+ };
+ const statements = @import("runner_frontend_integer_statements.zig");
++const suite = @import("runner_frontend_integer_suite.zig");
+ 
+ fn parseOutputs(code: []const u8, multiple: bool) ast.Invalid!Outputs {
+     if (code.len == 0 or code.len > 4096 or std.mem.indexOfScalar(u8, code, '\r') != null)
+         return error.Unsupported;
+-    var parser: ast.Parser = .{ .source = "", .require_math_import = true, .allow_lists = true };
++    var parser: ast.Parser = .{ .source = "", .require_math_import = true, .allow_lists = true, .capacity = ast.max_nodes };
+     var lines = statements.Iterator{ .code = code };
+     var outputs = Outputs{ .parser = undefined };
+     var expression_only = false;
+@@ -105,6 +107,14 @@ fn parseOutputs(code: []const u8, multiple: bool) ast.Invalid!Outputs {
+             (line[5] == '(' or line[5] == ' ' or line[5] == '\t');
+         if (keyword(line, "def")) {
+             try define(&parser, &lines, line);
++        } else if (keyword(line, "for") or keyword(line, "while")) {
++            if (!multiple) return error.Unsupported;
++            const Print = struct {
++                fn print(ctx: *anyopaque, p: *ast.Parser, text: []const u8) ast.Invalid!void {
++                    return printRoots(p, @ptrCast(@alignCast(ctx)), text, true);
++                }
++            };
++            try suite.module(&parser, try block(&lines, line), .{ .ctx = &outputs, .print = Print.print });
+         } else if (keyword(line, "assert")) {
+             try check(&parser, line["assert".len..]);
+         } else if (printed) {
+@@ -125,6 +135,27 @@ fn parseOutputs(code: []const u8, multiple: bool) ast.Invalid!Outputs {
+     return outputs;
+ }
+ 
++/// A compound statement from its header line through its indented suite, as one slice of the script.
++fn block(lines: *statements.Iterator, header: []const u8) ast.Invalid![]const u8 {
++    const start = @intFromPtr(header.ptr) - @intFromPtr(lines.code.ptr);
++    var end = start + header.len;
++    var indented = false;
++    while (true) {
++        var ahead = lines.*;
++        const raw = try ahead.next() orelse break;
++        const text = std.mem.trimEnd(u8, raw.text, " \t");
++        const stmt = std.mem.trim(u8, text, " \t");
++        // a semicolon's next statement shares its line: inside the suite after an indented one, else the header's body
++        if (stmt.len != 0 and !raw.after_semicolon and text[0] != ' ' and text[0] != '\t') break;
++        if (raw.after_semicolon and !indented and stmt.len != 0 and header[header.len - 1] == ':') break;
++        lines.* = ahead;
++        if (stmt.len == 0) continue;
++        if (!raw.after_semicolon) indented = true;
++        end = @intFromPtr(raw.text.ptr) - @intFromPtr(lines.code.ptr) + text.len;
++    }
++    return lines.code[start..end];
++}
++
+ fn expression(parser: *ast.Parser, text: []const u8) ast.Invalid!usize {
+     parser.source = std.mem.trim(u8, text, " \t");
+     parser.pos = 0;
+@@ -163,12 +194,12 @@ fn keyword(line: []const u8, word: []const u8) bool {
+         (line[word.len] == ' ' or line[word.len] == '\t' or line[word.len] == '(');
+ }
+ 
+-/// `def name(a, b):` (`int` annotations) whose body is one `return <int expr>`, a docstring first; else refuse.
++/// `def name(a, b):` (`int` annotations): one `return <int expr>` (a docstring first), or a suite of int statements.
+ fn define(parser: *ast.Parser, lines: *statements.Iterator, header: []const u8) ast.Invalid!void {
+     const open = std.mem.indexOfScalar(u8, header, '(') orelse return error.Unsupported;
+     const close = std.mem.indexOfScalarPos(u8, header, open, ')') orelse return error.Unsupported;
+     var f: ast.Parser.Function = .{ .name = std.mem.trim(u8, header["def".len..open], " \t"), .body = "" };
+-    if (!validBinding(f.name)) return error.Unsupported;
++    if (!validBinding(f.name) and !unimported(parser, f.name)) return error.Unsupported;
+     const params = std.mem.trim(u8, header[open + 1 .. close], " \t");
+     if (params.len != 0) {
+         var names = std.mem.splitScalar(u8, params, ',');
+@@ -191,9 +222,15 @@ fn define(parser: *ast.Parser, lines: *statements.Iterator, header: []const u8)
+     }
+     if (rest.len == 0 or rest[0] != ':') return error.Unsupported;
+     rest = std.mem.trim(u8, rest[1..], " \t");
+-    var body: ?[]const u8 = if (rest.len != 0) try returned(rest) else null;
+-    var docstring = body == null;
+-    // the indented suite: blank and comment-only lines pass; the first unindented statement is the module's again
++    if (rest.len == 0) {
++        // an indented suite: one `return <expr>` (a docstring first) stays an expression body, else statements run
++        const code = try block(lines, header);
++        const text = code[header.len..];
++        if (single(text)) |value| f.body = value else f.suite = text;
++        return parser.define(f);
++    }
++    f.body = try returned(rest);
++    // nothing else may follow on the def's own line or under it
+     while (true) {
+         var ahead = lines.*;
+         const raw = try ahead.next() orelse break;
+@@ -202,16 +239,30 @@ fn define(parser: *ast.Parser, lines: *statements.Iterator, header: []const u8)
+         const stmt = std.mem.trim(u8, text, " \t");
+         if (stmt.len != 0 and text[0] != ' ' and text[0] != '\t') break;
+         lines.* = ahead;
++        if (stmt.len != 0) return error.Unsupported;
++    }
++    try parser.define(f);
++}
++
++/// A suite that is one `return <expr>` without a conditional expression (a docstring may come first), else null.
++fn single(text: []const u8) ?[]const u8 {
++    var it = statements.Iterator{ .code = text };
++    var value: ?[]const u8 = null;
++    var docstring = true;
++    while (it.next() catch return null) |raw| {
++        const stmt = std.mem.trim(u8, raw.text, " \t");
+         if (stmt.len == 0) continue;
+-        if (body != null) return error.Unsupported;
++        if (value != null) return null;
+         if (docstring and stmt.len >= 2 and (stmt[0] == '"' or stmt[0] == '\'') and stmt[stmt.len - 1] == stmt[0]) {
+             docstring = false;
+             continue;
+         }
+-        body = try returned(stmt);
++        docstring = false;
++        const v = returned(stmt) catch return null;
++        if (list.top(v, "if", 0) != null) return null;
++        value = v;
+     }
+-    f.body = body orelse return error.Unsupported;
+-    try parser.define(f);
++    return value;
+ }
+ 
+ /// The expression of `return <expr>`: one value (a tuple, or a bare `return`, is not an int).
+@@ -270,7 +321,15 @@ pub fn compile(a: Allocator, io: std.Io, code: []const u8, config: compiler.Conf
+     return compiler.compile(a, io, result.source, trusted);
+ }
+ 
+-fn validBinding(name: []const u8) bool {
++/// math's gcd/isqrt/factorial/prod as a def's own name, where the script never imports it bare.
++fn unimported(parser: *const ast.Parser, name: []const u8) bool {
++    for ([_][]const u8{ "gcd", "isqrt", "factorial", "prod" }, 0..) |w, i| {
++        if (std.mem.eql(u8, name, w)) return parser.math_imports & (@as(u8, 1) << @intCast(i)) == 0;
++    }
++    return false;
++}
++
++pub fn validBinding(name: []const u8) bool {
+     if (name.len == 0 or !(std.ascii.isAlphabetic(name[0]) or name[0] == '_')) return false;
+     for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+     for ([_][]const u8{
+diff --git a/zig/src/core/runner_frontend_integer_suite.zig b/zig/src/core/runner_frontend_integer_suite.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..dc5ad1f0a3c8d36d9970371bdb2a6bfbf1cab873
+--- /dev/null
++++ b/zig/src/core/runner_frontend_integer_suite.zig
+@@ -0,0 +1,516 @@
++//! Suites in the whole-script integer lowering: def bodies and for/while loops, unrolled into nodes.
++const std = @import("std");
++const ast = @import("runner_frontend_integer_ast.zig");
++const statements = @import("runner_frontend_integer_statements.zig");
++const list = @import("runner_frontend_integer_list.zig");
++const Parser = ast.Parser;
++const Invalid = ast.Invalid;
++
++// Value decisions (a trip, a while test, a base case) are 0/1 nodes gating each assignment; unroll counts are schedule.
++
++/// Iterations one loop may unroll (a range's length, a while's true tests); past it the script refuses.
++pub const max_trips = 32;
++
++/// A module statement's `print(...)` arguments, printed as the script's own outputs.
++pub const Printer = struct { ctx: *anyopaque, print: *const fn (*anyopaque, *Parser, []const u8) Invalid!void };
++
++const Line = struct { indent: usize, text: []const u8 };
++const Lines = struct {
++    items: [96]Line = undefined,
++    len: usize = 0,
++
++    fn push(l: *Lines, indent: usize, text: []const u8) Invalid!void {
++        if (l.len == l.items.len) return error.Unsupported;
++        l.items[l.len] = .{ .indent = indent, .text = text };
++        l.len += 1;
++    }
++};
++
++pub const Run = struct {
++    p: *Parser,
++    lines: *const Lines,
++    function: bool, // a def's body: locals bind in its frame, `return` ends it, print refuses (a side effect)
++    printer: ?Printer = null,
++    pred: ?usize = null, // the 0/1 node gating every assignment here; null: unconditional
++    check: bool = false, // at the def: syntax only (each loop body once, both branches parsed), as Python compiles it
++    divided: ?struct { line: usize, name: []const u8, root: usize } = null, // a digit loop's `x //= L`: its closed form
++};
++
++/// A def's suite inlined at a call: its frame holds the parameters; every name it assigns is local from the start.
++pub fn call(p: *Parser, suite: []const u8) Invalid!usize {
++    const lines = try split(suite);
++    p.looped = true;
++    try prebind(p, &lines);
++    var r: Run = .{ .p = p, .lines = &lines, .function = true };
++    return (try exec(&r, 0, lines.len, true)) orelse error.Unsupported;
++}
++
++/// A def's suite as Python compiles it: statement shapes and expression syntax; names resolve at each call.
++pub fn check(p: *Parser, suite: []const u8) Invalid!void {
++    const lines = try split(suite);
++    const saved = .{ p.source, p.pos, p.count, p.item_count, p.list_count, p.check_only, p.binding_count };
++    defer {
++        p.source, p.pos, p.count, p.item_count, p.list_count, p.check_only, p.binding_count = saved;
++    }
++    p.check_only = true;
++    var r: Run = .{ .p = p, .lines = &lines, .function = true, .check = true };
++    _ = try exec(&r, 0, lines.len, true);
++}
++
++/// A module-level `for`/`while` statement and its suite; prints only where no value decides whether they run.
++pub fn module(p: *Parser, block: []const u8, printer: Printer) Invalid!void {
++    const lines = try split(block);
++    p.looped = true;
++    var r: Run = .{ .p = p, .lines = &lines, .function = false, .printer = printer };
++    if (try exec(&r, 0, lines.len, false) != null) return error.Unsupported;
++}
++
++/// A suite's statements with their columns; a header's same-line body sits one column deeper.
++fn split(code: []const u8) Invalid!Lines {
++    var out: Lines = .{};
++    var it = statements.Iterator{ .code = code };
++    var last: usize = 0;
++    while (try it.next()) |raw| {
++        const text = std.mem.trimEnd(u8, raw.text, " \t");
++        const body = std.mem.trimStart(u8, text, " \t");
++        if (body.len == 0) continue;
++        var indent = last;
++        if (!raw.after_semicolon) {
++            indent = 0;
++            for (text[0 .. text.len - body.len]) |c| indent = if (c == '\t') (indent / 8 + 1) * 8 else indent + 1;
++        }
++        last = indent;
++        if (header(body)) |colon| {
++            try out.push(indent, body[0 .. colon + 1]);
++            const rest = std.mem.trim(u8, body[colon + 1 ..], " \t");
++            if (rest.len != 0) {
++                last = indent + 1;
++                try out.push(last, rest);
++            }
++        } else try out.push(indent, body);
++    }
++    if (out.len == 0) return error.Unsupported;
++    return out;
++}
++
++/// The colon ending a compound statement's header, or null for a simple statement.
++fn header(text: []const u8) ?usize {
++    for ([_][]const u8{ "for", "while", "if", "elif", "else", "def", "class", "with", "try", "except", "finally" }) |w| {
++        if (word(text, w)) return statements.separator(text, ':') orelse text.len - 1;
++    }
++    return null;
++}
++
++fn word(text: []const u8, w: []const u8) bool {
++    if (!std.mem.startsWith(u8, text, w)) return false;
++    return text.len == w.len or !(std.ascii.isAlphanumeric(text[w.len]) or text[w.len] == '_');
++}
++
++/// The first line past `i` at `i`'s column or left of it: the end of i's suite.
++fn blockEnd(lines: *const Lines, i: usize, end: usize) usize {
++    var j = i + 1;
++    while (j < end and lines.items[j].indent > lines.items[i].indent) j += 1;
++    return j;
++}
++
++/// Lines start..end, one block at one column; the returned root when a `return` ends it (`top`: the def's own suite).
++pub fn exec(r: *Run, start: usize, end: usize, top: bool) Invalid!?usize {
++    if (start >= end) return error.Unsupported;
++    const column = r.lines.items[start].indent;
++    var i = start;
++    while (i < end) {
++        const line = r.lines.items[i];
++        if (line.indent != column) return error.Unsupported;
++        const next = blockEnd(r.lines, i, end);
++        const t = line.text;
++        if (r.divided) |d| if (d.line == i) {
++            try store(r, d.name, d.root);
++            i = next;
++            continue;
++        };
++        const compound = header(t) != null;
++        if (compound and (next == i + 1 or t[t.len - 1] != ':')) return error.Unsupported;
++        if (!compound and next != i + 1) return error.Unsupported; // an indented line under a simple statement
++        if (word(t, "for")) {
++            try forLoop(r, t["for".len .. t.len - 1], i + 1, next);
++        } else if (word(t, "while")) {
++            try whileLoop(r, t["while".len .. t.len - 1], i + 1, next);
++        } else if (word(t, "if")) {
++            if (!r.function or !top or r.pred != null) return error.Unsupported;
++            return try early(r, t["if".len .. t.len - 1], i + 1, next, end);
++        } else if (compound) {
++            return error.Unsupported; // elif, else, def, class, with, try
++        } else if (word(t, "return")) {
++            if (!r.function or !top or r.pred != null or next != end) return error.Unsupported;
++            return try value(r, t["return".len..]);
++        } else if (i == start and top and r.function and t.len >= 2 and (t[0] == '"' or t[0] == '\'') and t[t.len - 1] == t[0]) {
++            // a docstring
++        } else if (std.mem.eql(u8, t, "pass")) {} else if (word(t, "print")) {
++            const args = std.mem.trim(u8, t["print".len..], " \t");
++            if (args.len < 2 or args[0] != '(' or args[args.len - 1] != ')') return error.Unsupported;
++            const pr = r.printer orelse return error.Unsupported;
++            if (r.pred != null or r.check) return error.Unsupported;
++            try pr.print(pr.ctx, r.p, args[1 .. args.len - 1]);
++        } else try assignment(r, t);
++        i = next;
++    }
++    return null;
++}
++
++/// An expression's root: proved, or at the def syntax only.
++fn expression(r: *Run, text: []const u8) Invalid!usize {
++    const p = r.p;
++    p.source = std.mem.trim(u8, text, " \t");
++    p.pos = 0;
++    if (!r.check) return p.parse();
++    if (p.source.len == 0) return error.Unsupported;
++    const root = try p.expr(0);
++    p.space();
++    if (p.pos != p.source.len) return error.Unsupported;
++    return root;
++}
++
++/// A returned value: `A if C else B` chooses on the graph, else one int expression.
++fn value(r: *Run, text: []const u8) Invalid!usize {
++    const t = std.mem.trim(u8, text, " \t");
++    if (t.len == 0 or statements.separator(t, ',') != null) return error.Unsupported;
++    const at = list.top(t, "if", 0) orelse return expression(r, t);
++    const otherwise = list.top(t, "else", at + 2) orelse return error.Unsupported;
++    return choose(r, t[at + 2 .. otherwise], .{ .text = t[0..at] }, .{ .text = t[otherwise + 4 ..] });
++}
++
++const Branch = union(enum) { text: []const u8, rest: [2]usize };
++
++fn branch(r: *Run, b: Branch) Invalid!usize {
++    return switch (b) {
++        .text => |t| value(r, t),
++        .rest => |x| (try exec(r, x[0], x[1], true)) orelse error.Unsupported, // falling off the end returns None
++    };
++}
++
++/// `if C: return A` then the rest of the suite: A if C else (the rest).
++fn early(r: *Run, cond: []const u8, body: usize, body_end: usize, end: usize) Invalid!usize {
++    const ret = r.lines.items[body].text;
++    if (body_end != body + 1 or !word(ret, "return") or body_end == end) return error.Unsupported;
++    if (word(r.lines.items[body_end].text, "elif") or word(r.lines.items[body_end].text, "else")) return error.Unsupported;
++    return choose(r, cond, .{ .text = ret["return".len..] }, .{ .rest = .{ body_end, end } });
++}
++
++/// Bindings as they were: a branch's assignments never reach the other branch.
++pub const Saved = struct {
++    count: usize,
++    roots: [64]usize,
++    kinds: [64]bool,
++
++    pub fn take(p: *const Parser) Saved {
++        return .{ .count = p.binding_count, .roots = p.roots, .kinds = p.kinds };
++    }
++
++    pub fn put(s: *const Saved, p: *Parser) void {
++        p.binding_count = s.count;
++        p.roots = s.roots;
++        p.kinds = s.kinds;
++    }
++};
++
++/// c*A + (1-c)*B, both built: the branch C takes, then the other unless it needs recursion (the schedule's last level).
++fn choose(r: *Run, cond: []const u8, a: Branch, b: Branch) Invalid!usize {
++    const p = r.p;
++    const c = try expression(r, cond);
++    if (!p.boolean(c)) return error.Unsupported;
++    const saved = Saved.take(p);
++    if (r.check) {
++        _ = try branch(r, a);
++        saved.put(p);
++        _ = try branch(r, b);
++        saved.put(p);
++        return c;
++    }
++    const yes = p.nodes[c].value != 0;
++    const before = p.recursions;
++    const taken = try branch(r, if (yes) a else b);
++    const recursed = p.recursions != before;
++    saved.put(p);
++    const m = p.mark();
++    const was = .{ p.no_recurse, p.cut };
++    p.no_recurse, p.cut = .{ true, false };
++    const other: ?usize = branch(r, if (yes) b else a) catch null;
++    const cut = p.cut;
++    p.no_recurse, p.cut = was;
++    saved.put(p);
++    const o = other orelse {
++        // only a base case may stand alone: the other branch recursed past the schedule, and this one did not recurse
++        if (!cut or recursed) return error.Unsupported;
++        p.reset(m);
++        return taken;
++    };
++    if (p.boolean(taken) or p.boolean(o)) return error.Unsupported; // c*True is 1, not True
++    return blend(p, c, if (yes) taken else o, if (yes) o else taken);
++}
++
++/// c*a + (1-c)*b over a 0/1 node c.
++fn blend(p: *Parser, c: usize, a: usize, b: usize) Invalid!usize {
++    if (p.boolean(a) or p.boolean(b)) return error.Unsupported;
++    const off = try node(p, .sub, try literal(p, 1), c);
++    return node(p, .add, try node(p, .mul, c, a), try node(p, .mul, off, b));
++}
++
++pub fn node(p: *Parser, op: ast.Op, l: usize, rhs: usize) Invalid!usize {
++    const n = try p.add(.{ .op = op, .l = l, .r = rhs });
++    _ = try p.prove(n, n);
++    return n;
++}
++
++/// A constant of the lowering itself (a 0/1 offset, a digit's place, an iteration's index): schedule, not input.
++pub fn literal(p: *Parser, v: i512) Invalid!usize {
++    return p.add(.{ .op = .literal, .value = v, .text = "" });
++}
++
++/// `T op= E` or `T = E` on one int name; under a predicate the old value stays where the test is 0.
++fn assignment(r: *Run, t: []const u8) Invalid!void {
++    const p = r.p;
++    const eq = statements.separator(t, '=') orelse return error.Unsupported;
++    var name = std.mem.trim(u8, t[0..eq], " \t");
++    var op: ?ast.Op = null;
++    if (std.mem.endsWith(u8, name, "//")) {
++        op = .floor;
++        name = name[0 .. name.len - 2];
++    } else if (name.len != 0) {
++        op = switch (name[name.len - 1]) {
++            '+' => .add,
++            '-' => .sub,
++            '*' => .mul,
++            '%' => .mod,
++            else => null,
++        };
++        if (op != null) name = name[0 .. name.len - 1];
++    }
++    name = std.mem.trim(u8, name, " \t");
++    if (!@import("runner_frontend_integer_python.zig").validBinding(name)) return error.Unsupported;
++    const v = try expression(r, t[eq + 1 ..]);
++    if (r.check) return;
++    const old: ?usize = if (p.slot(name)) |s| (if (p.kinds[s] or p.roots[s] == ast.unbound) null else p.roots[s]) else null;
++    const new = if (op) |o| try update(p, r.pred, o, old orelse return error.Unsupported, v) else if (r.pred) |c|
++        try blend(p, c, v, old orelse return error.Unsupported) // a name first bound under a test may stay unbound
++    else
++        v;
++    try store(r, name, new);
++}
++
++/// old op v; under c: x + c*v, x - c*v, x*(1 + c*(v-1)), x*(v - c*(v-1)) // v (v a literal); `%=` refuses.
++fn update(p: *Parser, pred: ?usize, op: ast.Op, old: usize, v: usize) Invalid!usize {
++    const c = pred orelse return node(p, op, old, v);
++    const one = try literal(p, 1);
++    return switch (op) {
++        .add, .sub => node(p, op, old, try node(p, .mul, c, v)),
++        .mul => node(p, .mul, old, try node(p, .add, one, try node(p, .mul, c, try node(p, .sub, v, one)))),
++        .floor => blk: {
++            if (p.nodes[v].op != .literal or p.nodes[v].value == 0) return error.Unsupported;
++            const keep = try node(p, .sub, v, try node(p, .mul, c, try node(p, .sub, v, one)));
++            break :blk node(p, .floor, try node(p, .mul, old, keep), v);
++        },
++        else => error.Unsupported,
++    };
++}
++
++/// A def's locals in its frame; module names as the module binds them.
++pub fn store(r: *Run, name: []const u8, root: usize) Invalid!void {
++    const p = r.p;
++    if (!r.function) return p.bind(name, root);
++    const f = p.frame orelse return error.Unsupported;
++    var i = p.binding_count;
++    while (i > f.start) {
++        i -= 1;
++        if (std.mem.eql(u8, p.names[i], name)) {
++            p.roots[i] = root;
++            p.kinds[i] = false;
++            return;
++        }
++    }
++    return error.Unsupported; // prebind made every assigned name local
++}
++
++/// Every name a def's suite assigns is local for the whole body: read before it is assigned, Python raises.
++fn prebind(p: *Parser, lines: *const Lines) Invalid!void {
++    const f = p.frame orelse return error.Unsupported;
++    for (lines.items[0..lines.len]) |line| {
++        const name = assigns(line.text) orelse continue;
++        const known = for (p.names[f.start..p.binding_count]) |held| {
++            if (std.mem.eql(u8, held, name)) break true;
++        } else false;
++        if (known) continue;
++        if (p.binding_count == p.names.len) return error.Unsupported;
++        p.names[p.binding_count] = name;
++        p.roots[p.binding_count] = ast.unbound;
++        p.kinds[p.binding_count] = false;
++        p.binding_count += 1;
++    }
++}
++
++/// The name a line binds: a `for` target, or an assignment's (augmented or not).
++pub fn assigns(t: []const u8) ?[]const u8 {
++    if (word(t, "for")) {
++        const at = list.top(t, "in", 3) orelse return null;
++        return std.mem.trim(u8, t[3..at], " \t");
++    }
++    if (header(t) != null or word(t, "return")) return null;
++    const eq = statements.separator(t, '=') orelse return null;
++    return std.mem.trim(u8, std.mem.trimEnd(u8, std.mem.trim(u8, t[0..eq], " \t"), "+-*/%"), " \t");
++}
++
++/// `for T in range(...)` (predicated per trip) or over a literal list (its length is the script's text).
++fn forLoop(r: *Run, head: []const u8, body: usize, end: usize) Invalid!void {
++    const p = r.p;
++    const at = list.top(head, "in", 0) orelse return error.Unsupported;
++    const target = std.mem.trim(u8, head[0..at], " \t");
++    if (!@import("runner_frontend_integer_python.zig").validBinding(target)) return error.Unsupported;
++    const iter = std.mem.trim(u8, head[at + 2 ..], " \t");
++    if (std.mem.startsWith(u8, iter, "range(") and iter[iter.len - 1] == ')') return rangeLoop(r, target, iter[6 .. iter.len - 1], body, end);
++    p.source = iter;
++    p.pos = 0;
++    if (!r.check and !list.ahead(p)) return error.Unsupported;
++    const li = try list.whole(p, iter);
++    if (r.check) {
++        _ = try exec(r, body, end, false);
++        return;
++    }
++    const l = p.lists[li];
++    if (!l.literal) return error.Unsupported; // a range object, filter or sort: its length is a value's decision
++    var elems: [ast.max_items]usize = undefined;
++    @memcpy(elems[0..l.len], p.items[l.start..][0..l.len]);
++    for (elems[0..l.len]) |e| {
++        try store(r, target, e);
++        if (try exec(r, body, end, false) != null) return error.Unsupported;
++    }
++}
++
++/// range(stop) / range(start, stop[, step]): trip k runs where start + k*step is still short of stop.
++fn rangeLoop(r: *Run, target: []const u8, args_text: []const u8, body: usize, end: usize) Invalid!void {
++    const p = r.p;
++    var args: [3]usize = undefined;
++    var n: usize = 0;
++    var rest = args_text;
++    while (true) {
++        if (n == 3) return error.Unsupported;
++        const comma = statements.separator(rest, ',');
++        args[n] = try expression(r, rest[0 .. comma orelse rest.len]);
++        if (!r.check and p.boolean(args[n])) return error.Unsupported;
++        n += 1;
++        rest = rest[(comma orelse break) + 1 ..];
++    }
++    if (r.check) {
++        _ = try exec(r, body, end, false);
++        return;
++    }
++    const start: ?usize = if (n == 1) null else args[0];
++    const stop = if (n == 1) args[0] else args[1];
++    const step: ?usize = if (n == 3) args[2] else null;
++    const a: i512 = if (start) |s| p.nodes[s].value else 0;
++    const b = p.nodes[stop].value;
++    const s: i512 = if (step) |x| p.nodes[x].value else 1;
++    if (s == 0) return error.Unsupported; // ValueError
++    const span = if (s > 0) b - a else a - b;
++    const mag = if (s > 0) s else -s;
++    const trips: i512 = if (span <= 0) 0 else @divFloor(span + mag - 1, mag);
++    if (trips > max_trips) return error.Unsupported;
++    // headroom: the schedule's trips are a power of two past the script's own, so a larger input still runs exactly
++    const m = p.mark();
++    const saved = Saved.take(p);
++    const spare = schedule(@intCast(trips));
++    if (spare > trips) {
++        if (trip(r, target, .{ start, stop, step }, s > 0, spare, body, end)) |_| {
++            if (!heavy(p, null)) return unbind(r, target);
++        } else |_| {}
++        p.reset(m);
++        saved.put(p);
++    }
++    try trip(r, target, .{ start, stop, step }, s > 0, @intCast(trips), body, end);
++    try unbind(r, target); // after the loop its value is the last trip's, which a value decided
++}
++
++/// Whether a bound value outgrows headroom: its calc tree (shared nodes repeat) or the graph route's digit bound.
++pub fn heavy(p: *const Parser, extra: ?usize) bool {
++    var size: [ast.max_nodes]u32 = undefined;
++    var digits: [ast.max_nodes]u32 = undefined;
++    for (p.nodes[0..p.count], 0..) |n, i| {
++        const l: u32 = if (n.op == .literal) 0 else digits[n.l];
++        const r: u32 = if (n.op == .literal) 0 else digits[n.r];
++        size[i] = switch (n.op) {
++            .literal => 1,
++            .neg, .digits, .isqrt, .factorial, .digit_sum => 1 +| size[n.l],
++            else => 1 +| size[n.l] +| size[n.r] +| (if (n.op == .powmod or n.op == .range_product) size[n.k] else 0),
++        };
++        digits[i] = switch (n.op) {
++            .literal => @intCast(std.fmt.count("{d}", .{@abs(n.value)})),
++            .add, .sub => @max(l, r) + 1,
++            .mul => l +| r,
++            .floor => @min(l, @max(1, (l + 2) -| r)),
++            .mod => r,
++            .eq, .ne, .lt, .le, .gt, .ge => 5, // the table's sign trick: (d + M - 1) // M, and 1 - that
++            else => l,
++        };
++    }
++    for (p.roots[0..p.binding_count], p.kinds[0..p.binding_count]) |root, listed| {
++        if (listed or root == ast.unbound or root >= p.count) continue;
++        if (size[root] > 250 or digits[root] > 120) return true;
++    }
++    const x = extra orelse return false;
++    return size[x] > 250 or digits[x] > 120;
++}
++
++/// A power of two at least `n` (at least one trip), within the budget.
++pub fn schedule(n: usize) usize {
++    return @min(max_trips, std.math.ceilPowerOfTwo(usize, @max(n, 1)) catch max_trips);
++}
++
++/// `count` trips of a range loop's body, each gated by its index short of stop (`up`) or past it.
++fn trip(r: *Run, target: []const u8, bounds: [3]?usize, up: bool, count: usize, body: usize, end: usize) Invalid!void {
++    const p = r.p;
++    const start, const stop, const step = bounds;
++    for (0..count) |k| {
++        const kk = try literal(p, @intCast(k));
++        const index = if (start) |first| (if (k == 0) first else try node(p, .add, first, if (step) |x| try node(p, .mul, kk, x) else kk)) else kk;
++        const c = try node(p, if (up) .lt else .gt, index, stop.?);
++        var inner = r.*;
++        inner.pred = if (r.pred) |outer| try node(p, .mul, outer, c) else c;
++        try store(r, target, index);
++        if (try exec(&inner, body, end, false) != null) return error.Unsupported;
++    }
++}
++
++/// `while C:` unrolled while C is true here; trip k runs where every test so far is 1.
++fn whileLoop(r: *Run, cond: []const u8, body: usize, end: usize) Invalid!void {
++    const p = r.p;
++    if (r.check) {
++        _ = try expression(r, cond);
++        _ = try exec(r, body, end, false);
++        return;
++    }
++    if (try @import("runner_frontend_integer_digits.zig").whileDivides(r, cond, body, end)) return;
++    var active = r.pred;
++    var k: usize = 0;
++    while (true) : (k += 1) {
++        const c = try expression(r, cond);
++        if (!p.boolean(c)) return error.Unsupported;
++        if (p.nodes[c].value == 0) break;
++        if (k == max_trips) return error.Unsupported; // unbounded here, or past the budget
++        active = if (active) |x| try node(p, .mul, x, c) else c;
++        var inner = r.*;
++        inner.pred = active;
++        if (try exec(&inner, body, end, false) != null) return error.Unsupported;
++    }
++}
++
++fn unbind(r: *Run, name: []const u8) Invalid!void {
++    const s = r.p.slot(name) orelse return error.Unsupported;
++    r.p.roots[s] = ast.unbound;
++}
++
++test "suite lines: columns, same-line bodies and semicolons" {
++    const lines = try split("for i in range(3): s += i; t += 1\nwhile x:\n    x -= 1\n");
++    try std.testing.expectEqual(@as(usize, 5), lines.len);
++    try std.testing.expectEqualStrings("for i in range(3):", lines.items[0].text);
++    try std.testing.expectEqual(@as(usize, 1), lines.items[1].indent);
++    try std.testing.expectEqual(@as(usize, 1), lines.items[2].indent);
++    try std.testing.expectEqual(@as(usize, 4), lines.items[4].indent);
++}
+diff --git a/zig/src/core/runner_frontend_test.zig b/zig/src/core/runner_frontend_test.zig
+index 31ec5fb8ce5216e2c37fc6150873b52ac01dc9d7..63944b14a8a686829e5fbb6c193095b262b14670 100644
+--- a/zig/src/core/runner_frontend_test.zig
++++ b/zig/src/core/runner_frontend_test.zig
+@@ -7,6 +7,7 @@ test {
+     _ = @import("runner_frontend_integer_python.zig");
+     _ = @import("runner_frontend_integer_def_test.zig");
+     _ = @import("runner_frontend_integer_list_test.zig");
++    _ = @import("runner_frontend_integer_loop_test.zig");
+     _ = @import("runner_frontend_algorithm_test.zig");
+     _ = @import("runner_frontend_cwide_test.zig");
+     _ = @import("runner_frontend_blocks_test.zig");

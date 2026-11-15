@@ -1,0 +1,500 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 02:03:37 +0700
+Subject: [PATCH 143/207] Merge lane 7b5abe8d1 (TF_DSV41_RUNNER_STATED, opt-in,
+ only with form trace; off = byte-identical)
+
+Squashed merge of 1 commits:
+- runner trace: TF_DSV41_RUNNER_STATED (opt-in) takes whole statements written without `=` (S1 R4 rank 1a) (Jay Leaton)
+---
+ zig/src/core/runner.zig                   |   4 +
+ zig/src/core/runner_proof_test.zig        |   1 +
+ zig/src/core/runner_scan.zig              |   2 +
+ zig/src/core/runner_trace.zig             |  77 ++++++++-
+ zig/src/core/runner_trace_stated_test.zig | 193 ++++++++++++++++++++++
+ zig/src/core/runner_trace_text.zig        |  45 ++++-
+ 6 files changed, 314 insertions(+), 8 deletions(-)
+ create mode 100644 zig/src/core/runner_trace_stated_test.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 932710abc833130932979744c23773635fbec2d9..aab0de527f4553af56064f9e46499e9a0bbace5c 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -59,6 +59,7 @@ pub const Config = struct {
+         c.scan.inline_arith = try knob(u1, get, prefix ++ "_INLINE_ARITH", 1, 0, 1) == 1;
+         c.scan.inline_chain = try knob(u1, get, prefix ++ "_INLINE_CHAIN", 0, 0, 1) == 1;
+         c.scan.trace_window = try knob(u32, get, prefix ++ "_TRACE_WINDOW", c.scan.trace_window, 1, 65536);
++        c.scan.trace_whole = try knob(u1, get, prefix ++ "_STATED", 0, 0, 1) == 1;
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+             c.scan.repl = false;
+@@ -69,6 +70,8 @@ pub const Config = struct {
+                 if (std.mem.eql(u8, form, "fence")) c.scan.fence = true else if (std.mem.eql(u8, form, "repl")) c.scan.repl = true else if (std.mem.eql(u8, form, "inline")) c.scan.inline_math = true else if (std.mem.eql(u8, form, "trace")) c.scan.trace = true else return bad(prefix ++ "_FORMS", f);
+             }
+         };
++        // the knob widens form trace's statements: without the form it would do nothing
++        if (c.scan.trace_whole and !c.scan.trace) return bad(prefix ++ "_STATED", "1 (form trace is off)");
+         if (get(prefix ++ "_SPANS")) |sp| if (sp.len > 0) {
+             if (std.mem.eql(u8, sp, "reasoning")) c.scan.reasoning_only = true else if (!std.mem.eql(u8, sp, "all")) return bad(prefix ++ "_SPANS", sp);
+         };
+@@ -583,4 +586,5 @@ test {
+     _ = @import("runner_receipt_test.zig");
+     _ = @import("runner_inline_context_test.zig");
+     _ = @import("runner_inline_hex_test.zig");
++    _ = @import("runner_trace_stated_test.zig");
+ }
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 82e35c8c5449e997d1eb5cd76d83872c132f6baf..f8918ae560b206e3b045d4d245add77266214bd8 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -426,4 +426,5 @@ comptime {
+     _ = @import("runner_inline_chain_test.zig");
+     _ = @import("runner_inline_context_test.zig");
+     _ = @import("runner_inline_hex_test.zig");
++    _ = @import("runner_trace_stated_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 79c2808a21fa43fb7a227983b9d5b960e4f575ef..6c66b9a1724c6373c0e4f53d013f70158042eb24 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -19,6 +19,7 @@ pub const Config = struct {
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+     trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
+     trace_repeat: u8 = 0, // a restated, already owned line is owned again up to this many times
++    trace_whole: bool = false, // opt-in (TF_DSV41_RUNNER_STATED): trace also takes the whole-statement shapes
+ };
+ 
+ /// Trace ownerships per reply, and trace cells (stated computations) a reply may open.
+@@ -223,6 +224,7 @@ pub const Scanner = struct {
+         if (s.tracer == null) {
+             s.tracer = trace.Tracer.init(a);
+             s.tracer.?.repeat = s.cfg.trace_repeat;
++            s.tracer.?.whole = s.cfg.trace_whole;
+         }
+         const t = &s.tracer.?;
+         var fired = false;
+diff --git a/zig/src/core/runner_trace.zig b/zig/src/core/runner_trace.zig
+index 0830ed6c882e5237413e2aeb6e233bea59dc27b1..3673e23fb3600ada92343fb62ab10db58ab0fa0c 100644
+--- a/zig/src/core/runner_trace.zig
++++ b/zig/src/core/runner_trace.zig
+@@ -18,6 +18,7 @@ pub const Tracer = struct {
+     names: std.ArrayList(expr.Name) = .empty,
+     fired: std.ArrayList([]const u8) = .empty,
+     repeat: u8 = 0, // times a displayed line may be owned again when the reasoning restates it (TraceAsk.repeat)
++    whole: bool = false, // TF_DSV41_RUNNER_STATED: also comma sentences, gcd(x, y), `L = R.` restated and a hex value
+ 
+     pub fn init(gpa: Allocator) Tracer {
+         return .{ .keep = .init(gpa), .scratch = .init(gpa) };
+@@ -60,7 +61,7 @@ pub const Tracer = struct {
+         try t.definitions(clean, &define);
+         var heads: std.ArrayList(text.Head) = .empty;
+         try text.goalHeads(a, clean, &heads);
+-        try text.bareHeads(a, clean, &heads);
++        try text.bareHeads(a, clean, t.whole, &heads);
+         std.mem.sort(text.Head, heads.items, {}, text.Head.less);
+         var first: ?Found = null;
+         var last_head: usize = 0;
+@@ -69,8 +70,13 @@ pub const Tracer = struct {
+             if (first != null) continue;
+             if (try t.statement(clean, h)) |f| first = f;
+         }
++        var tail = last_head;
++        if (first == null and t.whole) if (try t.wholeShape(clean)) |w| {
++            first = w.found;
++            tail = w.end;
++        };
+         if (first) |*f| {
+-            f.same_line = text.cueIn(clean[last_head..]);
++            f.same_line = text.cueIn(clean[tail..]);
+             f.run = try printed(a, f.run);
+             return f.*;
+         }
+@@ -111,7 +117,7 @@ pub const Tracer = struct {
+     fn statement(t: *Tracer, clean: []const u8, h: text.Head) Allocator.Error!?Found {
+         const a = t.scratch.allocator();
+         const rest = clean[h.end..];
+-        const ph = text.phrase(rest) orelse return null;
++        const ph = text.phrase(rest, t.whole) orelse return null;
+         if (text.approx(rest[0..ph.end])) return null;
+         if (text.listed(rest, ph)) return null;
+         if (std.mem.indexOfScalar(u8, text.sentenceAt(clean, h.end), '?') != null) return null;
+@@ -133,6 +139,10 @@ pub const Tracer = struct {
+                 f = .{ .source = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "{s} * {s}", .{ try wrapped(a, parts[0]), try wrapped(a, parts[1]) }), .run = try std.fmt.allocPrint(a, "({s}) * ({s})", .{ parts[0].run, parts[1].run }) };
+                 bound = expr.sat(parts[0].bound + parts[1].bound);
+             },
++            .gcd => {
++                f = .{ .source = try std.fmt.allocPrint(a, "gcd({s}, {s})", .{ parts[0].source, parts[1].source }), .display = try std.fmt.allocPrint(a, "gcd({s}, {s})", .{ parts[0].display, parts[1].display }), .run = try std.fmt.allocPrint(a, "from math import gcd\nprint(gcd({s}, {s}))", .{ parts[0].run, parts[1].run }) };
++                bound = @max(parts[0].bound, parts[1].bound);
++            },
+             .subfrom => {
+                 f = .{ .source = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].source, parts[0].source }), .display = try std.fmt.allocPrint(a, "{s} - {s}", .{ try wrapped(a, parts[1]), try wrapped(a, parts[0]) }), .run = try std.fmt.allocPrint(a, "({s}) - ({s})", .{ parts[1].run, parts[0].run }) };
+                 bound = expr.sat(@max(parts[0].bound, parts[1].bound) + 1);
+@@ -144,6 +154,48 @@ pub const Tracer = struct {
+         return f;
+     }
+ 
++    /// TF_DSV41_RUNNER_STATED's line shapes: `L = R.` with L over names and literally R, or a hex literal's value.
++    fn wholeShape(t: *Tracer, clean: []const u8) Allocator.Error!?struct { found: Found, end: usize } {
++        const a = t.scratch.allocator();
++        for (clean, 0..) |c, k| {
++            if (c != '=' or (k > 0 and std.mem.indexOfScalar(u8, "=<>!", clean[k - 1]) != null)) continue;
++            if (k + 1 < clean.len and clean[k + 1] == '=') continue;
++            const sentence = text.sentenceAt(clean, k);
++            if (text.hypothetical(sentence)) continue;
++            const from = @intFromPtr(sentence.ptr) - @intFromPtr(clean.ptr);
++            // the left side: names and operators only (a definition or a stated literal is not a restatement)
++            const left = std.mem.trim(u8, clean[from..k], " \t");
++            if (left.len == 0 or std.mem.indexOfAny(u8, left, "0123456789") != null) continue;
++            const l = try t.parse(left) orelse continue;
++            if (l.ops == 0) continue;
++            var r0 = k + 1;
++            while (r0 < clean.len and text.isSpace(clean[r0])) r0 += 1;
++            const rest = clean[r0..];
++            const ph = text.phrase(rest, false) orelse continue;
++            if (ph.kind != .expr or text.approx(rest[0..ph.end])) continue;
++            const r = try t.parse(rest[ph.parts[0][0]..ph.parts[0][1]]) orelse continue;
++            if (r.ops == 0 or r.bound > max_digits or t.firedHas(r.display)) continue;
++            if (!std.mem.eql(u8, try literalParens(a, l.source), r.source)) continue;
++            return .{ .found = .{ .source = r.source, .display = r.display, .run = r.run }, .end = r0 + ph.end };
++        }
++        // `Hex = 0x….` / `This is 0x….`: ten or more hex digits ending a sentence; the radix runs on the circuit
++        var i: usize = 0;
++        while (std.mem.indexOfPos(u8, clean, i, "0x")) |h| : (i = h + 2) {
++            const lead = std.mem.trimEnd(u8, clean[0..h], " \t");
++            if (h > 0 and !text.isSpace(clean[h - 1])) continue;
++            if (!std.mem.endsWith(u8, lead, "=") and !(lead.len >= 2 and text.wordAt(lead, lead.len - 2, "is", true))) continue;
++            var j = h + 2;
++            while (j < clean.len and std.ascii.isHex(clean[j])) j += 1;
++            if (j - h - 2 < 10 or j - h - 2 > 100 or (j < clean.len and text.isWord(clean[j]))) continue;
++            if (!text.sentenceEndsAt(clean, j)) continue;
++            const lit = clean[h..j];
++            const e = try t.parse(lit) orelse continue;
++            if (e.bound > max_digits or t.firedHas(lit)) continue;
++            return .{ .found = .{ .source = try a.dupe(u8, lit), .display = try a.dupe(u8, lit), .run = try a.dupe(u8, lit) }, .end = j };
++        }
++        return null;
++    }
++
+     fn parse(t: *Tracer, s: []const u8) Allocator.Error!?Expr {
+         return expr.parse(t.scratch.allocator(), t.names.items, s);
+     }
+@@ -205,6 +257,25 @@ fn printed(a: Allocator, run: []const u8) Allocator.Error![]const u8 {
+     return std.mem.concat(a, u8, &.{ "print(", run, ")" });
+ }
+ 
++/// A name's source with the brackets around each plain literal dropped: `(98765432109)*(12345678901)` reads as written.
++fn literalParens(a: Allocator, source: []const u8) Allocator.Error![]const u8 {
++    var out: std.ArrayList(u8) = .empty;
++    var i: usize = 0;
++    while (i < source.len) : (i += 1) {
++        if (source[i] == '(') {
++            var j = i + 1;
++            while (j < source.len and std.ascii.isDigit(source[j])) j += 1;
++            if (j > i + 1 and j < source.len and source[j] == ')') {
++                try out.appendSlice(a, source[i + 1 .. j]);
++                i = j;
++                continue;
++            }
++        }
++        try out.append(a, source[i]);
++    }
++    return out.items;
++}
++
+ fn hasArith(source: []const u8) bool {
+     var i: usize = 0;
+     while (i < source.len) : (i += 1) {
+diff --git a/zig/src/core/runner_trace_stated_test.zig b/zig/src/core/runner_trace_stated_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..404e9fea28938149e73e9013402611f6b48f49de
+--- /dev/null
++++ b/zig/src/core/runner_trace_stated_test.zig
+@@ -0,0 +1,193 @@
++//! TF_DSV41_RUNNER_STATED (S1 R4 d_mirror rank 1a): whole statements form trace had no shape for, on the live lines.
++const std = @import("std");
++const api = @import("runner_api.zig");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const runner = @import("runner.zig");
++const trace = @import("runner_trace.zig");
++const gpa = std.testing.allocator;
++
++/// The last line's stated computation as display and run, after every line went through one tracer (null: none).
++fn expect(whole: bool, lines: []const []const u8, want: ?[2][]const u8) !void {
++    var t = trace.Tracer.init(gpa);
++    defer t.deinit();
++    t.whole = whole;
++    var got: ?trace.Found = null;
++    for (lines) |l| got = try t.line(l);
++    if (want) |w| {
++        const f = got orelse {
++            std.debug.print("nothing stated (whole {}): {s}\n", .{ whole, lines[lines.len - 1] });
++            return error.TestExpectedStated;
++        };
++        try std.testing.expectEqualStrings(w[0], f.display);
++        try std.testing.expectEqualStrings(w[1], f.run);
++    } else if (got) |f| {
++        std.debug.print("stated (whole {}): {s} from {s}\n", .{ whole, f.display, lines[lines.len - 1] });
++        return error.TestUnexpectedStated;
++    }
++}
++
++const product = "We need answer exact product. Need compute. Need use Python? We can calculate. Need final JSON only? User says explain briefly if useful, then end with FINAL_JSON. Need ensure exact. Let's compute carefully. 123,456,789,012 * 987,654,321,098.";
++const product_b = [_][]const u8{ "Let A = 98,765,432,109", "B = 12,345,678,901", "B = 12,000,000,000 + 345,678,901? Or use pattern.", "A * B = 98,765,432,109 * 12,345,678,901." };
++const gcd_a = "We need gcd(123456789012345, 987654321012345).";
++const gcd_b = "Let's compute carefully. Need gcd(1122334455667788, 9988776655443322).";
++const hex_b = "Hex = 0x123456789ABCDEF012345.";
++
++/// The live rank-1a lines with the knob: display, then the source the cell runs (hex as written: the circuit converts).
++const live = [_]struct { lines: []const []const u8, want: [2][]const u8 }{
++    .{ .lines = &.{product}, .want = .{ "123456789012*987654321098", "123456789012*987654321098" } },
++    .{ .lines = &product_b, .want = .{ "98765432109*12345678901", "98765432109*12345678901" } },
++    .{ .lines = &.{gcd_a}, .want = .{ "gcd(123456789012345, 987654321012345)", "from math import gcd\nprint(gcd(123456789012345, 987654321012345))" } },
++    .{ .lines = &.{gcd_b}, .want = .{ "gcd(1122334455667788, 9988776655443322)", "from math import gcd\nprint(gcd(1122334455667788, 9988776655443322))" } },
++    .{ .lines = &.{hex_b}, .want = .{ "0x123456789ABCDEF012345", "0x123456789ABCDEF012345" } },
++};
++
++test "runner trace stated: the R4 rank-1a lines are stated with TF_DSV41_RUNNER_STATED and not without it" {
++    for (live) |c| {
++        try expect(true, c.lines, c.want);
++        try expect(false, c.lines, null);
++    }
++    // already form trace's: the knob changes nothing (live mod-a, mod-b)
++    for ([_]bool{ false, true }) |w| {
++        try expect(w, &.{"We need answer compute 11^97 mod 1000000007. Need use Python maybe."}, .{ "11^97 mod 1000000007", "print(pow(11, 97, 1000000007))" });
++        try expect(w, &.{"Compute 13^127 mod 998244353. Let's calculate with modular arithmetic."}, .{ "13^127 mod 998244353", "print(pow(13, 127, 998244353))" });
++    }
++}
++
++test "runner trace stated: a restatement that is not literally its names, a list, a short or open hex and gcd of three refuse" {
++    const defs = product_b[0..2];
++    for ([_][]const u8{
++        "A * B = 98,765,432,109 * 12,345,678,902.", // a typo: which one the model means is unknown
++        "A + B = 98,765,432,109 * 12,345,678,901.",
++        "If A * B = 98,765,432,109 * 12,345,678,901.",
++        "A * B = 98,765,432,109 * 12,345,678,901?",
++        "A * B == 98,765,432,109 * 12,345,678,901.",
++    }) |line| try expect(true, &.{ defs[0], defs[1], line }, null);
++    // the brackets of a name's own sum stay: (A + B) * C is not 7 + 3 * 5
++    try expect(true, &.{ "Let A = 7", "B = 3", "C = 5", "(A + B) * C = 7 + 3 * 5." }, null);
++    try expect(true, &.{"A * B = 98,765,432,109 * 12,345,678,901."}, null); // no definitions
++    for ([_][]const u8{
++        "Need gcd(12, 18, 30).",                     "Need gcd(12,345, 18).",
++        "Digits: 1,234, 5,678, 9,012.",              "1,234,5678 * 2.",
++        "Hex = 0x123456789.",                        "Hex = 0x123456789ABCDEF012345?",
++        "Hex = 0x123456789ABCDEF012345 + 1 is big.", "Hex = 0x123456789ABCDEF012345G.",
++        "Low part 0x123456789ABCDEF012345.",         "Hex =0x123456789ABCDEF012345x.",
++    }) |line| try expect(true, &.{line}, null);
++}
++
++fn python(code: []const u8) ![]u8 {
++    const src = if (std.mem.startsWith(u8, code, "from ")) try gpa.dupe(u8, code) else try std.fmt.allocPrint(gpa, "print({s})", .{code});
++    defer gpa.free(src);
++    const r = try std.process.run(gpa, std.testing.io, .{ .argv = &.{ "/usr/bin/python3", "-I", "-S", "-c", src }, .stdout_limit = .limited(4096), .stderr_limit = .limited(4096) });
++    defer gpa.free(r.stderr);
++    errdefer gpa.free(r.stdout);
++    try std.testing.expect(r.term.success());
++    return r.stdout;
++}
++
++const Bank = struct {
++    bank: graph.Bank,
++    backend: api.Backend,
++    job: u64 = 0,
++
++    fn translate(b: *Bank, a: std.mem.Allocator, code: []const u8) ![]const u8 {
++        var routed: route.Routed = .{ .inner = @import("runner_frontend.zig").frontend(), .bank = &b.bank };
++        const f = routed.frontend();
++        const tr = try f.translate(f.ctx, a, .{ .form = .repl, .lang = "python", .code = code });
++        if (tr != .program or tr.program.kind != .graph) {
++            std.debug.print("not on the bank: {s}\n", .{code});
++            if (tr == .program) a.free(tr.program.bytes);
++            return error.TestExpectedGraph;
++        }
++        return tr.program.bytes;
++    }
++
++    fn run(b: *Bank, bytes: []const u8) ![]u8 {
++        b.job += 1;
++        const job = try b.backend.start(b.job, .{ .kind = .graph, .bytes = bytes }, 1 << 32);
++        const res = while (true) switch (b.backend.poll(job)) {
++            .running => std.Thread.yield() catch {},
++            .done => |r| break r,
++        };
++        defer b.backend.release(b.job);
++        try std.testing.expectEqual(api.Status.ok, res.status);
++        return gpa.dupe(u8, res.out);
++    }
++};
++
++fn openBank() !?*Bank {
++    const path = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return null;
++    const b = try gpa.create(Bank);
++    errdefer gpa.destroy(b);
++    b.* = .{ .bank = try graph.Bank.load(gpa, std.mem.span(path)), .backend = undefined };
++    b.backend = try graph.backend(gpa, &b.bank, 2);
++    return b;
++}
++
++fn closeBank(b: *Bank) void {
++    graph.destroy(b.backend);
++    b.bank.deinit();
++    gpa.destroy(b);
++}
++
++test "runner proof: trace stated: each live statement runs on the bank and prints CPython's value (TF_RUNNER_GRAPH_BANK)" {
++    const b = try openBank() orelse return error.SkipZigTest;
++    defer closeBank(b);
++    for (live) |c| {
++        const want = try python(c.want[1]);
++        defer gpa.free(want);
++        const bytes = try b.translate(gpa, c.want[1]);
++        defer gpa.free(bytes);
++        const out = try b.run(bytes);
++        defer gpa.free(out);
++        try std.testing.expectEqualStrings(want, out);
++    }
++}
++
++test "runner proof: trace stated: the circuit owns gcd and the restated product: a mutated input prints CPython's value (TF_RUNNER_GRAPH_BANK)" {
++    const b = try openBank() orelse return error.SkipZigTest;
++    defer closeBank(b);
++    for ([_][4][]const u8{
++        .{ live[2].want[1], "123456789012345", "123456789012340", "from math import gcd\nprint(gcd(123456789012340, 987654321012345))" },
++        .{ live[1].want[1], "98765432109", "98765432119", "98765432119*12345678901" },
++    }) |m| {
++        const bytes = try b.translate(gpa, m[0]);
++        defer gpa.free(bytes);
++        const from = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m[1]});
++        defer gpa.free(from);
++        const to = try std.fmt.allocPrint(gpa, "\"{s}\"", .{m[2]});
++        defer gpa.free(to);
++        if (std.mem.count(u8, bytes, from) != 1) {
++            std.debug.print("input {s} not one packet value: {s}\n", .{ m[1], bytes });
++            return error.TestExpectedInput;
++        }
++        const mutated = try std.mem.replaceOwned(u8, gpa, bytes, from, to);
++        defer gpa.free(mutated);
++        const want = try python(m[3]);
++        defer gpa.free(want);
++        const out = try b.run(mutated);
++        defer gpa.free(out);
++        if (!std.mem.eql(u8, want, out)) std.debug.print("host-owned: {s} -> {s}: '{s}', CPython '{s}'\n", .{ m[1], m[2], out, want });
++        try std.testing.expectEqualStrings(want, out);
++    }
++}
++
++test "runner trace stated: TF_DSV41_RUNNER_STATED parses, off unless set, and only with form trace" {
++    const K = struct {
++        var v: ?[]const u8 = null;
++        var forms: ?[]const u8 = null;
++        fn get(name: []const u8) ?[]const u8 {
++            if (std.mem.eql(u8, name, "TF_R")) return "1";
++            if (std.mem.eql(u8, name, "TF_R_CIRCUIT")) return "/c.bin";
++            if (std.mem.eql(u8, name, "TF_R_FORMS")) return forms;
++            return if (std.mem.eql(u8, name, "TF_R_STATED")) v else null;
++        }
++    };
++    try std.testing.expect(!(try runner.Config.parse(&K.get, "TF_R")).?.scan.trace_whole);
++    K.v = "1";
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++    K.forms = "fence,repl,inline,trace";
++    try std.testing.expect((try runner.Config.parse(&K.get, "TF_R")).?.scan.trace_whole);
++    K.v = "2";
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++}
+diff --git a/zig/src/core/runner_trace_text.zig b/zig/src/core/runner_trace_text.zig
+index d805ccfddcbadecb493abc89a3a365b65c38c5fb..438c91e514167b8f2ae8c2545f92e4aaf88d6741 100644
+--- a/zig/src/core/runner_trace_text.zig
++++ b/zig/src/core/runner_trace_text.zig
+@@ -252,8 +252,8 @@ pub fn goalHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocat
+     }
+ }
+ 
+-/// A sentence that is only an expression: starts with a digit or `(`, ends with a digit or `)` right before ". ".
+-pub fn bareHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocator.Error!void {
++/// A sentence that is only an expression: a digit or `(` to a digit or `)` before ". " (`commas`: thousands groups).
++pub fn bareHeads(a: Allocator, s: []const u8, commas: bool, out: *std.ArrayList(Head)) Allocator.Error!void {
+     var i: usize = 0;
+     while (i < s.len) : (i += 1) {
+         if (!(i == 0 or (i >= 2 and s[i - 2] == '.' and s[i - 1] == ' '))) continue;
+@@ -263,6 +263,8 @@ pub fn bareHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocat
+             const c = s[j];
+             if (std.ascii.isAlphanumeric(c) or std.mem.indexOfScalar(u8, "^*+-() ", c) != null) {
+                 j += 1;
++            } else if (commas and thousandsAt(s, j)) {
++                j += 1;
+             } else if (std.mem.startsWith(u8, s[j..], "×")) {
+                 j += 2;
+             } else if (std.mem.startsWith(u8, s[j..], "−")) {
+@@ -274,13 +276,13 @@ pub fn bareHeads(a: Allocator, s: []const u8, out: *std.ArrayList(Head)) Allocat
+     }
+ }
+ 
+-pub const Phrase = struct { kind: enum { divmod, mul, subfrom, expr }, parts: [2][2]usize = undefined, n: usize = 1, end: usize };
++pub const Phrase = struct { kind: enum { divmod, mul, subfrom, expr, gcd }, parts: [2][2]usize = undefined, n: usize = 1, end: usize };
+ 
+ const fill_words = [_][]const u8{ "the", "answer", "exact", "exactly", "value", "of", "integer", "decimal", "product", "sum", "difference", "result", "floor", "huge", "number", "big" };
+ const trail_words = [_][]const u8{ "exactly", "exact", "accurately", "carefully", "precisely", "manually" };
+ 
+-/// The phrase a head introduces, up to the first sentence end (`.,;:` then a space, or the line's end).
+-pub fn phrase(rest: []const u8) ?Phrase {
++/// The phrase a head introduces, up to the first sentence end (`.,;:` then a space, or the line's end; `whole`: gcd).
++pub fn phrase(rest: []const u8, whole: bool) ?Phrase {
+     var i: usize = 0;
+     var n: usize = 0;
+     while (n < 4) : (n += 1) {
+@@ -297,6 +299,7 @@ pub fn phrase(rest: []const u8) ?Phrase {
+     if (verbPhrase(rest, i, "multiply", &.{ "by", "and", "with" })) |p| return .{ .kind = .mul, .parts = p.parts, .n = 2, .end = p.end };
+     if (multiplyDefs(rest, i)) |p| return .{ .kind = .mul, .parts = p.parts, .n = 2, .end = p.end };
+     if (verbPhrase(rest, i, "subtract", &.{"from"})) |p| return .{ .kind = .subfrom, .parts = p.parts, .n = 2, .end = p.end };
++    if (whole) if (gcdCall(rest, i)) |p| return .{ .kind = .gcd, .parts = p.parts, .n = 2, .end = p.end };
+     const e = lazyEnd(rest, i) orelse return null;
+     return .{ .kind = .expr, .parts = .{ .{ i, e.text }, undefined }, .end = e.end };
+ }
+@@ -341,6 +344,31 @@ fn verbPhrase(s: []const u8, i: usize, verb: []const u8, seps: []const []const u
+     return null;
+ }
+ 
++/// `gcd(X, Y)` then a sentence end: X and Y split at the call's one top-level comma.
++fn gcdCall(s: []const u8, i: usize) ?Two {
++    const open = seq(s, i, &.{"gcd("}) orelse return null;
++    var depth: usize = 0;
++    var comma: ?usize = null;
++    var k = open;
++    while (k < s.len) : (k += 1) {
++        switch (s[k]) {
++            '(' => depth += 1,
++            ')' => {
++                if (depth == 0) break;
++                depth -= 1;
++            },
++            ',' => if (depth == 0) {
++                if (comma != null) return null; // three arguments, or a thousands comma: not one reading
++                comma = k;
++            },
++            else => {},
++        }
++    } else return null;
++    const c = comma orelse return null;
++    const e = endAt(s, k + 1) orelse return null;
++    return .{ .parts = .{ .{ open, c }, .{ c + 1, k } }, .end = e };
++}
++
+ /// `multiply A=x B=y`: two definitions side by side.
+ fn multiplyDefs(s: []const u8, i: usize) ?Two {
+     var j = seq(s, i, &.{"multiply"}) orelse return null;
+@@ -384,6 +412,13 @@ fn endAt(s: []const u8, k: usize) ?usize {
+     return null;
+ }
+ 
++/// A thousands comma at `j`: a digit before it, exactly three digits after it.
++pub fn thousandsAt(s: []const u8, j: usize) bool {
++    if (j == 0 or j + 4 > s.len or s[j] != ',' or !std.ascii.isDigit(s[j - 1])) return false;
++    for (s[j + 1 .. j + 4]) |c| if (!std.ascii.isDigit(c)) return false;
++    return j + 4 == s.len or !std.ascii.isDigit(s[j + 4]);
++}
++
+ /// "Compute D*349, D*350": a phrase ending in a comma before another candidate is a list, not one computation.
+ pub fn listed(rest: []const u8, ph: Phrase) bool {
+     if (ph.end < 2 or rest[ph.end - 2] != ',') return false;

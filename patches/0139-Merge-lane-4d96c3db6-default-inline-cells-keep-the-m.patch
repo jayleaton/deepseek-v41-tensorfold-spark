@@ -1,0 +1,241 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 23:08:38 +0700
+Subject: [PATCH 139/207] Merge lane 4d96c3db6 (default inline cells keep the
+ model's value where its context means something else: concatenation,
+ lcm/common denominators; carries a3566b1d5 = 923887522)
+
+Squashed merge of 2 commits:
+- runner: opt-in inline chain, the last `<expr> =` after complete earlier statements (TF_DSV41_RUNNER_INLINE_CHAIN) (Jay Leaton)
+- runner: default inline cells keep the model's value where its context means something else (Jay Leaton)
+---
+ zig/src/core/runner.zig                     |  3 +-
+ zig/src/core/runner_inline_context_test.zig | 49 +++++++++++++++++++++
+ zig/src/core/runner_inline_mod_test.zig     |  2 +-
+ zig/src/core/runner_proof_test.zig          |  1 +
+ zig/src/core/runner_scan.zig                | 34 +++++++++-----
+ zig/src/core/runner_scan_inline.zig         | 11 +++++
+ 6 files changed, 88 insertions(+), 12 deletions(-)
+ create mode 100644 zig/src/core/runner_inline_context_test.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index c19110668e439a82e416522f4ef8ff61c0bda906..9dead104b117ba6d8d38d5bff1b7b7cde6efb3a1 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -271,7 +271,7 @@ pub const Session = struct {
+             return;
+         }
+         // exact inline math would contradict a reply reasoning in Python floats
+-        if (c.float_context) {
++        if (c.own_context) {
+             cell.translation = .{ .abstain = .context };
+             cell.translated.store(true, .release);
+             return;
+@@ -581,4 +581,5 @@ test {
+     _ = @import("runner_inline_arith_test.zig");
+     _ = @import("runner_inline_chain_test.zig");
+     _ = @import("runner_receipt_test.zig");
++    _ = @import("runner_inline_context_test.zig");
+ }
+diff --git a/zig/src/core/runner_inline_context_test.zig b/zig/src/core/runner_inline_context_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..693a8d3326889cd5115d9e3fbbc98c0c9d4a4d95
+--- /dev/null
++++ b/zig/src/core/runner_inline_context_test.zig
+@@ -0,0 +1,49 @@
++//! Default inline cells whose reply context means something other than the span's value (2026-11-02 default audit).
++const std = @import("std");
++const scan = @import("runner_scan.zig");
++const t = std.testing;
++
++/// The cell the last text closes after `before` streamed through one scanner, with whether the reply keeps its value.
++fn last(a: std.mem.Allocator, before: []const []const u8, text: []const u8) !?bool {
++    var s: scan.Scanner = .{ .cfg = .{ .inline_math = true } };
++    defer s.deinit(a);
++    for (before) |b| _ = try s.feed(a, b, true);
++    const e = try s.feed(a, text, true);
++    const c = e.closed orelse return null;
++    if (c.form != .inline_expr or e.trigger == null) return null;
++    return c.own_context;
++}
++
++test "runner scan: after a join cue a bare `a + b` keeps the model's value; other spans and later lines do not" {
++    const a = t.allocator;
++    // live 0220: the model joined digit groups and wrote 1119392
++    const joining = [_][]const u8{ "Concatenate: 1119 392 629 836 636\n", "= 1119392629836636? Let's join step:\n" };
++    try t.expectEqual(@as(?bool, true), try last(a, &joining, "1119 + 392 ="));
++    // live 0216: the cue two lines up, commas grouped
++    const two_up = [_][]const u8{ "Result groups: 1143 | 594255903. Concatenate: 1143594255903?\n", "Let's do it:\n" };
++    try t.expectEqual(@as(?bool, true), try last(a, &two_up, "1,143 + 594,255,903 ="));
++    try t.expectEqual(@as(?bool, false), try last(a, &joining, "1119 + 392*2 ="));
++    // a label before the sum (smoke r0-27d7abd723f6 group addition, a digit count) is addition
++    try t.expectEqual(@as(?bool, false), try last(a, &joining, "g0: 868,587,520 + 216,486,895 ="));
++    try t.expectEqual(@as(?bool, false), try last(a, &joining, "Count digits: 20+19="));
++    try t.expectEqual(@as(?bool, false), try last(a, &joining, "1119 - 392 ="));
++    const later = [_][]const u8{ "Concatenate them later.\n", "a\n", "b\n", "c\n" };
++    try t.expectEqual(@as(?bool, false), try last(a, &later, "1119 + 392 ="));
++    try t.expectEqual(@as(?bool, false), try last(a, &.{}, "1119 + 392 ="));
++}
++
++test "runner scan: fractions over a common denominator keep the model's numerators; integers still open" {
++    const a = t.allocator;
++    // live 0022: `-1/2=-420` over the lcm 840, where the engine would write -0.5
++    const lcd = [_][]const u8{ "Let's compute exact. Use denominator lcm 840? Terms:\n", "1=840/840\n" };
++    try t.expectEqual(@as(?bool, true), try last(a, &lcd, "-1/2="));
++    try t.expectEqual(@as(?bool, true), try last(a, &.{"Common LCD is 72.\n"}, "7/12 ="));
++    try t.expectEqual(@as(?bool, false), try last(a, &lcd, "6 * 7 ="));
++    try t.expectEqual(@as(?bool, false), try last(a, &.{}, "-1/2="));
++}
++
++test "runner scan: running sums of place values still open (smoke r0-27d7abd723f6 wrote them right)" {
++    const a = t.allocator;
++    for ([_][]const u8{ "So quotient 20,282,422? Sum: 20,000,000+200,000=", "Sum 400,000+50,000=", "Sum 100+20+9 =", "Sum: 592+16,905=" }) |line|
++        try t.expectEqual(@as(?bool, false), try last(a, &.{}, line));
++}
+diff --git a/zig/src/core/runner_inline_mod_test.zig b/zig/src/core/runner_inline_mod_test.zig
+index 6332e9a536bcbba9b19f10bc9df840585e65eff6..9855382b435f4cac1f4e2f8fd2a63e46c1995616 100644
+--- a/zig/src/core/runner_inline_mod_test.zig
++++ b/zig/src/core/runner_inline_mod_test.zig
+@@ -184,7 +184,7 @@ test "runner scan: a Python-float reply marks an e-notation modulus, not a liter
+         defer s.deinit(a);
+         _ = try s.feed(a, "x = float(n)\n", true);
+         const e = try s.feed(a, c[0], true);
+-        try t.expectEqual(c[1], e.closed.?.float_context);
++        try t.expectEqual(c[1], e.closed.?.own_context);
+     }
+ }
+ 
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index 430a2a8b6a1969a778b5350bb00f5fa04edc3594..d8c0400166f0b725d155888156b366a471577c17 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -424,4 +424,5 @@ comptime {
+     _ = @import("runner_inline_mod_test.zig");
+     _ = @import("runner_inline_arith_test.zig");
+     _ = @import("runner_inline_chain_test.zig");
++    _ = @import("runner_inline_context_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 09b8f37c0030462c57fffb6856ddec286f10c33b..3d7fcd913b5c74ae72cfef5c4d29da6b888bba2e 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -25,11 +25,15 @@ pub const Config = struct {
+ const trace_owned_max = 16;
+ const trace_cells_max = 32;
+ 
+-/// Text that puts the reply in a language's float semantics, where exact inline math would contradict it.
+-const float_cues = [_][]const u8{ "float", "Decimal(", "sum(", "round(", "0.1+0.2", "0.1 + 0.2" };
++/// Text after which a reply keeps its own decimals and fractions: Python floats, or a common denominator.
++const float_cues = [_][]const u8{ "float", "Decimal(", "sum(", "round(", "0.1+0.2", "0.1 + 0.2", "lcm", "LCM", "LCD", "denominator" };
++/// Text after which `a + b` may join digits rather than add them (live: `Concatenate: … 1119 + 392 = 1119392`).
++const join_cues = [_][]const u8{ "oncatenat", "join", "Join" };
++/// Lines after a join cue in which a bare `a + b` opening its line keeps the model's own value.
++const join_lines = 2;
+ 
+ /// A closed cell; `lang` and `code` live in the scanner until the next `feed`.
+-pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, float_context: bool = false, trace: ?Stated = null };
++pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, own_context: bool = false, trace: ?Stated = null }; // own_context: the reply keeps its value
+ 
+ /// A trace cell's line text: what `[exact: … = value]` shows, and whether the value is a (quotient, remainder) pair.
+ pub const Stated = struct { display: []const u8, divmod: bool };
+@@ -54,6 +58,8 @@ pub const Scanner = struct {
+     armed: ?Trigger = null, // a trigger this token set; later non-blank bytes in the same token spoil it
+     tokens: u32 = 0, // tokens fed
+     float_at: ?u32 = null, // the token of the last float cue or closed code cell
++    lines: u32 = 0, // newlines fed
++    join_line: ?u32 = null, // the line of the last join cue
+     tail: [16]u8 = undefined, // the last bytes fed, for cues split across tokens
+     tail_len: usize = 0,
+     think: bool = false, // the think block was open at the last token
+@@ -101,6 +107,7 @@ pub const Scanner = struct {
+                 try s.line.append(a, b);
+                 continue;
+             }
++            s.lines +|= 1;
+             try s.endLine(a, &ev, think_open);
+             s.line.clearRetainingCapacity();
+         }
+@@ -124,7 +131,7 @@ pub const Scanner = struct {
+                 try m.code(a, &s.code);
+                 ev.closed = s.close(.inline_expr);
+                 // Python reads 1e9 as a float: a reply reasoning in floats keeps its own value
+-                ev.closed.?.float_context = floats and std.mem.indexOfScalar(u8, m.modulus, 'e') != null;
++                ev.closed.?.own_context = floats and std.mem.indexOfScalar(u8, m.modulus, 'e') != null;
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = m.space };
+             } else if (inline_scan.inlineExpr(s.line.items, s.cfg.inline_arith, s.cfg.inline_chain)) |x| {
+                 s.lang.clearRetainingCapacity();
+@@ -137,7 +144,11 @@ pub const Scanner = struct {
+                     if (c != ',') try s.code.append(a, c);
+                 }
+                 ev.closed = s.close(.inline_expr);
+-                ev.closed.?.float_context = floats and std.mem.indexOfAny(u8, x.expr, "./") != null;
++                // `1119 + 392 =` opening its line, just after a join cue: the model may be joining digit groups
++                const lead = std.mem.trim(u8, s.line.items[0 .. @intFromPtr(x.expr.ptr) - @intFromPtr(s.line.items.ptr)], " \t");
++                const joined = s.join_line != null and s.lines - s.join_line.? <= join_lines and lead.len == 0 and
++                    inline_scan.twoInts(x.expr);
++                ev.closed.?.own_context = joined or (floats and std.mem.indexOfAny(u8, x.expr, "./") != null);
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = x.space };
+             }
+         }
+@@ -257,6 +268,9 @@ pub const Scanner = struct {
+         for (float_cues) |c| if (std.mem.endsWith(u8, s.tail[0..s.tail_len], c)) {
+             s.float_at = s.tokens;
+         };
++        for (join_cues) |c| if (std.mem.endsWith(u8, s.tail[0..s.tail_len], c)) {
++            s.join_line = s.lines;
++        };
+     }
+ 
+     fn close(s: *Scanner, form: api.Form) Closed {
+@@ -453,24 +467,24 @@ test "runner scan: a Python-float reply marks inline decimals and fractions, not
+     for ([_][]const u8{ "Actually Python:\n", ">>> sum([0.1]*10)\n", "0.9999999999999999\n", "I think yes. ", "Let's recall common: " }) |t|
+         _ = try s.feed(a, t, true);
+     const live = try s.feed(a, "0.1+0.2 =", true);
+-    try std.testing.expect(live.closed.?.form == .inline_expr and live.closed.?.float_context);
++    try std.testing.expect(live.closed.?.form == .inline_expr and live.closed.?.own_context);
+     _ = try s.feed(a, " 0.3\n", true);
+     for ([_][]const u8{ "7/12 =", "6 * 7 =" }, [_]bool{ true, false }) |t, want| {
+         const e = try s.feed(a, t, true);
+-        try std.testing.expectEqual(want, e.closed.?.float_context);
++        try std.testing.expectEqual(want, e.closed.?.own_context);
+         _ = try s.feed(a, " 1\n", true);
+     }
+     var far: Scanner = .{ .cfg = .{ .inline_math = true, .float_window = 4 } };
+     defer far.deinit(a);
+     _ = try far.feed(a, "a flo", true);
+     _ = try far.feed(a, "at\n", true); // a cue split across tokens
+-    try std.testing.expect((try far.feed(a, "1.5+2 =", true)).closed.?.float_context);
++    try std.testing.expect((try far.feed(a, "1.5+2 =", true)).closed.?.own_context);
+     _ = try far.feed(a, " 3.5\n", true);
+     for (0..4) |_| _ = try far.feed(a, "ok\n", true);
+-    try std.testing.expect(!(try far.feed(a, "1.5+2 =", true)).closed.?.float_context);
++    try std.testing.expect(!(try far.feed(a, "1.5+2 =", true)).closed.?.own_context);
+     var plain: Scanner = .{ .cfg = .{ .inline_math = true } };
+     defer plain.deinit(a);
+-    try std.testing.expect(!(try plain.feed(a, "Discount: 889.35*0.075 =", true)).closed.?.float_context);
++    try std.testing.expect(!(try plain.feed(a, "Discount: 889.35*0.075 =", true)).closed.?.own_context);
+ }
+ 
+ test "runner scan: an answer's first fence opens a cell when the reasoning ended mid-line (live run-check-004)" {
+diff --git a/zig/src/core/runner_scan_inline.zig b/zig/src/core/runner_scan_inline.zig
+index 9689cdec9d2f0ebd76574fcf7948412e44a9a8f7..f871c70c556c5bcd07652ba47dd943a117f8b40f 100644
+--- a/zig/src/core/runner_scan_inline.zig
++++ b/zig/src/core/runner_scan_inline.zig
+@@ -404,6 +404,17 @@ fn runningOperand(word: []const u8) bool {
+     return false;
+ }
+ 
++/// `1119 + 392`: two plain non-negative integers added, nothing else (after a join cue it may be a concatenation).
++pub fn twoInts(e: []const u8) bool {
++    const plus = std.mem.indexOfScalar(u8, e, '+') orelse return false;
++    for ([_][]const u8{ e[0..plus], e[plus + 1 ..] }) |side| {
++        const t = std.mem.trim(u8, side, " \t");
++        if (t.len == 0) return false;
++        for (t) |c| if (!std.ascii.isDigit(c) and c != ',') return false;
++    }
++    return true;
++}
++
+ /// `gcd(a, b)` on plain non-negative literals ending the text, as its own phrase (not `2 * gcd(…)`, `math.gcd`).
+ fn gcdCall(before: []const u8) ?[]const u8 {
+     const s = std.mem.trimEnd(u8, before, " \t");

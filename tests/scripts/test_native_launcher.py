@@ -27,6 +27,8 @@ def launcher(tmp_path):
         "        log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "    if 'org.tensorfold.revision' in sys.argv[4]:\n"
         "        print(os.environ['LAUNCHER_TEST_REV'])\n"
+        "    elif 'org.tensorfold.tree' in sys.argv[4]:\n"
+        "        print(os.environ['LAUNCHER_TEST_TREE'])\n"
         "    elif sys.argv[4].startswith('{\"config\":'):\n"
         "        print(json.dumps({'config': {'Env': ['PATH=/usr/bin'], 'Cmd': ['bash']}, 'layers': ['sha256:' + '1' * 64,\n"
         "                          'sha256:' + '2' * 64], 'os': 'linux', 'architecture': 'arm64', 'variant': ''}))\n"
@@ -54,6 +56,7 @@ def launcher(tmp_path):
     argv_file = tmp_path / "argv.json"
     env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"], CONFIG=str(config),
                LAUNCHER_TEST_REV=(ROOT / "config/tensorfold.rev").read_text().strip(),
+               LAUNCHER_TEST_TREE=(ROOT / "config/tensorfold.tree").read_text().strip(),
                LAUNCHER_TEST_ARGV=str(argv_file), TF_TP_ROCE_HCA="fixture_hca")
     return env, argv_file, values
 

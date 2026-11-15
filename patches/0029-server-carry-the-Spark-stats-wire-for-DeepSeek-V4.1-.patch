@@ -1,0 +1,289 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 12:05:24 +0700
+Subject: [PATCH 029/207] server: carry the Spark stats wire for DeepSeek-V4.1
+ responses
+
+The published DeepSeek-V4.1 engine answers with the Spark server's
+tensorfold block (prompt, cached, ttft_s, finish, completion, prefill_s,
+decode_s, rounds, drafted, accepted), and the benchmark and smoke driver
+reads those keys. Add them to the native block, after its own keys, when the
+checkpoint's model_type is deepseek_v41 or deepseek_v4; TENSORFOLD_WIRE=spark
+forces them on and native (or tensorfold) forces them off. Whole replies and
+the final streamed chunk both carry them. Native keys and the speculative
+object are unchanged, and other families' replies are byte-identical.
+
+Test: spark_wire_test.zig serves a completion through openai.run with a
+scripted engine, whole and streamed, and checks each Spark value and that
+the block less those keys equals the native reply; spark_wire.zig tests the
+TENSORFOLD_WIRE overrides.
+---
+ zig/src/server/openai.zig          |   1 +
+ zig/src/server/root.zig            |   2 +
+ zig/src/server/serve.zig           |   5 ++
+ zig/src/server/server.zig          |   2 +
+ zig/src/server/spark_wire.zig      |  57 +++++++++++++
+ zig/src/server/spark_wire_test.zig | 129 +++++++++++++++++++++++++++++
+ 6 files changed, 196 insertions(+)
+ create mode 100644 zig/src/server/spark_wire.zig
+ create mode 100644 zig/src/server/spark_wire_test.zig
+
+diff --git a/zig/src/server/openai.zig b/zig/src/server/openai.zig
+index 975b31abbfd7554319c2f5788909c56b36dab83d..833defa91d9bbf794433e72361401a67a11a14fb 100644
+--- a/zig/src/server/openai.zig
++++ b/zig/src/server/openai.zig
+@@ -323,6 +323,7 @@ const Run = struct {
+     fn extras(r: *Run, o: *json.Object, reply: *const chat.Reply) Allocator.Error!void {
+         try o.put(r.a, "exact_mode", .{ .string = "exact" });
+         if (reply.stop_sequence) |s| try o.put(r.a, "stop_sequence", .{ .string = s });
++        if (r.srv.config.spark_stats) try @import("spark_wire.zig").add(r.a, reply);
+         try o.put(r.a, "tensorfold", reply.runtime);
+         try o.put(r.a, "speculative", reply.speculative);
+         if (r.turn) |t| try o.put(r.a, "cortheon", try t.summary(r.a));
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 3c47fcf1588d81410109b950154a774bb5a90a9b..d22c42ca6ede3c4f229e2ae29834ed9ee0befeca 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -98,6 +98,8 @@ test {
+     _ = @import("completion_prompt_test.zig");
+     _ = @import("hf_eos_http_test.zig");
+     _ = @import("reply_gpu_seconds_test.zig");
++    _ = @import("spark_wire.zig");
++    _ = @import("spark_wire_test.zig");
+     _ = @import("server_init_test.zig");
+     _ = @import("connection_arena_test.zig");
+     _ = @import("decisions.zig");
+diff --git a/zig/src/server/serve.zig b/zig/src/server/serve.zig
+index 38742886e10199fe31b30ca57bb6cb1b61473e3c..eab4915b7ec960c56806df7fabcf4143c1c17e92 100644
+--- a/zig/src/server/serve.zig
++++ b/zig/src/server/serve.zig
+@@ -159,6 +159,10 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
+         std.debug.print("tensorfold: TF_SSE_KEEPALIVE_S: seconds, a number >= 0\n", .{});
+         return 1;
+     };
++    const spark_stats = @import("spark_wire.zig").enabled(s.model_type, env(s, "TENSORFOLD_WIRE")) orelse {
++        std.debug.print("tensorfold: TENSORFOLD_WIRE: expected spark or native\n", .{});
++        return 1;
++    };
+     const config: server_mod.Config = .{
+         .browser = .{ .allowed_hosts = args.allowed_host, .allowed_origins = args.allowed_origin },
+         .allowed_controls = args.allowed_controls,
+@@ -189,6 +193,7 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
+         .prompt_seed = args.prompt_seed,
+         .sse_keepalive_s = keepalive_s,
+         .request_log = env(s, "TENSORFOLD_REQUEST_LOG"),
++        .spark_stats = spark_stats,
+         .dashboard = args.dashboard,
+         .compact_at = if (args.compact_auto) .{ .auto = {} } else if (args.compact_fraction) |f| .{ .fraction = f } else null,
+         .compact_keep = args.compact_keep,
+diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
+index d24385447aacd4f69f83b2a8fb868d635b35b358..954814de67a4405d953df60e18d8f73e9781056d 100644
+--- a/zig/src/server/server.zig
++++ b/zig/src/server/server.zig
+@@ -77,6 +77,8 @@ pub const Config = struct {
+     prompt_seed: bool = false,
+     /// TENSORFOLD_REQUEST_LOG: where chat and completion bodies are appended; null: nowhere.
+     request_log: ?[]const u8 = null,
++    /// The Spark server's keys in each reply's ``tensorfold`` block (spark_wire.zig): DeepSeek-V4, or TENSORFOLD_WIRE.
++    spark_stats: bool = false,
+     /// Null keeps every reply identical to a server that has no compaction.
+     compact_at: ?CompactAt = null,
+     /// Tokens of the recent tail kept whole. Null uses min(20000, a quarter of the window).
+diff --git a/zig/src/server/spark_wire.zig b/zig/src/server/spark_wire.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..f37f4731a1309d988449b31b87fad3b1caa95d2b
+--- /dev/null
++++ b/zig/src/server/spark_wire.zig
+@@ -0,0 +1,57 @@
++//! The Spark stats wire: the Spark server's ``tensorfold`` keys, beside a reply's own for DeepSeek-V4 checkpoints.
++const std = @import("std");
++const json = @import("json");
++const chat = @import("chat.zig");
++const Value = json.Value;
++const Allocator = std.mem.Allocator;
++
++/// Whether replies carry the Spark keys: TENSORFOLD_WIRE spark or native (tensorfold) wins, else the family decides.
++pub fn enabled(model_type: []const u8, setting: ?[]const u8) ?bool {
++    const t = std.mem.trim(u8, setting orelse "", " \t");
++    if (t.len == 0) return std.mem.eql(u8, model_type, "deepseek_v41") or std.mem.eql(u8, model_type, "deepseek_v4");
++    if (std.ascii.eqlIgnoreCase(t, "spark")) return true;
++    if (std.ascii.eqlIgnoreCase(t, "native") or std.ascii.eqlIgnoreCase(t, "tensorfold")) return false;
++    return null; // neither: the server refuses to start
++}
++
++/// The Spark server's prompt, cached, ttft_s, finish, completion, prefill_s, decode_s and draft counters, in its order.
++pub fn add(a: Allocator, reply: *const chat.Reply) Allocator.Error!void {
++    if (reply.runtime != .object) return;
++    const block = reply.runtime;
++    const o = block.object;
++    try o.put(a, "prompt", try json.intValue(a, reply.prompt_tokens));
++    try o.put(a, "cached", try json.intValue(a, reply.cached_tokens));
++    if (secondsOf(block, "time_to_first_token")) |t| try o.put(a, "ttft_s", .{ .float = round4(t) });
++    try o.put(a, "finish", .{ .string = if (std.mem.eql(u8, reply.finish_reason, "cancelled")) "cancelled" else "done" });
++    try o.put(a, "completion", try json.intValue(a, reply.completion_tokens));
++    if (secondsOf(block, "prefill_seconds")) |p| try o.put(a, "prefill_s", .{ .float = round4(p) });
++    if (secondsOf(block, "seconds")) |d| try o.put(a, "decode_s", .{ .float = round4(d) }); // from the prefill's end
++    for ([_][]const u8{ "rounds", "drafted", "accepted" }) |k| try o.put(a, k, try json.intValue(a, count(reply.speculative, k)));
++}
++
++fn secondsOf(block: Value, key: []const u8) ?f64 {
++    const v = block.field(key) orelse return null;
++    return v.float64();
++}
++
++fn count(spec: Value, key: []const u8) i64 {
++    const v = spec.get(key) orelse return 0;
++    return v.int64() orelse 0;
++}
++
++/// Python's ``round(x, 4)``, as the Spark server rounds its seconds.
++fn round4(x: f64) f64 {
++    var buf: [64]u8 = undefined;
++    const text = std.fmt.bufPrint(&buf, "{d:.4}", .{x}) catch return x;
++    return std.fmt.parseFloat(f64, text) catch x;
++}
++
++test "TENSORFOLD_WIRE overrides the family's default" {
++    try std.testing.expectEqual(@as(?bool, true), enabled("deepseek_v41", null));
++    try std.testing.expectEqual(@as(?bool, true), enabled("deepseek_v4", ""));
++    try std.testing.expectEqual(@as(?bool, false), enabled("qwen3", null));
++    try std.testing.expectEqual(@as(?bool, true), enabled("qwen3", "spark"));
++    try std.testing.expectEqual(@as(?bool, false), enabled("deepseek_v41", "native"));
++    try std.testing.expectEqual(@as(?bool, false), enabled("deepseek_v41", " tensorfold "));
++    try std.testing.expectEqual(@as(?bool, null), enabled("deepseek_v41", "sparks"));
++}
+diff --git a/zig/src/server/spark_wire_test.zig b/zig/src/server/spark_wire_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..cde404733693df48d8e5eb4afce55dbf902a086b
+--- /dev/null
++++ b/zig/src/server/spark_wire_test.zig
+@@ -0,0 +1,129 @@
++//! The Spark stats wire through the actual OpenAI handler: its keys only when on, the native block otherwise unchanged.
++const std = @import("std");
++const api = @import("engine_api");
++const json = @import("json");
++const HfText = @import("hf_text.zig").HfText;
++const fixture = @import("hf_eos_fixture.zig");
++const openai = @import("openai.zig");
++const Server = @import("server.zig").Server;
++const Conn = @import("http_conn.zig").Conn;
++const Allocator = std.mem.Allocator;
++
++const spark_keys = [_][]const u8{ "prompt", "cached", "ttft_s", "finish", "completion", "prefill_s", "decode_s", "rounds", "drafted", "accepted" };
++
++/// An engine that keeps two of the prompt's tokens, answers three and ends with drafted rounds and a prefill time.
++const Script = struct {
++    prefill_seconds: f64 = 0.125,
++    fn engine(s: *Script) api.Engine {
++        return .{ .ctx = s, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory } };
++    }
++    fn info(_: *anyopaque) api.Info {
++        return .{ .context_window = 4096 };
++    }
++    fn submit(ctx: *anyopaque, id: api.Id, _: *const api.Request, sink: api.Sink) api.SubmitError!void {
++        const s: *Script = @ptrCast(@alignCast(ctx));
++        sink.event(sink.ctx, id, &.{ .prefilled = 2 });
++        sink.event(sink.ctx, id, &.{ .tokens = &.{ 0, 1, 2 } });
++        sink.event(sink.ctx, id, &.{ .finished = .{ .reason = .length, .stats = .{ .rounds = 2, .drafted = 4, .accepted = 3, .min_rows = 2, .prefill_seconds = s.prefill_seconds } } });
++    }
++    fn cancel(_: *anyopaque, _: api.Id) void {}
++    fn status(_: *anyopaque, out: *api.Status, _: []u32) void {
++        out.* = .{};
++    }
++    fn memory(_: *anyopaque, _: bool) ?api.Memory {
++        return null;
++    }
++};
++
++const Reply = struct {
++    a: Allocator,
++    whole: ?json.Value = null,
++    events: std.ArrayList(json.Value) = .empty,
++    fn out(r: *Reply) openai.Out {
++        return .{ .ctx = r, .vt = &.{ .open = open, .event = event, .reply = reply } };
++    }
++    fn open(_: *anyopaque, _: usize) error{Closed}!void {}
++    fn event(ctx: *anyopaque, value: ?json.Value) error{Closed}!void {
++        const r: *Reply = @ptrCast(@alignCast(ctx));
++        if (value) |v| r.events.append(r.a, v) catch return error.Closed;
++    }
++    fn reply(ctx: *anyopaque, _: u16, value: json.Value) void {
++        const r: *Reply = @ptrCast(@alignCast(ctx));
++        r.whole = value;
++    }
++};
++
++/// The reply (or the stream's final event) of a completion served with `spark_stats`.
++fn served(a: Allocator, spark_stats: bool, streaming: bool) !json.Value {
++    const gpa = std.testing.allocator;
++    var f = try fixture.Fixture.init(gpa, std.testing.io, null);
++    defer f.deinit();
++    var problem: []const u8 = "";
++    const text = try HfText.load(gpa, std.testing.io, f.path, null, a, &problem);
++    defer text.deinit();
++    var script = Script{};
++    const srv = try Server.init(gpa, std.testing.io, script.engine(), text.text(), .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false, .spark_stats = spark_stats }, null);
++    defer srv.deinit();
++    const body = (try json.parse(a, if (streaming) "{\"model\":\"m\",\"prompt\":[0,1,2],\"max_tokens\":3,\"stream\":true}" else "{\"model\":\"m\",\"prompt\":[0,1,2],\"max_tokens\":3}")).ok;
++    var conn = Conn{ .fd = -1, .peer = "", .buf = &.{}, .gpa = a };
++    var response = Reply{ .a = a };
++    openai.run(srv, a, response.out(), .{ .conn = &conn }, false, body);
++    if (!streaming) return try json.deepCopy(a, response.whole orelse return error.MissingReply);
++    for (response.events.items) |v| if (v.get("tensorfold") != null) return try json.deepCopy(a, v);
++    return error.MissingReply;
++}
++
++/// The reply's JSON with its clock-dependent members fixed and the Spark keys left out.
++fn steady(a: Allocator, value: json.Value) ![]u8 {
++    const v = try json.deepCopy(a, value);
++    if (v.object.getPtr("id")) |p| p.* = .{ .string = "id" };
++    if (v.object.getPtr("created")) |p| p.* = .{ .int = "0" };
++    const block = v.get("tensorfold").?;
++    for ([_][]const u8{ "tokens_per_second", "seconds", "time_to_first_token" }) |k| {
++        if (block.object.getPtr(k)) |p| p.* = .null;
++    }
++    for (spark_keys) |k| _ = block.object.orderedRemove(k);
++    return json.stringify(a, v, .{});
++}
++
++fn int(block: json.Value, key: []const u8) !i64 {
++    const v = block.get(key) orelse return error.MissingKey;
++    return v.int64() orelse return error.NotInt;
++}
++
++fn float(block: json.Value, key: []const u8) !f64 {
++    const v = block.get(key) orelse return error.MissingKey;
++    if (v != .float) return error.NotFloat;
++    return v.float;
++}
++
++fn round4(x: f64) !f64 {
++    var buf: [64]u8 = undefined;
++    return std.fmt.parseFloat(f64, try std.fmt.bufPrint(&buf, "{d:.4}", .{x}));
++}
++
++test "spark wire: the tensorfold block carries the Spark keys, whole and streamed, and is otherwise unchanged" {
++    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    for ([_]bool{ false, true }) |streaming| {
++        const native = try served(a, false, streaming);
++        const spark = try served(a, true, streaming);
++        const plain = native.get("tensorfold").?;
++        for (spark_keys) |k| try std.testing.expect(plain.get(k) == null);
++        try std.testing.expectEqualStrings(try steady(a, native), try steady(a, spark));
++        const block = spark.get("tensorfold").?;
++        const usage = spark.get("usage").?;
++        try std.testing.expectEqual(try int(usage, "prompt_tokens"), try int(block, "prompt"));
++        try std.testing.expectEqual(@as(i64, 2), try int(block, "cached"));
++        try std.testing.expectEqual(@as(i64, 3), try int(block, "completion"));
++        try std.testing.expectEqual(@as(i64, 2), try int(block, "rounds"));
++        try std.testing.expectEqual(@as(i64, 4), try int(block, "drafted"));
++        try std.testing.expectEqual(@as(i64, 3), try int(block, "accepted"));
++        try std.testing.expectEqualStrings("done", block.strField("finish").?);
++        try std.testing.expectEqual(@as(f64, 0.125), try float(block, "prefill_s"));
++        try std.testing.expectEqual(try round4(try float(block, "time_to_first_token")), try float(block, "ttft_s"));
++        try std.testing.expectEqual(try round4(try float(block, "seconds")), try float(block, "decode_s"));
++        try std.testing.expectEqual(@as(i64, 4), try int(spark.get("speculative").?, "drafted")); // the native object stays
++    }
++}

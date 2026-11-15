@@ -1,0 +1,157 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 07:22:24 +0700
+Subject: [PATCH 022/207] deepseek: prefer executable EXL3 siblings in CUDA
+ rank plans
+
+Restore Jay Leaton's published recipe 60b6688 CUDA storage-selection behavior through the current shared trellis validator. CUDA rank plans select EXL3 siblings while the shared projection API keeps dense-first ownership and existing format refusals.
+
+Retain a header-only compressor regression on both ranks, including reversed shard order, dense-only refusal and malformed trellis refusal. Extend real-header inspection to full checkpoint coverage and make environment-driven header checks execute rather than reuse a skipped test result.
+---
+ zig/build/dsv41_shared.zig                   |  6 +++
+ zig/src/families/deepseek_v41/host_test.zig  | 12 +++++-
+ zig/src/families/deepseek_v41/pack.zig       |  2 +-
+ zig/src/families/deepseek_v41/plan.zig       | 44 ++++++++++++++++++--
+ zig/src/families/deepseek_v41/projection.zig | 15 +++++++
+ 5 files changed, 72 insertions(+), 7 deletions(-)
+
+diff --git a/zig/build/dsv41_shared.zig b/zig/build/dsv41_shared.zig
+index 0751a1100f2fb516059bad09dd8e7e00e4d9f90a..5b5f509c890be0ba049d7c935acd20993b95afac 100644
+--- a/zig/build/dsv41_shared.zig
++++ b/zig/build/dsv41_shared.zig
+@@ -17,6 +17,12 @@ pub fn steps(b: *std.Build) void {
+     b.step("compile-dsv41-engram-alloc-aarch64", "Emit Linux ARM64 Engram failure controls; never execute").dependOn(&arm.step);
+     const run = b.addRunArtifact(host);
+     run.setCwd(b.path("."));
++    if (b.graph.environ_map.get("TF_DSV41_HEADERS")) |dir| {
++        run.setEnvironmentVariable("TF_DSV41_HEADERS", dir);
++        if (b.graph.environ_map.get("TF_DSV41_HEADERS_FULL")) |full|
++            run.setEnvironmentVariable("TF_DSV41_HEADERS_FULL", full);
++        run.has_side_effects = true;
++    }
+     b.step("test-dsv41-shared", "Shared DeepSeek checkpoint host tests, no GPU dependencies").dependOn(&run.step);
+     const linux_target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu });
+     const cross = b.addTest(.{ .root_module = module(b, linux_target, "shared_test.zig") });
+diff --git a/zig/src/families/deepseek_v41/host_test.zig b/zig/src/families/deepseek_v41/host_test.zig
+index bc14998042656f89ddfb7ff74540f973bcb8d9b2..21380e2df59004c542a5532518a6524fbf430257 100644
+--- a/zig/src/families/deepseek_v41/host_test.zig
++++ b/zig/src/families/deepseek_v41/host_test.zig
+@@ -330,10 +330,18 @@ test "real pack headers (TF_DSV41_HEADERS: model.safetensors.index.json and <sha
+         try p.addHeaderDump(shard, bytes);
+         if (std.mem.startsWith(u8, shard, "layer-")) try blocks.append(a, try std.fmt.parseInt(u32, shard[6..8], 10));
+     }
+-    const c: Config = .{};
++    const full = testing.environ.getPosix("TF_DSV41_HEADERS_FULL") != null;
++    const c = if (full) try Config.read(a, io, dir) else Config{};
+     for ([_]u32{ 0, 1 }) |rank| {
+-        var pl = try plan.build(a, &c, &p, .{ .rank = rank, .world = 2, .blocks = blocks.items });
++        var pl = try plan.build(a, &c, &p, .{ .rank = rank, .world = 2, .blocks = if (full) null else blocks.items });
+         defer pl.deinit();
++        if (full) {
++            for (pl.leftovers) |name| std.debug.print("unplanned tensor: {s}\n", .{name});
++            try testing.expectEqual(@as(usize, 0), pl.leftovers.len);
++            try testing.expectEqual(c.allLayers(), pl.layers.len);
++            try testing.expect(pl.head != null and pl.dspark != null);
++            std.debug.print("full headers rank {d}: {d} tensors, {d} layers, {d} bytes, zero leftovers\n", .{ rank, p.names.count(), pl.layers.len, pl.bytes() });
++        }
+         for (pl.layers) |*l| {
+             const h = l.experts[1].layout.histogram();
+             std.debug.print("rank {d} {s} {t}: down {t} K2 4/6/8 = {d}/{d}/{d}, gate/up mismatches {d}, experts {d} B, block {d} B\n", .{ rank, l.prefix, l.mode, l.experts[1].layout.kind, h[4], h[6], h[8], l.gate_up_mismatch, l.expertBytes(), l.bytes() });
+diff --git a/zig/src/families/deepseek_v41/pack.zig b/zig/src/families/deepseek_v41/pack.zig
+index 0121a3e8e903aacbf0c0f3c562e2e1a74a51a21f..36c33ffa0f8a16e6cf0b25fcfeab3fb3951af24e 100644
+--- a/zig/src/families/deepseek_v41/pack.zig
++++ b/zig/src/families/deepseek_v41/pack.zig
+@@ -185,7 +185,7 @@ pub const Pack = struct {
+     /// Current CUDA rank adapter. Complete dense/packed storage remains available through projection().
+     pub fn group(p: *const Pack, prefix: []const u8, buf: []u8) !exl3.Group {
+         _ = buf;
+-        return (try p.projection(prefix)).cudaGroup();
++        return @import("projection.zig").cudaGroup(p, prefix);
+     }
+ 
+     /// The group's marker tensor name (mul1 or mcg) if it has one; its value picks the codebook at load time.
+diff --git a/zig/src/families/deepseek_v41/plan.zig b/zig/src/families/deepseek_v41/plan.zig
+index 2ff2694184bea7b487407e8f385c0248b59afe91..6ccc54f3d81153145fccd2890328e8289767533a 100644
+--- a/zig/src/families/deepseek_v41/plan.zig
++++ b/zig/src/families/deepseek_v41/plan.zig
+@@ -138,10 +138,7 @@ const Builder = struct {
+     }
+ 
+     fn group(b: *Builder, proj: names.Proj, prefix: []const u8, split: exl3.Split, k: u32, n: u32) !GroupPlan {
+-        var shared = try CheckpointPlan.init(b.a, b.pack, &.{prefix});
+-        defer shared.deinit();
+-        const storage = shared.projections[0].storage;
+-        const g = try storage.cudaGroup();
++        const g = try b.pack.group(prefix, &b.buf);
+         if ((k != 0 and g.k() != k) or (n != 0 and g.n() != n)) {
+             if (!quiet) log.warn("{s}: K={d} N={d}, expected K={d} N={d}", .{ prefix, g.k(), g.n(), k, n });
+             return error.UnexpectedShape;
+@@ -350,3 +347,42 @@ test "an F16 router bias plans as its stored slice; an F16 sink is still refused
+     try testing.expectEqual(@as(u64, 2 * count), v.bytes);
+     try testing.expectError(error.UnexpectedTensor, b.native("mtp.0.attn.attn_sink", sink.?));
+ }
++
++test "CUDA rank planning selects EXL3 over a kept dense sibling from headers alone" {
++    const a = testing.allocator;
++    const prefix = "layers.2.attn.compressor.wkv";
++    var p = Pack.init(a);
++    defer p.deinit();
++    const dense = "{\"layers.2.attn.compressor.wkv.weight\":{\"dtype\":\"BF16\",\"shape\":[512,5120],\"data_offsets\":[0,5242880]}}";
++    const quant = "{\"layers.2.attn.compressor.wkv.trellis\":{\"dtype\":\"I16\",\"shape\":[320,32,80],\"data_offsets\":[0,1638400]}," ++
++        "\"layers.2.attn.compressor.wkv.suh\":{\"dtype\":\"F16\",\"shape\":[5120],\"data_offsets\":[1638400,1648640]}," ++
++        "\"layers.2.attn.compressor.wkv.svh\":{\"dtype\":\"F16\",\"shape\":[512],\"data_offsets\":[1648640,1649664]}}";
++    try p.addHeader("native.safetensors", dense, 5242880);
++    try p.addHeader("layer-02.safetensors", quant, 1649664);
++    const c: Config = .{};
++    for ([_]u32{ 0, 1 }) |rank| {
++        var arena = std.heap.ArenaAllocator.init(a);
++        defer arena.deinit();
++        var b: Builder = .{ .a = arena.allocator(), .c = &c, .pack = &p, .o = .{ .rank = rank, .world = 2 } };
++        const g = try b.group(.wq_a, prefix, .whole, 5120, 512);
++        try testing.expectEqual(@as(u32, 10), g.full.k2());
++        try testing.expectEqual(@as(u64, 1638400), g.part.trellis.bytes());
++        try testing.expect(!b.used.contains("layers.2.attn.compressor.wkv.weight"));
++        try testing.expect(names.ignored("layers.2.attn.compressor.wkv.weight", &p));
++    }
++    try testing.expect((try p.projection(prefix)) == .dense);
++    var reversed = Pack.init(a);
++    defer reversed.deinit();
++    try reversed.addHeader("layer-02.safetensors", quant, 1649664);
++    try reversed.addHeader("native.safetensors", dense, 5242880);
++    var buf: [256]u8 = undefined;
++    try testing.expectEqual(@as(u32, 10), (try reversed.group(prefix, &buf)).k2());
++    reversed.names.getPtr("layers.2.attn.compressor.wkv.trellis").?.dtype = .f16;
++    try testing.expectError(error.BadTrellis, reversed.group(prefix, &buf));
++    _ = p.names.swapRemove("layers.2.attn.compressor.wkv.weight");
++    try testing.expectEqual(@as(u32, 10), (try p.group(prefix, &buf)).k2());
++    _ = p.names.swapRemove("layers.2.attn.compressor.wkv.trellis");
++    try testing.expectError(error.MissingTensor, p.group(prefix, &buf));
++    try p.addHeader("dense-only.safetensors", dense, 5242880);
++    try testing.expectError(error.UnsupportedDenseProjection, p.group(prefix, &buf));
++}
+diff --git a/zig/src/families/deepseek_v41/projection.zig b/zig/src/families/deepseek_v41/projection.zig
+index 5fa2d9e0ffcec73e6ba39a87b0f6d83111dc83b2..7a196ec7c64c9eaeab05044415d547bbc55694bd 100644
+--- a/zig/src/families/deepseek_v41/projection.zig
++++ b/zig/src/families/deepseek_v41/projection.zig
+@@ -38,6 +38,21 @@ pub fn read(p: *const pk.Pack, prefix: []const u8) !Projection {
+         if (w.dtype != .bf16 or w.rank != 2 or w.shape[0] == 0 or w.shape[1] == 0) return error.UnsupportedProjection;
+         return .{ .dense = .{ .weight = w, .k = w.shape[1], .n = w.shape[0], .scales = try scales(p, prefix, w.shape[1], w.shape[0], false) } };
+     }
++    return readTrellis(p, prefix);
++}
++
++/// CUDA selects its executable trellis even when the pack also keeps a dense sibling.
++pub fn cudaGroup(p: *const pk.Pack, prefix: []const u8) !exl3.Group {
++    var buf: [256]u8 = undefined;
++    const storage = if (p.has(try std.fmt.bufPrint(&buf, "{s}.trellis", .{prefix})))
++        try readTrellis(p, prefix)
++    else
++        try read(p, prefix);
++    return storage.cudaGroup();
++}
++
++fn readTrellis(p: *const pk.Pack, prefix: []const u8) !Projection {
++    var buf: [256]u8 = undefined;
+     const trellis = try p.need(try std.fmt.bufPrint(&buf, "{s}.trellis", .{prefix}));
+     if (trellis.dtype != .i16) return error.BadTrellis;
+     const g = try exl3.Group.fromShape(trellis.dims());

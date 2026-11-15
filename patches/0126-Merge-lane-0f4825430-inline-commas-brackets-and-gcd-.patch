@@ -1,0 +1,910 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 19:23:01 +0700
+Subject: [PATCH 126/207] =?UTF-8?q?Merge=20lane=200f4825430=20(inline=20co?=
+ =?UTF-8?q?mmas,=20brackets=20and=20gcd;=20TF=5FDSV41=5FRUNNER=5FINLINE=5F?=
+ =?UTF-8?q?ARITH;=20=CF=86(=20refused;=20routed=20calc=20leak)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+runner_scan_inline.zig replaces runner_scan_mod.zig; its φ rule (a parenthesis glued to a non-ASCII letter) replaces c061290ef's, and the φ/λ test cases stay. The inline gcd step moves into Routed.graphFirst.
+
+Squashed merge of 1 commits:
+- runner: inline arithmetic with thousands commas, brackets and a whole gcd(a, b) (Jay Leaton)
+---
+ zig/src/core/runner.zig                   |   2 +
+ zig/src/core/runner_graph_route.zig       |   7 +
+ zig/src/core/runner_inline_arith_test.zig | 178 ++++++++++++
+ zig/src/core/runner_proof_test.zig        |   1 +
+ zig/src/core/runner_scan.zig              | 104 +------
+ zig/src/core/runner_scan_inline.zig       | 335 ++++++++++++++++++++++
+ zig/src/core/runner_scan_mod.zig          | 146 ----------
+ 7 files changed, 534 insertions(+), 239 deletions(-)
+ create mode 100644 zig/src/core/runner_inline_arith_test.zig
+ create mode 100644 zig/src/core/runner_scan_inline.zig
+ delete mode 100644 zig/src/core/runner_scan_mod.zig
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index a32aa07b56558d05bb0abcf2839a0b2a769a0843..881292b4c468323c29e42010f0891a280f711fdb 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -53,6 +53,7 @@ pub const Config = struct {
+         c.scan.lookahead = try knob(u32, get, prefix ++ "_LOOKAHEAD", c.scan.lookahead, 1, 4096);
+         c.scan.float_window = try knob(u32, get, prefix ++ "_FLOAT_WINDOW", c.scan.float_window, 0, 65536);
+         c.scan.inline_mod = try knob(u1, get, prefix ++ "_INLINE_MOD", 1, 0, 1) == 1;
++        c.scan.inline_arith = try knob(u1, get, prefix ++ "_INLINE_ARITH", 1, 0, 1) == 1;
+         c.scan.trace_window = try knob(u32, get, prefix ++ "_TRACE_WINDOW", c.scan.trace_window, 1, 65536);
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+             c.scan.fence = false;
+@@ -581,4 +582,5 @@ test {
+     _ = @import("runner_probe.zig");
+     _ = @import("runner_graph_table_test.zig");
+     _ = @import("runner_inline_mod_test.zig");
++    _ = @import("runner_inline_arith_test.zig");
+ }
+diff --git a/zig/src/core/runner_graph_route.zig b/zig/src/core/runner_graph_route.zig
+index 282b8866710f055de3c8893cc1bc9a4c52ba8257..e6aa8d8ee3a5d60040121bb3163831530f89a7bd 100644
+--- a/zig/src/core/runner_graph_route.zig
++++ b/zig/src/core/runner_graph_route.zig
+@@ -356,6 +356,12 @@ pub const Routed = struct {
+         // a whole script the frontend checks runs on the bank before any compile; earlier cells' names stay on its path
+         if (cell.form != .inline_expr and std.mem.eql(u8, cell.lang, "python") and cell.prior.len == 0)
+             if (try @import("runner_graph_table.zig").translate(a, r.bank, cell.code)) |bytes| return bytes;
++        // an inline `gcd(a, b) =` (the scanner's literal call) is math.gcd's plan, as the printed Python call
++        if (cell.form == .inline_expr and std.mem.startsWith(u8, cell.code, "gcd(") and cell.code.len <= 160) {
++            var src: [200]u8 = undefined;
++            const py = std.fmt.bufPrint(&src, "from math import gcd\nprint({s})", .{cell.code}) catch unreachable;
++            if (try prog.program(a, r.bank, py)) |bytes| return bytes;
++        }
+         return null;
+     }
+ 
+@@ -366,6 +372,7 @@ pub const Routed = struct {
+         if (t == .abstain) if (try prog.direct(a, r.bank, cell, t.abstain)) |bytes| return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+         if (t != .program or t.program.kind != .calc) return t;
+         const bytes = try lower(a, r.bank, t.program.bytes) orelse return t;
++        a.free(t.program.bytes); // the calc program the graph replaces
+         return .{ .program = .{ .kind = .graph, .bytes = bytes } };
+     }
+ };
+diff --git a/zig/src/core/runner_inline_arith_test.zig b/zig/src/core/runner_inline_arith_test.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..7196850666fa56c7fbd299f618c6d0cb6d6685ea
+--- /dev/null
++++ b/zig/src/core/runner_inline_arith_test.zig
+@@ -0,0 +1,178 @@
++//! Inline arithmetic with thousands commas, brackets and a whole `gcd(a, b)`: reply lines, cells, CPython values.
++const std = @import("std");
++const graph = @import("runner_graph.zig");
++const route = @import("runner_graph_route.zig");
++const frontend = @import("runner_frontend.zig");
++const scan = @import("runner_scan.zig");
++const t = std.testing;
++
++/// The line up to the model's `=`, the cell code, and CPython's value of it (`^` read as `**`).
++const Golden = struct { []const u8, []const u8, []const u8 };
++
++/// Live lines (S1 r2-3, S2 r2/2b, T3 smokes, T4 W2-3 replies, where the model then wrote this value), then variations.
++pub const goldens = [_]Golden{
++    .{ "next: 288,419,716 - 624,605,146 need borrow from previous limb (338,327,950). Borrow 1e9: (1,288,419,716 -624,605,146)=", "(1288419716 -624605146)", "663814570" },
++    .{ "64,800^2 =", "64800^2", "4199040000" },
++    .{ "285,000,000^2 =", "285000000^2", "81225000000000000" },
++    .{ "We had 136,418,000^2 =", "136418000^2", "18609870724000000" },
++    .{ "12,000,000^2=", "12000000^2", "144000000000000" },
++    .{ "Compute 5,764,801^2 =", "5764801^2", "33232930569601" },
++    .{ "We computed 234,567,890*12,345,679 =", "234567890*12345679", "2895899873647310" },
++    .{ "876,543,210*234 =", "876543210*234", "205111111140" },
++    .{ "2*69,663,000*30 =", "2*69663000*30", "4179780000" },
++    .{ "18,364,758,544,493,064,720 *3 =", "18364758544493064720 *3", "55094275633479194160" },
++    .{ "Compute 70,272,836,576 * 200,000,000 =", "70272836576 * 200000000", "14054567315200000000" },
++    .{ "Add to *12,000,000: 2,814,814,680,000,000 + 81,085,193,647,310 =", "2814814680000000 + 81085193647310", "2895899873647310" },
++    .{ "M^2: 789,971,041 + 1,950,922,114 =", "789971041 + 1950922114", "2740893155" },
++    .{ "M^3: 975,461,057 + 2 =", "975461057 + 2", "975461059" },
++    .{ "Add low: 507,835,392 + 985,229,328 =", "507835392 + 985229328", "1493064720" },
++    .{ "We need 3^400 mod 10^18. Since gcd(3,10)=", "gcd(3,10)", "1" },
++    .{ "Output: gcd(462, 1071) =", "gcd(462, 1071)", "21" },
++    // bn-011's bracketed squares, other operators, signs, and gcd edges
++    .{ "(147,000+73)^2=", "(147000+73)^2", "21630467329" },
++    .{ "Square: (179,000+457)^2 = ", "(179000+457)^2", "32204814849" },
++    .{ "2*(1,000+24) =", "2*(1000+24)", "2048" },
++    .{ "(1,000 − 7) × 3 =", "(1000 − 7) × 3", "2979" },
++    .{ "-(2,000+5) =", "-(2000+5)", "-2005" },
++    .{ "49,659 − 29,876 =", "49659 − 29876", "19783" },
++    .{ "1,024 × 1,024 =", "1024 × 1024", "1048576" },
++    .{ "1,234 + 5 =", "1234 + 5", "1239" },
++    .{ "Now subtract 3^67 =", "3^67", "92709463147897837085761925410587" },
++    .{ "(10,000,000,000,000,000,000+123,456,789)^2-10,000,000,000,000,000,000^2 =", "(10000000000000000000+123456789)^2-10000000000000000000^2", "2469135780015241578750190521" },
++    .{ "So gcd(0,0) =", "gcd(0,0)", "0" },
++    .{ "gcd(1234567890, 9876543210) =", "gcd(1234567890, 9876543210)", "90" },
++    .{ "Since: gcd(0, 24) =", "gcd(0, 24)", "24" },
++};
++
++/// Lines no cell may open; the model keeps writing.
++const refused = [_][]const u8{
++    // prose, decimal and list commas
++    "3, 4 and 5 =",
++    "1, 234 + 5 =",
++    "3,5 * 2 =",
++    "12,34 + 5 =",
++    "1,23 + 5 =",
++    "0,500 * 2 =",
++    "1.234,567 * 2 =",
++    "1,2345 + 1 =",
++    "1,234,5678 + 1 =",
++    ",000+5 =",
++    "1,000, +5 =",
++    "1673, +10 =",
++    // floats with commas: CPython's value would be a float
++    "44,253,970,636,272 / 16 =",
++    "1,234.5 * 2 =",
++    "1,000 ÷ 8 =",
++    // tuple, list, set or call context
++    "(1,000, 2,000) =",
++    "[1,000 + 2 =",
++    "{1,000*2 =",
++    "f(1,000+2) =",
++    "print((1,000+2) =",
++    "point (3,141 + 1 =",
++    "max(1,000, 2) =",
++    "x = (1,000+2) =",
++    // calls that are not a whole literal gcd
++    "lcm(4, 6) =",
++    "f(3) + 1 =",
++    "φ(2^18)=",
++    "Since φ(5^18)=",
++    "√(16) =",
++    "gcd(4, 6, 8) =",
++    "gcd(-4, 6) =",
++    "gcd(04, 6) =",
++    "gcd(4,6)^2 =",
++    "2 * gcd(4, 6) =",
++    "math.gcd(4, 6) =",
++    "xgcd(4, 6) =",
++    "\\gcd(4, 6) =",
++    "gcd(1,000, 5) =",
++    "gcd(4 , 6) =",
++    "gcd(a, 6) =",
++    "gcd(4,  6) =",
++    "x mod gcd(4, 6) =",
++    "Add gcd(4, 6) =",
++    "gcd(4, 6) = 2",
++    // unbalanced brackets
++    "(147,000+73 =",
++    "147,000+73) =",
++    "((1,000+2) =",
++    "1,000+2)) =",
++    // a running total the model holds
++    "Add 11,529,600 +1 =",
++    "Minus 2,386,000 +25 =",
++    "subtract: 1,000 - 5 =",
++    "Plus 3 + 4 =",
++};
++
++/// The cell a line closes at its `=` with inline math on, or null.
++fn cellOf(a: std.mem.Allocator, line: []const u8, cfg: scan.Config) !?[]u8 {
++    var s: scan.Scanner = .{ .cfg = cfg };
++    defer s.deinit(a);
++    const e = try s.feed(a, line, true);
++    const c = e.closed orelse return null;
++    if (c.form != .inline_expr or e.trigger == null or e.trigger.?.inline_space == null) return null;
++    return try a.dupe(u8, c.code);
++}
++
++test "runner scan: inline arithmetic with commas, brackets and gcd opens cells with Python-readable code" {
++    for (goldens) |g| {
++        const got = try cellOf(t.allocator, g[0], .{ .inline_math = true }) orelse {
++            std.debug.print("no cell: {s}\n", .{g[0]});
++            return error.TestExpectedInline;
++        };
++        defer t.allocator.free(got);
++        try t.expectEqualStrings(g[1], got);
++    }
++    for (refused) |line| if (try cellOf(t.allocator, line, .{ .inline_math = true })) |got| {
++        defer t.allocator.free(got);
++        std.debug.print("opened, must not: {s} -> {s}\n", .{ line, got });
++        return error.TestUnexpectedInline;
++    };
++}
++
++test "runner scan: inline arithmetic is off with its knob; a plain expression is not" {
++    const a = t.allocator;
++    const off: scan.Config = .{ .inline_math = true, .inline_arith = false };
++    for ([_][]const u8{ "(147,000+73)^2=", "Since gcd(3,10)=", "1,234 + 5 =" }) |line| {
++        try t.expectEqual(@as(?[]u8, null), try cellOf(a, line, off));
++    }
++    const plain = (try cellOf(a, "(147000+73)^2=", off)).?;
++    defer a.free(plain);
++    try t.expectEqualStrings("(147000+73)^2", plain);
++    try t.expectEqual(@as(?[]u8, null), try cellOf(a, "(147,000+73)^2=", .{}));
++}
++
++fn bankPath() ![]const u8 {
++    const p = std.c.getenv("TF_RUNNER_GRAPH_BANK") orelse return error.SkipZigTest;
++    return std.mem.span(p);
++}
++
++test "runner proof: inline arithmetic lines scan to cells that run on the graph bank and print CPython's value (TF_RUNNER_GRAPH_BANK)" {
++    var bank = try graph.Bank.load(t.allocator, try bankPath());
++    defer bank.deinit();
++    var context: frontend.Context = .{ .io = t.io, .compiler = .{ .clang = "/nonexistent-inline-arith-clang" } };
++    var routed: route.Routed = .{ .inner = context.frontend(), .bank = &bank };
++    const f = routed.frontend();
++    for (goldens) |g| {
++        // end to end: the scanner's own cell for the reply line, not the golden's expected code
++        const code = try cellOf(t.allocator, g[0], .{ .inline_math = true }) orelse return error.TestExpectedInline;
++        defer t.allocator.free(code);
++        const result = try f.translate(f.ctx, t.allocator, .{ .form = .inline_expr, .lang = "python", .code = code });
++        defer if (result == .program) t.allocator.free(result.program.bytes);
++        if (result != .program or result.program.kind != .graph) {
++            std.debug.print("not on the graph: {s}: {any}\n", .{ code, result });
++            return error.TestExpectedGraph;
++        }
++        var machine = try @import("runner_graph_machine.zig").Machine.boot(t.allocator, &bank, result.program.bytes);
++        defer machine.deinit();
++        var out: std.ArrayList(u8) = .empty;
++        defer out.deinit(t.allocator);
++        const end = try machine.run(4_000_000, &out, null);
++        try t.expect(end.end == .halted);
++        std.testing.expectEqualStrings(g[2], std.mem.trimEnd(u8, out.items, "\n")) catch |e| {
++            std.debug.print("inline arith value: {s}\n", .{code});
++            return e;
++        };
++    }
++}
+diff --git a/zig/src/core/runner_proof_test.zig b/zig/src/core/runner_proof_test.zig
+index c2fd8d64c3aa7f86b44517df883a1f1b92358403..974183f0ecf22a9357f5a9363a0b396e8c2b2f72 100644
+--- a/zig/src/core/runner_proof_test.zig
++++ b/zig/src/core/runner_proof_test.zig
+@@ -422,4 +422,5 @@ test "runner proof: S1's and S2's six saved cells take the graph route and print
+ comptime {
+     _ = @import("runner_frontend_inline_regression_test.zig");
+     _ = @import("runner_inline_mod_test.zig");
++    _ = @import("runner_inline_arith_test.zig");
+ }
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 65c97d41d31b2a860a77c7f0187401979cdc272e..2919c0c0541d6fb84afd79eed2524e3fc9177aec 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -3,7 +3,7 @@ const std = @import("std");
+ const api = @import("runner_api.zig");
+ const trace = @import("runner_trace.zig");
+ const header = @import("runner_scan_boundary.zig");
+-const inline_mod = @import("runner_scan_mod.zig");
++const inline_scan = @import("runner_scan_inline.zig");
+ const Allocator = std.mem.Allocator;
+ 
+ pub const Config = struct {
+@@ -13,6 +13,7 @@ pub const Config = struct {
+     reasoning_only: bool = false, // triggers only while the think block is open
+     inline_math: bool = false, // `A op B =` at a line's end: the value after `=` (exact math semantics)
+     inline_mod: bool = true, // with inline_math: `A mod M =` and `A % M =` on literals, after any earlier `=`
++    inline_arith: bool = true, // with inline_math: thousands commas (`147,000+73`) and a whole `gcd(a, b)` on literals
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+     trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
+@@ -115,7 +116,7 @@ pub const Scanner = struct {
+         {
+             const floats = s.float_at != null and s.tokens - s.float_at.? <= s.cfg.float_window;
+             // a modular step first: inlineExpr alone would take `10^18` of `3^400 mod 10^18 =` for the whole
+-            if (if (s.cfg.inline_mod) inline_mod.inlineMod(s.line.items) else null) |m| {
++            if (if (s.cfg.inline_mod) inline_scan.inlineMod(s.line.items) else null) |m| {
+                 s.lang.clearRetainingCapacity();
+                 try s.lang.appendSlice(a, "python");
+                 s.code.clearRetainingCapacity();
+@@ -124,11 +125,16 @@ pub const Scanner = struct {
+                 // Python reads 1e9 as a float: a reply reasoning in floats keeps its own value
+                 ev.closed.?.float_context = floats and std.mem.indexOfScalar(u8, m.modulus, 'e') != null;
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = m.space };
+-            } else if (inlineExpr(s.line.items)) |x| {
++            } else if (inline_scan.inlineExpr(s.line.items, s.cfg.inline_arith)) |x| {
+                 s.lang.clearRetainingCapacity();
+                 try s.lang.appendSlice(a, "python");
+                 s.code.clearRetainingCapacity();
+-                try s.code.appendSlice(a, x.expr);
++                // thousands commas go: Python would read `147,000+73` as a tuple
++                if (x.call) {
++                    try s.code.appendSlice(a, x.expr);
++                } else for (x.expr) |c| {
++                    if (c != ',') try s.code.append(a, c);
++                }
+                 ev.closed = s.close(.inline_expr);
+                 ev.closed.?.float_context = floats and std.mem.indexOfAny(u8, x.expr, "./") != null;
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = x.space };
+@@ -296,94 +302,6 @@ fn runsPrevious(lang: []const u8, code: []const u8) bool {
+     return any;
+ }
+ 
+-/// A whole arithmetic expression ending the line at `=` or `= ` (no chain, comparison, word, list or gap).
+-fn inlineExpr(line: []const u8) ?struct { expr: []const u8, space: bool } {
+-    var t = line;
+-    var space = true;
+-    if (std.mem.endsWith(u8, t, " ")) {
+-        t = t[0 .. t.len - 1];
+-        space = false;
+-    }
+-    if (t.len < 4 or t[t.len - 1] != '=') return null;
+-    const before = t[0 .. t.len - 1];
+-    if (std.mem.indexOfAny(u8, before, "=<>!") != null) return null;
+-    var start = before.len;
+-    while (start > 0) {
+-        const b = before[start - 1];
+-        if (std.ascii.isDigit(b) or std.mem.indexOfScalar(u8, " \t+-*/^().", b) != null) {
+-            start -= 1;
+-        } else if (start >= 2 and before[start - 2] == 0xC3 and (b == 0x97 or b == 0xB7)) {
+-            start -= 2; // × ÷
+-        } else if (start >= 3 and before[start - 3] == 0xE2 and before[start - 2] == 0x88 and b == 0x92) {
+-            start -= 3; // −
+-        } else break;
+-    }
+-    const lead = before[0..start];
+-    const expr = std.mem.trim(u8, before[start..], " \t");
+-    if (expr.len < 3 or expr.len > 120 or std.mem.indexOf(u8, expr, "..") != null) return null;
+-    if (lead.len > 0) {
+-        const stop = lead[lead.len - 1];
+-        // a word glued on (x3, f(2), $5, φ(2^18) as Euler's φ) or a list (1673, +10) is not a whole expression
+-        if (stop == ',' or stop == '$' or stop == '%' or stop == '_' or std.ascii.isAlphanumeric(stop) or stop >= 0x80) {
+-            if (before[start] != ' ' and before[start] != '\t') return null;
+-            if (stop == ',') return null;
+-        }
+-        // after a word, an unspaced "12-20" is a range ("positions 12-20 ="), not a subtraction
+-        const word = std.mem.trimEnd(u8, lead, " \t");
+-        // the modulus of `A mod M` or `A % M` is not the whole expression (live bn-011: `3^400 mod 10^18 =`)
+-        if (std.mem.endsWith(u8, word, "%") or (std.mem.endsWith(u8, word, "mod") and
+-            (word.len == 3 or !std.ascii.isAlphanumeric(word[word.len - 4])))) return null;
+-        if (word.len > 0 and std.ascii.isAlphabetic(word[word.len - 1])) {
+-            for (1..expr.len - 1) |k| {
+-                if (expr[k] == '-' and std.ascii.isDigit(expr[k - 1]) and std.ascii.isDigit(expr[k + 1])) return null;
+-            }
+-        }
+-    }
+-    const first = expr[0];
+-    if (!(std.ascii.isDigit(first) or first == '(' or first == '-')) return null;
+-    if (first == '-' and std.mem.trimEnd(u8, lead, " \t").len > 0 and !std.mem.endsWith(u8, std.mem.trimEnd(u8, lead, " \t"), ":")) return null;
+-    const last = expr[expr.len - 1];
+-    if (!(std.ascii.isDigit(last) or last == ')')) return null;
+-    var depth: i32 = 0;
+-    var ops: u32 = 0;
+-    var prev: enum { none, num, op, open, close } = .none;
+-    var gap = false;
+-    var i: usize = 0;
+-    while (i < expr.len) : (i += 1) {
+-        const c = expr[i];
+-        if (c == ' ' or c == '\t') {
+-            gap = true;
+-            continue;
+-        }
+-        defer gap = false;
+-        if (std.ascii.isDigit(c) or c == '.') {
+-            if ((prev == .num and gap) or prev == .close) return null;
+-            prev = .num;
+-        } else if (c == '(') {
+-            if (prev == .num or prev == .close) return null;
+-            depth += 1;
+-            prev = .open;
+-        } else if (c == ')') {
+-            depth -= 1;
+-            if (depth < 0 or prev == .op or prev == .open) return null;
+-            prev = .close;
+-        } else {
+-            const n: usize = if (c == 0xC3) 2 else if (c == 0xE2) 3 else 1;
+-            const unary = c == '-' and (prev == .none or prev == .open or prev == .op);
+-            const power = c == '*' and i + 1 < expr.len and expr[i + 1] == '*';
+-            if (!unary) {
+-                if (prev != .num and prev != .close) return null;
+-                ops += 1;
+-            }
+-            i += n - 1;
+-            if (power) i += 1;
+-            prev = .op;
+-        }
+-    }
+-    if (depth != 0 or ops == 0) return null;
+-    return .{ .expr = expr, .space = space };
+-}
+-
+ /// ">>> code" (one line, not opening a block): the code, else null.
+ fn replLine(line: []const u8) ?[]const u8 {
+     const t = header.indentOk(line) orelse return null;
+@@ -498,7 +416,7 @@ test "runner scan: an inline expression at a line's end is a cell and its own tr
+ test "runner scan: inline refuses chains, comparisons, words, lists and incomplete expressions" {
+     for ([_][]const u8{
+         "a = 3*4 =",                     "15*16 = 240*17 =", "3*4 ==",    "x <= 3*4 =",    "2x + 3 =",  "x3*4 =",   "f(2)*3 =",
+-        "1673, +10 =",                   "1,234 + 5 =",      "a - 3*4 =", "3 + 4 + ... =", "3 4 + 5 =", "(3 + 4 =", "3 + =",
++        "1673, +10 =",                   "1,23 + 5 =",       "a - 3*4 =", "3 + 4 + ... =", "3 4 + 5 =", "(3 + 4 =", "3 + =",
+         "42 =",                          "$5 + 3 =",         "50% * 2 =", "3 *",           "**3*4** =", "2(3+4) =", "3*4 = 12",
+         "Rightmost 9 positions 12-20 =", "pages 3-5 + 1 =",
+         "Since φ(2^18)=",
+diff --git a/zig/src/core/runner_scan_inline.zig b/zig/src/core/runner_scan_inline.zig
+new file mode 100644
+index 0000000000000000000000000000000000000000..92d74148cfd77f92baa38c4f1cfbf639728c9821
+--- /dev/null
++++ b/zig/src/core/runner_scan_inline.zig
+@@ -0,0 +1,335 @@
++//! Inline triggers: a whole arithmetic expression or a modular step ending a reply line at `=`, as a cell's code.
++const std = @import("std");
++const Allocator = std.mem.Allocator;
++
++/// A whole arithmetic expression ending the line at `=` or `= ` (no chain, comparison, word or gap).
++pub fn inlineExpr(line: []const u8, arith: bool) ?struct { expr: []const u8, space: bool, call: bool = false } {
++    var t = line;
++    var space = true;
++    if (std.mem.endsWith(u8, t, " ")) {
++        t = t[0 .. t.len - 1];
++        space = false;
++    }
++    if (t.len < 4 or t[t.len - 1] != '=') return null;
++    const before = t[0 .. t.len - 1];
++    if (std.mem.indexOfAny(u8, before, "=<>!") != null) return null;
++    if (arith) if (gcdCall(before)) |g| return .{ .expr = g, .space = space, .call = true };
++    var start = before.len;
++    while (start > 0) {
++        const b = before[start - 1];
++        if (std.ascii.isDigit(b) or std.mem.indexOfScalar(u8, " \t+-*/^().", b) != null) {
++            start -= 1;
++        } else if (arith and b == ',' and start >= 2 and std.ascii.isDigit(before[start - 2]) and start + 3 <= before.len and
++            allDigits(before[start .. start + 3]))
++        {
++            start -= 1; // a thousands comma; `thousands` checks the whole number below
++        } else if (start >= 2 and before[start - 2] == 0xC3 and (b == 0x97 or b == 0xB7)) {
++            start -= 2; // × ÷
++        } else if (start >= 3 and before[start - 3] == 0xE2 and before[start - 2] == 0x88 and b == 0x92) {
++            start -= 3; // −
++        } else break;
++    }
++    const lead = before[0..start];
++    const expr = std.mem.trim(u8, before[start..], " \t");
++    if (expr.len < 3 or expr.len > 120 or std.mem.indexOf(u8, expr, "..") != null) return null;
++    if (lead.len > 0) {
++        const stop = lead[lead.len - 1];
++        // φ(2^18): a parenthesis glued to a non-ASCII letter is a function call (live bn-011 got 262144 for φ)
++        if (stop >= 0x80 and before[start] == '(') return null;
++        // a word glued to the expression (x3, f(2), $5) or a list (1673, +10) is not a whole expression
++        if (stop == ',' or stop == '$' or stop == '%' or stop == '_' or std.ascii.isAlphanumeric(stop)) {
++            if (before[start] != ' ' and before[start] != '\t') return null;
++            if (stop == ',') return null;
++        }
++        // after a word, an unspaced "12-20" is a range ("positions 12-20 ="), not a subtraction
++        const word = std.mem.trimEnd(u8, lead, " \t");
++        // the modulus of `A mod M` or `A % M` is not the whole expression (live bn-011: `3^400 mod 10^18 =`)
++        if (std.mem.endsWith(u8, word, "%") or (std.mem.endsWith(u8, word, "mod") and
++            (word.len == 3 or !std.ascii.isAlphanumeric(word[word.len - 4])))) return null;
++        // `1, 234 + 5 =`: the expression is the next item of a number list
++        if (word.len >= 2 and word[word.len - 1] == ',' and std.ascii.isDigit(word[word.len - 2])) return null;
++        // `Add 11,529,600 +1 =` adds to a running total the model holds; a lone operand (`subtract 3^67 =`) is fine
++        if (runningOperand(std.mem.trimEnd(u8, word, ":")) and topSum(expr)) return null;
++        if (word.len > 0 and std.ascii.isAlphabetic(word[word.len - 1])) {
++            for (1..expr.len - 1) |k| {
++                if (expr[k] == '-' and std.ascii.isDigit(expr[k - 1]) and std.ascii.isDigit(expr[k + 1])) return null;
++            }
++        }
++    }
++    const first = expr[0];
++    if (!(std.ascii.isDigit(first) or first == '(' or first == '-')) return null;
++    if (first == '-' and std.mem.trimEnd(u8, lead, " \t").len > 0 and !std.mem.endsWith(u8, std.mem.trimEnd(u8, lead, " \t"), ":")) return null;
++    const last = expr[expr.len - 1];
++    if (!(std.ascii.isDigit(last) or last == ')')) return null;
++    // a comma inside an open ( [ { is a tuple, list or call argument; else every grouped number must read as thousands
++    if (std.mem.indexOfScalar(u8, expr, ',') != null and (opensBracket(lead) or !thousands(expr))) return null;
++    // integers only with commas, so the value is CPython's: `/` and a point would be floats there
++    if (std.mem.indexOfScalar(u8, expr, ',') != null and
++        (std.mem.indexOfAny(u8, expr, "./") != null or std.mem.indexOf(u8, expr, "÷") != null)) return null;
++    var depth: i32 = 0;
++    var ops: u32 = 0;
++    var prev: enum { none, num, op, open, close } = .none;
++    var gap = false;
++    var i: usize = 0;
++    while (i < expr.len) : (i += 1) {
++        const c = expr[i];
++        if (c == ' ' or c == '\t') {
++            gap = true;
++            continue;
++        }
++        defer gap = false;
++        if (std.ascii.isDigit(c) or c == '.' or c == ',') {
++            if ((prev == .num and gap) or prev == .close) return null;
++            prev = .num;
++        } else if (c == '(') {
++            if (prev == .num or prev == .close) return null;
++            depth += 1;
++            prev = .open;
++        } else if (c == ')') {
++            depth -= 1;
++            if (depth < 0 or prev == .op or prev == .open) return null;
++            prev = .close;
++        } else {
++            const n: usize = if (c == 0xC3) 2 else if (c == 0xE2) 3 else 1;
++            const unary = c == '-' and (prev == .none or prev == .open or prev == .op);
++            const power = c == '*' and i + 1 < expr.len and expr[i + 1] == '*';
++            if (!unary) {
++                if (prev != .num and prev != .close) return null;
++                ops += 1;
++            }
++            i += n - 1;
++            if (power) i += 1;
++            prev = .op;
++        }
++    }
++    if (depth != 0 or ops == 0) return null;
++    return .{ .expr = expr, .space = space };
++}
++
++/// A modular step closing a line: `A` as the model wrote it, its literal modulus, and the space flag as inlineExpr.
++pub const Mod = struct {
++    left: []const u8,
++    modulus: []const u8,
++    space: bool,
++
++    /// `A mod M` in plain digits for the cell (the graph binder's math syntax; `%` there would read as a percent).
++    pub fn code(m: Mod, a: Allocator, out: *std.ArrayList(u8)) Allocator.Error!void {
++        var i: usize = 0;
++        while (i < m.left.len) : (i += 1) {
++            if (std.mem.startsWith(u8, m.left[i..], "×")) {
++                try out.append(a, '*');
++                i += "×".len - 1;
++            } else if (std.mem.startsWith(u8, m.left[i..], "−")) {
++                try out.append(a, '-');
++                i += "−".len - 1;
++            } else if (m.left[i] != ',') try out.append(a, m.left[i]);
++        }
++        try out.appendSlice(a, " mod ");
++        if (std.mem.indexOfScalar(u8, m.modulus, 'e')) |e| {
++            try out.print(a, "({s}*10^{s})", .{ m.modulus[0..e], m.modulus[e + 1 ..] });
++        } else for (m.modulus) |c| if (c != ',') try out.append(a, c);
++    }
++};
++
++/// `A mod M =` or `A % M =` ending a line, after any earlier `=`: A over `* × ^ **`, M a nonzero literal; no names.
++pub fn inlineMod(line: []const u8) ?Mod {
++    var t = line;
++    var space = true;
++    if (std.mem.endsWith(u8, t, " ")) {
++        t = t[0 .. t.len - 1];
++        space = false;
++    }
++    if (t.len < 6 or t[t.len - 1] != '=') return null;
++    const before = t[0 .. t.len - 1];
++    if (std.mem.indexOfScalar(u8, "=<>!", before[before.len - 1]) != null) return null;
++    var seg = before;
++    if (std.mem.lastIndexOfScalar(u8, before, '=')) |k| {
++        if (k > 0 and std.mem.indexOfScalar(u8, "=<>!", before[k - 1]) != null) return null;
++        seg = before[k + 1 ..];
++    }
++    const s = std.mem.trimEnd(u8, seg, " \t");
++    var m_start = s.len;
++    while (m_start > 0 and (std.ascii.isDigit(s[m_start - 1]) or std.mem.indexOfScalar(u8, ",^*e", s[m_start - 1]) != null))
++        m_start -= 1;
++    const modulus = s[m_start..];
++    if (!literalModulus(modulus)) return null;
++    var rest = std.mem.trimEnd(u8, s[0..m_start], " \t");
++    if (std.mem.endsWith(u8, rest, "%")) {
++        rest = rest[0 .. rest.len - 1];
++    } else if (std.mem.endsWith(u8, rest, "mod") and rest.len > 3 and (rest[rest.len - 4] == ' ' or rest[rest.len - 4] == '\t')) {
++        rest = rest[0 .. rest.len - 3];
++    } else return null;
++    const left_text = std.mem.trimEnd(u8, rest, " \t");
++    var start = left_text.len;
++    while (start > 0) {
++        const b = left_text[start - 1];
++        if (std.ascii.isDigit(b) or std.mem.indexOfScalar(u8, " \t*^()+-,", b) != null) {
++            start -= 1;
++        } else if (start >= 2 and left_text[start - 2] == 0xC3 and b == 0x97) {
++            start -= 2; // ×
++        } else if (start >= 3 and left_text[start - 3] == 0xE2 and left_text[start - 2] == 0x88 and b == 0x92) {
++            start -= 3; // −
++        } else break;
++    }
++    const lead = left_text[0..start];
++    const left = std.mem.trim(u8, left_text[start..], " \t");
++    if (left.len == 0 or left.len > 120 or !grouped(left)) return null;
++    if (!(std.ascii.isDigit(left[0]) or left[0] == '(')) return null;
++    if (!(std.ascii.isDigit(left[left.len - 1]) or left[left.len - 1] == ')')) return null;
++    if (lead.len > 0) {
++        const stop = lead[lead.len - 1];
++        // glued to a word or a decimal (x3, 3.5), or after an operator, comparison or symbol: not a whole operand
++        if ((std.ascii.isAlphanumeric(stop) or stop == '_' or stop == '$' or stop == '.') and
++            left_text[start] != ' ' and left_text[start] != '\t') return null;
++        const word = std.mem.trimEnd(u8, lead, " \t");
++        if (word.len > 0 and (word[word.len - 1] >= 0x80 or std.mem.indexOfScalar(u8, ",/%<>!", word[word.len - 1]) != null))
++            return null;
++    }
++    var depth: u32 = 0;
++    var prev: enum { none, num, op, open, close } = .none;
++    var gap = false;
++    var i: usize = 0;
++    while (i < left.len) : (i += 1) {
++        const c = left[i];
++        if (c == ' ' or c == '\t') {
++            gap = true;
++            continue;
++        }
++        defer gap = false;
++        if (std.ascii.isDigit(c) or c == ',') {
++            if ((prev == .num and gap) or prev == .close) return null;
++            prev = .num;
++        } else if (c == '(') {
++            if (prev == .num or prev == .close) return null;
++            depth += 1;
++            prev = .open;
++        } else if (c == ')') {
++            if (depth == 0 or prev == .op or prev == .open) return null;
++            depth -= 1;
++            prev = .close;
++        } else {
++            const n: usize = if (c == 0xC3) 2 else if (c == 0xE2) 3 else 1;
++            // which side `mod` takes in `2 + 3 mod 7` is a convention; inside parentheses a sum is one operand
++            if ((c == '+' or c == '-' or c == 0xE2) and depth == 0) return null;
++            if (prev != .num and prev != .close) return null;
++            if (c == '*' and i + 1 < left.len and left[i + 1] == '*') i += 1;
++            i += n - 1;
++            prev = .op;
++        }
++    }
++    if (depth != 0 or prev == .op) return null;
++    return .{ .left = left, .modulus = modulus, .space = space };
++}
++
++/// Thousands groups only: each `,` has a digit before it and exactly three digits after it.
++fn grouped(text: []const u8) bool {
++    for (text, 0..) |c, i| if (c == ',') {
++        if (i == 0 or !std.ascii.isDigit(text[i - 1]) or i + 4 > text.len) return false;
++        for (text[i + 1 .. i + 4]) |d| if (!std.ascii.isDigit(d)) return false;
++        if (i + 4 < text.len and std.ascii.isDigit(text[i + 4])) return false;
++    };
++    return true;
++}
++
++fn allDigits(text: []const u8) bool {
++    for (text) |c| if (!std.ascii.isDigit(c)) return false;
++    return text.len > 0;
++}
++
++/// Each comma number reads as thousands: 1-3 lead digits, no leading 0, a point only after the last group (not `3,5`).
++fn thousands(e: []const u8) bool {
++    var i: usize = 0;
++    while (i < e.len) {
++        if (!std.ascii.isDigit(e[i]) and e[i] != '.') {
++            i += 1;
++            continue;
++        }
++        const s = i;
++        while (i < e.len and (std.ascii.isDigit(e[i]) or e[i] == '.' or e[i] == ',')) i += 1;
++        const num = e[s..i];
++        const last = std.mem.lastIndexOfScalar(u8, num, ',') orelse continue;
++        const first = std.mem.indexOfScalar(u8, num, ',').?;
++        if (first == 0 or first > 3 or num[0] == '0' or !grouped(num)) return false;
++        if (std.mem.indexOfScalar(u8, num[0..last], '.') != null) return false;
++    }
++    return true;
++}
++
++/// An unclosed `(`, `[` or `{` in the text before an expression: its commas would be a tuple's, list's or call's.
++fn opensBracket(lead: []const u8) bool {
++    var depth: usize = 0;
++    for (lead) |c| switch (c) {
++        '(', '[', '{' => depth += 1,
++        ')', ']', '}' => depth -|= 1,
++        else => {},
++    };
++    return depth > 0;
++}
++
++/// A `+` or binary `-` outside parentheses: the expression is a sum or difference.
++fn topSum(e: []const u8) bool {
++    var depth: usize = 0;
++    var operand = false;
++    var i: usize = 0;
++    while (i < e.len) : (i += 1) {
++        const c = e[i];
++        if (c == '(') depth += 1 else if (c == ')') depth -|= 1;
++        const minus = c == '-' or std.mem.startsWith(u8, e[i..], "−");
++        if (depth == 0 and (c == '+' or minus) and operand) return true;
++        if (std.ascii.isDigit(c) or c == ')') operand = true else if (c != ' ' and c != '\t') operand = false;
++    }
++    return false;
++}
++
++/// A lead ending in an operator word (`Add`, `minus`): the expression is an operand of a value the model holds.
++fn runningOperand(word: []const u8) bool {
++    for ([_][]const u8{ "add", "adding", "plus", "minus", "subtract", "subtracting" }) |w| {
++        if (word.len >= w.len and std.ascii.eqlIgnoreCase(word[word.len - w.len ..], w) and
++            (word.len == w.len or !std.ascii.isAlphanumeric(word[word.len - w.len - 1]))) return true;
++    }
++    return false;
++}
++
++/// `gcd(a, b)` on plain non-negative literals ending the text, as its own phrase (not `2 * gcd(…)`, `math.gcd`).
++fn gcdCall(before: []const u8) ?[]const u8 {
++    const s = std.mem.trimEnd(u8, before, " \t");
++    if (!std.mem.endsWith(u8, s, ")")) return null;
++    const at = std.mem.lastIndexOf(u8, s, "gcd(") orelse return null;
++    if (at > 0) {
++        if (s[at - 1] != ' ' and s[at - 1] != '\t') return null;
++        const word = std.mem.trimEnd(u8, s[0..at], " \t");
++        if (word.len > 0) {
++            const w = word[word.len - 1];
++            // an operand of a bigger expression, of `mod` or of a running value
++            if (std.ascii.isDigit(w) or w >= 0x80 or std.mem.indexOfScalar(u8, "+-*/^%(,.", w) != null) return null;
++            if (std.mem.endsWith(u8, word, "mod") and (word.len == 3 or !std.ascii.isAlphanumeric(word[word.len - 4])))
++                return null;
++            if (runningOperand(std.mem.trimEnd(u8, word, ":"))) return null;
++        }
++    }
++    const args = s[at + 4 .. s.len - 1];
++    const comma = std.mem.indexOfScalar(u8, args, ',') orelse return null;
++    const y = args[comma + 1 ..];
++    for ([_][]const u8{ args[0..comma], if (std.mem.startsWith(u8, y, " ")) y[1..] else y }) |n| {
++        if (n.len > 60 or !allDigits(n) or (n[0] == '0' and n.len > 1)) return null;
++    }
++    return s[at..];
++}
++
++/// A nonzero literal modulus: digits, `b^k`, `b**k`, `dek` (1e9), or thousands groups.
++fn literalModulus(m: []const u8) bool {
++    // a zero or a leading zero (0, 007, 0^3, 0e5, 0,000): Python raises or reads it otherwise
++    if (m.len == 0 or !std.ascii.isDigit(m[0]) or m[0] == '0') return false;
++    if (std.mem.indexOfScalar(u8, m, ',') != null) {
++        if (std.mem.indexOfAny(u8, m, "^*e") != null) return false;
++        const first = std.mem.indexOfScalar(u8, m, ',').?;
++        return first <= 3 and grouped(m);
++    }
++    const sep = std.mem.indexOfAny(u8, m, "^*e") orelse return true;
++    const width: usize = if (std.mem.startsWith(u8, m[sep..], "**")) 2 else if (m[sep] == '*') return false else 1;
++    const exponent = m[sep + width ..];
++    if (exponent.len == 0 or exponent.len > 3) return false;
++    for (m[0..sep]) |c| if (!std.ascii.isDigit(c)) return false;
++    for (exponent) |c| if (!std.ascii.isDigit(c)) return false;
++    return !(exponent[0] == '0' and exponent.len > 1);
++}
+diff --git a/zig/src/core/runner_scan_mod.zig b/zig/src/core/runner_scan_mod.zig
+deleted file mode 100644
+index 7c4d7b76cccfb7a8c061803ef0becec1edde1fc1..0000000000000000000000000000000000000000
+--- a/zig/src/core/runner_scan_mod.zig
++++ /dev/null
+@@ -1,146 +0,0 @@
+-//! The inline modular step `A mod M =` / `A % M =` (Scanner, Config.inline_mod): its shape and literal modulus.
+-const std = @import("std");
+-const Allocator = std.mem.Allocator;
+-
+-/// A modular step closing a line: `A` as the model wrote it, its literal modulus, and the space flag as inlineExpr.
+-pub const Mod = struct {
+-    left: []const u8,
+-    modulus: []const u8,
+-    space: bool,
+-
+-    /// `A mod M` in plain digits for the cell (the graph binder's math syntax; `%` there would read as a percent).
+-    pub fn code(m: Mod, a: Allocator, out: *std.ArrayList(u8)) Allocator.Error!void {
+-        var i: usize = 0;
+-        while (i < m.left.len) : (i += 1) {
+-            if (std.mem.startsWith(u8, m.left[i..], "×")) {
+-                try out.append(a, '*');
+-                i += "×".len - 1;
+-            } else if (std.mem.startsWith(u8, m.left[i..], "−")) {
+-                try out.append(a, '-');
+-                i += "−".len - 1;
+-            } else if (m.left[i] != ',') try out.append(a, m.left[i]);
+-        }
+-        try out.appendSlice(a, " mod ");
+-        if (std.mem.indexOfScalar(u8, m.modulus, 'e')) |e| {
+-            try out.print(a, "({s}*10^{s})", .{ m.modulus[0..e], m.modulus[e + 1 ..] });
+-        } else for (m.modulus) |c| if (c != ',') try out.append(a, c);
+-    }
+-};
+-
+-/// `A mod M =` or `A % M =` ending a line, after any earlier `=`: A over `* × ^ **`, M a nonzero literal; no names.
+-pub fn inlineMod(line: []const u8) ?Mod {
+-    var t = line;
+-    var space = true;
+-    if (std.mem.endsWith(u8, t, " ")) {
+-        t = t[0 .. t.len - 1];
+-        space = false;
+-    }
+-    if (t.len < 6 or t[t.len - 1] != '=') return null;
+-    const before = t[0 .. t.len - 1];
+-    if (std.mem.indexOfScalar(u8, "=<>!", before[before.len - 1]) != null) return null;
+-    var seg = before;
+-    if (std.mem.lastIndexOfScalar(u8, before, '=')) |k| {
+-        if (k > 0 and std.mem.indexOfScalar(u8, "=<>!", before[k - 1]) != null) return null;
+-        seg = before[k + 1 ..];
+-    }
+-    const s = std.mem.trimEnd(u8, seg, " \t");
+-    var m_start = s.len;
+-    while (m_start > 0 and (std.ascii.isDigit(s[m_start - 1]) or std.mem.indexOfScalar(u8, ",^*e", s[m_start - 1]) != null))
+-        m_start -= 1;
+-    const modulus = s[m_start..];
+-    if (!literalModulus(modulus)) return null;
+-    var rest = std.mem.trimEnd(u8, s[0..m_start], " \t");
+-    if (std.mem.endsWith(u8, rest, "%")) {
+-        rest = rest[0 .. rest.len - 1];
+-    } else if (std.mem.endsWith(u8, rest, "mod") and rest.len > 3 and (rest[rest.len - 4] == ' ' or rest[rest.len - 4] == '\t')) {
+-        rest = rest[0 .. rest.len - 3];
+-    } else return null;
+-    const left_text = std.mem.trimEnd(u8, rest, " \t");
+-    var start = left_text.len;
+-    while (start > 0) {
+-        const b = left_text[start - 1];
+-        if (std.ascii.isDigit(b) or std.mem.indexOfScalar(u8, " \t*^()+-,", b) != null) {
+-            start -= 1;
+-        } else if (start >= 2 and left_text[start - 2] == 0xC3 and b == 0x97) {
+-            start -= 2; // ×
+-        } else if (start >= 3 and left_text[start - 3] == 0xE2 and left_text[start - 2] == 0x88 and b == 0x92) {
+-            start -= 3; // −
+-        } else break;
+-    }
+-    const lead = left_text[0..start];
+-    const left = std.mem.trim(u8, left_text[start..], " \t");
+-    if (left.len == 0 or left.len > 120 or !grouped(left)) return null;
+-    if (!(std.ascii.isDigit(left[0]) or left[0] == '(')) return null;
+-    if (!(std.ascii.isDigit(left[left.len - 1]) or left[left.len - 1] == ')')) return null;
+-    if (lead.len > 0) {
+-        const stop = lead[lead.len - 1];
+-        // glued to a word or a decimal (x3, 3.5), or after an operator, comparison or symbol: not a whole operand
+-        if ((std.ascii.isAlphanumeric(stop) or stop == '_' or stop == '$' or stop == '.') and
+-            left_text[start] != ' ' and left_text[start] != '\t') return null;
+-        const word = std.mem.trimEnd(u8, lead, " \t");
+-        if (word.len > 0 and (word[word.len - 1] >= 0x80 or std.mem.indexOfScalar(u8, ",/%<>!", word[word.len - 1]) != null))
+-            return null;
+-    }
+-    var depth: u32 = 0;
+-    var prev: enum { none, num, op, open, close } = .none;
+-    var gap = false;
+-    var i: usize = 0;
+-    while (i < left.len) : (i += 1) {
+-        const c = left[i];
+-        if (c == ' ' or c == '\t') {
+-            gap = true;
+-            continue;
+-        }
+-        defer gap = false;
+-        if (std.ascii.isDigit(c) or c == ',') {
+-            if ((prev == .num and gap) or prev == .close) return null;
+-            prev = .num;
+-        } else if (c == '(') {
+-            if (prev == .num or prev == .close) return null;
+-            depth += 1;
+-            prev = .open;
+-        } else if (c == ')') {
+-            if (depth == 0 or prev == .op or prev == .open) return null;
+-            depth -= 1;
+-            prev = .close;
+-        } else {
+-            const n: usize = if (c == 0xC3) 2 else if (c == 0xE2) 3 else 1;
+-            // which side `mod` takes in `2 + 3 mod 7` is a convention; inside parentheses a sum is one operand
+-            if ((c == '+' or c == '-' or c == 0xE2) and depth == 0) return null;
+-            if (prev != .num and prev != .close) return null;
+-            if (c == '*' and i + 1 < left.len and left[i + 1] == '*') i += 1;
+-            i += n - 1;
+-            prev = .op;
+-        }
+-    }
+-    if (depth != 0 or prev == .op) return null;
+-    return .{ .left = left, .modulus = modulus, .space = space };
+-}
+-
+-/// Thousands groups only: each `,` has a digit before it and exactly three digits after it.
+-fn grouped(text: []const u8) bool {
+-    for (text, 0..) |c, i| if (c == ',') {
+-        if (i == 0 or !std.ascii.isDigit(text[i - 1]) or i + 4 > text.len) return false;
+-        for (text[i + 1 .. i + 4]) |d| if (!std.ascii.isDigit(d)) return false;
+-        if (i + 4 < text.len and std.ascii.isDigit(text[i + 4])) return false;
+-    };
+-    return true;
+-}
+-
+-/// A nonzero literal modulus: digits, `b^k`, `b**k`, `dek` (1e9), or thousands groups.
+-fn literalModulus(m: []const u8) bool {
+-    // a zero or a leading zero (0, 007, 0^3, 0e5, 0,000): Python raises or reads it otherwise
+-    if (m.len == 0 or !std.ascii.isDigit(m[0]) or m[0] == '0') return false;
+-    if (std.mem.indexOfScalar(u8, m, ',') != null) {
+-        if (std.mem.indexOfAny(u8, m, "^*e") != null) return false;
+-        const first = std.mem.indexOfScalar(u8, m, ',').?;
+-        return first <= 3 and grouped(m);
+-    }
+-    const sep = std.mem.indexOfAny(u8, m, "^*e") orelse return true;
+-    const width: usize = if (std.mem.startsWith(u8, m[sep..], "**")) 2 else if (m[sep] == '*') return false else 1;
+-    const exponent = m[sep + width ..];
+-    if (exponent.len == 0 or exponent.len > 3) return false;
+-    for (m[0..sep]) |c| if (!std.ascii.isDigit(c)) return false;
+-    for (exponent) |c| if (!std.ascii.isDigit(c)) return false;
+-    return !(exponent[0] == '0' and exponent.len > 1);
+-}

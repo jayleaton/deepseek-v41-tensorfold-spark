@@ -1,0 +1,428 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 22:51:13 +0700
+Subject: [PATCH 076/207] Merge T2 9c66d5d98 (skip idle grouped heads, shared
+ input frames)
+
+Squashed merge of 1 commits:
+- runner circuit: skip grouped heads with nothing to do, share input frames (Jay Leaton)
+---
+ zig/src/core/runner_circuit_eval.zig      |   6 +-
+ zig/src/core/runner_circuit_flow.zig      |  16 ++-
+ zig/src/core/runner_circuit_head.zig      | 121 ++++++++++++++++++----
+ zig/src/core/runner_circuit_state.zig     |  17 ++-
+ zig/src/core/runner_circuit_test.zig      |  19 ++++
+ zig/src/core/runner_circuit_tiny_test.zig |   4 +-
+ 6 files changed, 153 insertions(+), 30 deletions(-)
+
+diff --git a/zig/src/core/runner_circuit_eval.zig b/zig/src/core/runner_circuit_eval.zig
+index 9c8e299d063d8a833c9bb5b22ab25227f6c821d2..d2b20decf8df9eba2c6df552ebd428666a527138 100644
+--- a/zig/src/core/runner_circuit_eval.zig
++++ b/zig/src/core/runner_circuit_eval.zig
+@@ -41,7 +41,8 @@ pub fn step(s: *State, token: u32) !u32 {
+         const i = w * 64 + bit;
+         const u = &c.flow.units[i];
+         if (s.dirty[i] == stamp) s.changed[i] = stamp;
+-        if ((s.changed[i] != 0 and stamp - s.changed[i] <= u.lag) or s.unstable[i]) {
++        const due = (s.changed[i] != 0 and stamp - s.changed[i] <= u.lag) or s.unstable[i];
++        if (due and !(u.kind == .heads and try head.skips(s, u.plan, i))) {
+             try run(s, u, i, stamp);
+         } else finish(s, u, i, stamp);
+         // A unit's own outputs may re-mark it while it runs; clearing after the run drops that.
+@@ -172,6 +173,9 @@ fn run(s: *State, u: *const flow.Unit, i: usize, stamp: u64) !void {
+         .ffn => try ffnCached(s, u, &s.circuit.flow.ffn_plans[u.plan], i, nz, list),
+         .heads => try head.run(s, u.plan, i, nz, list),
+     };
++    if (u.kind == .heads) s.rest[i] = for (values) |v| {
++        if (@as(u32, @bitCast(v)) != 0) break false;
++    } else true;
+     if (u.outs.len == 0) return;
+     const f = &s.circuit.flow;
+     const first = u.outs[0];
+diff --git a/zig/src/core/runner_circuit_flow.zig b/zig/src/core/runner_circuit_flow.zig
+index 98b24e3e61dc68c116330c61a975dda0c7d5d0a7..beda8d3f3913ac3e66ace5bcdf824c4b9d9f1b60 100644
+--- a/zig/src/core/runner_circuit_flow.zig
++++ b/zig/src/core/runner_circuit_flow.zig
+@@ -85,8 +85,8 @@ fn reads(a: std.mem.Allocator, sets: []const *const model.Sparse) ![]u32 {
+     return out.items[0..n];
+ }
+ 
+-/// Heads reading the same slots through the same selecting dims see one selection key per step (the RAM banks).
+-fn selectionGroups(a: std.mem.Allocator, units: []const Unit, plans: []const head.Plan) !struct { []u32, u32 } {
++/// Heads reading the same slots through the same selecting dims share one key per step and one input-frame ring.
++fn selectionGroups(a: std.mem.Allocator, units: []const Unit, plans: []head.Plan) !struct { []u32, u32 } {
+     const group = try a.alloc(u32, plans.len);
+     @memset(group, no_slot);
+     var n: u32 = 0;
+@@ -99,9 +99,17 @@ fn selectionGroups(a: std.mem.Allocator, units: []const Unit, plans: []const hea
+                 n += 1;
+             }
+             group[u.plan] = group[v.plan];
++            plans[u.plan].owner = plans[v.plan].owner;
+             break;
+         };
+     };
++    const size = try a.alloc(u32, n);
++    defer a.free(size);
++    @memset(size, 0);
++    for (plans, group) |*p, g| if (g != no_slot) {
++        p.member = size[g];
++        size[g] += 1;
++    };
+     return .{ group, n };
+ }
+ 
+@@ -142,7 +150,9 @@ pub fn build(a: std.mem.Allocator, c: *const model.Circuit) !Flow {
+         .heads => |*hs| for (hs.split) |*h| {
+             var u = try unit(a, .{ .heads = h }, try reads(a, &.{&h.proj.forms}), h.outs, maxLag(h), visible, &slots);
+             u.plan = @intCast(plans.items.len);
+-            try plans.append(a, try head.build(a, h, u.dims));
++            var plan = try head.build(a, h, u.dims);
++            plan.owner = u.plan;
++            try plans.append(a, plan);
+             try units.append(a, u);
+         },
+     };
+diff --git a/zig/src/core/runner_circuit_head.zig b/zig/src/core/runner_circuit_head.zig
+index d7676ff6f9aba785e0eb305b7c40413708ebe509..a23d5fc5543a30b0f7786a5614dccac90c1fb859 100644
+--- a/zig/src/core/runner_circuit_head.zig
++++ b/zig/src/core/runner_circuit_head.zig
+@@ -32,28 +32,52 @@ pub const Plan = struct {
+     zstart: []const u32,
+     /// A query or key with several nonzero taps: selection is computed from the frames, not cached.
+     general: bool,
++    /// Queries and keys read only the running step: an empty selection then depends on nothing older.
++    lag0: bool = false,
++    /// The plan whose frames hold this head's inputs (the first head of its selection group), and its member index.
++    owner: u32 = none,
++    member: u32 = 0,
+ 
+     fn head(p: *const Plan) *const model.Head {
+         return &p.h.heads[0];
+     }
+ };
+ 
+-/// A run's inputs (nonzero dims ascending) and its selecting results, stamped with step + 1.
++/// A run's inputs (nonzero dims ascending), stamped with step + 1; heads reading the same slots share one ring.
+ pub const Frame = struct {
+     stamp: u64 = 0,
+     dims: std.ArrayList(u32) = .empty,
+     vals: std.ArrayList(Scalar) = .empty,
+-    words: std.ArrayList(u32) = .empty,
+ 
+     pub fn deinit(f: *Frame, gpa: std.mem.Allocator) void {
+         f.dims.deinit(gpa);
+         f.vals.deinit(gpa);
++    }
++};
++
++/// One head's selecting results of a run, stamped with step + 1.
++pub const Picks = struct {
++    stamp: u64 = 0,
++    words: std.ArrayList(u32) = .empty,
++
++    pub fn deinit(f: *Picks, gpa: std.mem.Allocator) void {
+         f.words.deinit(gpa);
+     }
+ };
+ 
+ /// A selection group's step key: its first member to run in a step looks it up once and names its generation.
+-pub const Group = struct { memo: Memo = .{}, stamp: u64 = 0, hash: u64 = 0, gen: u64 = 0, next: u64 = 0 };
++pub const Group = struct {
++    memo: Memo = .{},
++    stamp: u64 = 0,
++    hash: u64 = 0,
++    gen: u64 = 0,
++    next: u64 = 0,
++    /// Per memo slot, the members whose selection under that slot's generation is empty (bit = member index).
++    slot_gen: [memo_slots]u64 = @splat(0),
++    empty: [memo_slots]u64 = @splat(0),
++};
++
++const memo_slots = @import("runner_circuit_memo.zig").slots_per_unit;
+ 
+ /// The last four runs cover steps t-3..t: a unit runs every step its lag window is open, else its inputs held.
+ pub const frames_per_unit = 4;
+@@ -145,6 +169,11 @@ pub fn build(a: std.mem.Allocator, h: *const model.Heads, dims: []const u32) !Pl
+         .zrep = zrep.items,
+         .zstart = zstart,
+         .general = general,
++        .lag0 = !general and for (q) |x| {
++            if (x.lag != 0) break false;
++        } else for (k) |x| {
++            if (x.lag != 0) break false;
++        } else true,
+     };
+ }
+ 
+@@ -179,10 +208,10 @@ fn lagMask(list: []const Sel) u8 {
+     return m;
+ }
+ 
+-/// The run that holds step `step`'s inputs: the latest run at or before it (null before the first step).
+-fn frameAt(frames: []const Frame, step: i64) ?*const Frame {
++/// The run that holds step `step`'s inputs or picks: the latest run at or before it (null before the first step).
++fn frameAt(comptime T: type, frames: []const T, step: i64) ?*const T {
+     if (step < 0) return null;
+-    var best: ?*const Frame = null;
++    var best: ?*const T = null;
+     for (frames) |*f| {
+         if (f.stamp == 0 or f.stamp - 1 > @as(u64, @intCast(step))) continue;
+         if (best == null or f.stamp > best.?.stamp) best = f;
+@@ -190,7 +219,7 @@ fn frameAt(frames: []const Frame, step: i64) ?*const Frame {
+     return best;
+ }
+ 
+-fn oldest(frames: []Frame) *Frame {
++fn oldest(comptime T: type, frames: []T) *T {
+     var o = &frames[0];
+     for (frames[1..]) |*f| if (f.stamp < o.stamp) {
+         o = f;
+@@ -207,7 +236,7 @@ const Views = struct {
+ 
+     fn dense(v: *Views, lag: u32) ?[]const Scalar {
+         if (lag == 0) return v.s.x;
+-        const f = frameAt(v.frames, @as(i64, @intCast(v.t)) - lag) orelse return null;
++        const f = frameAt(Frame, v.frames, @as(i64, @intCast(v.t)) - lag) orelse return null;
+         const x = v.s.past[lag - 1];
+         if (v.filled[lag] != f) {
+             if (v.filled[lag]) |old| for (old.dims.items) |d| {
+@@ -280,13 +309,13 @@ fn select(s: *State, p: *const Plan, nz: []const u32) []const u32 {
+ }
+ 
+ /// Indices of the positive channels of one list at step t, ascending, from the frames at their lags.
+-fn positives(p: *const Plan, frames: []const Frame, t: u64, which: u1, out: []u32) usize {
++fn positives(p: *const Plan, frames: []const Picks, t: u64, which: u1, out: []u32) usize {
+     const list = if (which == 0) p.q else p.k;
+     const mask = if (which == 0) p.lags_q else p.lags_k;
+     var n: usize = 0;
+     for (0..frames_per_unit) |lag| {
+         if (mask >> @intCast(lag) & 1 == 0) continue;
+-        const f = frameAt(frames, @as(i64, @intCast(t)) - @as(i64, @intCast(lag))) orelse continue;
++        const f = frameAt(Picks, frames, @as(i64, @intCast(t)) - @as(i64, @intCast(lag))) orelse continue;
+         const w = f.words.items;
+         var at: usize = 0;
+         if (which == 1) at = 1 + 2 * w[0];
+@@ -305,7 +334,7 @@ fn positives(p: *const Plan, frames: []const Frame, t: u64, which: u1, out: []u3
+ pub fn run(s: *State, plan: u32, unit: usize, nz: []const u32, local: []const u32) ![]const Scalar {
+     const p = &s.circuit.flow.plans[plan];
+     const t = s.steps;
+-    const frames = s.frames[plan][0..];
++    const frames = s.frames[p.owner][0..];
+     const memo = &s.memos[unit];
+     const gi = s.circuit.flow.plan_group[plan];
+     const words = if (gi != none and !s.always) try grouped(s, p, &s.groups[gi], memo, nz, local) else blk: {
+@@ -318,14 +347,22 @@ pub fn run(s: *State, plan: u32, unit: usize, nz: []const u32, local: []const u3
+         if (!memo.off()) try memo.put(s.gpa, key, h, w);
+         break :blk w;
+     };
+-    const f = oldest(frames);
++    var newest: u64 = 0;
++    for (frames) |fr| newest = @max(newest, fr.stamp);
++    if (newest != t + 1) {
++        const in = oldest(Frame, frames);
++        in.stamp = 0;
++        in.dims.clearRetainingCapacity();
++        try in.dims.appendSlice(s.gpa, nz);
++        try in.vals.resize(s.gpa, nz.len);
++        for (nz, in.vals.items) |d, *v| v.* = s.x[d];
++        in.stamp = t + 1;
++    }
++    const picks = s.picks[plan][0..];
++    const f = oldest(Picks, picks);
+     f.stamp = 0;
+     f.words.clearRetainingCapacity();
+     try f.words.appendSlice(s.gpa, words);
+-    f.dims.clearRetainingCapacity();
+-    try f.dims.appendSlice(s.gpa, nz);
+-    f.vals.clearRetainingCapacity();
+-    for (nz) |d| try f.vals.append(s.gpa, s.x[d]);
+     f.stamp = t + 1;
+     var views: Views = .{ .s = s, .frames = frames, .t = t };
+     defer views.clear();
+@@ -344,10 +381,10 @@ pub fn run(s: *State, plan: u32, unit: usize, nz: []const u32, local: []const u3
+         };
+     } else {
+         var idx: [hd]u32 = undefined;
+-        const nk = positives(p, frames, t, 1, &idx);
++        const nk = positives(p, picks, t, 1, &idx);
+         if (nk > 1) return error.CircuitKeyNotOneHot;
+         if (nk == 1) key_row = p.k[idx[0]].at;
+-        n_rows = positives(p, frames, t, 0, &idx);
++        n_rows = positives(p, picks, t, 0, &idx);
+         for (idx[0..n_rows], rows[0..n_rows]) |i, *r| r.* = p.q[i].at;
+     }
+     const gates = f.words.items[f.words.items.len - 2 * hd0.value_heads.len ..];
+@@ -413,12 +450,52 @@ fn grouped(s: *State, p: *const Plan, g: *Group, memo: *Memo, nz: []const u32, l
+             }
+         }
+     }
+-    if (g.gen != 0 and !memo.off()) if (memo.find(&[_]u64{g.gen}, g.hash)) |w| return w;
+-    const w = select(s, p, s.nz2[0..selKey(s, p, nz, local)]);
+-    if (g.gen != 0 and !memo.off()) try memo.put(s.gpa, &[_]u64{g.gen}, g.hash, w);
++    const hit = if (g.gen != 0 and !memo.off()) memo.find(&[_]u64{g.gen}, g.hash) else null;
++    const w = hit orelse select(s, p, s.nz2[0..selKey(s, p, nz, local)]);
++    if (g.gen == 0) return w;
++    if (hit == null and !memo.off()) try memo.put(s.gpa, &[_]u64{g.gen}, g.hash, w);
++    if (p.member < 64 and emptyWords(p, w)) {
++        const slot = g.hash % memo_slots;
++        if (g.slot_gen[slot] != g.gen) {
++            g.slot_gen[slot] = g.gen;
++            g.empty[slot] = 0;
++        }
++        g.empty[slot] |= @as(u64, 1) << @intCast(p.member);
++    }
+     return w;
+ }
+ 
++/// No query, no key and no decay: the run reads and writes nothing, and every output is +0.
++fn emptyWords(p: *const Plan, w: []const u32) bool {
++    if (w[0] != 0 or w[1] != 0) return false;
++    for (p.a, 0..) |ai, j| {
++        const sel_a: Scalar = @bitCast(w[2 + 2 * j]);
++        if (ai != none and sel_a != model.keep_selector) return false;
++    }
++    return true;
++}
++
++/// A grouped head skips a run that changes nothing: outputs all +0, no selection now or reaching now from older runs.
++pub fn skips(s: *State, plan: u32, unit: usize) !bool {
++    const p = &s.circuit.flow.plans[plan];
++    const gi = s.circuit.flow.plan_group[plan];
++    if (gi == none or s.always or p.member >= 64 or s.unstable[unit] or !s.rest[unit]) return false;
++    const g = &s.groups[gi];
++    if (g.stamp != s.steps + 1 or g.gen == 0 or g.slot_gen[g.hash % memo_slots] != g.gen) return false;
++    if (g.empty[g.hash % memo_slots] >> @intCast(p.member) & 1 == 0) return false;
++    if (p.lag0) return true;
++    // A lagged query or key reads an older run's picks: skip only if none reaches this step, and record empty picks.
++    const picks = s.picks[plan][0..];
++    var idx: [hd]u32 = undefined;
++    if (positives(p, picks, s.steps, 0, &idx) + positives(p, picks, s.steps, 1, &idx) > 0) return false;
++    const f = oldest(Picks, picks);
++    f.stamp = 0;
++    f.words.clearRetainingCapacity();
++    try f.words.appendSlice(s.gpa, &.{ 0, 0 });
++    f.stamp = s.steps + 1;
++    return true;
++}
++
+ /// beta: absent is 1; 1 writes, an integer <= 0 does not, anything else breaks the circuit's exact range.
+ fn writeEnabled(b: Scalar) !bool {
+     if (b == 1) return true;
+@@ -467,7 +544,7 @@ fn readNorm(s: *State, table: u32, rows: []const u32) !?Scalar {
+ /// Canonical history of this head's channels at step `t`: projections of steps t-1, t-2, t-3, newest first.
+ pub fn history(s: *State, plan: u32, out: []u8, at: *usize) void {
+     const p = &s.circuit.flow.plans[plan];
+-    var views: Views = .{ .s = s, .frames = s.frames[plan][0..], .t = s.steps };
++    var views: Views = .{ .s = s, .frames = s.frames[p.owner][0..], .t = s.steps };
+     defer views.clear();
+     for (0..p.h.channels) |c| for (1..model.lags) |lag| {
+         const v: Scalar = if (views.dense(@intCast(lag)) == null) 0 else views.proj(p, @intCast(c), @intCast(lag));
+diff --git a/zig/src/core/runner_circuit_state.zig b/zig/src/core/runner_circuit_state.zig
+index 75c285fa1a9162da7bbc304e280bc848333386eb..1a9cf15eaec90cef76e3c5965f76be7464f9d43f 100644
+--- a/zig/src/core/runner_circuit_state.zig
++++ b/zig/src/core/runner_circuit_state.zig
+@@ -41,6 +41,9 @@ pub const State = struct {
+     keep: []u64,
+     /// Per head (by plan) its last runs' inputs; per unit its results by exact input.
+     frames: [][head.frames_per_unit]head.Frame,
++    picks: [][head.frames_per_unit]head.Picks,
++    /// Per unit: its last outputs were all +0.
++    rest: []bool,
+     memos: []Memo,
+     groups: []head.Group,
+     /// Dense input scratch, zero outside a running unit; the same for steps t-1..t-3 while a head reads them.
+@@ -63,7 +66,7 @@ pub const State = struct {
+     always: bool = false,
+ 
+     pub fn init(gpa: std.mem.Allocator, c: *const model.Circuit) !State {
+-        var s: State = .{ .gpa = gpa, .circuit = c, .tables = &.{}, .owned = &.{}, .present = &.{}, .val = &.{}, .dirty = &.{}, .changed = &.{}, .rebase = &.{}, .pre = &.{}, .rb = &.{}, .rb_len = &.{}, .rb_mark = &.{}, .in_vals = &.{}, .in_bits = &.{}, .unstable = &.{}, .chain_bits = &.{}, .active = &.{}, .keep = &.{}, .frames = &.{}, .memos = &.{}, .groups = &.{}, .x = &.{}, .past = @splat(&.{}), .nz = &.{}, .key = &.{}, .nz2 = &.{}, .local = &.{}, .words = &.{}, .work = &.{}, .ffn_up = &.{}, .ffn_gate = &.{}, .ffn_y = &.{} };
++        var s: State = .{ .gpa = gpa, .circuit = c, .tables = &.{}, .owned = &.{}, .present = &.{}, .val = &.{}, .dirty = &.{}, .changed = &.{}, .rebase = &.{}, .pre = &.{}, .rb = &.{}, .rb_len = &.{}, .rb_mark = &.{}, .in_vals = &.{}, .in_bits = &.{}, .unstable = &.{}, .chain_bits = &.{}, .active = &.{}, .keep = &.{}, .frames = &.{}, .picks = &.{}, .rest = &.{}, .memos = &.{}, .groups = &.{}, .x = &.{}, .past = @splat(&.{}), .nz = &.{}, .key = &.{}, .nz2 = &.{}, .local = &.{}, .words = &.{}, .work = &.{}, .ffn_up = &.{}, .ffn_gate = &.{}, .ffn_y = &.{} };
+         errdefer s.deinit();
+         const f = &c.flow;
+         const n = f.units.len;
+@@ -89,6 +92,10 @@ pub const State = struct {
+         s.keep = try zeroed(gpa, u64, n / 64 + 1);
+         s.frames = try gpa.alloc([head.frames_per_unit]head.Frame, f.plans.len);
+         for (s.frames) |*fs| fs.* = @splat(.{});
++        s.picks = try gpa.alloc([head.frames_per_unit]head.Picks, f.plans.len);
++        for (s.picks) |*fs| fs.* = @splat(.{});
++        s.rest = try gpa.alloc(bool, n);
++        @memset(s.rest, true);
+         s.memos = try gpa.alloc(Memo, n);
+         for (s.memos) |*m| m.* = .{};
+         s.groups = try gpa.alloc(head.Group, f.groups);
+@@ -128,6 +135,9 @@ pub const State = struct {
+         s.gpa.free(s.keep);
+         for (s.frames) |*fs| for (fs) |*fr| fr.deinit(s.gpa);
+         s.gpa.free(s.frames);
++        for (s.picks) |*fs| for (fs) |*fr| fr.deinit(s.gpa);
++        s.gpa.free(s.picks);
++        s.gpa.free(s.rest);
+         for (s.memos) |*m| m.deinit(s.gpa);
+         s.gpa.free(s.memos);
+         for (s.groups) |*g| g.memo.deinit(s.gpa);
+@@ -190,7 +200,10 @@ pub const State = struct {
+         var n: usize = (s.x.len * (1 + history) + s.work.len + s.val.len) * @sizeOf(Scalar) + s.dirty.len * 17;
+         for (s.owned) |o| n += if (o) table_floats * @sizeOf(Scalar) else 0;
+         for (s.frames) |fs| for (fs) |fr| {
+-            n += fr.dims.capacity * 4 + fr.vals.capacity * 4 + fr.words.capacity * 4;
++            n += fr.dims.capacity * 4 + fr.vals.capacity * 4;
++        };
++        for (s.picks) |fs| for (fs) |fr| {
++            n += fr.words.capacity * 4;
+         };
+         for (s.memos) |m| n += m.bytes();
+         for (s.groups) |g| n += g.memo.bytes();
+diff --git a/zig/src/core/runner_circuit_test.zig b/zig/src/core/runner_circuit_test.zig
+index 00754858910ed8ec5bab180d5e99fd7ad93477c5..a690474e4a72d01b659ad4e3a9109b10aadd9874 100644
+--- a/zig/src/core/runner_circuit_test.zig
++++ b/zig/src/core/runner_circuit_test.zig
+@@ -235,6 +235,25 @@ test "banks sharing an address share one selection key per step but keep their o
+     try std.testing.expect(lazy.groups[0].memo.hits > 0);
+ }
+ 
++test "a bank skipped on a step its group selects nothing still sees that step's inputs one step later" {
++    var c = try tinyCircuit(.banks);
++    defer c.deinit(gpa);
++    var lazy = try rc.State.init(gpa, &c);
++    defer lazy.deinit();
++    var full = try rc.State.init(gpa, &c);
++    defer full.deinit();
++    full.always = true;
++    // An A token selects no row in either bank: from the second cycle the mirror skips it, then a write reads it back.
++    for (0..3) |_| for ([_]u32{ tok(2, 1 | 4), tok(1, 0), tok(2, 2), tok(3, 2), tok(3, 1), tok(1, 0), tok(2, 3), tok(3, 3) }) |t| {
++        try std.testing.expectEqual(try eval.step(&full, t), try eval.step(&lazy, t));
++        const want = try full.canonical(gpa);
++        defer gpa.free(want);
++        const got = try lazy.canonical(gpa);
++        defer gpa.free(got);
++        try std.testing.expectEqualSlices(u8, want, got);
++    };
++}
++
+ test "a node that reads a dim written earlier in stored order sees the write" {
+     var c = try tinyCircuit(.good);
+     defer c.deinit(gpa);
+diff --git a/zig/src/core/runner_circuit_tiny_test.zig b/zig/src/core/runner_circuit_tiny_test.zig
+index af46f45b151bfe343426bbd6102adcec0cf1db46..36329ec6c978fbaddde277c6a0bde173ce8ccaaf 100644
+--- a/zig/src/core/runner_circuit_tiny_test.zig
++++ b/zig/src/core/runner_circuit_tiny_test.zig
+@@ -159,7 +159,7 @@ fn ramHead(w: Writer, variant: Variant) !void {
+     try w.s("\"z\":[],\"out\":[],\"into\":false,\"init\":[]}]}");
+ }
+ 
+-/// mirror for .banks: ram0's inputs, but row r lives at table row r ^ 1, read to dims.sum (a bank sharing the address).
++/// mirror for .banks: ram0's inputs, row r at table row r ^ 1, read to dims.sum; its data bit is the previous step's.
+ fn bankHead(w: Writer) !void {
+     try w.s(",{\"kind\":\"head\",\"name\":\"mirror\",\"n_cols\":128,\"levels\":\"bit\",\"tiny\":0.0,\"q\":[");
+     for (0..4) |r| {
+@@ -172,7 +172,7 @@ fn bankHead(w: Writer) !void {
+         try selectAt(w, @intCast(r ^ 1), @intCast(r), dims.is_w, .{ 7, 8 });
+     }
+     try w.s("],\"value_heads\":[{\"v\":[[0,{\"expr\":[[3," ++ a_ref ++ "]],\"taps\":[1.0,0.0,0.0,0.0]}],[1,{\"expr\":[[3," ++ a_ref);
+-    try w.s("]],\"taps\":[1.0,0.0,0.0,0.0]}],[2,{\"expr\":[[9,128.0]],\"taps\":[1.0,0.0,0.0,0.0]}]],\"a\":[],\"beta\":null,");
++    try w.s("]],\"taps\":[1.0,0.0,0.0,0.0]}],[2,{\"expr\":[[9,128.0]],\"taps\":[0.0,1.0,0.0,0.0]}]],\"a\":[],\"beta\":null,");
+     try w.f("\"z\":[[2,[[4,1.0]]]],\"out\":[[2,{d},16384.0]],\"into\":false,\"init\":[]}}]}}", .{dims.sum});
+ }
+ 

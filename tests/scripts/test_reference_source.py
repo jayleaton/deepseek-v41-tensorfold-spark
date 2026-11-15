@@ -48,10 +48,12 @@ def test_generators_import_only_the_pinned_patch_modules():
     imports = reference_imports(TOOLS / "dsv41_rope_tables.py")
     package = "tensorfold.families.deepseek_v41.cuda"
     assert imports == {f"{package}.rope", f"{package}.config.Config"}
-    assert not (ROOT / "vendor/TensorFold").exists() and not (ROOT / "patches").exists()
+    assert not (ROOT / "vendor/TensorFold").exists()
     recipe, sums = pins()
     assert [name for _, name in sums] == [f"patches/{n}.patch" for n in (
         "0001-spark-stack-060", "0002-deepseek-v41-family", "0003-dsv41-literal-added-tokens")]
+    # The reference patches come from the pinned recipe commit, never from this checkout's patches/ (the engine series).
+    assert not any((ROOT / name).exists() for _, name in sums)
     try:
         blobs = [subprocess.run(["git", "-C", str(ROOT), "show", f"{recipe}:{name}"],
                                 capture_output=True, check=True).stdout for _, name in sums]

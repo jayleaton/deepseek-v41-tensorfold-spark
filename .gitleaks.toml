@@ -10,3 +10,20 @@ condition = "AND"
 paths = ['''^bench/compute-lane/''']
 regexTarget = "secret"
 regexes = ['''^[0-9a-f]{64}$''']
+
+# Engine source in the patch series that the generic-api-key rule reads as keys: a list of kernel names ("dsv41_topk_keys"
+# beside the next name) and two prose words after "token," / "escaping,". Only these exact values in patches/ pass; the
+# prose pair is matched by secret because git scans report no line.
+[[allowlists]]
+description = "engine kernel names in the patch series"
+condition = "AND"
+paths = ['''^patches/[0-9]{4}-[^/]+\.patch$''']
+regexTarget = "line"
+regexes = ['''"dsv41_x3gm_plan", "dsv41_topk_keys", "dsv41_pointwise", "dsv41_kvsplit", ''']
+
+[[allowlists]]
+description = "engine prose in the patch series"
+condition = "AND"
+paths = ['''^patches/[0-9]{4}-[^/]+\.patch$''']
+regexTarget = "secret"
+regexes = ['''^interval-256$''', '''^skip/failure/log/leak$''']

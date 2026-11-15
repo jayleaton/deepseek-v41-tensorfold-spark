@@ -1,0 +1,189 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 22:08:18 +0700
+Subject: [PATCH 071/207] In-model runner: answer fences after reasoning,
+ compile-and-run shells, no inline prior
+
+Live re-smoke code cells owned 0/8:
+- the think block's end has no bytes, so an answer opening with a fence was read mid-line and every later fence paired one off; the boundary now ends the line
+- a shell fence that only compiles or runs (gcc x.c -o x && ./x) no longer takes the header from the program cell before it
+- inline cells are no longer passed as notebook state, which made the frontend refuse every later code cell
+---
+ zig/src/core/runner.zig      | 11 ++++--
+ zig/src/core/runner_scan.zig | 69 ++++++++++++++++++++++++++++++++++++
+ zig/src/core/runner_test.zig | 10 ++++++
+ 3 files changed, 88 insertions(+), 2 deletions(-)
+
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index d26c731f0310f77a472e5a9a32d4cb2158ab1340..187eb1266283fe432ae5b87e7c5c8bc253a3c560 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -149,8 +149,15 @@ pub const Session = struct {
+         errdefer gpa.free(cell.lang);
+         cell.code = try gpa.dupe(u8, c.code);
+         errdefer gpa.free(cell.code);
+-        const prior = try cell.arena.allocator().alloc([]const u8, s.cells.items.len);
+-        for (s.cells.items, prior) |p, *dst| dst.* = p.code;
++        // earlier code cells are the notebook; inline values define nothing
++        var n: usize = 0;
++        for (s.cells.items) |p| n += @intFromBool(p.form != .inline_expr);
++        const prior = try cell.arena.allocator().alloc([]const u8, n);
++        n = 0;
++        for (s.cells.items) |p| if (p.form != .inline_expr) {
++            prior[n] = p.code;
++            n += 1;
++        };
+         try s.cells.append(gpa, cell);
+         // exact inline math would contradict a reply reasoning in Python floats
+         if (c.float_context) {
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index 572b85fc96ea3502d9ef78773fa16c13ebef413b..62ab993a5938a81f159de6b16c8ebafc7050285d 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -39,6 +39,8 @@ pub const Scanner = struct {
+     float_at: ?u32 = null, // the token of the last float cue or closed code cell
+     tail: [16]u8 = undefined, // the last bytes fed, for cues split across tokens
+     tail_len: usize = 0,
++    think: bool = false, // the think block was open at the last token
++    code_cells: u32 = 0, // fence and REPL cells closed so far
+ 
+     pub fn deinit(s: *Scanner, a: Allocator) void {
+         s.line.deinit(a);
+@@ -51,6 +53,12 @@ pub const Scanner = struct {
+         var ev: Events = .{};
+         s.armed = null;
+         s.tokens +|= 1;
++        // the think block's end has no bytes of its own, yet the answer starts on a new line
++        if (s.think and !think_open and s.line.items.len > 0) {
++            try s.endLine(a, &ev, true);
++            s.line.clearRetainingCapacity();
++        }
++        s.think = think_open;
+         if (s.state == .after) {
+             s.since += 1;
+             if (s.since > s.cfg.lookahead) s.state = .prose;
+@@ -90,7 +98,11 @@ pub const Scanner = struct {
+         switch (s.state) {
+             .fence => {
+                 if (fenceClose(raw)) {
++                    const prev = s.pending;
++                    const had = s.code_cells > 0;
+                     ev.closed = s.close(.fence);
++                    // `gcc x.c -o x && ./x` runs the cell before it: a header after it names that cell
++                    if (had and runsPrevious(ev.closed.?.lang, ev.closed.?.code)) s.pending = prev;
+                     s.state = .after;
+                     s.since = 0;
+                 } else {
+@@ -141,6 +153,7 @@ pub const Scanner = struct {
+         if (form != .inline_expr) {
+             s.pending = s.cells;
+             s.float_at = s.tokens;
++            s.code_cells += 1;
+         }
+         s.cells += 1;
+         return c;
+@@ -152,6 +165,32 @@ pub const Scanner = struct {
+     }
+ };
+ 
++/// A shell fence whose every command compiles or runs a program (no defines, pipes or redirects).
++fn runsPrevious(lang: []const u8, code: []const u8) bool {
++    const shells = [_][]const u8{ "bash", "sh", "shell", "zsh", "console" };
++    for (shells) |sh| {
++        if (std.mem.eql(u8, lang, sh)) break;
++    } else return false;
++    const tools = [_][]const u8{ "gcc ", "g++ ", "cc ", "clang ", "clang++ ", "tcc ", "./", "python ", "python3 ", "node " };
++    var any = false;
++    var lines = std.mem.splitScalar(u8, code, '\n');
++    while (lines.next()) |raw| {
++        var line = std.mem.trim(u8, raw, " \t\r");
++        if (std.mem.startsWith(u8, line, "$ ")) line = line[2..];
++        if (line.len == 0 or line[0] == '#') continue;
++        if (std.mem.indexOfAny(u8, line, "|<>;`") != null or std.mem.indexOf(u8, line, "-D") != null) return false;
++        var parts = std.mem.splitSequence(u8, line, "&&");
++        while (parts.next()) |part| {
++            const cmd = std.mem.trim(u8, part, " \t");
++            for (tools) |t| {
++                if (std.mem.startsWith(u8, cmd, t)) break;
++            } else return false;
++            any = true;
++        }
++    }
++    return any;
++}
++
+ fn indentOk(line: []const u8) ?[]const u8 {
+     var i: usize = 0;
+     while (i < line.len and line[i] == ' ') i += 1;
+@@ -448,6 +487,36 @@ test "runner scan: a Python-float reply marks inline decimals and fractions, not
+     try std.testing.expect(!(try plain.feed(a, "Discount: 889.35*0.075 =", true)).closed.?.float_context);
+ }
+ 
++test "runner scan: an answer's first fence opens a cell when the reasoning ended mid-line (live run-check-004)" {
++    const a = std.testing.allocator;
++    var s: Scanner = .{ .cfg = .{} };
++    defer s.deinit(a);
++    _ = try s.feed(a, "Let's craft.", true);
++    _ = try s.feed(a, "", true); // the think block's end: no bytes
++    for ([_][]const u8{ "```python\n", "print(2**100)\n" }) |t| _ = try s.feed(a, t, false);
++    const closed = (try s.feed(a, "```\n", false)).closed.?;
++    try std.testing.expectEqualStrings("python", closed.lang);
++    try std.testing.expectEqualStrings("print(2**100)\n", closed.code);
++    try std.testing.expectEqual(@as(u32, 0), (try s.feed(a, "Output:\n", false)).trigger.?.index);
++}
++
++test "runner scan: a header after a compile-and-run shell fence names the program cell" {
++    const a = std.testing.allocator;
++    for ([_][]const u8{
++        "```bash\ngcc -Wall -o gcd gcd.c\n./gcd\n```\n",
++        "```sh\n$ cc fib.c -o fib && ./fib\n```\n",
++        "```bash\necho 42\n```\n",
++        "```bash\ngcc -DN=5 x.c -o x && ./x\n```\n",
++        "```bash\n./x | head\n```\n",
++    }, [_]u32{ 0, 0, 1, 1, 1 }) |shell, want| {
++        var s: Scanner = .{ .cfg = .{} };
++        defer s.deinit(a);
++        _ = try s.feed(a, "```c\nint main(void) { return 0; }\n```\n", false);
++        _ = try s.feed(a, shell, false);
++        try std.testing.expectEqual(want, (try s.feed(a, "Output:\n", false)).trigger.?.index);
++    }
++}
++
+ test "runner scan: a header after an inline cell still names the fence cell before it" {
+     const a = std.testing.allocator;
+     var s: Scanner = .{ .cfg = .{ .inline_math = true } };
+diff --git a/zig/src/core/runner_test.zig b/zig/src/core/runner_test.zig
+index e18d32375b1ac8b771549153b0fdd7dcedf167fa..0d8b400772e77d4eb8a13cba0a1c7048d4ada87b 100644
+--- a/zig/src/core/runner_test.zig
++++ b/zig/src/core/runner_test.zig
+@@ -74,6 +74,8 @@ pub const Model = struct {
+ /// `print(X)` and REPL `X` become calc X; code naming `undefined_` abstains.
+ fn translate(_: ?*anyopaque, a: std.mem.Allocator, cell: rapi.Cell) std.mem.Allocator.Error!rapi.Translation {
+     if (std.mem.indexOf(u8, cell.code, "undefined_") != null) return .{ .abstain = .name };
++    // like T5's frontend: a cell after earlier code cells abstains
++    if (std.mem.eql(u8, cell.code, "2**99") and cell.prior.len != 0) return .{ .abstain = .unsupported };
+     var code = std.mem.trim(u8, cell.code, " \n");
+     if (std.mem.startsWith(u8, code, "print(") and std.mem.endsWith(u8, code, ")")) code = code[6 .. code.len - 1];
+     return .{ .program = .{ .kind = .calc, .bytes = try a.dupe(u8, code) } };
+@@ -92,6 +94,7 @@ pub const Back = struct {
+         .{ "2**100", "1267650600228229401496703205376\n" },
+         .{ "47 * 83", "3901" },
+         .{ "1.5+2.25", "3.75" },
++        .{ "2**99", "633825300114114700748351602688\n" },
+     };
+ 
+     fn backend(b: *Back) rapi.Backend {
+@@ -352,6 +355,13 @@ test "runner: an inline decimal abstains in a Python-float reply; integers stay
+     try std.testing.expectEqualStrings("In Python, as a float: 47 * 83 = 3901\nDone.", integer);
+ }
+ 
++test "runner: an inline value earlier in the reply is not notebook state for a later REPL cell" {
++    const lead = "First 47 * 83 = 3901\nThen:\n>>> 2**99\n";
++    const got = try one(lead, .{ .inline_math = true });
++    defer gpa.free(got);
++    try std.testing.expectEqualStrings(lead ++ "633825300114114700748351602688\nDone.", got);
++}
++
+ test "runner: knobs parse; off unless the flag is 1 with a circuit" {
+     const K = struct {
+         var set: []const [2][]const u8 = &.{};

@@ -8,7 +8,7 @@
 # Original paths are relative to a named source root; internal agent names and host names in path components
 # were replaced the same way as in file contents (e.g. a leading agent-name prefix such as "<name>-stdbench-" is
 # written "stdbench-"). sha256 "UNREADABLE" = root-owned file not readable by the publishing account (size only).
-# Roots: stdbench/ = stdbench (rank-0 host <rank0-work>/stdbench/, dev-box mirror of the same tree); ab3/ = ab3 (<rank0-work>/ab3-20261104/); owned-oracle/ = owned-oracle (<rank0-work>/owned-oracle/); in-model-runner/ = in-model-runner (adjudicator workspace on the dev host)
+# Roots: stdbench/ = stdbench (rank-0 host <rank0-work>/stdbench/, operator workstation mirror of the same tree); ab3/ = ab3 (<rank0-work>/ab3-20261104/); owned-oracle/ = owned-oracle (<rank0-work>/owned-oracle/); in-model-runner/ = in-model-runner (adjudicator workspace on the dev host)
 # Category totals: duplicate-of 117 files 7500893 bytes; raw:engine-source-snapshot 6876 files 87043793 bytes; raw:large 85 files 1109346816 bytes; raw:log-or-binary-or-other 557 files 19085167 bytes; raw:per-boot-request-payload 114 files 25567842 bytes; raw:run-state-or-per-boot 1683 files 46298862 bytes; raw:superseded-earlier-kit 155 files 5534950 bytes; raw:tool-rerun-receipt 2 files 240039 bytes; raw:transcript-or-telemetry 23 files 1653364 bytes; raw:turn-copy-or-receipt 949 files 32635776 bytes
 821f409c7e2234dde275603b7f9d1c06e5bfa99971361fda96a6b8fea1457f1f	4651	ab3/dry-t01.out	raw:log-or-binary-or-other
 8261141063ad03137b4b0b764945b8746e53e63f2746d64b4c8e22863177b445	4642	ab3/dry2-t01.out	raw:log-or-binary-or-other
