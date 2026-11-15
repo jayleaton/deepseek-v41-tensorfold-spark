@@ -17,7 +17,13 @@ first four (9.7 s at p95). With eight slots they wait 1.3 s.
 
 Concurrent replies can differ from the same request sent alone (raw completions and some prompts; chat replies to the
 same prompt matched). Four slots behave the same way: the production profile's precision settings make the output
-depend on the rest of the batch. The slot count does not cause it.
+depend on the rest of the batch.
+
+Known issue (2026-11-15 boot of main's engine with eight slots): with drafts turned off (`draft:false`), greedy
+non-thinking replies sent one at a time matched the four-slot engine on 3 of 5 prompts (two diverged late, at tokens
+15 and 83); the same engine at four slots gave 5 of 5. Drafted output, the default path, matched on 15 of 15. Every
+other gate passed: boot, smoke, eight cold 20,480-token prompts at once, the 196,608-token edge (200) and one token
+past it (400), and the Compute Lanes smoke.
 
 Pick eight slots when many people share the pair; keep the default when single sessions (agents) go past 192K.
 Both use the same assets, so switching is a restart with the two values changed.
