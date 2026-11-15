@@ -18,29 +18,26 @@ the previously deployed engine and profile.
 | Engine | upstream [TensorFold](https://github.com/ashhart/TensorFold) at [`config/tensorfold.rev`](config/tensorfold.rev), plus this recipe's [`patches/`](patches/) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch migrates the recipe to upstream native serving. The engine is upstream TensorFold `0d51120a8` with
-patches `0001`-`0207` applied ([ENGINE](docs/ENGINE.md#the-patch-series)), the content of engine commit `12257eb51`:
-`1ea71240a` plus two server commits, so a whole tool call to a tool the request did
-not declare comes back as a tool call, as on vLLM, and the client can refuse it
-([ENGINE](docs/ENGINE.md#undeclared-tool-calls-at-this-pin)). `1ea71240a` (patch `0205`) is
-`7b79ef92d` plus opt-in prompt checkpoints for rewritten histories
-(`TF_DSV41_SESSION_LCP_RESUME`, off by default) and a log line on each costly session miss
-([#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)). `7b79ef92d` (patch `0203`) is
-`01a62132c` plus the NVMe session-restore fix of upstream #2182 (sessions parked on
-the NVMe tier come back instead of failing with `BadBlob`; [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)).
-`01a62132c` is the engine source the [compute-lane studies](docs/compute-lane.md) ran (`07106059c`,
-byte-for-byte) plus `TF_DSV41_COMPUTE_LANE_DEFAULT` and its follow-ups (a client's own `python` function keeps the name;
-`compute_executed` counts only runs; the built-in tool only for thinking chats with room for a call; no runner cell
-for half an expression). That is release
-candidate G (`58bece1d3`, patch `0050`, fallback; F `56200688d`, patch `0047`, before it) plus `deadline_s`, the engine-held compute lane and the
-experimental in-model runner. The flash17 profile's default is the in-thinking "tool-full" profile, whose runner and
-trust guide run for every thinking chat whatever the client sends (the built-in tool only when its reply has room for a
-call); it needs the runner image (`scripts/build-runner-image.sh`). The measured lane-only arm is an opt-in block. The
-series holds the stable DeepSeek head H (`20ad77878`, patch `0039`) and includes flash17’s `dsq-1` admission support.
-The build fetches the upstream commit from [`config/tensorfold.repo`](config/tensorfold.repo) and applies the series;
-a local checkout or bundle of upstream also works. Rolling back to an earlier engine means applying a shorter prefix
-of the series. See [ENGINE](docs/ENGINE.md).
+This branch builds the engine the pair serves today (G, `6c4eeccda`). The engine is upstream TensorFold `f212eeabd`
+(on upstream `main`, 2026-11-09) with patches `0001`-`0072` applied ([ENGINE](docs/ENGINE.md#the-patch-series)): the
+content of `6c4eeccda` except for 24 reworded comment lines. Against the previous recipe engine (`12257eb51`, upstream
+`0d51120a8` plus 207 patches) it brings 2,517 newer upstream commits (among them tool-call ids keyed over the
+request, so a replay names its calls again; opt-in chunked prefill admission for long prompts;
+`TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS`; and Engram shards whose direct reads refuse a sector read buffered instead of
+failing) and the G line's changes: the compute lane and the in-thinking runner in TensorFold's shared core, with generic
+`TF_COMPUTE_LANE*` / `TF_RUNNER*` names (the profile's `TF_DSV41_*` names still work as aliases), engine-owned reply
+bytes that survive every strip at each format's own call openers, and `TF_DSV41_ENGRAM_READERS`. It keeps the previous
+engine's DeepSeek work: IDX_SPLIT, IDX_IOTA, ROT_FOLD, KV_MIRROR, session checkpoints for rewritten histories (#80),
+the NVMe session-restore fix (#86), and undeclared tool calls returned whole. `TF_DSV41_RUNNER_SPEC_HOLD` is not in
+this engine. The image adds the CUDA 13.3 forward-compatibility layer G serves on
+([`scripts/build-compat-image.sh`](scripts/build-compat-image.sh)). The flash17 profile's default is the in-thinking
+"tool-full" profile, whose runner and trust guide run for every thinking chat whatever the client sends (the built-in
+tool only when its reply has room for a call); it needs the runner image (`scripts/build-runner-image.sh`). The
+measured lane-only arm is an opt-in block. The build fetches the upstream commit from
+[`config/tensorfold.repo`](config/tensorfold.repo) and applies the series; a local checkout or bundle of upstream also
+works. The previous engine is the recipe's previous commit (`0001`-`0207` on `0d51120a8`). See [ENGINE](docs/ENGINE.md).
 
+The pair has served this engine (G) since 2026-11-12; the spot checks below ran on earlier engines of this recipe.
 On the 2026-10-29/30 spot checks against the previous engine, H passed every correctness gate, with 0 token
 differences. It was at parity on 8K prefill (1.06×), 1-stream decode (1.00×) and auto tools (1.02×); 4-stream decode
 was 0.97×. The details are in [ENGINE](docs/ENGINE.md#results-at-this-pin-2026-10-2930). Full engine/pack/device
@@ -90,6 +87,7 @@ git clone https://github.com/jayleaton/deepseek-v41-tensorfold-spark.git
 cd deepseek-v41-tensorfold-spark
 scripts/build-native.sh -t tensorfold-dsv41:local                                    # the engine at the pin
 scripts/build-runner-image.sh tensorfold-dsv41:local -t tensorfold-dsv41:local-runner  # + runner assets (downloaded, sha256-checked)
+scripts/build-compat-image.sh tensorfold-dsv41:local-runner -t tensorfold-dsv41:local-compat  # + CUDA 13.3 forward compat
 hf download jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw --local-dir /srv/models/flash17   # both nodes
 cp config/prod-zig-flash17.env.example config/prod-zig.env && $EDITOR config/prod-zig.env    # both nodes
 scripts/run-zig.sh 1 --check-aot   # after generating assets; compare both rank identities before starting

@@ -1,0 +1,499 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 22:30:19 +0700
+Subject: [PATCH 60/72] dsv41 calibration: time suspect rows again before the
+ table is built
+
+The boot calibration times rows 5-8 and 9-16 back to back, so one burst on
+either rank can fill a row's runs and its median. The raw table is the
+monotone envelope of the rows, which carries that value to every wider row.
+Cost mode then drafts shallow for the whole life of the process.
+
+On TP2 DGX Spark this hit 15 of 54 stored rank-0 calibrations, including
+three benchmark boots: H (row 6 at 67 ms against about 44), a candidate's
+first boot (rows 5-6 near 60-67 ms against about 40, deep rows up to 145 ms)
+and a K4 spot (row 6 at 63 ms). Each ran with code TPR 6-10% below the same
+engine's clean boots.
+
+After the reference measurement, rank 0 takes the slower rank's rows and
+fits each segment's robust line (rows 2-8 and 9+, the fit shape's split,
+Theil-Sen as in fit). A row more than 15% above its segment's line is
+suspect, and so is a row 9+ more than 30% above the rows 2-8 line extended,
+since a burst over several deep rows outvotes their own line. Suspect rows
+are timed again (one warm-up round, then REPS rounds with the rows cycled)
+and every rank keeps the lower of its value and the retime's median, the
+recheck's rule. This repeats for at most two rounds, then the table is
+built as before.
+
+The followers need no change: they pair whatever marks the leader sends
+before each gather. The reference plan, its statistics and its table are
+unchanged, so the frozen golden still holds.
+
+TF_DSV41_CALIB_RETIME (0-4, default 2; 0 is the reference measurement
+only) and TF_DSV41_CALIB_SPIKE (0.02-2, default 0.15) tune the rule. The
+stored entry records the retimed rows and their earlier values, and the
+boot log names each one.
+
+Tests use stored calibrations from those boots: three spiked ones flag
+exactly their burst rows, three clean ones flag none, and a retime brings
+the spiked row 6 back so the table loses the burst.
+---
+ zig/src/families/deepseek_v41/calib_gpu.zig   | 113 ++++++++++++------
+ .../families/deepseek_v41/draft/calib_env.zig |   7 +-
+ .../deepseek_v41/draft/calib_measure.zig      |  95 +++++++++++++--
+ .../deepseek_v41/draft/calib_measure_test.zig |  86 +++++++++++++
+ 4 files changed, 254 insertions(+), 47 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/calib_gpu.zig b/zig/src/families/deepseek_v41/calib_gpu.zig
+index 1cf09fe8779aa778025dfe3cd968047606f355df..b0f4a752f56e459c22608ac60a18d0493882ac94 100644
+--- a/zig/src/families/deepseek_v41/calib_gpu.zig
++++ b/zig/src/families/deepseek_v41/calib_gpu.zig
+@@ -20,9 +20,13 @@ pub const Measured = struct {
+     /// rank 0's rows 1..rows as kept (the lower of sweep and recheck), ms
+     kept: [cm.max_rows]f64 = @splat(0.0),
+     rows: u32 = 0,
+-    /// slots the windows used, timed runs
++    /// slots the windows used, timed runs (the retimes included)
+     n: u32 = 0,
+     runs: usize = 0,
++    /// rows (1-based) timed again as suspect, and their combined ms before
++    retimed: [cm.max_rows]u32 = @splat(0),
++    before: [cm.max_rows]f64 = @splat(0.0),
++    nretimed: usize = 0,
+ };
+ 
+ /// The calibration prompt (rank 0): the calibration text's ids over the checkpoint's tokenizer. gpa-owned.
+@@ -78,26 +82,76 @@ pub fn measure(gpa: Allocator, m: *model.Model, ids: []const u32, how: cm.Method
+         }
+     }
+     try prefillAll(tgt, gt, pass, ids, lens[0..plan.n], true);
+-    // the timed runs, in the plan's order; each between two marks on every rank
+-    const samples = try gpa.alloc(i64, plan.runs.items.len);
+-    defer gpa.free(samples);
++    const shape = gate_lanes.shapeOf(f);
++    if (shape.block > cm.max_rows) return error.CalibBlock;
+     var toks: [4][cm.max_rows]u32 = undefined;
+     for (lens[0..plan.n], 0..) |l, i| {
+         toks[i][0] = ids[l - 1];
+         @memcpy(toks[i][1..rows], conts[i][0 .. rows - 1]);
+     }
+-    const shape = gate_lanes.shapeOf(f);
+-    if (shape.block > cm.max_rows) return error.CalibBlock;
++    const r: Runs = .{ .tgt = tgt, .pass = pass, .lens = lens[0..plan.n], .ids = ids, .toks = &toks, .block = shape.block };
++    var arena = std.heap.ArenaAllocator.init(gpa);
++    defer arena.deinit();
++    const a = arena.allocator();
++    // the timed runs, in the plan's order: each rank's kept values
++    const w: usize = f.comm.world();
++    const vals = try a.alloc([]f64, w);
++    for (vals, try timed(a, gt, f, r, plan.runs.items)) |*v, ms| {
++        v.* = try a.alloc(f64, plan.entries());
++        try plan.values(ms, v.*);
++    }
++    const ranks = try a.alloc([]const f64, w);
++    for (ranks, vals) |*x, v| x.* = v;
++    // suspect rows (a burst prices every wider row) timed again, keeping the lower, until none left or rounds run out
++    var out: Measured = .{ .costs = undefined, .rows = rows, .n = plan.n, .runs = plan.runs.items.len };
++    var both: [cm.max_rows]f64 = undefined;
++    var flag: [cm.max_rows]bool = undefined;
++    for (0..how.retime) |_| {
++        try plan.combined(ranks, both[0..rows]);
++        if (try cm.suspects(gpa, both[0..rows], how.spike, flag[0..rows]) == 0) break;
++        for (flag[0..rows], 0..) |s, i| if (s and std.mem.indexOfScalar(u32, out.retimed[0..out.nretimed], @intCast(i + 1)) == null) {
++            out.retimed[out.nretimed] = @intCast(i + 1);
++            out.before[out.nretimed] = both[i];
++            out.nretimed += 1;
++        };
++        var extra: std.ArrayList(cm.Run) = .empty;
++        try plan.retimeRuns(a, flag[0..rows], &extra);
++        for (vals, try timed(a, gt, f, r, extra.items)) |v, ms| try plan.mergeRetime(extra.items, ms, v);
++        out.runs += extra.items.len;
++    }
++    for (0..plan.n) |i| {
++        const slot: u32 = @intCast(i);
++        tgt.release(slot);
++        if (pass) |p| p.reset(slot);
++    }
++    out.costs = try plan.build(gpa, ranks);
++    @memcpy(out.kept[0..rows], ranks[0][1 .. rows + 1]);
++    return out;
++}
++
++/// What a timed run needs: the slots' texts prefilled (`lens`), each slot's window tokens, the DSpark block.
++const Runs = struct {
++    tgt: iface.Target,
++    pass: ?iface.Pass,
++    lens: []const usize,
++    ids: []const u32,
++    toks: *const [4][cm.max_rows]u32,
++    block: usize,
++};
++
++/// Times `runs` between marks on every rank (a window dropped after each); every rank's ms in run order (`a`-owned).
++fn timed(a: Allocator, gt: anytype, f: anytype, r: Runs, runs: []const cm.Run) ![][]f64 {
++    const samples = try a.alloc(i64, runs.len);
+     var drafts: [cm.max_rows]u32 = undefined;
+     var conf: [cm.max_rows]f32 = undefined;
+     var chosen: [4][cm.max_rows]u32 = undefined;
+-    for (plan.runs.items, samples) |run, *x| {
++    for (runs, samples) |run, *x| {
+         if (run.what == .draft) {
+-            const p0: u64 = lens[0] - 1;
+-            const asks = [_]iface.Ask{.{ .slot = 0, .anchor = ids[lens[0] - 1], .start = p0, .params = dspark.Params.of(null, p0) }};
+-            var props = [_]iface.Proposal{.{ .drafts = drafts[0..shape.block], .conf = conf[0..shape.block] }};
++            const p0: u64 = r.lens[0] - 1;
++            const asks = [_]iface.Ask{.{ .slot = 0, .anchor = r.ids[r.lens[0] - 1], .start = p0, .params = dspark.Params.of(null, p0) }};
++            var props = [_]iface.Proposal{.{ .drafts = drafts[0..r.block], .conf = conf[0..r.block] }};
+             const t0 = try f.calibMark();
+-            try pass.?.propose(&asks, &props);
++            try r.pass.?.propose(&asks, &props);
+             x.* = @intCast((try f.calibMark()) - t0);
+             continue;
+         }
+@@ -105,41 +159,27 @@ pub fn measure(gpa: Allocator, m: *model.Model, ids: []const u32, how: cm.Method
+         var outs: [4][]u32 = undefined;
+         const draws: [cm.max_rows]u64 = @splat(0);
+         for (run.segments(), segs[0..run.nsegs], outs[0..run.nsegs]) |s, *sg, *o| {
+-            if (s.slot >= plan.n) return error.CalibPlan;
+-            sg.* = .{ .slot = s.slot, .start = lens[s.slot] - 1, .tokens = toks[s.slot][0..s.rows], .parents = null, .draws = draws[0..s.rows], .sampling = null };
++            if (s.slot >= r.lens.len) return error.CalibPlan;
++            sg.* = .{ .slot = s.slot, .start = r.lens[s.slot] - 1, .tokens = r.toks[s.slot][0..s.rows], .parents = null, .draws = draws[0..s.rows], .sampling = null };
+             o.* = chosen[s.slot][0..s.rows];
+         }
+         const t0 = try f.calibMark();
+-        try tgt.window(segs[0..run.nsegs], outs[0..run.nsegs]);
++        try r.tgt.window(segs[0..run.nsegs], outs[0..run.nsegs]);
+         x.* = @intCast((try f.calibMark()) - t0);
+         for (run.segments()) |s| try gt.dropWindow(s.slot);
+     }
+-    for (0..plan.n) |i| {
+-        const slot: u32 = @intCast(i);
+-        tgt.release(slot);
+-        if (pass) |p| p.reset(slot);
+-    }
+-    // every rank's samples; each entry the slower rank's
++    // every rank's samples
+     const w: usize = f.comm.world();
+-    const all = try gpa.alloc(i64, samples.len * w);
+-    defer gpa.free(all);
++    const all = try a.alloc(i64, samples.len * w);
+     try f.calibGather(samples, all);
+-    var arena = std.heap.ArenaAllocator.init(gpa);
+-    defer arena.deinit();
+-    const a = arena.allocator();
+-    const ranks = try a.alloc([]const f64, w);
+-    for (ranks, 0..) |*r, k| {
+-        const ms = try a.alloc(f64, samples.len);
+-        for (ms, all[k * samples.len ..][0..samples.len]) |*y, ns| {
++    const out = try a.alloc([]f64, w);
++    for (out, 0..) |*o, k| {
++        o.* = try a.alloc(f64, samples.len);
++        for (o.*, all[k * samples.len ..][0..samples.len]) |*y, ns| {
+             if (ns < 0) return error.CalibFollower; // a follower's marks did not pair up with ours
+             y.* = @as(f64, @floatFromInt(ns)) / 1e6;
+         }
+-        const v = try a.alloc(f64, plan.entries());
+-        try plan.values(ms, v);
+-        r.* = v;
+     }
+-    var out: Measured = .{ .costs = try plan.build(gpa, ranks), .rows = rows, .n = plan.n, .runs = plan.runs.items.len };
+-    @memcpy(out.kept[0..rows], ranks[0][1 .. rows + 1]);
+     return out;
+ }
+ 
+@@ -164,11 +204,12 @@ pub fn boot(gpa: Allocator, io: std.Io, m: *model.Model, dir: []const u8, k: cal
+     var got = try measure(gpa, m, ids, how, rows_cap);
+     errdefer got.costs.deinit(gpa);
+     const secs = @as(f64, @floatFromInt(ph.nowNs() - t0)) / 1e9;
+-    log.info("dsv41 calib method (zig): table {t}, {t} of {d} after {d} warm-up(s), rows 1-{d} cycled, rows 1-{d} rechecked, rows 9+ {d} runs; {d} slots, {d} timed runs, a {d}-token text; rows 1-4 kept {d:.3} / {d:.3} / {d:.3} / {d:.3} ms (rank 0)", .{ how.shape, how.stat, how.reps, how.warm, how.cycle, how.recheck, how.deep, got.n, got.runs, ids.len, got.kept[0], got.kept[1], got.kept[2], got.kept[3] });
++    log.info("dsv41 calib method (zig): table {t}, {t} of {d} after {d} warm-up(s), rows 1-{d} cycled, rows 1-{d} rechecked, rows 9+ {d} runs; {d} slots, {d} timed runs, a {d}-token text; rows 1-4 kept {d:.3} / {d:.3} / {d:.3} / {d:.3} ms (rank 0); {d} suspect row(s) retimed (at most {d} rounds, over {d:.2} of the line)", .{ how.shape, how.stat, how.reps, how.warm, how.cycle, how.recheck, how.deep, got.n, got.runs, ids.len, got.kept[0], got.kept[1], got.kept[2], got.kept[3], got.nretimed, how.retime, how.spike });
++    for (got.retimed[0..got.nretimed], got.before[0..got.nretimed]) |r, ms| log.info("dsv41 calib: row {d} retimed: {d:.3} ms before, {d:.3} ms kept", .{ r, ms, got.costs.verify[r - 1] });
+     var path: ?[]u8 = null;
+     var db: [std.fs.max_path_bytes]u8 = undefined;
+     if (calib_env.dirOf(k, &db)) |d| {
+-        path = calib_env.store(gpa, io, d, want, got.costs, .{ .method = how, .seconds = secs, .kept = got.kept[0..got.rows], .tokens = ids.len }, std.Io.Clock.real.now(io).toSeconds()) catch |e| blk: {
++        path = calib_env.store(gpa, io, d, want, got.costs, .{ .method = how, .seconds = secs, .kept = got.kept[0..got.rows], .tokens = ids.len, .retimed = got.retimed[0..got.nretimed], .before = got.before[0..got.nretimed] }, std.Io.Clock.real.now(io).toSeconds()) catch |e| blk: {
+             if (!quiet) log.warn("calibration: the table was not stored in {s} ({t})", .{ d, e });
+             break :blk null;
+         };
+diff --git a/zig/src/families/deepseek_v41/draft/calib_env.zig b/zig/src/families/deepseek_v41/draft/calib_env.zig
+index 8dea35a67f9a7df8b8ec5a71dfec94dfae196447..270380ab08597ef8d715cd8ae8f82a799a3a72af 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_env.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_env.zig
+@@ -166,6 +166,9 @@ pub const Record = struct {
+     kept: []const f64 = &.{},
+     /// the calibration prompt's ids (rank 0's text, before the slot cuts)
+     tokens: usize = 0,
++    /// rows (1-based) timed again as suspect, and their combined ms before (the method's retime rounds)
++    retimed: []const u32 = &.{},
++    before: []const f64 = &.{},
+ };
+ 
+ /// Writes `c` for `want` into `dir` as zigName atomically; returns its path (gpa-owned); `now_s` stamps meta.time.
+@@ -191,9 +194,11 @@ pub fn store(gpa: Allocator, io: std.Io, dir: []const u8, want: Shape, c: Costs,
+         .meta = .{
+             .shape = .{ .slots = want.slots, .world = want.world, .dspark = want.dspark, .context = want.context },
+             .time = time,
+-            .method = .{ .reps = m.reps, .warm = m.warm, .stat = @tagName(m.stat), .recheck = m.recheck, .shape = @tagName(m.shape), .cycle = m.cycle, .deep = m.deep },
++            .method = .{ .reps = m.reps, .warm = m.warm, .stat = @tagName(m.stat), .recheck = m.recheck, .shape = @tagName(m.shape), .cycle = m.cycle, .deep = m.deep, .retime = m.retime, .spike = m.spike },
+             .seconds = rec.seconds,
+             .kept_rank0 = rec.kept,
++            .retimed_rows = rec.retimed,
++            .retimed_before = rec.before,
+             .prompt_tokens = rec.tokens,
+             .engine = "zig",
+         },
+diff --git a/zig/src/families/deepseek_v41/draft/calib_measure.zig b/zig/src/families/deepseek_v41/draft/calib_measure.zig
+index b227b37be8d5984aa5dbd1736d51f439708e6f3b..4c79ad040676c02750ef0e3bb0dbfc8935b30555 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_measure.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_measure.zig
+@@ -16,7 +16,7 @@ pub const max_samples = 64; // a statistic's runs at most (REPS / DEEP_REPS <= 5
+ pub const Shape = enum { raw, fit };
+ pub const Stat = enum { median, min };
+ 
+-/// The timing method (TF_DSV41_CALIB_SHAPE / _REPS / _WARM / _STAT / _RECHECK / _CYCLE / _DEEP_REPS).
++/// The timing method (TF_DSV41_CALIB_SHAPE/_REPS/_WARM/_STAT/_RECHECK/_CYCLE/_DEEP_REPS/_RETIME/_SPIKE).
+ pub const Method = struct {
+     reps: u32 = 5,
+     warm: u32 = 3,
+@@ -25,6 +25,10 @@ pub const Method = struct {
+     shape: Shape = .raw,
+     cycle: u32 = 4,
+     deep: u32 = 5,
++    /// rounds of timing suspect rows again (0: the reference measurement only)
++    retime: u32 = 2,
++    /// a row this fraction above its segment's line is suspect
++    spike: f64 = 0.15,
+ };
+ 
+ /// The defaults by shape (raw: G15; fit: G14, VERSION 3), then the explicit knobs, each range-checked.
+@@ -42,9 +46,17 @@ pub fn method(get: *const fn ([*:0]const u8) ?[]const u8) !Method {
+         .shape = shape,
+         .cycle = try num(get("TF_DSV41_CALIB_CYCLE"), d.cycle, 0, early),
+         .deep = try num(get("TF_DSV41_CALIB_DEEP_REPS"), d.deep, 1, 50),
++        .retime = try num(get("TF_DSV41_CALIB_RETIME"), d.retime, 0, 4),
++        .spike = try fraction(get("TF_DSV41_CALIB_SPIKE"), d.spike, 0.02, 2.0),
+     };
+ }
+ 
++fn fraction(raw: ?[]const u8, default: f64, lo: f64, hi: f64) !f64 {
++    const v = if (trimmed(raw)) |s| try std.fmt.parseFloat(f64, s) else default;
++    if (!(v >= lo and v <= hi)) return error.CalibKnob;
++    return v;
++}
++
+ fn num(raw: ?[]const u8, default: u32, lo: u32, hi: u32) !u32 {
+     const v: i64 = if (trimmed(raw)) |s| try std.fmt.parseInt(i64, s, 10) else default;
+     if (v < lo or v > hi) return error.CalibKnob;
+@@ -76,8 +88,10 @@ fn median(xs: []f64) f64 {
+     return if (xs.len % 2 == 1) xs[m] else (xs[m - 1] + xs[m]) / 2.0;
+ }
+ 
++pub const Line = struct { base: f64, slope: f64 };
++
+ /// The median of pairwise slopes, then the median intercept.
+-pub fn fitLine(gpa: Allocator, rows: []const f64, ys: []const f64) !struct { base: f64, slope: f64 } {
++pub fn fitLine(gpa: Allocator, rows: []const f64, ys: []const f64) !Line {
+     var slopes: std.ArrayList(f64) = .empty;
+     defer slopes.deinit(gpa);
+     for (0..rows.len) |i| for (i + 1..rows.len) |j| try slopes.append(gpa, (ys[j] - ys[i]) / (rows[j] - rows[i]));
+@@ -116,6 +130,30 @@ pub fn fit(gpa: Allocator, v: []const f64) ![]f64 {
+     return out;
+ }
+ 
++/// Marks rows over `spike` above their segment's line (2..8, 9+), or 9+ over 2*spike above 2..8's; returns the count.
++pub fn suspects(gpa: Allocator, times: []const f64, spike: f64, out: []bool) !usize {
++    if (out.len != times.len or times.len > max_rows) return error.BadSamples;
++    @memset(out, false);
++    var xs: [max_rows]f64 = undefined;
++    var early_line: ?Line = null;
++    const segs = [_][2]usize{ .{ 2, @min(times.len, deep_from) }, .{ deep_from + 1, times.len } };
++    for (segs, 0..) |s, k| {
++        if (s[1] < s[0] + 2) continue;
++        for (s[0]..s[1] + 1, 0..) |r, i| xs[i] = @floatFromInt(r);
++        const l = try fitLine(gpa, xs[0 .. s[1] - s[0] + 1], times[s[0] - 1 .. s[1]]);
++        if (k == 0) early_line = l;
++        for (s[0]..s[1] + 1) |r| {
++            const line = l.base + l.slope * @as(f64, @floatFromInt(r));
++            if (line > 0.0 and times[r - 1] > line * (1.0 + spike)) out[r - 1] = true;
++        }
++    }
++    if (early_line) |l| if (times.len > deep_from) for (deep_from + 1..times.len + 1) |r| {
++        const line = l.base + l.slope * @as(f64, @floatFromInt(r));
++        if (line > 0.0 and times[r - 1] > line * (1.0 + 2.0 * spike)) out[r - 1] = true;
++    };
++    return std.mem.count(bool, out, &.{true});
++}
++
+ /// `raw` = monotone, `fit` = fit.
+ pub fn tableOf(gpa: Allocator, times: []const f64, shape: Shape) ![]f64 {
+     if (shape == .fit) return fit(gpa, times);
+@@ -148,7 +186,7 @@ fn ceilDiv(a: u32, b: u32) u32 {
+ 
+ /// One timed run's segments (slot, rows), a DSpark pass when `draft`.
+ pub const Seg = struct { slot: u32, rows: u32 };
+-pub const What = union(enum) { sweep: u32, recheck: u32, shared: u32, draft };
++pub const What = union(enum) { sweep: u32, recheck: u32, shared: u32, draft, retime: u32 };
+ pub const Run = struct {
+     segs: [4]Seg = undefined,
+     nsegs: u8 = 0,
+@@ -260,14 +298,39 @@ pub const Plan = struct {
+     }
+ 
+     fn stat(p: *const Plan, samples: []const f64, what: What, buf: *[max_samples]f64) !?f64 {
+-        var n: usize = 0;
+-        for (p.runs.items, samples) |r, x| if (!r.warm and std.meta.eql(r.what, what)) {
+-            if (n == buf.len) return error.TooManyRuns;
+-            buf[n] = x;
+-            n += 1;
++        return statOf(p.runs.items, samples, what, p.m.stat, buf);
++    }
++
++    /// Rows 1..rows as `build` combines them (the slower rank's, at microsecond resolution), from values' layout.
++    pub fn combined(p: *const Plan, ranks: []const []const f64, out: []f64) !void {
++        if (out.len != p.rows) return error.BadSamples;
++        for (out, 0..) |*o, i| {
++            var hi: i64 = std.math.minInt(i64);
++            for (ranks) |v| {
++                if (v.len != p.entries()) return error.BadSamples;
++                hi = @max(hi, costs_mod.roundEven(v[1 + i] * 1000.0));
++            }
++            o.* = @as(f64, @floatFromInt(hi)) / 1000.0;
++        }
++    }
++
++    /// Runs timing the `flagged` rows again: a warm-up round and `reps` rounds, rows cycled so a burst spreads out.
++    pub fn retimeRuns(p: *const Plan, gpa: Allocator, flagged: []const bool, out: *std.ArrayList(Run)) !void {
++        if (flagged.len != p.rows) return error.BadSamples;
++        for (0..1 + p.m.reps) |k| for (flagged, 0..) |f, i| if (f) {
++            var x = one(@intCast(i + 1), k == 0, false);
++            x.what = .{ .retime = @intCast(i + 1) };
++            try out.append(gpa, x);
++        };
++    }
++
++    /// One rank's `v` (values' layout) with each retimed row the lower of its value and the retime's statistic.
++    pub fn mergeRetime(p: *const Plan, runs: []const Run, samples: []const f64, v: []f64) !void {
++        if (samples.len != runs.len or v.len != p.entries()) return error.BadSamples;
++        var buf: [max_samples]f64 = undefined;
++        for (0..p.rows) |i| if (try statOf(runs, samples, .{ .retime = @intCast(i + 1) }, p.m.stat, &buf)) |x| {
++            v[1 + i] = @min(v[1 + i], x);
+         };
+-        if (n == 0) return null;
+-        return try statistic(buf[0..n], p.m.stat);
+     }
+ 
+     /// The shared table: per-rank microsecond ints, max over ranks, table_of, Costs.slot, wide buckets, extended.
+@@ -297,6 +360,18 @@ pub const Plan = struct {
+     }
+ };
+ 
++/// `what`'s timed (not warm-up) samples of `runs` under `s`; null: none.
++fn statOf(runs: []const Run, samples: []const f64, what: What, s: Stat, buf: *[max_samples]f64) !?f64 {
++    var n: usize = 0;
++    for (runs, samples) |r, x| if (!r.warm and std.meta.eql(r.what, what)) {
++        if (n == buf.len) return error.TooManyRuns;
++        buf[n] = x;
++        n += 1;
++    };
++    if (n == 0) return null;
++    return try statistic(buf[0..n], s);
++}
++
+ /// The calibration text (prose, a numbered explanation and code); calib_gpu.zig tokenizes it, first PROMPT_MAX ids.
+ pub const text =
+     \\The committee met on Tuesday to review the quarterly results. Revenue grew by eleven percent, driven mostly
+diff --git a/zig/src/families/deepseek_v41/draft/calib_measure_test.zig b/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
+index 86f2e3300e82f9fa126f3c131e3aed3924124839..dfb604de87908cd2d677e9147752892a6801fcba 100644
+--- a/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
++++ b/zig/src/families/deepseek_v41/draft/calib_measure_test.zig
+@@ -181,3 +181,89 @@ test "the calibration prompt: ids past the vocabulary dropped, at most 256, fall
+     try std.testing.expectEqual(@as(usize, 20), cm.cutOf(20, 2)); // 20 > 14 + 8 fails: the whole prompt
+     try std.testing.expect(std.mem.endsWith(u8, cm.text, "and the") and std.mem.startsWith(u8, cm.text, "The committee"));
+ }
++
++// Rank 0's kept rows 1..16 (ms) from Spark TP2 boots: bursts (S10 row 6; all-on 5-6 + deep; E06 5,10,15), 3 clean.
++const spiked_s10 = [_]f64{ 22.772, 27.019, 30.387, 34.693, 39.26, 63.096, 46.47, 51.122, 67.116, 61.769, 71.768, 69.244, 73.629, 85.339, 77.017, 79.448 };
++const spiked_all_on = [_]f64{ 22.823, 27.038, 30.416, 35.529, 60.167, 67.206, 48.494, 49.727, 59.171, 96.94, 109.488, 115.328, 129.475, 76.827, 144.058, 144.776 };
++const spiked_e06 = [_]f64{ 22.874, 26.99, 30.296, 34.766, 47.874, 44.323, 46.106, 51.241, 57.974, 81.059, 66.091, 68.658, 74.165, 75.87, 124.086, 80.051 };
++const clean = [_][16]f64{
++    .{ 22.71, 26.866, 30.071, 34.575, 39.486, 44.699, 47.567, 50.591, 57.581, 65.043, 66.205, 69.061, 73.217, 76.339, 78.011, 80.667 },
++    .{ 23.289, 26.772, 30.405, 35.209, 38.856, 43.218, 46.93, 49.595, 59.344, 62.237, 65.004, 68.633, 73.667, 77.915, 78.217, 80.34 },
++    .{ 22.846, 26.953, 30.288, 34.791, 39.194, 45.385, 47.106, 49.819, 58.188, 63.24, 65.447, 68.609, 73.129, 75.523, 76.988, 78.614 },
++};
++
++fn flaggedRows(times: []const f64, buf: *[cm.max_rows]u32) ![]const u32 {
++    var flag: [cm.max_rows]bool = undefined;
++    const n = try cm.suspects(gpa, times, 0.15, flag[0..times.len]);
++    var k: usize = 0;
++    for (flag[0..times.len], 0..) |f, i| if (f) {
++        buf[k] = @intCast(i + 1);
++        k += 1;
++    };
++    try std.testing.expectEqual(n, k);
++    return buf[0..k];
++}
++
++test "suspect rows: a burst over one row's runs is found, clean boots are left alone" {
++    var buf: [cm.max_rows]u32 = undefined;
++    try std.testing.expectEqualSlices(u32, &.{6}, try flaggedRows(&spiked_s10, &buf));
++    try std.testing.expectEqualSlices(u32, &.{ 5, 6, 10, 11, 12, 13, 15, 16 }, try flaggedRows(&spiked_all_on, &buf));
++    try std.testing.expectEqualSlices(u32, &.{ 5, 10, 15 }, try flaggedRows(&spiked_e06, &buf));
++    for (&clean) |c| try std.testing.expectEqual(@as(usize, 0), (try flaggedRows(&c, &buf)).len);
++    // too few rows for a line: nothing to judge
++    try std.testing.expectEqual(@as(usize, 0), (try flaggedRows(&.{ 22.0, 60.0, 30.0 }, &buf)).len);
++}
++
++test "retime: suspect rows cycled after one warm-up round, each kept the lower; the table loses the burst" {
++    const m: cm.Method = .{};
++    var p = try cm.Plan.init(gpa, 4, 64, cm.max_rows, m, false);
++    defer p.deinit(gpa);
++    // one rank's values: S10's rows, the shared windows 1 ms over row 16
++    const v = try gpa.alloc(f64, p.entries());
++    defer gpa.free(v);
++    @memset(v, spiked_s10[15] + 1.0);
++    v[0] = 0.0;
++    @memcpy(v[1..17], &spiked_s10);
++    var before = try p.build(gpa, &.{v});
++    defer before.deinit(gpa);
++    try std.testing.expectEqual(spiked_s10[5], before.verify[7]); // the burst carried to row 8 by the envelope
++    var both: [cm.max_rows]f64 = undefined;
++    try p.combined(&.{v}, &both);
++    var flag: [cm.max_rows]bool = undefined;
++    try std.testing.expectEqual(@as(usize, 1), try cm.suspects(gpa, &both, m.spike, &flag));
++    var runs: std.ArrayList(cm.Run) = .empty;
++    defer runs.deinit(gpa);
++    try p.retimeRuns(gpa, &flag, &runs);
++    try std.testing.expectEqual(@as(usize, 1 + m.reps), runs.items.len);
++    try std.testing.expect(runs.items[0].warm and !runs.items[1].warm);
++    try std.testing.expectEqual(@as(u32, 6), runs.items[1].segments()[0].rows);
++    // the retime sees row 6 at 43 ms (the warm-up at 90 is dropped); a slower retime would not raise a row
++    var ms: [6]f64 = .{ 90.0, 43.2, 42.9, 43.1, 43.0, 44.0 };
++    try p.mergeRetime(runs.items, &ms, v);
++    try std.testing.expectEqual(@as(f64, 43.1), v[6]);
++    @memset(&ms, 99.0);
++    try p.mergeRetime(runs.items, &ms, v);
++    try std.testing.expectEqual(@as(f64, 43.1), v[6]);
++    var after = try p.build(gpa, &.{v});
++    defer after.deinit(gpa);
++    try std.testing.expect(after.verify[5] < 44.0 and after.verify[7] < 52.0);
++    try p.combined(&.{v}, &both);
++    try std.testing.expectEqual(@as(usize, 0), try cm.suspects(gpa, &both, m.spike, &flag));
++}
++
++test "retime knobs: rounds 0..4, spike fraction 0.02..2" {
++    Env.obj = null;
++    const d = try cm.method(&Env.get);
++    try std.testing.expectEqual(@as(u32, 2), d.retime);
++    try std.testing.expectEqual(@as(f64, 0.15), d.spike);
++    var parsed = try std.json.parseFromSlice(Value, gpa, "{\"TF_DSV41_CALIB_RETIME\": \"0\", \"TF_DSV41_CALIB_SPIKE\": \"0.3\"}", .{});
++    defer parsed.deinit();
++    const m = try methodOf(parsed.value);
++    try std.testing.expectEqual(@as(u32, 0), m.retime);
++    try std.testing.expectEqual(@as(f64, 0.3), m.spike);
++    for ([_][]const u8{ "{\"TF_DSV41_CALIB_RETIME\": \"5\"}", "{\"TF_DSV41_CALIB_SPIKE\": \"0.01\"}", "{\"TF_DSV41_CALIB_SPIKE\": \"nan\"}" }) |bad| {
++        var x = try std.json.parseFromSlice(Value, gpa, bad, .{});
++        defer x.deinit();
++        try std.testing.expectError(error.CalibKnob, methodOf(x.value));
++    }
++}

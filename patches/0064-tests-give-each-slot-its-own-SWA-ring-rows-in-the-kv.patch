@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 20:11:52 +0700
+Subject: [PATCH 64/72] tests: give each slot its own SWA ring rows in the
+ kv-mirror row-mode cases
+
+In row mode the attention kernels read a slot's sliding-window rows at
+(p % ring) + slot * ring, and production stacks one ring a slot. The
+check allocated a single ring, so rows on slots 1 and 2 read past the
+buffer. Their outputs went NaN or ignored the compressed rows, and the
+mirror comparison and its planted wrong table then matched for no reason.
+Allocate slots * ring rows in row mode, and fail on any NaN or Inf in the
+split output so the comparison cannot pass vacuously.
+---
+ zig/tests/cuda/deepseek_v41/kv_mirror_check.zig | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig b/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
+index 636f5b5ddde0ee2061f4aa7a411d24063d768b70..a717758d6aba4a29c801ad014b39ccf540055359 100644
+--- a/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
++++ b/zig/tests/cuda/deepseek_v41/kv_mirror_check.zig
+@@ -129,11 +129,12 @@ fn runCase(gpu: Gpu, o: dsv41.ops.Ops, stream: cuda.Stream, rnd: std.Random, c:
+     }
+     const qh = try a.alloc(u16, R * H * D);
+     for (qh) |*x| x.* = bf16(rnd.float(f32) - 0.5);
+-    const swa = try a.alloc(u8, ring * rb);
+-    for (0..ring) |i| kvRow(rnd, swa[i * rb ..][0..rb]);
+-    const sv = try a.alloc(u8, ring * 576);
+-    const ssc = try a.alloc(u8, ring * 8);
+-    for (0..ring) |i| {
++    const nring: usize = if (c.stacked) @as(usize, c.slots) * ring else ring; // row mode reads (p % ring) + slot * ring
++    const swa = try a.alloc(u8, nring * rb);
++    for (0..nring) |i| kvRow(rnd, swa[i * rb ..][0..rb]);
++    const sv = try a.alloc(u8, nring * 576);
++    const ssc = try a.alloc(u8, nring * 8);
++    for (0..nring) |i| {
+         @memcpy(sv[i * 576 ..][0..576], swa[i * rb ..][0..576]);
+         @memcpy(ssc[i * 8 ..][0..8], swa[i * rb + 576 ..][0..8]);
+     }
+@@ -254,6 +255,9 @@ fn runCase(gpu: Gpu, o: dsv41.ops.Ops, stream: cuda.Stream, rnd: std.Random, c:
+     const got_wrong = try check.download(gpu, outs[2]);
+     defer gpu.gpa.free(got_wrong);
+     try check.expect(std.mem.indexOfNone(u8, got_split, &.{0}) != null, "kv-mirror: an all-zero output", .{});
++    for (std.mem.bytesAsSlice(u16, got_split)) |x| {
++        try check.expect(x & 0x7f80 != 0x7f80, "kv-mirror: a NaN or Inf in the split output", .{});
++    }
+     try check.sameBytes("kv-mirror attention: mirror vs split KV's exchanged rows", got_mir, got_split);
+     try check.expect(!std.mem.eql(u8, got_wrong, got_split), "kv-mirror: the planted wrong table gave the same bytes", .{});
+ 

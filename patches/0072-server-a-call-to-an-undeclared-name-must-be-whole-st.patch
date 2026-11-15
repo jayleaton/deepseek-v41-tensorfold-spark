@@ -1,0 +1,194 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 18:21:48 +0700
+Subject: [PATCH 72/72] server: a call to an undeclared name must be whole;
+ stray text in its XML or GLM markup keeps it as text
+
+2d00471eb let an undeclared function name through for every whole envelope, but the parallel parse
+(payload with complete = false) drops stray text inside XML and GLM calls before callName sees them. With only
+`shell` declared, `<tool_call><function=bash>junk</function></tool_call>` came back as bash({}) with its text
+removed, in whole and streamed replies, where 8e744bf70 kept it as text; single-call mode already refused it.
+
+Call carries `whole` (nothing but the call's markup): functionBlock and glmCall set it from their residue, and
+callName accepts an undeclared name only from a whole call. A declared call keeps the parallel parse's leniency;
+DSML, JSON and Gemma calls were already strict.
+
+Tests: six malformed undeclared shapes (stray text before, between and after XML parameters, an unclosed
+parameter, GLM text after a value, a GLM key with no value) stay text in both call modes, and whitespace near
+misses still go out as calls; an HTTP test sends both sets whole and streamed, one-call and parallel. The GLM
+pairs test compares the declared name only, since an undeclared name with stray text is now text by design.
+
+The G line's port of public 12257eb51.
+---
+ docs/api.md                                   |  5 ++-
+ zig/src/server/stream_dsml_test.zig           |  9 ++++
+ zig/src/server/tool_dsml.zig                  |  3 +-
+ zig/src/server/tool_parse.zig                 | 14 ++++---
+ zig/src/server/tool_parse_test.zig            |  2 +
+ zig/src/server/tool_parse_visibility_test.zig | 41 +++++++++++++++++++
+ 6 files changed, 65 insertions(+), 9 deletions(-)
+
+diff --git a/docs/api.md b/docs/api.md
+index 9bbb35ab8cf46781fabe3eb7d2224a17a4cc726b..c86449181cfe307784cb86e30e28e86f44f44810 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -414,8 +414,9 @@ A reply that is not a call returns as content, never an error: prose, JSON that
+ `<arg_key>` gets that tag back, and the call parses. A whole, well-formed call to a tool the request did not offer
+ is returned as a tool call under its own name, as vLLM returns it, when that name is 1 to 64 letters, digits, `_` or
+ `-` and its arguments are a JSON object, so the client can report the unknown tool and the model can correct itself.
+-Any other undeclared name, such as one with spaces or dots, keeps the block as text. With no tools in the request,
+-no reply is a tool call.
++Any other undeclared name, such as one with spaces or dots, keeps the block as text, and so does an undeclared
++call whose markup holds stray text (parallel calls drop such text only from an offered tool's call). With no tools
++in the request, no reply is a tool call.
+ 
+ When a model end token arrives inside a whole tool call before its closing markup, the server closes the
+ markup and returns the call. A GLM value the end token cut off is closed with `</arg_value>` first, and the call
+diff --git a/zig/src/server/stream_dsml_test.zig b/zig/src/server/stream_dsml_test.zig
+index 3cc126546e777577b3cae3aef673dc0015cfdfed..0984cdb4dbbb0ad178300791ff5e877b95bdda10 100644
+--- a/zig/src/server/stream_dsml_test.zig
++++ b/zig/src/server/stream_dsml_test.zig
+@@ -334,3 +334,12 @@ test "tool visibility HTTP: a DSML call to an undeclared function name is a tool
+         "ls /tmp</｜DSML｜ parameter>\n</｜DSML｜ invoke>\n</｜DSML｜ calls>";
+     try expectShellReply(a, live, "bash", "{\"command\":\"ls /tmp\"}");
+ }
++
++test "tool visibility HTTP: an undeclared call with stray text in its XML or GLM markup stays text, whole and streamed" {
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cases = @import("tool_parse_visibility_test.zig");
++    for (cases.malformed_undeclared) |raw| try expectShellReply(a, raw, null, "");
++    for (cases.whole_undeclared) |c| try expectShellReply(a, c[0], "bash", c[1]);
++}
+diff --git a/zig/src/server/tool_dsml.zig b/zig/src/server/tool_dsml.zig
+index 170c20c35c242b93eb2b3b92f0bd081f02c6a6e5..a822ae5de2a111dbcab637619386043520ce468e 100644
+--- a/zig/src/server/tool_dsml.zig
++++ b/zig/src/server/tool_dsml.zig
+@@ -6,7 +6,8 @@ const Value = json.Value;
+ const Allocator = std.mem.Allocator;
+ 
+ pub const Error = error{ Invalid, OutOfMemory };
+-pub const Call = struct { name: []const u8, arguments: Value };
++/// `whole`: nothing but the call's markup (the lenient parallel parse may keep stray text inside a declared call).
++pub const Call = struct { name: []const u8, arguments: Value, whole: bool = true };
+ 
+ /// One spelling's tags: every one ``<｜DSML｜``, its separator, then its name.
+ pub const Spelling = struct {
+diff --git a/zig/src/server/tool_parse.zig b/zig/src/server/tool_parse.zig
+index 58f396f8a9a22216dfd9d9b438d899d42ea8f243..a5ff8b14b6ad11f7a5c6c27778a572e43ce86c4f 100644
+--- a/zig/src/server/tool_parse.zig
++++ b/zig/src/server/tool_parse.zig
+@@ -213,12 +213,12 @@ fn argumentsClose(a: Allocator, body: []const u8) Allocator.Error![]const u8 {
+     return closed[body.len..];
+ }
+ 
+-/// The offered tool's spelling; else, as vLLM, an undeclared function name with finite object arguments; else null.
++/// The offered spelling; else, as vLLM, an undeclared function name of a whole call with finite object arguments.
+ fn callName(a: Allocator, c: Call, known: *const std.StringArrayHashMapUnmanaged([]const u8)) Allocator.Error!?[]const u8 {
+     const name = strip(c.name);
+     if (known.get(try std.ascii.allocLowerString(a, name))) |offered| return offered;
+     // the client refuses the unknown tool and the model can retry; kept as text, the call ended the client's turn
+-    return if (functionName(name) and c.arguments == .object and tool_params.finite(c.arguments)) name else null;
++    return if (c.whole and functionName(name) and c.arguments == .object and tool_params.finite(c.arguments)) name else null;
+ }
+ 
+ /// 1 to 64 of ``[A-Za-z0-9_-]``: a name OpenAI's API accepts for a function.
+@@ -369,14 +369,15 @@ fn functionBlock(a: Allocator, block: []const u8, schemas: ?*const tool_params.S
+     } else return null;
+     const body = strip(block[body_start..close]);
+     const params = try parameterBlocks(a, body);
+-    if (complete and !allSpace(params.residue)) return null;
++    const whole = allSpace(params.residue);
++    if (complete and !whole) return null;
+     const arguments = try json.newObject(a);
+     for (params.items) |p| {
+         const key = strip(p.key);
+         const schema: tool_params.Schema = if (schemas) |s| try tool_params.schemaOf(s, name, key, a) else try tool_params.emptySchema(a);
+         try arguments.put(a, key, try tool_params.decode(a, p.value, schema, true));
+     }
+-    return .{ .name = name, .arguments = .{ .object = arguments } };
++    return .{ .name = name, .arguments = .{ .object = arguments }, .whole = whole };
+ }
+ 
+ const Param = struct { key: []const u8, value: []const u8 };
+@@ -475,14 +476,15 @@ fn glmCall(a: Allocator, written: []const u8, schemas: ?*const tool_params.Schem
+         pos = kept;
+     }
+     try residue.appendSlice(a, rest[kept..]);
+-    if (complete and !allSpace(residue.items)) return null;
++    const whole = allSpace(residue.items);
++    if (complete and !whole) return null;
+     const arguments = try json.newObject(a);
+     for (pairs.items) |p| {
+         const key = strip(p.key);
+         const schema: tool_params.Schema = if (schemas) |s| try tool_params.schemaOf(s, name, key, a) else try tool_params.emptySchema(a);
+         try arguments.put(a, key, try tool_params.decode(a, p.value, schema, false));
+     }
+-    return .{ .name = name, .arguments = .{ .object = arguments } };
++    return .{ .name = name, .arguments = .{ .object = arguments }, .whole = whole };
+ }
+ 
+ /// The first ``</arg_key>`` at or after `from` that an ``<arg_value>`` follows, and where that value starts.
+diff --git a/zig/src/server/tool_parse_test.zig b/zig/src/server/tool_parse_test.zig
+index 9cb1e28d3e06e11dc26d185c26893d309a53e099..b4e0d32ba8d9298d83594e5f76aa6ed4c2c2fd53 100644
+--- a/zig/src/server/tool_parse_test.zig
++++ b/zig/src/server/tool_parse_test.zig
+@@ -505,6 +505,8 @@ test "GLM pairs from the cached key and value ends are the pairs each key's own
+         const block = try repairGlmKeys(a, std.mem.trim(u8, body.items, " \n"));
+         const cut = std.mem.indexOf(u8, block, "<arg_key>") orelse block.len;
+         if (std.mem.indexOfScalar(u8, block[0..cut], '<') != null) continue; // no name: both stay text
++        // an undeclared name (`lookupk`): its stray text keeps it as text, which the visibility tests check
++        if (!std.mem.eql(u8, std.mem.trim(u8, block[0..cut], " \t\r\n"), "lookup")) continue;
+         const rest = block[cut..];
+         var canon: std.ArrayList(u8) = .empty; // the reference's pairs written plainly, nothing between them
+         try canon.appendSlice(a, "<tool_call>");
+diff --git a/zig/src/server/tool_parse_visibility_test.zig b/zig/src/server/tool_parse_visibility_test.zig
+index e519c19257baad52edaa95087de426adf933511b..f29d62fc5fd72a5e7948d0aa55d1949e802cc1a9 100644
+--- a/zig/src/server/tool_parse_visibility_test.zig
++++ b/zig/src/server/tool_parse_visibility_test.zig
+@@ -106,3 +106,44 @@ test "a call whose undeclared name is no function name, or whose arguments are n
+     try std.testing.expectEqualStrings("lookup", offered.calls.?[0].get("function").?.get("name").?.string);
+     try std.testing.expect((try parse(a, "{\"name\":\"launch\",\"arguments\":{}}", tools, null)).calls == null);
+ }
++
++/// Calls to `bash` (undeclared: only `shell` is offered) whose markup holds stray text; each stays the reply's text.
++pub const malformed_undeclared = [_][]const u8{
++    "<tool_call><function=bash>junk</function></tool_call>",
++    "<tool_call><function=bash><parameter=command>ls</parameter>junk</function></tool_call>",
++    "<tool_call><function=bash>junk<parameter=command>ls</parameter></function></tool_call>",
++    "<tool_call><function=bash><parameter=command>ls</function></tool_call>",
++    "<tool_call>bash<arg_key>command</arg_key><arg_value>ls</arg_value>junk</tool_call>",
++    "<tool_call>bash<arg_key>command</arg_key><arg_value>ls</arg_value><arg_key>cwd</arg_key></tool_call>",
++};
++
++/// Near misses: whole calls to `bash` whose only extra bytes are whitespace; each is a call, with these arguments.
++pub const whole_undeclared = [_][2][]const u8{
++    .{ "<tool_call>\n<function=bash>\n<parameter=command>\nls\n</parameter>\n</function>\n</tool_call>", "{\"command\":\"ls\"}" },
++    .{ "<tool_call><function=bash> \n </function></tool_call>", "{}" },
++    .{ "<tool_call>bash\n<arg_key>command</arg_key>\n<arg_value>ls</arg_value>\n</tool_call>", "{\"command\":\"ls\"}" },
++};
++
++test "a call to an undeclared name whose XML or GLM markup holds stray text stays text in both call modes" {
++    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const tools = (try json.parse(a, "[{\"type\":\"function\",\"function\":{\"name\":\"shell\"}}]")).ok.array;
++    for (malformed_undeclared) |text| for ([_]?usize{ null, 1 }) |max_calls| {
++        const r = try parse(a, text, tools, max_calls);
++        try std.testing.expect(r.calls == null);
++        try std.testing.expectEqualStrings(text, r.content);
++        try std.testing.expectEqual(@as(usize, 1), r.rejected_envelopes);
++    };
++    for (whole_undeclared) |c| for ([_]?usize{ null, 1 }) |max_calls| {
++        const r = try parse(a, c[0], tools, max_calls);
++        try std.testing.expectEqualStrings("bash", r.calls.?[0].get("function").?.get("name").?.string);
++        try std.testing.expectEqualStrings(c[1], r.calls.?[0].get("function").?.get("arguments").?.string);
++        try std.testing.expectEqualStrings("", r.content);
++    };
++    // a declared call keeps the parallel parse's leniency (stray text dropped), and single-call mode still rejects it
++    for ([_][]const u8{ "<tool_call><function=shell>junk</function></tool_call>", "<tool_call>shell<arg_key>c</arg_key><arg_value>ls</arg_value>junk</tool_call>" }) |text| {
++        try std.testing.expectEqualStrings("shell", (try parse(a, text, tools, null)).calls.?[0].get("function").?.get("name").?.string);
++        try std.testing.expect((try parse(a, text, tools, 1)).calls == null);
++    }
++}
