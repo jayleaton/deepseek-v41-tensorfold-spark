@@ -7,11 +7,14 @@ Subject: [PATCH 88/88] dspark: every statics staging region starts
 A DSpark pass stages its statics (int64 [len64] then int32 [len32]) in its own
 pinned region; region g starts at g * region_bytes. region_bytes was
 8 * len64 + 4 * len32, which is 4 mod 8 whenever len32 is odd (a 12-slot pass at
-dspark_block 5, window 128: 34,020 bytes). Region 0 is always aligned, so up to
-12 live slots (one pass) never noticed; with 16 slots the second pass stages in
-region 12 and statics() panicked with "incorrect alignment" on both ranks.
+dspark_block 5, window 128: 34,020 bytes), so every odd region started
+misaligned. Up to 12 live asks run one pass in region 0 and never noticed. With
+16 slots, groups() splits 13 or 14 live asks into [0,7) and [7,..): the second
+pass stages in region 7 and statics() panicked with "incorrect alignment" on
+both ranks.
 
 Dev.regionBytes pads a region to int64 alignment; both Dev.init callers use it.
+The test checks every region of a 16-slot staging buffer.
 ---
  zig/src/families/deepseek_v41/dspark_dev.zig  |  5 +++++
  zig/src/families/deepseek_v41/dspark_gpu.zig  |  2 +-
@@ -62,7 +65,7 @@ index cb44ad70b..f871d63c2 100644
                  const ko = r.kernels.others(r.stream).f;
                  if (ko.ds_accept_rows != null and ko.ds_stage_rows != null and nslots <= 16) {
 diff --git a/zig/src/families/deepseek_v41/staging_owner_test.zig b/zig/src/families/deepseek_v41/staging_owner_test.zig
-index 2875d423b..a24f49475 100644
+index 2875d423b..07d1ff1b0 100644
 --- a/zig/src/families/deepseek_v41/staging_owner_test.zig
 +++ b/zig/src/families/deepseek_v41/staging_owner_test.zig
 @@ -58,6 +58,27 @@ test "Draft state: DSpark statics hand out their own region without a context dr
@@ -70,7 +73,7 @@ index 2875d423b..a24f49475 100644
      try std.testing.expectError(error.Statics, dev.statics(0, 4, 1));
  }
 +test "Draft state: DSpark statics regions after the first start int64-aligned for an odd int32 count" {
-+    // 16 slots: passes of up to 12 slots, so the second pass stages in region 12 (dspark_block 5, window 128)
++    // passes of up to 12 slots (block 5, window 128): 13 or 14 live asks split [0,7), [7,..), staging in region 7
 +    const lay = @import("dspark_emit.zig").Layout.of(12, 5, 128);
 +    const n64: usize = @intCast(lay.len64);
 +    const n32: usize = @intCast(lay.len32);
@@ -83,7 +86,7 @@ index 2875d423b..a24f49475 100644
 +    const bytes = try std.testing.allocator.alignedAlloc(u8, .@"16", dev.region_bytes * dev.regions);
 +    defer std.testing.allocator.free(bytes);
 +    dev.stage = .{ .d = &d, .bytes = bytes };
-+    for ([_]usize{ 1, 12, 15 }) |g| {
++    for (0..dev.regions) |g| {
 +        const sv = try dev.statics(g, n64, n32);
 +        try std.testing.expectEqual(@as(usize, 0), @intFromPtr(sv[0].ptr) % @alignOf(i64));
 +        try std.testing.expectEqual(n64, sv[0].len);
