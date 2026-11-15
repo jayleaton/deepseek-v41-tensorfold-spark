@@ -21,7 +21,7 @@ binding in its family; `0010`, engine-owned reply bytes that survive every strip
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
 machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088` (both below); the whole series gives tree
-`3038b800e`, and the checkout's last commit is `881e50a3a` with the fixed committer `fetch-source.sh` uses.
+`e59276d38`, and the checkout's last commit is `e93a56176` with the fixed committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
 
@@ -46,11 +46,13 @@ patch carries, with its author and message (the gap table is in the PR):
 With slot drafts on (`TF_DSV41_SLOT_DRAFTS=1`), each DSpark pass stages its statics (int64 then int32 arrays) in its
 own pinned region, and region `g` starts at `g` times the region size. That size was `8 * len64 + 4 * len32` bytes,
 which is not a multiple of 8 when `len32` is odd (a 12-slot pass at the model's block 5 and window 128: 34,020 bytes).
-A pass covers at most 12 slots, so up to 12 live slots only ever use region 0. With 16 slots the second pass stages in
-region 12 at a misaligned address, and both ranks panicked (`incorrect alignment` in `dspark_dev.zig` `statics`) on
-the first 16 concurrent requests. `0088` pads each region to 8 bytes (`Dev.regionBytes`, used by both callers) and adds
-a host test with an odd `len32` and regions past the first. Four and eight slots stage exactly as before. Upstream
-`main` has the same code.
+Every odd region therefore started misaligned. A pass covers at most 12 slots, so up to 12 live requests run one pass
+in region 0. Above that the requests are split into balanced passes: with 16 slots, 13 or 14 live requests split as
+`[0,7)` and `[7,..)`, the second pass stages in region 7, and both ranks panicked (`incorrect alignment` in
+`dspark_dev.zig` `statics`) during the first 16 concurrent requests. `0088` pads each region to 8 bytes
+(`Dev.regionBytes`, used by both callers) and adds a host test that checks every region of a 16-slot staging buffer.
+With 12 or fewer live requests nothing moves; above that, a pass starting past region 0 moves by `4 * g` bytes of host
+staging only, and the device copies are the same bytes. Upstream `main` has the same code (ashhart/TensorFold#3446).
 
 The knobs are read under the boot's runner prefix (`TF_DSV41_RUNNER_*` in the flash17 profile, `TF_RUNNER_*` for the
 generic names; the S3 lane runner's `TF_DSV41_COMPUTE_LANE_RUNNER_*` are listed too). Not carried over: the Qwen
