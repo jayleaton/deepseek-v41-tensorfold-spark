@@ -1,0 +1,611 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 19:21:49 +0700
+Subject: [PATCH 89/89] server: an adaptive context window shares a token budget
+ among the active chats, above a floor
+
+A served engine whose KV is a shared pool (and whose idle chats park on NVMe) can give one chat its whole window
+while few are active, but one long chat may then take the pool from many. TENSORFOLD_CONTEXT_BUDGET turns on a
+window that follows load: budget / active chats, rounded down to 256 tokens, between TENSORFOLD_CONTEXT_FLOOR and
+the static window. A chat is named by its opening 512 tokens past the shared system prefix and counts as active from
+its second request within TENSORFOLD_CONTEXT_HOLD_S (300) of the last one, so a burst of one-shot requests (a
+benchmark, quick API calls) lowers no one's window once it is done; the requests in flight bound the count from
+below. Background requests are not noted. Off (budget 0) by default: the static window, as before.
+DeepSeek-V4.1 reads the same settings as TF_DSV41_CONTEXT_* (what its launchers forward), each ignored while
+its TENSORFOLD_ name is set.
+
+The window binds where chat and completion prompts are checked (chat.prepare): an over-window prompt gets the same
+OpenAI-worded context_length_exceeded 400 ("... while this server serves several chats"), and the reply limit is
+capped to the lowered room, so a request never reserves past it. Admitted requests keep their reservation.
+/v1/models keeps the static window; the open /health body adds context {window, active_chats, budget, floor}.
+
+Tests: the window's arithmetic (1-4 chats at 1M of a 4M budget, 8 at 512K, 16+ at the 256K floor, page rounding,
+off by default), chat keys, counting from the second request, a one-shot burst that leaves a long chat its window,
+hold expiry and capacity; and chat preparations on a fixture tokenizer where one-shot and background requests leave
+the long chat its window, a returning second chat halves it and refuses the first chat's long prompt, and a floor at
+the budget keeps the whole window, under either set of names, and a TENSORFOLD_ name wins over its TF_DSV41_ one.
+---
+ docs/api.md                                   |   8 +
+ docs/environment.md                           |   4 +
+ zig/build/cuda_server_host.zig                |   1 +
+ .../deepseek_v41/env_validate_test.zig        |   4 +-
+ zig/src/platform/environment.zig              |   6 +
+ zig/src/platform/environment_test.zig         |   4 +
+ zig/src/server/chat.zig                       |  10 +-
+ zig/src/server/context_window.zig             | 217 ++++++++++++++++++
+ zig/src/server/context_window_test.zig        | 145 ++++++++++++
+ zig/src/server/root.zig                       |   2 +
+ zig/src/server/server.zig                     |   2 +
+ zig/src/server/status_routes.zig              |   9 +
+ 12 files changed, 407 insertions(+), 5 deletions(-)
+ create mode 100644 zig/src/server/context_window.zig
+ create mode 100644 zig/src/server/context_window_test.zig
+
+diff --git a/docs/api.md b/docs/api.md
+index c864491..c694db1 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -639,6 +639,14 @@ carries OpenAI's `context_length_exceeded` code, the field it is about in `param
+ that compact a conversation on that error do so. An image prompt that expands past the window is refused the same
+ way, and so are GLM-5.3's own context refusals on CUDA.
+ When the request omits the reply limit, the server still caps its configured default to the remaining context.
++With `TENSORFOLD_CONTEXT_BUDGET` set (see [environment](environment.md)), N is the adaptive window: the budget
++divided by the chats active within `TENSORFOLD_CONTEXT_HOLD_S` (at least the requests in flight), rounded down to 256
++tokens, between `TENSORFOLD_CONTEXT_FLOOR` and the static window. The message then says the window holds "while this
++server serves several chats"; `/v1/models` keeps the static window and the open `/health` body adds `context`
++(`window`, `active_chats`, `budget`, `floor`). A chat is named by its opening tokens after the shared system prompt
++and counts as active from its second request within the hold, so a burst of one-shot requests lowers no one's window
++once it is done (while in flight it counts); background requests are not counted. Admitted requests keep their
++reservation.
+ CUDA returns HTTP 400 before generation when the chat template rejects the request or
+ `chat_template_kwargs` is neither an object nor null. A generation error returns HTTP 500 for a
+ non-streamed request; after a stream opens, both backends send an error event of type `server_error`,
+diff --git a/docs/environment.md b/docs/environment.md
+index 1ac146d..ad19147 100644
+--- a/docs/environment.md
++++ b/docs/environment.md
+@@ -10,6 +10,10 @@ Diagnostics quote and escape the supplied text so it cannot create another termi
+ | `TENSORFOLD_VIDEO_TOKENS` | Nonnegative whole video-token budget; default 16384; stored as an unsigned 64-bit count |
+ | `TENSORFOLD_MAX_PDF_PAGES` | Whole count 1 through 4294967295, capped by `--vision-max-images`; default min(16, image limit) |
+ | `TENSORFOLD_PRESSURE_CACHE_PERCENT` | Whole percentage 0 through 100; default 50 |
++| `TENSORFOLD_CONTEXT_BUDGET` | Whole tokens the active chats share; each request's context window is this budget divided by the active chats, rounded down to 256 tokens, between `TENSORFOLD_CONTEXT_FLOOR` and the static window; zero, the default, keeps the static window |
++| `TENSORFOLD_CONTEXT_FLOOR` | Whole tokens, the least window a request gets while the budget is on (never above the static window); default 0 |
++| `TENSORFOLD_CONTEXT_HOLD_S` | Whole seconds a chat counts as active after its last request began, from its second request in that time (a one-shot request counts only while it runs); default 300 |
++| `TF_DSV41_CONTEXT_BUDGET`, `TF_DSV41_CONTEXT_FLOOR`, `TF_DSV41_CONTEXT_HOLD_S` | DeepSeek-V4.1 names of the three settings above, with the same forms; each is ignored while its `TENSORFOLD_` name is set |
+ | `TENSORFOLD_PREFIX_WAIT_MS` | Whole milliseconds 0 through 4294967295; zero disables waiting; default 60000 |
+ | `TENSORFOLD_RESTORE_PREFETCH` | Whole unsigned 64-bit count, capped at 65536; zero disables reading ahead; default 2 |
+ | `TENSORFOLD_RESTORE_PREFETCH_GIB` | Whole unsigned 64-bit GiB count, capped at 16777216; default 16 |
+diff --git a/zig/build/cuda_server_host.zig b/zig/build/cuda_server_host.zig
+index 2a33644..3ff829d 100644
+--- a/zig/build/cuda_server_host.zig
++++ b/zig/build/cuda_server_host.zig
+@@ -36,6 +36,7 @@ pub fn steps(b: *std.Build, host: std.Build.ResolvedTarget, cuda: *std.Build.Mod
+     b.step("test-benchmark-manifest-host", "Manifest identity through the HTTP server without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"manifest"} })).step);
+     b.step("test-lesson-questions-host", "Supplied questions through the production lesson without shaders").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"Lesson questions:"} })).step);
+     b.step("test-grammar-metrics-host", "Grammar totals in whole and streamed replies without devices").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"grammar timing:"} })).step);
++    b.step("test-context-window-host", "The adaptive context window: arithmetic, chat keys and chat preparations").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"context window:"} })).step);
+     b.step("test-slide-input-host", "Text-only lesson admission before any engine work").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{"slide input:"} })).step);
+     b.step("test-pocket-audit-host", "Read-only pocket audit probes, witnesses and CLI on the host").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "pocket audit", "audit request:", "audit CLI:", "audit probe bank:", "audit endpoint:" } })).step);
+     b.step("test-slide-recovery-host", "Living Weights conversation, stream and refusal-word regressions without a GPU").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = server_tests, .filters = &.{ "lesson conversations:", "lesson stream:", "lesson writer:", "lesson refusal:" } })).step);
+diff --git a/zig/src/families/deepseek_v41/env_validate_test.zig b/zig/src/families/deepseek_v41/env_validate_test.zig
+index bacfec0..f932f0d 100644
+--- a/zig/src/families/deepseek_v41/env_validate_test.zig
++++ b/zig/src/families/deepseek_v41/env_validate_test.zig
+@@ -36,13 +36,13 @@ fn check(name: []const u8, raw: []const u8, valid: bool) !void {
+     try t.expect(std.mem.endsWith(u8, why.?, e.rule(name).forms));
+ }
+ 
+-test "DeepSeek strict env: the shared table holds all 92 settings: 53 switches, 18 integers, 16 reals, 3 structured, 2 presence" {
++test "DeepSeek strict env: the shared table holds all 95 settings: 53 switches, 21 integers, 16 reals, 3 structured, 2 presence" {
+     var counts: [5]usize = @splat(0);
+     for (e.rules) |r| if (r.scope == .dsv41) {
+         try t.expect(std.mem.startsWith(u8, r.name, "TF_DSV41_"));
+         counts[@backingInt(group(r))] += 1;
+     };
+-    try t.expectEqual([5]usize{ 53, 18, 16, 3, 2 }, counts);
++    try t.expectEqual([5]usize{ 53, 21, 16, 3, 2 }, counts);
+ }
+ 
+ test "DeepSeek strict env: unset and blank settings both read as the caller's default" {
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index 19ec0f1..d28d6b1 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -37,6 +37,9 @@ pub const rules = [_]Rule{
+     .{ .name = "TENSORFOLD_RESTORE_PREFETCH", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "a whole unsigned 64-bit read count (0 disables reading ahead; capped at 65536)" },
+     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_GIB", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "a whole unsigned 64-bit GiB count (capped at 16777216)" },
+     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_MS", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "whole unsigned 64-bit milliseconds (capped at 1099511627776)" },
++    .{ .name = "TENSORFOLD_CONTEXT_BUDGET", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "whole tokens the active chats share (0, the default, keeps the static context window)" },
++    .{ .name = "TENSORFOLD_CONTEXT_FLOOR", .scope = .common, .kind = .u64, .trim = " \t", .first_digit = true, .forms = "the least whole-token window a request gets while TENSORFOLD_CONTEXT_BUDGET is on (default 0)" },
++    .{ .name = "TENSORFOLD_CONTEXT_HOLD_S", .scope = .common, .kind = .u32, .trim = " \t", .first_digit = true, .forms = "whole seconds a chat stays active after its last request began (default 300)" },
+     .{ .name = "TENSORFOLD_TOOL_ID_KEY_FILE", .scope = .common, .kind = .path, .forms = "a path without control characters to a file only its owner can read, holding at least 32 key bytes" },
+     .{ .name = "TF_CUDA_DEVICE", .scope = .cuda, .kind = .device, .trim = " ", .forms = "a whole GPU ordinal from 0 to 4294967295, or empty for the default" },
+     .{ .name = "TF_CUDA_SEGMENTS", .scope = .cuda, .kind = .segments, .trim = " ", .forms = "a whole number from 1 to 4, or empty for the default" },
+@@ -100,6 +103,9 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_DSV41_KV_NORM_STORE", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_ROUTER_GROUP_ROT", .scope = .dsv41, .kind = .flag, .trim = " ", .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_SCHEMA_PROMPT", .scope = .dsv41, .kind = .flag, .trim = " \t\r\n", .forms = "0 or 1" },
++    .{ .name = "TF_DSV41_CONTEXT_BUDGET", .scope = .dsv41, .kind = .u64, .trim = " \t", .first_digit = true, .alias_of = "TENSORFOLD_CONTEXT_BUDGET", .forms = "whole tokens (ignored while TENSORFOLD_CONTEXT_BUDGET is set)" },
++    .{ .name = "TF_DSV41_CONTEXT_FLOOR", .scope = .dsv41, .kind = .u64, .trim = " \t", .first_digit = true, .alias_of = "TENSORFOLD_CONTEXT_FLOOR", .forms = "whole tokens (ignored while TENSORFOLD_CONTEXT_FLOOR is set)" },
++    .{ .name = "TF_DSV41_CONTEXT_HOLD_S", .scope = .dsv41, .kind = .u32, .trim = " \t", .first_digit = true, .alias_of = "TENSORFOLD_CONTEXT_HOLD_S", .forms = "whole seconds (ignored while TENSORFOLD_CONTEXT_HOLD_S is set)" },
+     .{ .name = "TF_DSV41_TOOL_GRAMMAR", .scope = .dsv41, .kind = .flag, .trim = " ", .alias_of = "TENSORFOLD_TOOL_GRAMMAR", .forms = "0 or 1 (ignored while TENSORFOLD_TOOL_GRAMMAR is set)" },
+     .{ .name = "TF_DSV41_PIECE_RUNS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+     .{ .name = "TF_DSV41_REPLAY_RUNS", .scope = .dsv41, .kind = .flag, .forms = "0 or 1" },
+diff --git a/zig/src/platform/environment_test.zig b/zig/src/platform/environment_test.zig
+index 7137ee8..a84bdcf 100644
+--- a/zig/src/platform/environment_test.zig
++++ b/zig/src/platform/environment_test.zig
+@@ -47,6 +47,10 @@ const valid = [_]Case{
+     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_GIB", .raw = "16777217", .n = 16777217 },
+     .{ .name = "TENSORFOLD_RESTORE_PREFETCH_MS", .raw = "1099511627777", .n = 1099511627777 },
+     .{ .name = "TENSORFOLD_TOOL_ID_KEY_FILE", .raw = "/etc/tensorfold/tool id.key", .n = 0 },
++    .{ .name = "TENSORFOLD_CONTEXT_BUDGET", .raw = " 4194304\t", .n = 4194304 },
++    .{ .name = "TENSORFOLD_CONTEXT_BUDGET", .raw = "0", .n = 0 },
++    .{ .name = "TENSORFOLD_CONTEXT_FLOOR", .raw = "262144", .n = 262144 },
++    .{ .name = "TENSORFOLD_CONTEXT_HOLD_S", .raw = "4294967295", .n = std.math.maxInt(u32) },
+     .{ .name = "TF_CUDA_DEVICE", .raw = " 3 ", .n = 3 },
+     .{ .name = "TF_CUDA_DEVICE", .raw = "4294967295", .n = std.math.maxInt(u32) },
+     .{ .name = "TF_CUDA_SEGMENTS", .raw = " 1 ", .n = 1 },
+diff --git a/zig/src/server/chat.zig b/zig/src/server/chat.zig
+index 7a7204a..762a874 100644
+--- a/zig/src/server/chat.zig
++++ b/zig/src/server/chat.zig
+@@ -14,6 +14,7 @@ const clock = @import("clock.zig");
+ const wait = @import("wait_reason.zig");
+ const server_mod = @import("server.zig");
+ const Server = server_mod.Server;
++const context_window = @import("context_window.zig");
+ const chunk_plan = @import("chunk_plan.zig");
+ const Mailbox = @import("mailbox.zig").Mailbox;
+ const StopHook = @import("stop_hook.zig").StopHook;
+@@ -174,15 +175,18 @@ pub fn prepare(srv: *Server, cx: *Cx, given: Input, gone: anytype) Failure!Prepa
+     const rendered = try prompt_mod.prepare(srv, cx, input, thinking, effort);
+     if (gone.check()) return error.Cancelled;
+     if (rendered.ids.len == 0) return cx.refuse("rendered prompt is empty");
+-    const window: i64 = srv.info.context_window;
++    const system_len: usize = if (input.prompt != null) 0 else prompt_mod.systemPrefixLen(srv, cx, input.messages, input.tools, rendered.ids, thinking, effort);
++    const key: ?u64 = if (background) null else context_window.chatKey(rendered.ids, system_len);
++    const adaptive = srv.context.window(io, srv.info.context_window, key, srv.generating.load(.acquire), received);
++    const window: i64 = @intCast(adaptive.window);
+     const n: i64 = @intCast(rendered.ids.len);
+     if (window > 0) {
++        const fitted = if (adaptive.window < srv.info.context_window) " while this server serves several chats" else if (srv.info.capability(.context_fitted)) ", the most this server's memory budget fits" else "";
+         const room = window - n;
+-        if (room < 1) return cx.fail(.context_length, "{s} {d} tokens{s}, but the rendered prompt has {d} tokens and leaves no room for a reply, which exceeds the context window. Compact or shorten the conversation.", .{ errors.context_limit, window, if (srv.info.capability(.context_fitted)) ", the most this server's memory budget fits" else "", n });
++        if (room < 1) return cx.fail(.context_length, "{s} {d} tokens{s}, but the rendered prompt has {d} tokens and leaves no room for a reply, which exceeds the context window. Compact or shorten the conversation.", .{ errors.context_limit, window, fitted, n });
+         if (input.max_tokens != null and limit > room) return cx.fail(.context_length, "{s} {d} tokens, but the rendered prompt has {d} tokens and requests {d} reply tokens, which exceeds the context window. Reduce the prompt to at most {d} prompt tokens or request at most {d} reply tokens, including chat template and thinking tokens.", .{ errors.context_limit, window, n, limit, @max(0, window - limit), room });
+         limit = @min(limit, room);
+     }
+-    const system_len: usize = if (input.prompt != null) 0 else prompt_mod.systemPrefixLen(srv, cx, input.messages, input.tools, rendered.ids, thinking, effort);
+     var shared: std.ArrayList(u32) = .empty;
+     if (system_len > 0) for ([_]i64{ @as(i64, @intCast(system_len)) - 2048, @as(i64, @intCast(system_len)) - 512, @intCast(system_len) }) |cut| {
+         if (cut >= 512) try shared.append(a, @intCast(cut));
+diff --git a/zig/src/server/context_window.zig b/zig/src/server/context_window.zig
+new file mode 100644
+index 0000000..ae42196
+--- /dev/null
++++ b/zig/src/server/context_window.zig
+@@ -0,0 +1,217 @@
++//! The adaptive context window: a request's cap is a share of a token budget among the active chats, above a floor.
++const std = @import("std");
++const environment = @import("sys").environment;
++
++/// The window moves in whole pages of this many tokens.
++pub const page: u64 = 256;
++/// Distinct chats remembered; past it the least recently seen gives way (the in-flight count still bounds the share).
++pub const capacity = 64;
++/// Opening tokens past the shared system prefix that name a chat.
++pub const key_tokens = 512;
++
++pub const Settings = struct {
++    /// Tokens the active chats share (TENSORFOLD_CONTEXT_BUDGET); 0 keeps the static window.
++    budget: u64 = 0,
++    /// The least window any request gets while the budget is on (TENSORFOLD_CONTEXT_FLOOR), never above the static one.
++    floor: u64 = 0,
++    /// A chat counts as active this long after its last request began (TENSORFOLD_CONTEXT_HOLD_S).
++    hold_s: u32 = 300,
++
++    /// TENSORFOLD_CONTEXT_*, each else its DeepSeek-V4.1 name TF_DSV41_CONTEXT_* (what its launchers forward).
++    pub fn fromEnv() environment.Error!Settings {
++        return .{
++            .budget = try either(u64, "TENSORFOLD_CONTEXT_BUDGET", "TF_DSV41_CONTEXT_BUDGET", 0),
++            .floor = try either(u64, "TENSORFOLD_CONTEXT_FLOOR", "TF_DSV41_CONTEXT_FLOOR", 0),
++            .hold_s = try either(u32, "TENSORFOLD_CONTEXT_HOLD_S", "TF_DSV41_CONTEXT_HOLD_S", 300),
++        };
++    }
++
++    fn either(comptime T: type, comptime name: [:0]const u8, comptime alias: [:0]const u8, default: T) environment.Error!T {
++        if (try environment.read(?T, name, null)) |v| return v;
++        return environment.read(T, alias, default);
++    }
++
++    pub fn enabled(s: Settings) bool {
++        return s.budget > 0;
++    }
++
++    /// The window for `active` chats under a static `window` (0: unbounded, left as it is).
++    pub fn windowFor(s: Settings, window: u64, active: u32) u64 {
++        if (!s.enabled() or window == 0) return window;
++        const share = s.budget / @max(1, active) / page * page;
++        return @min(window, @max(@min(s.floor, window), share));
++    }
++};
++
++/// A chat's key: its opening tokens past the system prefix (agents share the system prompt, not the first turn).
++pub fn chatKey(ids: []const u32, system_len: usize) u64 {
++    const start = @min(system_len, ids.len);
++    const end = @min(ids.len, start + key_tokens);
++    return std.hash.Wyhash.hash(0x636861745f6b6579, std.mem.sliceAsBytes(ids[start..end]));
++}
++
++/// A request's window and the chats it was shared among.
++pub const Now = struct { window: u64, active: u32 };
++
++/// Chats seen in the hold, each counted from its second request (one-shots shrink no one); window/peek take `mutex`.
++pub const Adaptive = struct {
++    settings: Settings = .{},
++    mutex: std.Io.Mutex = .init,
++    keys: [capacity]u64 = undefined,
++    seen: [capacity]i96 = undefined,
++    again: [capacity]bool = undefined,
++    len: usize = 0,
++
++    fn expire(a: *Adaptive, now: i96) void {
++        const hold: i96 = @as(i96, a.settings.hold_s) * std.time.ns_per_s;
++        var i: usize = 0;
++        while (i < a.len) {
++            if (now - a.seen[i] >= hold) {
++                a.len -= 1;
++                a.keys[i] = a.keys[a.len];
++                a.seen[i] = a.seen[a.len];
++                a.again[i] = a.again[a.len];
++            } else i += 1;
++        }
++    }
++
++    fn chats(a: *const Adaptive) u32 {
++        var n: u32 = 0;
++        for (a.again[0..a.len]) |x| n += @intFromBool(x);
++        return n;
++    }
++
++    /// Records `key` as seen at `now` (null: count only) and returns the chats active within the hold.
++    pub fn note(a: *Adaptive, key: ?u64, now: i96) u32 {
++        a.expire(now);
++        const k = key orelse return a.chats();
++        for (a.keys[0..a.len], 0..) |x, i| if (x == k) {
++            a.seen[i] = now;
++            a.again[i] = true;
++            return a.chats();
++        };
++        var slot = a.len;
++        if (a.len == capacity) {
++            slot = 0;
++            for (a.seen[0..a.len], 0..) |t, i| if (t < a.seen[slot]) {
++                slot = i;
++            };
++        } else a.len += 1;
++        a.keys[slot] = k;
++        a.seen[slot] = now;
++        a.again[slot] = false;
++        return a.chats();
++    }
++
++    /// The window a new request gets: `key` noted (background requests pass null), at least `inflight` chats active.
++    pub fn window(a: *Adaptive, io: std.Io, static: u64, key: ?u64, inflight: u32, now: i96) Now {
++        if (!a.settings.enabled()) return .{ .window = static, .active = inflight };
++        a.mutex.lockUncancelable(io);
++        defer a.mutex.unlock(io);
++        const active = @max(@max(1, inflight), a.note(key, now));
++        return .{ .window = a.settings.windowFor(static, active), .active = active };
++    }
++
++    /// The chats active now and the window a request would get, for status readers (no chat is noted).
++    pub fn peek(a: *Adaptive, io: std.Io, static: u64, inflight: u32, now: i96) Now {
++        return a.window(io, static, null, inflight, now);
++    }
++};
++
++const testing = std.testing;
++const sec = std.time.ns_per_s;
++const jj: Settings = .{ .budget = 4 << 20, .floor = 256 << 10, .hold_s = 300 };
++
++test "context window: off by default, the static window whatever the load" {
++    const off: Settings = .{};
++    try testing.expect(!off.enabled());
++    try testing.expectEqual(@as(u64, 1 << 20), off.windowFor(1 << 20, 16));
++    try testing.expectEqual(@as(u64, 0), jj.windowFor(0, 8));
++}
++
++test "context window: 1-4 chats get the whole 1M, more get a page-rounded share, never under the floor" {
++    for ([_]u32{ 0, 1, 2, 3, 4 }) |n| try testing.expectEqual(@as(u64, 1 << 20), jj.windowFor(1 << 20, n));
++    try testing.expectEqual(@as(u64, 838_656), jj.windowFor(1 << 20, 5));
++    try testing.expectEqual(@as(u64, 698_880), jj.windowFor(1 << 20, 6));
++    try testing.expectEqual(@as(u64, 524_288), jj.windowFor(1 << 20, 8));
++    try testing.expectEqual(@as(u64, 262_144), jj.windowFor(1 << 20, 16));
++    try testing.expectEqual(@as(u64, 262_144), jj.windowFor(1 << 20, 64));
++    for (1..65) |n| try testing.expectEqual(@as(u64, 0), jj.windowFor(1 << 20, @intCast(n)) % page);
++    // a floor above the static window is the static window
++    const high: Settings = .{ .budget = 1 << 20, .floor = 1 << 22 };
++    try testing.expectEqual(@as(u64, 1 << 20), high.windowFor(1 << 20, 8));
++    // the pool as the budget: eight chats fit at once (2,100,224 / 8 = 262,528, rounded down to whole pages)
++    const pool: Settings = .{ .budget = 2_100_224, .floor = 256 << 10 };
++    try testing.expectEqual(@as(u64, 262_400), pool.windowFor(1 << 20, 8));
++    try testing.expect(8 * pool.windowFor(1 << 20, 8) <= 2_100_224);
++}
++
++test "context window: a chat's key skips the system prefix and reads only its opening tokens" {
++    var a: [2000]u32 = undefined;
++    var b: [2000]u32 = undefined;
++    for (&a, &b, 0..) |*x, *y, i| {
++        x.* = @intCast(i);
++        y.* = @intCast(i);
++    }
++    b[3] = 99_999; // a different system prompt
++    try testing.expectEqual(chatKey(&a, 100), chatKey(&b, 100));
++    try testing.expect(chatKey(&a, 0) != chatKey(&b, 0));
++    b[1500] = 7; // a later turn of the same chat
++    try testing.expectEqual(chatKey(&a, 100), chatKey(&b, 100));
++    b[200] = 7; // a different opening turn: another chat
++    try testing.expect(chatKey(&a, 100) != chatKey(&b, 100));
++    try testing.expectEqual(chatKey(a[0..50], 100), chatKey(a[0..60], 100));
++}
++
++test "context window: chats count from their second request, once each, stay through the hold, then age out" {
++    var ad: Adaptive = .{ .settings = jj };
++    try testing.expectEqual(@as(u32, 0), ad.note(1, 0));
++    try testing.expectEqual(@as(u32, 1), ad.note(1, 10 * sec));
++    try testing.expectEqual(@as(u32, 1), ad.note(1, 11 * sec));
++    for (0..2) |_| for (2..9) |k| {
++        _ = ad.note(k, 20 * sec);
++    };
++    try testing.expectEqual(@as(u32, 8), ad.note(null, 30 * sec));
++    try testing.expectEqual(@as(u64, 524_288), ad.settings.windowFor(1 << 20, ad.note(null, 30 * sec)));
++    // chat 1 was refreshed at 11 s, the rest at 20 s: at 315 s only the seven remain, at 320 s none
++    try testing.expectEqual(@as(u32, 7), ad.note(null, 315 * sec));
++    try testing.expectEqual(@as(u32, 0), ad.note(null, 320 * sec));
++    try testing.expectEqual(@as(u32, 0), ad.note(9, 321 * sec));
++    try testing.expectEqual(@as(u32, 1), ad.note(9, 322 * sec));
++}
++
++test "context window: a burst of one-shot requests does not shrink a long chat's window" {
++    var ad: Adaptive = .{ .settings = jj };
++    const io = testing.io;
++    _ = ad.window(io, 1 << 20, 1, 1, 0);
++    try testing.expectEqual(@as(u64, 1 << 20), ad.window(io, 1 << 20, 1, 1, sec).window);
++    // twenty distinct one-shot requests (a benchmark, quick API calls), one after another
++    for (100..120) |k| _ = ad.window(io, 1 << 20, k, 1, 2 * sec);
++    const w = ad.window(io, 1 << 20, 1, 1, 3 * sec);
++    try testing.expectEqual(@as(u32, 1), w.active);
++    try testing.expectEqual(@as(u64, 1 << 20), w.window);
++    // while they run they count (in flight); one that comes back is a conversation and counts after it finishes
++    try testing.expectEqual(@as(u64, 524_288), ad.window(io, 1 << 20, 1, 8, 4 * sec).window);
++    _ = ad.window(io, 1 << 20, 100, 1, 5 * sec);
++    try testing.expectEqual(@as(u32, 2), ad.peek(io, 1 << 20, 0, 6 * sec).active);
++}
++
++test "context window: past capacity the least recently seen chat gives way" {
++    var ad: Adaptive = .{ .settings = jj };
++    for (0..capacity) |k| _ = ad.note(k, @intCast(k));
++    try testing.expectEqual(@as(u32, 0), ad.note(1000, 100));
++    for (ad.keys[0..ad.len]) |k| try testing.expect(k != 0);
++    for (0..capacity) |k| _ = ad.note(k + 1, @intCast(200 + k));
++    try testing.expectEqual(@as(u32, capacity - 1), ad.note(null, 300));
++}
++
++test "context window: the in-flight count is a lower bound, background requests are not noted" {
++    var ad: Adaptive = .{ .settings = jj };
++    const io = testing.io;
++    const w = ad.window(io, 1 << 20, null, 8, 0);
++    try testing.expectEqual(@as(u32, 8), w.active);
++    try testing.expectEqual(@as(u64, 524_288), w.window);
++    try testing.expectEqual(@as(usize, 0), ad.len);
++    try testing.expectEqual(@as(u64, 1 << 20), ad.window(io, 1 << 20, 5, 1, 0).window);
++    try testing.expectEqual(@as(u64, 1 << 20), ad.peek(io, 1 << 20, 0, 1).window);
++}
+diff --git a/zig/src/server/context_window_test.zig b/zig/src/server/context_window_test.zig
+new file mode 100644
+index 0000000..2dde3ac
+--- /dev/null
++++ b/zig/src/server/context_window_test.zig
+@@ -0,0 +1,145 @@
++//! Chat preparations under TENSORFOLD_/TF_DSV41_CONTEXT_*: one-shots do not count, a second chat halves, a floor holds.
++const std = @import("std");
++const api = @import("engine_api");
++const json = @import("json");
++const errors = @import("errors.zig");
++const fixture = @import("control_tokens_fixture.zig");
++const HfText = @import("hf_text.zig").HfText;
++const Server = @import("server.zig").Server;
++const chat = @import("chat.zig");
++const openai = @import("openai.zig");
++const env = @import("sys").env;
++const t = std.testing;
++
++const Fake = struct {
++    window: u32,
++    fn engine(f: *@This()) api.Engine {
++        return .{ .ctx = f, .vtable = &.{ .info = info, .submit = submit, .cancel = cancel, .status = status, .memory = memory } };
++    }
++    fn info(ptr: *anyopaque) api.Info {
++        const f: *@This() = @ptrCast(@alignCast(ptr));
++        return .{ .context_window = f.window, .prefill_step = 4096 };
++    }
++    fn submit(_: *anyopaque, _: api.Id, _: *const api.Request, _: api.Sink) api.SubmitError!void {
++        return error.Closed;
++    }
++    fn cancel(_: *anyopaque, _: api.Id) void {}
++    fn status(_: *anyopaque, out: *api.Status, _: []u32) void {
++        out.* = .{};
++    }
++    fn memory(_: *anyopaque, _: bool) ?api.Memory {
++        return null;
++    }
++};
++
++const Never = struct {
++    pub fn check(_: @This()) bool {
++        return false;
++    }
++};
++
++fn message(a: std.mem.Allocator, role: []const u8, content: []const u8) !json.Value {
++    const out = try json.newObject(a);
++    try out.put(a, "role", .{ .string = role });
++    try out.put(a, "content", .{ .string = content });
++    return .{ .object = out };
++}
++
++/// One chat request: `opening` names the chat, `background` marks it as a side request; its prompt tokens, or null.
++fn ask(srv: *Server, a: std.mem.Allocator, opening: []const u8, background: bool, cx: *errors.Cx) !?usize {
++    const body = try json.newObject(a);
++    try body.put(a, "messages", .{ .array = try a.dupe(json.Value, &.{try message(a, "user", opening)}) });
++    try body.put(a, "max_tokens", try json.intValue(a, 1));
++    if (background) try body.put(a, "priority", .{ .string = "background" });
++    const input = try openai.chatInput(srv, cx, .{ .object = body });
++    const prepared = chat.prepare(srv, cx, input, Never{}) catch |e| switch (e) {
++        error.Refused => return null,
++        else => return e,
++    };
++    srv.release(prepared.preparing, prepared.request);
++    return prepared.prompt_len;
++}
++
++const names = [2][3][:0]const u8{
++    .{ "TENSORFOLD_CONTEXT_BUDGET", "TENSORFOLD_CONTEXT_FLOOR", "TENSORFOLD_CONTEXT_HOLD_S" },
++    .{ "TF_DSV41_CONTEXT_BUDGET", "TF_DSV41_CONTEXT_FLOOR", "TF_DSV41_CONTEXT_HOLD_S" },
++};
++
++/// One case: the settings under `set` (0: TENSORFOLD_, 1: TF_DSV41_); `decoy`: a TF_DSV41_ floor at the budget too.
++const Case = struct { set: usize, floor_is_budget: bool, decoy: bool = false };
++
++fn setAll(c: Case, budget: [:0]const u8) void {
++    _ = env.setenv(names[c.set][0], budget, 1);
++    _ = env.setenv(names[c.set][1], if (c.floor_is_budget) budget else "256", 1);
++    _ = env.setenv(names[c.set][2], "3600", 1);
++    // a DeepSeek-V4.1 floor at the budget would hold the whole window; the TENSORFOLD_ name set must win over it
++    if (c.decoy) _ = env.setenv(names[1][1], budget, 1);
++}
++
++fn unsetAll() void {
++    for (names) |set| for (set) |name| {
++        _ = env.unsetenv(name);
++    };
++}
++
++test "context window: one chat gets the whole window, one-shot and background requests do not count, a second chat halves it" {
++    defer unsetAll();
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var files = try fixture.Fixture.init(a, 0);
++    defer files.deinit();
++    var problem: []const u8 = "";
++    const hf = try HfText.load(a, t.io, files.path, null, a, &problem);
++    defer hf.deinit();
++    const long = try a.alloc(u8, 3000);
++    for (long, 0..) |*c, i| c.* = "abcdefgh "[i % 9];
++    // measure the long chat's prompt on a static server
++    unsetAll();
++    var probe: Fake = .{ .window = 1 << 20 };
++    const n = blk: {
++        const srv = try Server.init(a, t.io, probe.engine(), hf.text(), .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false }, null);
++        defer srv.deinit();
++        var cx: errors.Cx = .{ .a = a };
++        break :blk (try ask(srv, a, long, false, &cx)).?;
++    };
++    try t.expect(n > 600);
++    // the static window and budget are 2p + 1 pages: one chat gets them all, two get p pages each, not above n
++    const p: u32 = @intCast(n / 256);
++    const window: u32 = (2 * p + 1) * 256;
++    var f: Fake = .{ .window = window };
++    const budget = try std.fmt.allocPrintSentinel(a, "{d}", .{window}, 0);
++    const cases = [_]Case{ .{ .set = 0, .floor_is_budget = false }, .{ .set = 1, .floor_is_budget = false }, .{ .set = 0, .floor_is_budget = false, .decoy = true }, .{ .set = 0, .floor_is_budget = true } };
++    for (cases) |c| {
++        unsetAll();
++        setAll(c, budget);
++        const srv = try Server.init(a, t.io, f.engine(), hf.text(), .{ .served_name = "m", .model_ids = &.{"m"}, .enable_thinking = false }, null);
++        defer srv.deinit();
++        var cx: errors.Cx = .{ .a = a };
++        // alone (with a background side request beside it): the whole window
++        try t.expect(try ask(srv, a, long, false, &cx) != null);
++        try t.expect(try ask(srv, a, "Generate a title", true, &cx) != null);
++        try t.expect(try ask(srv, a, long, false, &cx) != null);
++        // a burst of one-shot chats does not count once each is done: the long chat keeps the whole window
++        for (0..6) |i| {
++            var buf: [32]u8 = undefined;
++            try t.expect(try ask(srv, a, try std.fmt.bufPrint(&buf, "a one-shot request {d}", .{i}), false, &cx) != null);
++        }
++        try t.expect(try ask(srv, a, long, false, &cx) != null);
++        // a second chat that comes back: each gets half the budget, under the long prompt, unless the floor holds
++        try t.expect(try ask(srv, a, "a different chat", false, &cx) != null);
++        try t.expect(try ask(srv, a, "a different chat", false, &cx) != null);
++        const held = c.floor_is_budget;
++        var refused: errors.Cx = .{ .a = a };
++        const again = try ask(srv, a, long, false, &refused);
++        try t.expectEqual(held, again != null);
++        if (!held) {
++            try t.expectEqual(errors.Kind.context_length, refused.kind);
++            try t.expect(std.mem.startsWith(u8, refused.message, errors.context_limit));
++            var want_buf: [64]u8 = undefined;
++            try t.expect(std.mem.indexOf(u8, refused.message, try std.fmt.bufPrint(&want_buf, " {d} tokens while this server serves several chats", .{p * 256})) != null);
++            // short requests of either chat still fit the lowered window
++            try t.expect(try ask(srv, a, "a different chat", false, &cx) != null);
++        }
++    }
++}
+diff --git a/zig/src/server/root.zig b/zig/src/server/root.zig
+index 75f40fb..8481a3c 100644
+--- a/zig/src/server/root.zig
++++ b/zig/src/server/root.zig
+@@ -277,5 +277,7 @@ test {
+ 
+ test {
+     _ = @import("request_starts_turns_test.zig");
++    _ = @import("context_window.zig");
++    _ = @import("context_window_test.zig");
+     _ = @import("thinking_request_test.zig");
+ }
+diff --git a/zig/src/server/server.zig b/zig/src/server/server.zig
+index 7ed3624..48bff61 100644
+--- a/zig/src/server/server.zig
++++ b/zig/src/server/server.zig
+@@ -169,6 +169,7 @@ pub const Server = struct {
+     /// S3 (Info.compute_runner): built-in calls the circuit can run run there; null: every call goes to the sandbox.
+     compute_exec: ?api.compute_circuit.Exec = null,
+     preparing: std.atomic.Value(i64) = .init(0),
++    context: @import("context_window.zig").Adaptive = .{}, // the adaptive context window (TENSORFOLD_CONTEXT_*)
+     speech_inflight: std.atomic.Value(u32) = .init(0),
+     arena: std.heap.ArenaAllocator,
+     /// Structured output's compiler, opened by the first structured request (Python's grammar.compiler).
+@@ -198,6 +199,7 @@ pub const Server = struct {
+         srv.* = .{ .tool_ids = tool_ids, .gpa = gpa, .io = io, .engine = engine, .info = engine.info(), .text = text, .config = config, .keys = keys, .metrics = .{ .gpa = gpa, .phases = config.phase_metrics }, .load = .init(io), .store = .{ .gpa = gpa }, .arena = .init(gpa), .slide = .init(gpa, io, config.slide_graph), .teacher = .init(gpa) };
+         srv.config.tool_id_key = null; // its key is zeroed: `tool_ids` is the one copy
+         errdefer srv.deinit(); // a later step's failure stops the keepalive before the caller closes the engine
++        srv.context.settings = try @import("context_window.zig").Settings.fromEnv();
+         if (srv.info.embeddings != null and srv.info.capability(.text_generation)) return error.InvalidEmbeddingCapabilities;
+         if (srv.info.readouts != null and (srv.info.capability(.text_generation) or srv.info.embeddings != null)) return error.InvalidReadoutCapabilities;
+         if (srv.info.vision) |vision| if (@import("vision_markers.zig").firstUnsafe(text, vision)) |id| {
+diff --git a/zig/src/server/status_routes.zig b/zig/src/server/status_routes.zig
+index dbb19da..5186908 100644
+--- a/zig/src/server/status_routes.zig
++++ b/zig/src/server/status_routes.zig
+@@ -54,6 +54,15 @@ pub fn openHealth(srv: *Server, a: Allocator, reset_peak: bool) !Value {
+     }
+     try o.put(a, "memory", .{ .object = memory });
+     try o.put(a, "live", try live.snapshot(a, status));
++    if (srv.context.settings.enabled()) {
++        const now = srv.context.peek(srv.io, info_early.context_window, srv.generating.load(.acquire), @import("clock.zig").nowNs(srv.io));
++        const context = try json.newObject(a);
++        try context.put(a, "window", try json.intValue(a, now.window));
++        try context.put(a, "active_chats", try json.intValue(a, now.active));
++        try context.put(a, "budget", try json.intValue(a, srv.context.settings.budget));
++        try context.put(a, "floor", try json.intValue(a, srv.context.settings.floor));
++        try o.put(a, "context", .{ .object = context });
++    }
+     const ident = srv.config.identity;
+     for ([_][2][]const u8{
+         .{ "version", ident.version },
+-- 
+2.56.0
+

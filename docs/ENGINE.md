@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088` (both below); the whole series gives tree
-`e59276d38`, and the checkout's last commit is `e93a56176` with the fixed committer `fetch-source.sh` uses.
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088` and `0089` (all below); the whole series gives tree
+`896aaf362`, and the checkout's last commit is `3556c0fb0` with the fixed committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
 
@@ -53,6 +53,14 @@ in region 0. Above that the requests are split into balanced passes: with 16 slo
 (`Dev.regionBytes`, used by both callers) and adds a host test that checks every region of a 16-slot staging buffer.
 With 12 or fewer live requests nothing moves; above that, a pass starting past region 0 moves by `4 * g` bytes of host
 staging only, and the device copies are the same bytes. Upstream `main` has the same code (ashhart/TensorFold#3446).
+
+### Adaptive context window (`0089`)
+
+`0089` (Jay Leaton, an upstream candidate) adds the server's adaptive context window: each request's window is a
+token budget divided by the active chats, in 256-token pages, between a floor and the static window
+(`TENSORFOLD_CONTEXT_BUDGET`, `_FLOOR`, `_HOLD_S`, read by DeepSeek-V4.1 as `TF_DSV41_CONTEXT_*` too; off unless set).
+A chat counts as active from its second request within the hold; requests in flight always count. The pool,
+admission, NVMe session tier and the family are unchanged ([OPERATIONS](OPERATIONS.md#adaptive-context-window)).
 
 The knobs are read under the boot's runner prefix (`TF_DSV41_RUNNER_*` in the flash17 profile, `TF_RUNNER_*` for the
 generic names; the S3 lane runner's `TF_DSV41_COMPUTE_LANE_RUNNER_*` are listed too). Not carried over: the Qwen
