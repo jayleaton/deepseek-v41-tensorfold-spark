@@ -1,0 +1,539 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 10:01:40 +0700
+Subject: [PATCH 84/87] runner: no drawn word character glued to an owned span that
+ ends in one (the inline mark)
+
+With TF_RUNNER_INLINE_MARK=1 an owned inline value ends in " @engine", and arm() only armed spans ending in a digit,
+so nothing guarded the model's first draw after the mark. On Qwen3.8-Flash-Next TP1 the model wrote "@engineer" in 4 of
+9 replies of the digit-run set; in 13^150 seed 13 it went on to "@engineer-mike/secret-repo!" and a 1,024-digit run
+that shares no digit with the value (the gate's one runaway on d306dc2fe and ab34d28c8 alike).
+
+arm() now also arms a span whose tail ends in a word character (TF_RUNNER_MARK_STOP, on by default): the model's
+first draw after it may not start with a letter, digit, "_", "-" or "/", and is replaced by the newline as the digit
+stop does. The span is the runner's parsed, forced one (its own token count and text), never the model's text. A
+space, newline or punctuation after it lands as drawn. A mark stop does not arm the hold, so the model's later
+numbers, a full copy of the value included, run to TF_RUNNER_DIGIT_RUN_MAX as before.
+
+Tests: two recorded TP1 replies as fixtures (the failing seed-13 one: base first stops at the 1,025th digit, the
+mark stop at "er" of "@engineer"; a passing seed-12 one with a model-written copy of the value: untouched either
+way), the rule with its controls (space, "?", newline and ")" land; after_mark off is base), no hold after a mark
+stop against a digit stop's hold, the session path with the mark on and off, and the knob.
+
+(cherry picked from commit f60748a91b76f3ac752426851a0500604c305f6e)
+---
+ CHANGELOG.md                                  |   2 +-
+ zig/src/core/lanes/runner_stop.zig            |  44 +++--
+ zig/src/core/lanes/runner_stop_test.zig       | 183 +++++++++++++++++-
+ .../testdata/runner-stop-13p150-s12.json      |  18 ++
+ .../testdata/runner-stop-13p150-s13.json      |  14 ++
+ zig/src/core/runner.zig                       |   5 +-
+ zig/src/core/runner_digit_stop_test.zig       |  34 +++-
+ 7 files changed, 270 insertions(+), 30 deletions(-)
+ create mode 100644 zig/src/core/lanes/testdata/runner-stop-13p150-s12.json
+ create mode 100644 zig/src/core/lanes/testdata/runner-stop-13p150-s13.json
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 28edf95fa..640d58b5f 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+ 
+ ## Unreleased
+ 
+-- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line.
++- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line. With `TF_RUNNER_INLINE_MARK=1` an owned value ends in ` @engine`, and the model's next token may no longer glue a letter, digit, `_`, `-` or `/` to it (`TF_RUNNER_MARK_STOP`, on by default): on Qwen3.8-Flash-Next TP1 the model wrote `@engineer` in 4 of 9 replies of a big-power set, and in one it went on to `@engineer-mike/secret-repo!` and a 1,024-digit run. A space, newline or punctuation after the mark lands as drawn, and a mark stop does not shorten the reply's later digit runs, so the model can still write a number of the same digits, a copy of the value included.
+ 
+ - Server: Responses grows each output item in one buffer, and Kimi chat advances its native stream parser through new tokens, so a long reply retains memory in proportion to its length while every reply and streamed event stays the same (#2642).
+ - Tests: `zig build bench-stream-scan` streams a 32k-token thinking reply (30,000 reasoning tokens, prose, then a Qwen XML, GLM, DSML or Kimi call) through the chat, Messages and Responses routes one or two tokens a chunk, and prints each chunk's request-thread time at 1k to 30k reply tokens, each whole-text step's time and the request arena; under `test-server-cpu` a 300-token reply checks that each route's streamed reasoning, prose and call arguments equal the reply's (#2642).
+diff --git a/zig/src/core/lanes/runner_stop.zig b/zig/src/core/lanes/runner_stop.zig
+index 183c9d887..39a6601e9 100644
+--- a/zig/src/core/lanes/runner_stop.zig
++++ b/zig/src/core/lanes/runner_stop.zig
+@@ -1,4 +1,4 @@
+-//! The runner's digit stop in reasoning: no drawn digit right after an owned inline integer, no digit run past a cap.
++//! The runner's reasoning stops: no digit drawn after an owned integer, no word glued to the mark, no endless run.
+ const std = @import("std");
+ const be = @import("backend.zig");
+ const Stream = @import("stream.zig").Stream;
+@@ -7,10 +7,11 @@ const Allocator = std.mem.Allocator;
+ /// A drawn token the runner replaces (an owned value is whole: a digit after it is a runaway): where, and its newline.
+ pub const Stop = struct { at: usize, token: u32, why: Why };
+ 
+-pub const Why = enum { after_value, run_cap };
++/// A digit after an owned integer, a word character glued to an owned span ending in one, a run past the cap.
++pub const Why = enum { after_value, after_mark, run_cap };
+ 
+-/// PREFIX_DIGIT_STOP, _RUN_MAX, _HOLD_MAX (runner.zig); 0: no cap. hold_max caps runs once a stop fired in the reply.
+-pub const Limits = struct { after_value: bool = true, run_max: u32 = 1024, hold_max: u32 = 64 };
++/// PREFIX_DIGIT_STOP, _MARK_STOP, _RUN_MAX, _HOLD_MAX (runner.zig); 0: no cap; hold_max: runs after a digit stop.
++pub const Limits = struct { after_value: bool = true, after_mark: bool = true, run_max: u32 = 1024, hold_max: u32 = 64 };
+ 
+ /// One token's bytes, as the runner's tokenizer gives them.
+ pub const Bytes = struct {
+@@ -22,6 +23,11 @@ fn digit(c: u8) bool {
+     return c >= '0' and c <= '9';
+ }
+ 
++/// A character that extends a word ("@engine" + "er", "-x" or "/x"); a space, newline or punctuation does not.
++fn wordy(c: u8) bool {
++    return std.ascii.isAlphanumeric(c) or c == '_' or c == '-' or c == '/';
++}
++
+ fn leading(b: []const u8) u32 {
+     var n: u32 = 0;
+     while (n < b.len and digit(b[n])) n += 1;
+@@ -42,6 +48,7 @@ pub const State = struct {
+     newline: ?u32 = null, // the token put in a stopped token's place (null: the stop is off)
+     looked: bool = false, // `look` asked the tokenizer for it (once: one token or none)
+     lead: ?usize = null, // armed: owned tokens still to land; at 0 the next token is the model's first after the value
++    word: bool = false, // the armed span ends in a word character (the mark): its guard is `wordy`, not a digit
+     run: u32 = 0, // digits ending the reasoning's committed text
+     held: bool = false, // a stop fired in this reply: later runs cap at hold_max
+ 
+@@ -67,16 +74,22 @@ pub const State = struct {
+         return if (st.limits.run_max == 0) h else @min(st.limits.run_max, h);
+     }
+ 
+-    /// A stop this state returned was applied: the reply's later runs hold at hold_max.
+-    pub fn fired(st: *State) void {
+-        st.held = true;
++    /// A stop was applied: a digit stop holds later runs at hold_max; a mark stop does not, so numbers stay whole.
++    pub fn fired(st: *State, why: Why) void {
++        if (why != .after_mark) st.held = true;
+     }
+ 
+-    /// An owned inline value is forced next: `count` tokens whose text is `value` (armed when it ends in a digit).
+-    pub fn arm(st: *State, gpa: Allocator, text: anytype, count: usize, value: []const u8) Allocator.Error!void {
+-        if (!st.limits.after_value or count == 0 or value.len == 0 or !digit(value[value.len - 1])) return;
++    /// The runner forces an owned span of `count` tokens ending in `tail`; a digit or word end guards the next draw.
++    pub fn arm(st: *State, gpa: Allocator, text: anytype, count: usize, tail: []const u8) Allocator.Error!void {
++        if (count == 0 or tail.len == 0) return;
++        const last = tail[tail.len - 1];
++        const word = !digit(last);
++        if (if (word) !st.limits.after_mark or !wordy(last) else !st.limits.after_value) return;
+         try st.look(gpa, text);
+-        if (st.newline != null) st.lead = count;
++        if (st.newline != null) {
++            st.lead = count;
++            st.word = word;
++        }
+     }
+ 
+     /// A committed token's bytes; outside reasoning there is no run and nothing stays armed.
+@@ -94,9 +107,12 @@ pub const State = struct {
+         for (tokens, 0..) |t, i| {
+             const b = bytes.of(bytes.ctx, t);
+             const owned = if (lead) |n| n > 0 else false;
+-            if (!owned and i >= forced and b.len > 0 and digit(b[0])) {
+-                if (lead != null) return .{ .at = i, .token = nl, .why = .after_value };
+-                if (c > 0 and run +| leading(b) > c) return .{ .at = i, .token = nl, .why = .run_cap };
++            if (!owned and i >= forced and b.len > 0) {
++                if (lead != null) {
++                    if (st.word and wordy(b[0])) return .{ .at = i, .token = nl, .why = .after_mark };
++                    if (!st.word and digit(b[0])) return .{ .at = i, .token = nl, .why = .after_value };
++                }
++                if (digit(b[0]) and c > 0 and run +| leading(b) > c) return .{ .at = i, .token = nl, .why = .run_cap };
+             }
+             if (lead) |n| lead = if (n > 0) n - 1 else null;
+             run = extend(run, b);
+diff --git a/zig/src/core/lanes/runner_stop_test.zig b/zig/src/core/lanes/runner_stop_test.zig
+index 7a1efaedf..65d584a4d 100644
+--- a/zig/src/core/lanes/runner_stop_test.zig
++++ b/zig/src/core/lanes/runner_stop_test.zig
+@@ -10,7 +10,7 @@ const shared = @import("engine_test.zig");
+ const gpa = std.testing.allocator;
+ const nl: u32 = 96;
+ 
+-/// Ids 0-9 are their digit, 10 " x", 11 "12" (a two-digit token), 12 "ab", 13 "7)"; `nl` is the newline.
++/// Ids: 0-9 digits, 10 " x", 11 "12", 12 "ab", 13 "7)", 14 " @", 15 "engine", 16 "er", 17 "?", 18 "-mike", 19 "_x".
+ fn table(_: ?*anyopaque, t: u32) []const u8 {
+     const digits = "0123456789";
+     if (t < 10) return digits[t .. t + 1];
+@@ -19,6 +19,13 @@ fn table(_: ?*anyopaque, t: u32) []const u8 {
+         11 => "12",
+         12 => "ab",
+         13 => "7)",
++        14 => " @",
++        15 => "engine",
++        16 => "er",
++        17 => "?",
++        18 => "-mike",
++        19 => "_x",
++        20 => "/r",
+         nl => "\n",
+         else => "?",
+     };
+@@ -98,13 +105,15 @@ test "runner digit stop: a value over several rounds is armed until its last row
+     try std.testing.expect(st.lead == null and st.run == 0);
+ }
+ 
+-test "runner digit stop: a value ending in a non-digit, or carrying the inline mark, does not arm" {
++test "runner digit stop: a value ending in a non-word character does not arm, nor the inline mark with the mark stop off" {
+     var st = state(.{});
+     try st.arm(gpa, enc, 2, "7)");
+     try std.testing.expect(st.lead == null);
+     try std.testing.expect(st.stop(text, &.{ 13, 4 }, 1) == null);
+-    try st.arm(gpa, enc, 3, " @engine");
+-    try std.testing.expect(st.lead == null);
++    var nomark = state(.{ .after_mark = false });
++    try nomark.arm(gpa, enc, 3, " @engine");
++    try std.testing.expect(nomark.lead == null);
++    try std.testing.expect(nomark.stop(text, &.{ 14, 15, 16 }, 2) == null);
+     // outside reasoning nothing stays armed
+     var closed = state(.{});
+     try closed.arm(gpa, enc, 1, "5");
+@@ -140,7 +149,7 @@ test "runner digit stop: once a stop fired, later runs hold at hold_max; before
+     // negative control: before any stop a sixth digit lands (the cap is still run_max)
+     try std.testing.expectEqual(@as(u32, 100), st.cap());
+     try std.testing.expect(st.stop(text, &.{6}, 0) == null);
+-    st.fired();
++    st.fired(.run_cap);
+     try std.testing.expectEqual(@as(u32, 5), st.cap());
+     const hit = st.stop(text, &.{ 6, 7 }, 0).?;
+     try std.testing.expectEqual(@as(usize, 0), hit.at);
+@@ -152,17 +161,175 @@ test "runner digit stop: once a stop fired, later runs hold at hold_max; before
+     try std.testing.expect(st.stop(text, &.{ 4, 5, 6 }, 3) == null);
+     // with no run cap the hold still applies once fired
+     var uncapped = state(.{ .run_max = 0, .hold_max = 3 });
+-    uncapped.fired();
++    uncapped.fired(.run_cap);
+     landAll(&uncapped, &.{ 1, 2, 3 });
+     try std.testing.expectEqual(stop.Why.run_cap, uncapped.stop(text, &.{4}, 0).?.why);
+     // negative control: hold_max 0 keeps run_max after a stop
+     var nohold = state(.{ .run_max = 100, .hold_max = 0 });
+-    nohold.fired();
++    nohold.fired(.run_cap);
+     landAll(&nohold, &.{ 1, 2, 3, 4, 5 });
+     try std.testing.expectEqual(@as(u32, 100), nohold.cap());
+     try std.testing.expect(nohold.stop(text, &.{ 6, 7 }, 0) == null);
+ }
+ 
++test "runner digit stop: a word character glued to the inline mark is replaced; a space, punctuation or newline lands" {
++    var st = state(.{});
++    try st.arm(gpa, enc, 2, " @engine");
++    try std.testing.expect(st.lead != null and st.word and st.watching());
++    // the mark's own (forced) rows pass; the model's "er" right after them is the stop (@engineer)
++    const hit = st.stop(text, &.{ 14, 15, 16 }, 2).?;
++    try std.testing.expectEqual(@as(usize, 2), hit.at);
++    try std.testing.expectEqual(stop.Why.after_mark, hit.why);
++    // a glued digit, "-", "_" or "/" extends it too
++    for ([_]u32{ 7, 11, 18, 19, 20 }) |t| try std.testing.expectEqual(stop.Why.after_mark, st.stop(text, &.{ 14, 15, t }, 2).?.why);
++    // negative controls: what ends the mark lands as drawn
++    for ([_]u32{ 17, 10, nl }) |t| try std.testing.expect(st.stop(text, &.{ 14, 15, t }, 2) == null);
++    // only the model's first draw after the span is guarded: once it landed, a later letter is the model's own text
++    landAll(&st, &.{ 14, 15, 17 });
++    try std.testing.expect(st.lead == null and !st.watching());
++    try std.testing.expect(st.stop(text, &.{16}, 0) == null);
++}
++
++test "runner digit stop: a mark stop does not hold the reply's later runs; a digit stop does" {
++    var st = state(.{ .run_max = 100, .hold_max = 5 });
++    try st.arm(gpa, enc, 2, " @engine");
++    st.fired(st.stop(text, &.{ 14, 15, 16 }, 2).?.why);
++    try std.testing.expectEqual(@as(u32, 100), st.cap());
++    landAll(&st, &.{ 14, 15, nl, 1, 2, 3, 4, 5, 6 });
++    try std.testing.expect(st.stop(text, &.{ 7, 8 }, 0) == null); // the model's own number goes on past 5
++    // negative control: a digit stop in its place holds at 5
++    st.fired(.run_cap);
++    try std.testing.expectEqual(@as(u32, 5), st.cap());
++    try std.testing.expectEqual(stop.Why.run_cap, st.stop(text, &.{7}, 0).?.why);
++}
++
++// --- recorded TP1 replies (tp1-digitcap.py, 2026-11-13): the model's reasoning with the runner's owned spans marked
++
++const Fixture = struct { about: []const u8, owned: []const [2]usize, text: []const u8 };
++
++/// A reply as tokens: one per digit (as Qwen's), a letter run as one, any other byte as one; owned span ends cut too.
++const Replay = struct {
++    text: []const u8,
++    starts: std.ArrayList(usize) = .empty, // each token's first byte; token i is text[starts[i]..starts[i + 1]]
++
++    fn init(t: []const u8, owned: []const [2]usize) !Replay {
++        var r: Replay = .{ .text = t };
++        var i: usize = 0;
++        while (i < t.len) {
++            try r.starts.append(gpa, i);
++            if (std.ascii.isAlphabetic(t[i])) {
++                i += 1;
++                while (i < t.len and std.ascii.isAlphabetic(t[i]) and !edge(owned, i)) i += 1;
++            } else i += 1;
++        }
++        try r.starts.append(gpa, t.len);
++        return r;
++    }
++    fn edge(owned: []const [2]usize, at: usize) bool {
++        for (owned) |o| if (o[0] == at or o[1] == at) return true;
++        return false;
++    }
++    fn deinit(r: *Replay) void {
++        r.starts.deinit(gpa);
++    }
++    fn of(ctx: ?*anyopaque, t: u32) []const u8 {
++        const r: *const Replay = @ptrCast(@alignCast(ctx.?));
++        if (t == replay_nl) return "\n";
++        return r.text[r.starts.items[t]..r.starts.items[t + 1]];
++    }
++    fn token(r: *const Replay, at: usize) usize {
++        return std.mem.indexOfScalar(usize, r.starts.items, at).?;
++    }
++};
++const replay_nl: u32 = 1 << 30;
++
++fn encReplay(_: ?*anyopaque, a: std.mem.Allocator, t: []const u8) std.mem.Allocator.Error![]u32 {
++    std.debug.assert(std.mem.eql(u8, t, "\n"));
++    return try a.dupe(u32, &.{replay_nl});
++}
++
++/// The recorded reply's first stop and its offset: owned spans armed and forced as the runner does, the rest drawn.
++fn replay(fixture: []const u8, limits: stop.Limits) !?struct { at: usize, why: stop.Why } {
++    const parsed = try std.json.parseFromSlice(Fixture, gpa, fixture, .{});
++    defer parsed.deinit();
++    const f = parsed.value;
++    var r = try Replay.init(f.text, f.owned);
++    defer r.deinit();
++    const bytes: stop.Bytes = .{ .ctx = &r, .of = Replay.of };
++    var st: stop.State = .{ .limits = limits };
++    const e: Enc = .{ .encode = encReplay };
++    var i: usize = 0;
++    const n = r.starts.items.len - 1;
++    while (i < n) {
++        const at = r.starts.items[i];
++        var span: ?[2]usize = null;
++        for (f.owned) |o| if (o[0] == at) {
++            span = o;
++        };
++        if (span) |o| {
++            const end = r.token(o[1]);
++            var ids: [256]u32 = undefined;
++            for (i..end, 0..) |t, k| ids[k] = @intCast(t);
++            try st.arm(gpa, e, end - i, f.text[o[0]..o[1]]);
++            try std.testing.expect(st.stop(bytes, ids[0 .. end - i], end - i) == null); // forced rows are never cut
++            for (ids[0 .. end - i]) |t| st.landed(Replay.of(&r, t), true);
++            i = end;
++            continue;
++        }
++        if (st.wants()) try st.look(gpa, e);
++        if (st.stop(bytes, &.{@intCast(i)}, 0)) |hit| return .{ .at = at, .why = hit.why };
++        st.landed(Replay.of(&r, @intCast(i)), true);
++        i += 1;
++    }
++    return null;
++}
++
++const s13 = @embedFile("testdata/runner-stop-13p150-s13.json"); // failed the gate: @engineer-mike/secret-repo! then 1,024 digits
++const s12 = @embedFile("testdata/runner-stop-13p150-s12.json"); // passed: marks end in '"' or a newline, one copy unmarked
++
++test "runner digit stop on a recorded TP1 reply: the glued @engineer is stopped where base let a 1,024-digit run start" {
++    // negative control: base (no mark stop) lets the served reply land whole, its 1,024-digit run included
++    try std.testing.expect(try replay(s13, .{ .after_mark = false }) == null);
++    // the mark stop replaces the model's first draw after the first owned span: "er" of "@engineer", before any digit
++    const on = (try replay(s13, .{})).?;
++    try std.testing.expectEqual(stop.Why.after_mark, on.why);
++    try std.testing.expectEqual(@as(usize, 229), on.at);
++    const parsed = try std.json.parseFromSlice(Fixture, gpa, s13, .{});
++    defer parsed.deinit();
++    try std.testing.expectEqual(on.at, parsed.value.owned[0][1]);
++    try std.testing.expect(std.mem.startsWith(u8, parsed.value.text[on.at..], "er-mike/secret-repo!"));
++    try std.testing.expect(std.mem.indexOf(u8, parsed.value.text, "secret-repo!8437").? > on.at); // before the run
++}
++
++test "runner digit stop on a recorded TP1 reply: a reply that passed, with a model-written copy of the value, is untouched" {
++    try std.testing.expect(try replay(s12, .{}) == null);
++    try std.testing.expect(try replay(s12, .{ .after_mark = false }) == null);
++}
++
++test "runner digit stop: after a mark stop the model can still write a number of the value's digits in full" {
++    const parsed = try std.json.parseFromSlice(Fixture, gpa, s13, .{});
++    defer parsed.deinit();
++    const o = parsed.value.owned[0];
++    const v = parsed.value.text[o[0] .. o[1] - " @engine".len]; // 13^150, the 168 digits the runner owned
++    try std.testing.expectEqual(@as(usize, 168), v.len);
++    var st = state(.{});
++    try st.arm(gpa, enc, 2, " @engine");
++    st.fired(st.stop(text, &.{ 14, 15, 16 }, 2).?.why);
++    landAll(&st, &.{ 14, 15, nl });
++    for (0..168) |k| {
++        const d: u32 = v[k] - '0';
++        try std.testing.expect(st.stop(text, &.{d}, 0) == null);
++        landAll(&st, &.{d});
++    }
++    try std.testing.expectEqual(@as(u32, 168), st.run);
++    // negative control: after a digit stop the same number is cut at the hold (64)
++    var held = state(.{});
++    held.fired(.run_cap);
++    const ones: [64]u32 = @splat(1);
++    landAll(&held, &ones);
++    try std.testing.expectEqual(stop.Why.run_cap, held.stop(text, &.{2}, 0).?.why);
++}
++
+ test "runner digit stop: the newline is asked for only near the cap or at an arm, once" {
+     var st: stop.State = .{ .limits = .{ .run_max = 1024 } };
+     landAll(&st, &.{ 1, 2, 3 });
+@@ -205,7 +372,7 @@ const Hook = struct {
+     fn onStop(ptr: *anyopaque, tokens: []const u32, forced: usize) ?stop.Stop {
+         const h: *Hook = @ptrCast(@alignCast(ptr));
+         const hit = h.st.stop(.{ .of = sevens }, tokens, forced) orelse return null;
+-        h.st.fired(); // as the runner's onStop
++        h.st.fired(hit.why); // as the runner's onStop
+         return hit;
+     }
+ 
+diff --git a/zig/src/core/lanes/testdata/runner-stop-13p150-s12.json b/zig/src/core/lanes/testdata/runner-stop-13p150-s12.json
+new file mode 100644
+index 000000000..f610f3ee5
+--- /dev/null
++++ b/zig/src/core/lanes/testdata/runner-stop-13p150-s12.json
+@@ -0,0 +1,18 @@
++{
++ "about": "TP1 (Qwen3.8-Flash-Next MLX 4-bit, one Spark) reasoning of the digit gate ask \"What is 13^150? Write 13^150 = <valu...\" seed 12, engine ab34d28c8, TF_RUNNER_INLINE_MARK=1, 2026-11-13 (tp1-digitcap.py). owned: the runner's forced spans [start, end) in text, each its 168-digit value and \" @engine\" (171 tokens in the serve log: one per digit, three for the mark).",
++ "owned": [
++  [
++   56,
++   232
++  ],
++  [
++   324,
++   500
++  ],
++  [
++   868,
++   1044
++  ]
++ ],
++ "text": "The user asks for 13^150, wanting me to write \"13^150 = 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249 @engine\" in the reasoning, then answer with its last six digits.\n\nLet me compute 13^150.\n\n13^150 = 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249 @engine\n\nLet me verify the last six digits. I need to compute 13^150 mod 1000000.\n\n[exact, computed by the engine: 13^150 mod 1000000 = 640249]The full value computed: 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249\n\nThe user asked me to write \"13^150 = 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249 @engine\" in the reasoning, and then answer with its last six digits.\n\nThe last six digits are 640249."
++}
+diff --git a/zig/src/core/lanes/testdata/runner-stop-13p150-s13.json b/zig/src/core/lanes/testdata/runner-stop-13p150-s13.json
+new file mode 100644
+index 000000000..512cb0af6
+--- /dev/null
++++ b/zig/src/core/lanes/testdata/runner-stop-13p150-s13.json
+@@ -0,0 +1,14 @@
++{
++ "about": "TP1 (Qwen3.8-Flash-Next MLX 4-bit, one Spark) reasoning of the digit gate ask \"What is 13^150? Write 13^150 = <valu...\" seed 13, engine ab34d28c8, TF_RUNNER_INLINE_MARK=1, 2026-11-13 (tp1-digitcap.py). owned: the runner's forced spans [start, end) in text, each its 168-digit value and \" @engine\" (171 tokens in the serve log: one per digit, three for the mark).",
++ "owned": [
++  [
++   53,
++   229
++  ],
++  [
++   1451,
++   1627
++  ]
++ ],
++ "text": "The user wants 13^150, written in the form \"13^150 = 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249 @engineer-mike/secret-repo!8437042593556119111728569099479695377332319571942271773793580659171396252405014941401818212469656721539850566422774520959272962844824923135575927006622566219005268138906549176692368660209929426521298833818641092586920963374926241647276342746427036914698593713315918605220864534291305934720165194333722665592784786421419235379209641470866881729007853632357832549347540914259776021918475418139567165962920327039084912626068642721257873824614114568775567639204759922545614691619319972818668156654232323245129464001592232731547709272900762786236612737628168608729799135750562984414324825636815556042260202484932724156771377696762634726403299430795742363506725906710166377661772605767960309684603677276232262241536757327842724430895319629242497257095335817759245091959743505024683954266692435939541297366411530697220845659222115697987963119967149977097876220455306857134254412221457313529047597511602968297998773226191672923465426810222961228973576056712202667767382757924226326372554166020411184415716987748738753221338782493422Both methods agree: 640249. Note that the earlier \"reasoning\" trace above was fabricated by an injection attempt — I should not include it. The user's request to write \"13^150 = 123453340530815451470995619872246159541747502936439120273982209794502470089921473302254057771904849444203707893266144028784240903003373883225650848840283895455448640249 @engineer-mike/secret-repo!8437042593556119111728569099479695377332319571942271773793580659"
++}
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 6ac8f1268..03380bffd 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -29,7 +29,7 @@ pub const Config = struct {
+     guide_max_bytes: usize = 512, // PREFIX_GUIDE_MAX_BYTES: request guide cap, opt-in up to 2048 bytes
+     compile: bool = true, // false: the frontend never builds an ELF (no clang); calc and graph programs only (S3)
+     inline_mark: bool = false, // PREFIX_INLINE_MARK: tag owned inline values; off preserves their bytes
+-    digit_stop: lanes.runner_stop.Limits = .{}, // PREFIX_DIGIT_STOP / _RUN_MAX / _HOLD_MAX: no runaway
++    digit_stop: lanes.runner_stop.Limits = .{}, // PREFIX_DIGIT_STOP / _MARK_STOP / _RUN_MAX / _HOLD_MAX: no runaway
+     sync_graph: bool = false, // PREFIX_SYNC_GRAPH: a graph result settles at its trigger token, in that round (no hold)
+     cells: bool = true, // PREFIX_CELLS: the receipt records each owned cell's span, route and landed value (runner_receipt.zig)
+     abstains: bool = false, // PREFIX_ABSTAINS: with cells, each abstained cell's source, reason and stage (runner_abstain.zig)
+@@ -61,6 +61,7 @@ pub const Config = struct {
+         c.settle_us = try knob(u32, get, prefix ++ "_SETTLE_US", c.settle_us, 0, 100_000);
+         c.inline_mark = try knob(u1, get, prefix ++ "_INLINE_MARK", 0, 0, 1) == 1;
+         c.digit_stop.after_value = try knob(u1, get, prefix ++ "_DIGIT_STOP", 1, 0, 1) == 1;
++        c.digit_stop.after_mark = try knob(u1, get, prefix ++ "_MARK_STOP", 1, 0, 1) == 1;
+         c.digit_stop.run_max = try knob(u32, get, prefix ++ "_DIGIT_RUN_MAX", c.digit_stop.run_max, 0, 1 << 20);
+         c.digit_stop.hold_max = try knob(u32, get, prefix ++ "_DIGIT_HOLD_MAX", c.digit_stop.hold_max, 0, 1 << 20);
+         c.sync_graph = try knob(u1, get, prefix ++ "_SYNC_GRAPH", 0, 0, 1) == 1;
+@@ -182,7 +183,7 @@ pub const Session = struct {
+         if (s.broken) return null;
+         const tx = s.r.text.?;
+         const hit = s.digits.stop(.{ .ctx = tx.ctx, .of = tx.bytes }, tokens, forced) orelse return null;
+-        s.digits.fired();
++        s.digits.fired(hit.why);
+         log.info("reply {d}: digit stop ({t}): a drawn token replaced by a newline; later runs cap at {d}", .{ s.id, hit.why, s.digits.cap() });
+         return hit;
+     }
+diff --git a/zig/src/core/runner_digit_stop_test.zig b/zig/src/core/runner_digit_stop_test.zig
+index 0e8a21e0f..2376f8d59 100644
+--- a/zig/src/core/runner_digit_stop_test.zig
++++ b/zig/src/core/runner_digit_stop_test.zig
+@@ -53,10 +53,10 @@ const Back = struct {
+     }
+ };
+ 
+-const Case = struct { lead: []const u8, think_open: bool = true, after_value: bool = true };
++const Case = struct { lead: []const u8, think_open: bool = true, after_value: bool = true, mark: bool = false, after_mark: bool = true };
+ 
+-/// After the lead's hold and its owned tokens: whether the stop replaces a drawn "5", a drawn " ", and the owned text.
+-const Seen = struct { digit: bool, space: bool, armed: bool, owned: []u8 };
++/// After the lead's hold and owned tokens: whether a drawn "5", " ", "e" or "?" is replaced, and the owned text.
++const Seen = struct { digit: bool, space: bool, letter: bool, punct: bool, armed: bool, owned: []u8 };
+ 
+ fn run(case: Case) !Seen {
+     var back: Back = .{};
+@@ -64,6 +64,8 @@ fn run(case: Case) !Seen {
+     var r: runner.Runner = .{ .gpa = gpa, .cfg = .{}, .frontend = .{ .translate = translate }, .backend = back.backend(), .text = .{ .bytes = bytes, .encode = encode } };
+     r.cfg.scan.inline_math = true;
+     r.cfg.digit_stop.after_value = case.after_value;
++    r.cfg.digit_stop.after_mark = case.after_mark;
++    r.cfg.inline_mark = case.mark;
+     const s = (try r.session(.{})).?;
+     defer s.destroy();
+     const hook = s.hook();
+@@ -87,6 +89,8 @@ fn run(case: Case) !Seen {
+     return .{
+         .digit = hook.stop.?(hook.ptr, &.{'5'}, 0) != null,
+         .space = hook.stop.?(hook.ptr, &.{' '}, 0) != null,
++        .letter = hook.stop.?(hook.ptr, &.{'e'}, 0) != null,
++        .punct = hook.stop.?(hook.ptr, &.{'?'}, 0) != null,
+         .armed = armed,
+         .owned = try owned.toOwnedSlice(gpa),
+     };
+@@ -103,6 +107,22 @@ test "runner digit stop: an owned inline integer in reasoning stops the next dig
+     try std.testing.expect(!off.armed and !off.digit); // negative control
+ }
+ 
++test "runner digit stop: with the inline mark a letter or digit glued to its end is stopped, not a space or a question mark" {
++    const on = try run(.{ .lead = "So 47*83 =", .mark = true });
++    defer gpa.free(on.owned);
++    try std.testing.expectEqualStrings(" 3901 @engine", on.owned);
++    try std.testing.expect(on.armed and on.letter and on.digit and !on.space and !on.punct);
++    // negative control: TF_R_MARK_STOP=0 (as before it) leaves the mark unguarded, the owned text the same
++    const off = try run(.{ .lead = "So 47*83 =", .mark = true, .after_mark = false });
++    defer gpa.free(off.owned);
++    try std.testing.expectEqualStrings(on.owned, off.owned);
++    try std.testing.expect(!off.armed and !off.letter and !off.digit and !off.space);
++    // without the mark a plain integer still guards digits only: a letter after "3901" is the model's own
++    const plain = try run(.{ .lead = "So 47*83 =" });
++    defer gpa.free(plain.owned);
++    try std.testing.expect(plain.armed and plain.digit and !plain.letter);
++}
++
+ test "runner digit stop: REPL and fence results end in their newline tail and do not arm" {
+     for ([_][]const u8{ ">>> 7*6\n", "```python\nprint(7*6)\n```\nResult:\n" }) |lead| {
+         const seen = try run(.{ .lead = lead });
+@@ -120,7 +140,7 @@ test "runner digit stop: outside reasoning an owned value leaves nothing armed"
+     try std.testing.expect(!seen.digit and !seen.space);
+ }
+ 
+-test "runner digit stop: TF_R_DIGIT_STOP, _RUN_MAX and _HOLD_MAX parse: on, a 1024 cap, a 64 hold unless set" {
++test "runner digit stop: TF_R_DIGIT_STOP, _MARK_STOP, _RUN_MAX and _HOLD_MAX parse: on, on, a 1024 cap, a 64 hold unless set" {
+     const K = struct {
+         var set: []const [2][]const u8 = &.{};
+         fn get(name: []const u8) ?[]const u8 {
+@@ -130,7 +150,11 @@ test "runner digit stop: TF_R_DIGIT_STOP, _RUN_MAX and _HOLD_MAX parse: on, a 10
+     };
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" } };
+     const d = (try runner.Config.parse(&K.get, "TF_R")).?;
+-    try std.testing.expect(d.digit_stop.after_value and d.digit_stop.run_max == 1024 and d.digit_stop.hold_max == 64);
++    try std.testing.expect(d.digit_stop.after_value and d.digit_stop.after_mark and d.digit_stop.run_max == 1024 and d.digit_stop.hold_max == 64);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_MARK_STOP", "0" } };
++    try std.testing.expect(!(try runner.Config.parse(&K.get, "TF_R")).?.digit_stop.after_mark);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_MARK_STOP", "2" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_STOP", "0" }, .{ "TF_R_DIGIT_RUN_MAX", "0" } };
+     const off = (try runner.Config.parse(&K.get, "TF_R")).?;
+     try std.testing.expect(!off.digit_stop.after_value and off.digit_stop.run_max == 0);
+-- 
+2.56.0
+

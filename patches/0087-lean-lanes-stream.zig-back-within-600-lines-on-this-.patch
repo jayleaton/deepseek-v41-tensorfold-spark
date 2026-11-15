@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 10:18:45 +0700
+Subject: [PATCH 87/87] lean: lanes/stream.zig back within 600 lines on this line
+
+The budget-hold commits (0076, 0078) leave stream.zig at 601 lines over G's series, where the lean checker's size
+rule splits at 600 (on the Qwen line the file was shorter). thinkCut's drawn-row test is written inline in its two
+uses instead of a local, with the same meaning: the budget's close and a drawn EOS count only rows past forced_out.
+---
+ zig/src/core/lanes/stream.zig | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/zig/src/core/lanes/stream.zig b/zig/src/core/lanes/stream.zig
+index a3cd718e1..cc4cd8297 100644
+--- a/zig/src/core/lanes/stream.zig
++++ b/zig/src/core/lanes/stream.zig
+@@ -382,10 +382,9 @@ pub const Stream = struct {
+         if (!s.budgetActive() or s.force.items.len > 0) return null;
+         const done = s.emitted().len;
+         for (tokens, 0..) |t, i| {
+-            const drawn = i >= s.forced_out;
+-            if (drawn and done + i + 1 >= s.think_budget) return i;
++            if (i >= s.forced_out and done + i + 1 >= s.think_budget) return i; // drawn rows only
+             if (@as(i64, t) == s.think_end) return null;
+-            if (drawn and s.isEos(t)) return null;
++            if (i >= s.forced_out and s.isEos(t)) return null;
+         }
+         return null;
+     }
+-- 
+2.56.0
+

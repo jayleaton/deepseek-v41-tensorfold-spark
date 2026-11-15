@@ -43,12 +43,14 @@ TOOL_FULL = {
     "TF_DSV41_COMPUTE_LANE_RUNNER_BACKEND": "graph",
     "TF_DSV41_COMPUTE_LANE_RUNNER_GRAPH_BANK": "/opt/tensorfold/share/runner/graph-v7-powmod/bank/bank.json",
     "TF_DSV41_COMPUTE_LANE_RUNNER_SETTLE_US": "3000", "TF_DSV41_RUNNER_COMMIT": "0",
+    "TF_DSV41_RUNNER_SPANS": "reasoning", "TF_DSV41_RUNNER_DIGIT_HOLD_MAX": "0", "TF_DSV41_RUNNER_MARK_STOP": "0",
 }
 # Unread while the runner switches are 0; empty is unset to the engine.
 UNSET = dict.fromkeys(("TF_DSV41_RUNNER_CIRCUIT", "TF_DSV41_RUNNER_BACKEND", "TF_DSV41_RUNNER_GRAPH_BANK",
                        "TF_DSV41_RUNNER_COMPILE_STEPS", "TF_DSV41_RUNNER_CELLS", "TF_DSV41_COMPUTE_LANE_RUNNER_CIRCUIT",
                        "TF_DSV41_COMPUTE_LANE_RUNNER_BACKEND", "TF_DSV41_COMPUTE_LANE_RUNNER_GRAPH_BANK",
-                       "TF_DSV41_COMPUTE_LANE_RUNNER_SETTLE_US"), "")
+                       "TF_DSV41_COMPUTE_LANE_RUNNER_SETTLE_US", "TF_DSV41_RUNNER_SPANS",
+                       "TF_DSV41_RUNNER_DIGIT_HOLD_MAX", "TF_DSV41_RUNNER_MARK_STOP"), "")
 LANE = {
     "TF_DSV41_COMPUTE_LANE": "1", "TF_DSV41_COMPUTE_LANE_DEFAULT": "0", "TF_DSV41_COMPUTE_LANE_RUNNER": "0",
     "TF_DSV41_RUNNER": "0", "TF_DSV41_RUNNER_COMMIT": "0", "TF_DSV41_RUNNER_STATED": "0",
@@ -73,7 +75,7 @@ def test_flash17_default_is_the_tool_full_profile_for_every_chat():
 def test_flash17_lane_arm_is_a_commented_opt_in_that_replaces_the_default():
     lines = flash17()
     start = next(i for i, line in enumerate(lines) if line.startswith("# Opt-in: arm L"))
-    assert "Replace the nineteen lines above" in " ".join(lines[start:start + 4])
+    assert "Replace the twenty-two lines above" in " ".join(lines[start:start + 4])
     block = [line[2:].split("=", 1) for line in lines[start:] if line.startswith("# TF_DSV41_")]
     assert dict(block[:len(LANE)]) == LANE and len(block[:len(LANE)]) == len(LANE)
     assert set(LANE) == set(TOOL_FULL) | {"TF_DSV41_COMPUTE_LANE_DEFAULT"}  # every name the default sets

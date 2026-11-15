@@ -21,7 +21,7 @@ what they showed and how to rerun them. The kits, specs, checkers and results ar
 
 | | |
 | --- | --- |
-| Pin | upstream TensorFold `f212eeabde0fc2ac3234ca947a69cc7714abaca2` with [`patches/`](../patches/) `0001`-`0072` (engine commit `6c4eeccda`, the engine G serves; the lane and runner moved into TensorFold's shared core with the `TF_DSV41_*` names kept as aliases, [ENGINE](ENGINE.md#this-engine-against-the-previous-recipe-engine)). The studies below ran on the previous recipe engine: upstream `0d51120a8d88ace54e833a78ddffc7fe6768f872` with the earlier series `0001`-`0207` (engine commit `12257eb51`: `1ea71240a` plus the undeclared-tool fix; `1ea71240a`, patch `0205`, is `7b79ef92d` plus the opt-in checkpoints of [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)); before them `7b79ef92d846138d51638b677c473392a56e240c`, patch `0203` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
+| Pin | upstream TensorFold `f212eeabde0fc2ac3234ca947a69cc7714abaca2` with [`patches/`](../patches/) `0001`-`0087` (`0001`-`0072`: engine commit `6c4eeccda`, the engine G serves; `0073`-`0087`: the Qwen recipe's runner and lane commits, [ENGINE](ENGINE.md#compute-lanes-from-the-qwen-recipe-0073-0087); the lane and runner moved into TensorFold's shared core with the `TF_DSV41_*` names kept as aliases, [ENGINE](ENGINE.md#this-engine-against-the-previous-recipe-engine)). The studies below ran on the previous recipe engine: upstream `0d51120a8d88ace54e833a78ddffc7fe6768f872` with the earlier series `0001`-`0207` (engine commit `12257eb51`: `1ea71240a` plus the undeclared-tool fix; `1ea71240a`, patch `0205`, is `7b79ef92d` plus the opt-in checkpoints of [#80](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/80)); before them `7b79ef92d846138d51638b677c473392a56e240c`, patch `0203` (`01a62132c` plus the session-restore fix of upstream #2182, [#86](https://github.com/jayleaton/deepseek-v41-tensorfold-spark/issues/86)) |
 | Measured source | `07106059c` (patch `0196`): tree `c3636e6da0d871470490830bb7860bb1a379c577`, identical to `3a429d6f1` |
 | Measured image | `tensorfold-dsv41-imr:r-3a429d6f122d` (G's runtime image plus that source's two binaries and the runner's frontend layer, circuit and graph banks) |
 
@@ -69,7 +69,7 @@ effective container environment of the L boot is in
 **Tool-full** (AB3 only, engine `3bf584af1`, image `tensorfold-dsv41-imr:r-3bf584af1c54`): L plus the in-model runner,
 its calculator circuit and graph bank, S3 (calls go to the runner first, with the sandbox as fallback) and the trust
 guide sent as the request's `runner_guide` (sha256 `53ed328f…`). The 18 engine lines are the active default
-"tool-full" block of [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example), before
+"tool-full" block (less the three runner lines added with `0073`-`0087`, below) of [`config/prod-zig-flash17.env.example`](../config/prod-zig-flash17.env.example), before
 `TF_DSV41_COMPUTE_LANE_DEFAULT=1`; the requests
 used `tools: [{"type": "code_interpreter"}]` (tool definition sha256 `eec0577c…`, about 306 prompt tokens),
 `max_tokens` 32768, `deadline_s` 300, three seeds and four streams at a time. Its arms were plain, lane (L's engine
@@ -77,12 +77,14 @@ lines with this request shape), full and runner-only.
 
 ### The flash17 profile against the measured arms
 
-The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1`. AB3's requests sent
+The profile's default is the tool-full arm's 18 engine lines plus `TF_DSV41_COMPUTE_LANE_DEFAULT=1` and three runner
+lines AB3 did not have: `TF_DSV41_RUNNER_SPANS=reasoning` (thinking chats only), `TF_DSV41_RUNNER_DIGIT_HOLD_MAX=0` and
+`TF_DSV41_RUNNER_MARK_STOP=0` (as the Qwen recipe's TP1 release). AB3's requests sent
 `tools: [{"type": "code_interpreter"}]` and the trust guide as `runner_guide`; with the default setting the engine
 supplies the guide to every thinking chat and the tool to a thinking chat with room for a call, so a client need not
 send either. `max_tokens` and `deadline_s` stay the client's (AB3
 sent 32768 and 300). The engine is AB3's source plus the two owned-bytes commits and the default commit, so the default
-has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's nineteen names with
+has not itself been measured at the pin. Arm L is the commented opt-in block below it (the default's twenty-two names with
 the runner off, so no default value survives from an exported shell) and runs on the plain image.
 
 Both blocks share the rest of the profile, which equals L's effective environment except:

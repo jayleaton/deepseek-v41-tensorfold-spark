@@ -1,0 +1,136 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 17:38:46 +0700
+Subject: [PATCH 86/87] runner: the reply's receipt lists the digit stops that fired,
+ so a reply the runner cut says so
+
+A digit stop replaces a drawn reasoning token with a newline: after an owned value, after the inline mark, or past
+TF_RUNNER_DIGIT_RUN_MAX (1024 digits). Only the serving log recorded it. The reply's runner receipt (the response's
+tensorfold.runner) counted cells alone, so a reply whose only runner action was a stop read as "runner idle": all
+cell counts 0, cells []. In the 11-14 opencode A/B on Qwen3.8-Flash-Next TP1 one lanes-on reply (fib(250) by hand)
+had its model-written 1,024-digit reasoning run cut by the run cap, then closed its reasoning there and answered
+without a tool call; its receipt said nothing, and the A/B report concluded the lanes were not involved.
+
+The stop state counts each fired stop by its reason (the same events as the serving log's "digit stop" lines) and the
+receipt adds "stops":{"after_value":N,"after_mark":N,"run_cap":N} after resume_ms when any fired. A reply with no
+stop keeps its receipt byte for byte, so the existing receipt fixtures are unchanged.
+
+Tests: a session whose reasoning run reaches a cap of 8 lists run_cap 1 with every cell count 0; one digit short
+(negative control) no stop fires and the receipt ends as before.
+
+(cherry picked from commit 488a3b59bedbd95b49cb53685b780bc872e5033b)
+---
+ CHANGELOG.md                            |  2 ++
+ zig/src/core/lanes/runner_stop.zig      |  2 ++
+ zig/src/core/runner_digit_stop_test.zig | 31 +++++++++++++++++++++++++
+ zig/src/core/runner_receipt.zig         |  8 +++++--
+ 4 files changed, 41 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f7fbbba35..f95f5d394 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+ 
+ - In-model runner: an inline `<expr> =` or `A mod M =` that sits inside an open quotation on its line (an odd number of `"` before it, or a `“` with no `”`) is quoted text, and the runner no longer owns its value there (`TF_RUNNER_INLINE_QUOTED`, on by default; 0 restores the earlier trigger). The cell abstains, its abstain record giving the reason `quoted`, and the model's own continuation stands, so nothing is forced and no digit stop is armed. On Qwen3.8-Flash-Next TP1 (MLX 4-bit, one Spark) the model opens its reasoning by quoting the request; when the request itself contained `7^222 =` or `13^150 = <value>`, the runner wrote the 168 to 188 digit value and ` @engine` into the middle of that quotation. In a 9-reply big-power set the first owned span of 7 replies was such a quotation; the model then read the value as the user's text, glued `@engineer…` to the mark and in one reply ran on for 1,024 invented digits. The same expression on the model's own line, or after the quotation closes, is owned as before; of about 12,300 inline spans in 2,506 recorded TP2 replies, 17 sat in an open quotation.
+ 
++- In-model runner: the reply's runner receipt (`tensorfold.runner` in the response) lists the digit stops that replaced a drawn reasoning token, as `"stops":{"after_value":N,"after_mark":N,"run_cap":N}`, whenever one fired; before, only the serving log recorded them, so a reply whose only runner action was a stop read as one the runner never touched (every cell count 0). A reply with no stop keeps its receipt byte for byte. On Qwen3.8-Flash-Next TP1 a lanes-on opencode reply wrote an invented fib(250) of 1,024 digits in its reasoning; the run cap (`TF_RUNNER_DIGIT_RUN_MAX`) cut it there, the model closed its reasoning and answered without a tool call, and its receipt said nothing of the cut.
++
+ - In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line. With `TF_RUNNER_INLINE_MARK=1` an owned value ends in ` @engine`, and the model's next token may no longer glue a letter, digit, `_`, `-` or `/` to it (`TF_RUNNER_MARK_STOP`, on by default): on Qwen3.8-Flash-Next TP1 the model wrote `@engineer` in 4 of 9 replies of a big-power set, and in one it went on to `@engineer-mike/secret-repo!` and a 1,024-digit run. A space, newline or punctuation after the mark lands as drawn, and a mark stop does not shorten the reply's later digit runs, so the model can still write a number of the same digits, a copy of the value included.
+ 
+ - Server: Responses grows each output item in one buffer, and Kimi chat advances its native stream parser through new tokens, so a long reply retains memory in proportion to its length while every reply and streamed event stays the same (#2642).
+diff --git a/zig/src/core/lanes/runner_stop.zig b/zig/src/core/lanes/runner_stop.zig
+index 39a6601e9..c81c9775a 100644
+--- a/zig/src/core/lanes/runner_stop.zig
++++ b/zig/src/core/lanes/runner_stop.zig
+@@ -51,6 +51,7 @@ pub const State = struct {
+     word: bool = false, // the armed span ends in a word character (the mark): its guard is `wordy`, not a digit
+     run: u32 = 0, // digits ending the reasoning's committed text
+     held: bool = false, // a stop fired in this reply: later runs cap at hold_max
++    fires: [3]u32 = @splat(0), // stops fired in this reply, by Why (the receipt's "stops"; the serving log's lines)
+ 
+     /// The newline token from `text` (its `encode`, as the runner's Text), asked once.
+     pub fn look(st: *State, gpa: Allocator, text: anytype) Allocator.Error!void {
+@@ -76,6 +77,7 @@ pub const State = struct {
+ 
+     /// A stop was applied: a digit stop holds later runs at hold_max; a mark stop does not, so numbers stay whole.
+     pub fn fired(st: *State, why: Why) void {
++        st.fires[@backingInt(why)] +|= 1;
+         if (why != .after_mark) st.held = true;
+     }
+ 
+diff --git a/zig/src/core/runner_digit_stop_test.zig b/zig/src/core/runner_digit_stop_test.zig
+index 304aeaa8c..46c913399 100644
+--- a/zig/src/core/runner_digit_stop_test.zig
++++ b/zig/src/core/runner_digit_stop_test.zig
+@@ -169,3 +169,34 @@ test "runner digit stop: TF_R_DIGIT_STOP, _MARK_STOP, _RUN_MAX and _HOLD_MAX par
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_RUN_MAX", "-1" } };
+     try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+ }
++
++/// `digits` drawn reasoning digits under a run cap of 8, then a "5": whether it stops, and the receipt (caller frees).
++fn capped(digits: usize) !struct { hit: bool, receipt: []u8 } {
++    var back: Back = .{};
++    defer back.deinit();
++    var r: runner.Runner = .{ .gpa = gpa, .cfg = .{}, .frontend = .{ .translate = translate }, .backend = back.backend(), .text = .{ .bytes = bytes, .encode = encode } };
++    r.cfg.scan.inline_math = true;
++    r.cfg.digit_stop.run_max = 8;
++    const s = (try r.session(.{})).?;
++    defer s.destroy();
++    const hook = s.hook();
++    for (0..digits) |i| try std.testing.expect(!hook.token(hook.ptr, '1' + @as(u32, @intCast(i % 9)), true, true, false));
++    const hit = hook.stop.?(hook.ptr, &.{'5'}, 0);
++    if (hit) |h| try std.testing.expectEqual(@import("lanes").runner_stop.Why.run_cap, h.why);
++    return .{ .hit = hit != null, .receipt = try gpa.dupe(u8, s.receipt()) };
++}
++
++test "runner digit stop: a run cap that fired is in the reply's receipt though no cell was claimed; none fired, none listed" {
++    // the 11-14 opencode fib(250) reply: the cap cut a model-written 1,024-digit run, and the receipt said nothing
++    const cut = try capped(8);
++    defer gpa.free(cut.receipt);
++    try std.testing.expect(cut.hit);
++    try std.testing.expect(std.mem.indexOf(u8, cut.receipt, "\"inline\":{\"closed\":0,\"owned\":0,\"abstained\":0,\"owned_tokens\":0}") != null);
++    try std.testing.expect(std.mem.indexOf(u8, cut.receipt, ",\"stops\":{\"after_value\":0,\"after_mark\":0,\"run_cap\":1}") != null);
++    // negative control: one digit short of the cap nothing fires and the receipt is byte for byte as before
++    const short = try capped(7);
++    defer gpa.free(short.receipt);
++    try std.testing.expect(!short.hit);
++    try std.testing.expect(std.mem.indexOf(u8, short.receipt, "\"stops\"") == null);
++    try std.testing.expect(std.mem.endsWith(u8, short.receipt, "\"resume_ms\":0,\"cells\":[]}"));
++}
+diff --git a/zig/src/core/runner_receipt.zig b/zig/src/core/runner_receipt.zig
+index bea886a61..923f69963 100644
+--- a/zig/src/core/runner_receipt.zig
++++ b/zig/src/core/runner_receipt.zig
+@@ -123,7 +123,8 @@ pub fn write(s: anytype) []const u8 {
+     const l = &s.rec;
+     l.out.clearRetainingCapacity();
+     const cfg = if (comptime @typeInfo(@TypeOf(s.r)) == .pointer) &s.r.cfg else null;
+-    put(s.cells.items, l, s.r.gpa, s.held_ms, s.resume_ms, cfg) catch return "";
++    const stops: [3]u32 = if (comptime @hasField(std.meta.Child(@TypeOf(s)), "digits")) s.digits.fires else @splat(0);
++    put(s.cells.items, l, s.r.gpa, s.held_ms, s.resume_ms, stops, cfg) catch return "";
+     return l.out.items;
+ }
+ 
+@@ -153,7 +154,7 @@ fn fresh(cells: anytype, l: *Log, gpa: Allocator) Allocator.Error!void {
+ 
+ pub const form_names = [_][]const u8{ "fence", "repl", "inline", "trace" };
+ 
+-fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64, cfg: anytype) Allocator.Error!void {
++fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64, stops: [3]u32, cfg: anytype) Allocator.Error!void {
+     var forms = std.mem.zeroes([4][4]u32);
+     var kinds = std.mem.zeroes([3]u32);
+     for (cells) |c| {
+@@ -174,6 +175,9 @@ fn put(cells: anytype, l: *Log, gpa: Allocator, held_ms: u64, resume_ms: u64, cf
+     for (forms, form_names) |f, name|
+         try o.print(gpa, "\"{s}\":{{\"closed\":{d},\"owned\":{d},\"abstained\":{d},\"owned_tokens\":{d}}},", .{ name, f[0], f[1], f[2], f[3] });
+     try o.print(gpa, "\"owned_by\":{{\"calc\":{d},\"elf\":{d},\"graph\":{d}}},\"held_ms\":{d},\"resume_ms\":{d}", .{ kinds[0], kinds[1], kinds[2], held_ms, resume_ms });
++    // the digit stops that fired (lanes/runner_stop.zig), listed only then: other receipts stay byte for byte
++    if (stops[0] | stops[1] | stops[2] != 0)
++        try o.print(gpa, ",\"stops\":{{\"after_value\":{d},\"after_mark\":{d},\"run_cap\":{d}}}", .{ stops[0], stops[1], stops[2] });
+     if (l.on) {
+         try o.appendSlice(gpa, ",\"cells\":[");
+         for (l.records.items, 0..) |r, i| {
+-- 
+2.56.0
+

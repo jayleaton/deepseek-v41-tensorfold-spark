@@ -13,14 +13,38 @@ existing generator/reference dependencies pending their equivalence audit.
 
 ## The patch series
 
-The 72 patches are the DeepSeek-V4.1 engine the pair serves (G, `6c4eeccda`) that is not on upstream `main` yet: G's
+Patches `0001`-`0072` are the DeepSeek-V4.1 engine the pair serves (G, `6c4eeccda`) that is not on upstream `main` yet: G's
 first-parent history over its upstream base `f212eeabd`, one patch per commit, each with its author. Two of those
 commits were merges of a side branch holding one commit each, whose diff is exactly that commit's; each is one patch
 carrying that commit's message, author and date, with a note that it came from a merge (`0013`, Flash-Next's compute
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people. The checkout's last commit is `986206947` with the fixed committer `fetch-source.sh` uses.
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow (below); the whole series gives tree
+`cd758a27c`, and the checkout's last commit is `c961a117f` with the fixed committer `fetch-source.sh` uses.
+
+### Compute Lanes from the Qwen recipe (`0073`-`0087`)
+
+The Qwen recipe (`jayleaton/qwen4-tensorfold-spark`) serves the same shared compute lane and in-model runner and
+carried 14 runner and lane commits made after G's line was cut. Each of `0073`-`0086` is a cherry-pick of the commit the Qwen recipe's
+patch carries, with its author and message (the gap table is in the PR):
+
+| patches | Qwen recipe | change |
+| --- | --- | --- |
+| `0073`, `0074` | `0057`, `0061` | a resumed segment that ends at its EOS inside the think block a result turn reopened answers with that text; an answer left there gets the template's next turn, thinking off |
+| `0075` | `0064` | a runner binding may default to the think block; with `PREFIX_SPANS=reasoning` a non-thinking chat opens no runner session (no cells, no owned value, no guide). DeepSeek's binding keeps every span by default; the flash17 profile sets `TF_DSV41_RUNNER_SPANS=reasoning` |
+| `0076`-`0081` | `0070`-`0075` | the thinking budget's cut waits for a tool result's forced rows (the result lands whole, then the close), with its harness |
+| `0082` | `0076` | digit stops: in reasoning, no drawn digit right after an owned inline integer; a reasoning digit run stops at 1,024 (`_DIGIT_STOP`, `_DIGIT_RUN_MAX`, on). G's line had no `lanes/round_cut.zig` (it came with Mia's call gate); the patch adds it with the loop guard, the budget and the digit stop only, in the same order |
+| `0083` | `0081` | after a stop, later reasoning runs hold at 64 digits (`_DIGIT_HOLD_MAX`; the profile sets 0) |
+| `0084` | `0082` | no word character glued to the inline mark (`_MARK_STOP`; the profile sets 0, and its mark is off) |
+| `0085` | `0083` | the quoted rule: an inline span inside an open quotation abstains (`quoted`) (`_INLINE_QUOTED`, on) |
+| `0086` | `0084` (PR #2) | the reply's runner receipt adds `"stops":{"after_value":N,"after_mark":N,"run_cap":N}` when a stop fired; other receipts are byte for byte |
+| `0087` | (this recipe) | lean: `lanes/stream.zig` back within 600 lines on G's line (the budget-hold commits left it at 601), same meaning |
+
+The knobs are read under the boot's runner prefix (`TF_DSV41_RUNNER_*` in the flash17 profile, `TF_RUNNER_*` for the
+generic names; the S3 lane runner's `TF_DSV41_COMPUTE_LANE_RUNNER_*` are listed too). Not carried over: the Qwen
+recipe's `0085` media fallback (DeepSeek-V4.1 serves images natively and has its own `TF_DSV41_IMAGES=placeholder`),
+its XML tool-cut fix (Qwen markup), and Mia's opt-in lane scheduling commits.
 
 To get the patched engine source, for example to regenerate the settings list or build by hand:
 
