@@ -46,7 +46,8 @@ same trees, messages and dates, re-recorded under one author. Counterparts of co
 ## Measured configurations
 
 Every study ran on two GB10 Sparks (TP2) with the flash17 K6 MTP pack (DeepSeek-V4.1-Flash-1017, EXL3 2.80 bpw),
-four slots, 1M context and the release candidate G settings of the flash17 profile.
+four slots, 1M context (the profile default before
+[eight slots of 192K](../results/c8-slots-20261114/README.md)) and the release candidate G settings of the flash17 profile.
 
 **Requests** (all lane-only studies): thinking on, `reasoning_effort` high, temperature 1.0, top-p 0.95, top-k 20,
 `max_tokens` 8192, `"deadline_s": 270`, seeds 101 and 102, one request at a time, streamed with `return_token_ids`.
