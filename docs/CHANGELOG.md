@@ -5,6 +5,13 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **Compute Lanes caught up with the Qwen recipe** (`patches/0073`-`0087`). In reasoning the runner now stops a
+  model-written number from running on: no digit right after an owned inline value, and a 1,024-digit cap per run; the
+  stopped token becomes a newline and the reply's `tensorfold.runner` receipt lists it under `"stops"`. An inline
+  expression inside an open quotation is no longer owned. With `TF_DSV41_RUNNER_SPANS=reasoning` (set in the flash17
+  profile) a non-thinking chat gets no runner session, so its bytes are the runner-off server's. A thinking budget no
+  longer cuts inside a held tool result, and an answer left inside a think block a result reopened is returned as the
+  answer. See [ENGINE](ENGINE.md#compute-lanes-from-the-qwen-recipe-0073-0087).
 - **The recipe builds the engine the pair serves.** Upstream `f212eeabd` plus `patches/0001`-`0072` give `6c4eeccda`'s
   content (24 comment lines reworded), 2,517 upstream commits newer than the previous pin. The compute lane and runner
   now live in TensorFold's shared core; the profile's `TF_DSV41_*` names still work. `TF_DSV41_RUNNER_SPEC_HOLD` is

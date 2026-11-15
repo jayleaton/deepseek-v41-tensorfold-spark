@@ -1,0 +1,252 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Thu, 12 Nov 2026 21:58:08 +0700
+Subject: [PATCH 83/87] runner: once a digit stop fired in a reply, hold its later
+ reasoning digit runs at 64 digits
+
+After the stop's newline Qwen3.8-Flash-Next TP2 restarted a fresh digit run on the next line, about 1,000 digits each until the run cap, 8 runs in one reply (digit gate, 3^300 and 2^500). TF_RUNNER_DIGIT_HOLD_MAX (default 64, 0 off) caps those later runs; forced rows and owned values are never cut.
+
+(cherry picked from commit ab34d28c822d4cb42e44df7beb2bd2db752a4775)
+---
+ CHANGELOG.md                            |  2 +-
+ zig/src/core/lanes/runner_stop.zig      | 26 ++++++++---
+ zig/src/core/lanes/runner_stop_test.zig | 59 +++++++++++++++++++++++--
+ zig/src/core/runner.zig                 |  6 ++-
+ zig/src/core/runner_digit_stop_test.zig |  8 +++-
+ 5 files changed, 88 insertions(+), 13 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a96f6ed74..28edf95fa 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,7 +4,7 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+ 
+ ## Unreleased
+ 
+-- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged.
++- In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line.
+ 
+ - Server: Responses grows each output item in one buffer, and Kimi chat advances its native stream parser through new tokens, so a long reply retains memory in proportion to its length while every reply and streamed event stays the same (#2642).
+ - Tests: `zig build bench-stream-scan` streams a 32k-token thinking reply (30,000 reasoning tokens, prose, then a Qwen XML, GLM, DSML or Kimi call) through the chat, Messages and Responses routes one or two tokens a chunk, and prints each chunk's request-thread time at 1k to 30k reply tokens, each whole-text step's time and the request arena; under `test-server-cpu` a 300-token reply checks that each route's streamed reasoning, prose and call arguments equal the reply's (#2642).
+diff --git a/zig/src/core/lanes/runner_stop.zig b/zig/src/core/lanes/runner_stop.zig
+index a9108e9cb..183c9d887 100644
+--- a/zig/src/core/lanes/runner_stop.zig
++++ b/zig/src/core/lanes/runner_stop.zig
+@@ -9,8 +9,8 @@ pub const Stop = struct { at: usize, token: u32, why: Why };
+ 
+ pub const Why = enum { after_value, run_cap };
+ 
+-/// PREFIX_DIGIT_STOP and PREFIX_DIGIT_RUN_MAX (core/runner.zig parses them); run_max 0: no cap.
+-pub const Limits = struct { after_value: bool = true, run_max: u32 = 1024 };
++/// PREFIX_DIGIT_STOP, _RUN_MAX, _HOLD_MAX (runner.zig); 0: no cap. hold_max caps runs once a stop fired in the reply.
++pub const Limits = struct { after_value: bool = true, run_max: u32 = 1024, hold_max: u32 = 64 };
+ 
+ /// One token's bytes, as the runner's tokenizer gives them.
+ pub const Bytes = struct {
+@@ -43,6 +43,7 @@ pub const State = struct {
+     looked: bool = false, // `look` asked the tokenizer for it (once: one token or none)
+     lead: ?usize = null, // armed: owned tokens still to land; at 0 the next token is the model's first after the value
+     run: u32 = 0, // digits ending the reasoning's committed text
++    held: bool = false, // a stop fired in this reply: later runs cap at hold_max
+ 
+     /// The newline token from `text` (its `encode`, as the runner's Text), asked once.
+     pub fn look(st: *State, gpa: Allocator, text: anytype) Allocator.Error!void {
+@@ -55,7 +56,20 @@ pub const State = struct {
+ 
+     /// Whether the run nears its cap with the newline not yet asked for (the runner then calls `look`).
+     pub fn wants(st: *const State) bool {
+-        return !st.looked and st.limits.run_max > 0 and st.run +| 64 > st.limits.run_max;
++        const c = st.cap();
++        return !st.looked and c > 0 and st.run +| 64 > c;
++    }
++
++    /// The digit-run cap now (0: none): run_max, or hold_max once a stop fired.
++    pub fn cap(st: *const State) u32 {
++        const h = st.limits.hold_max;
++        if (!st.held or h == 0) return st.limits.run_max;
++        return if (st.limits.run_max == 0) h else @min(st.limits.run_max, h);
++    }
++
++    /// A stop this state returned was applied: the reply's later runs hold at hold_max.
++    pub fn fired(st: *State) void {
++        st.held = true;
+     }
+ 
+     /// An owned inline value is forced next: `count` tokens whose text is `value` (armed when it ends in a digit).
+@@ -76,12 +90,13 @@ pub const State = struct {
+         const nl = st.newline orelse return null;
+         var lead = st.lead;
+         var run = st.run;
++        const c = st.cap();
+         for (tokens, 0..) |t, i| {
+             const b = bytes.of(bytes.ctx, t);
+             const owned = if (lead) |n| n > 0 else false;
+             if (!owned and i >= forced and b.len > 0 and digit(b[0])) {
+                 if (lead != null) return .{ .at = i, .token = nl, .why = .after_value };
+-                if (st.limits.run_max > 0 and run +| leading(b) > st.limits.run_max) return .{ .at = i, .token = nl, .why = .run_cap };
++                if (c > 0 and run +| leading(b) > c) return .{ .at = i, .token = nl, .why = .run_cap };
+             }
+             if (lead) |n| lead = if (n > 0) n - 1 else null;
+             run = extend(run, b);
+@@ -92,7 +107,8 @@ pub const State = struct {
+     /// Whether the next draw could be stopped: a pipelined stream reads it before feeding it.
+     pub fn watching(st: *const State) bool {
+         if (st.newline == null) return false;
+-        return st.lead != null or (st.limits.run_max > 0 and st.run +| 16 > st.limits.run_max);
++        const c = st.cap();
++        return st.lead != null or (c > 0 and st.run +| 16 > c);
+     }
+ };
+ 
+diff --git a/zig/src/core/lanes/runner_stop_test.zig b/zig/src/core/lanes/runner_stop_test.zig
+index 9af37fca7..7a1efaedf 100644
+--- a/zig/src/core/lanes/runner_stop_test.zig
++++ b/zig/src/core/lanes/runner_stop_test.zig
+@@ -134,6 +134,35 @@ test "runner digit stop: a reasoning digit run stops at the cap, and runs on wit
+     try std.testing.expect(off.stop(text, &.{ 7, 8, 9 }, 0) == null);
+ }
+ 
++test "runner digit stop: once a stop fired, later runs hold at hold_max; before it, and with no hold, they run on" {
++    var st = state(.{ .run_max = 100, .hold_max = 5 });
++    landAll(&st, &.{ 1, 2, 3, 4, 5 });
++    // negative control: before any stop a sixth digit lands (the cap is still run_max)
++    try std.testing.expectEqual(@as(u32, 100), st.cap());
++    try std.testing.expect(st.stop(text, &.{6}, 0) == null);
++    st.fired();
++    try std.testing.expectEqual(@as(u32, 5), st.cap());
++    const hit = st.stop(text, &.{ 6, 7 }, 0).?;
++    try std.testing.expectEqual(@as(usize, 0), hit.at);
++    try std.testing.expectEqual(stop.Why.run_cap, hit.why);
++    try std.testing.expect(st.watching());
++    // a new run after the newline holds at the short cap too, and forced rows still pass
++    landAll(&st, &.{ nl, 1, 2, 3 });
++    try std.testing.expectEqual(@as(usize, 2), st.stop(text, &.{ 4, 5, 6 }, 0).?.at);
++    try std.testing.expect(st.stop(text, &.{ 4, 5, 6 }, 3) == null);
++    // with no run cap the hold still applies once fired
++    var uncapped = state(.{ .run_max = 0, .hold_max = 3 });
++    uncapped.fired();
++    landAll(&uncapped, &.{ 1, 2, 3 });
++    try std.testing.expectEqual(stop.Why.run_cap, uncapped.stop(text, &.{4}, 0).?.why);
++    // negative control: hold_max 0 keeps run_max after a stop
++    var nohold = state(.{ .run_max = 100, .hold_max = 0 });
++    nohold.fired();
++    landAll(&nohold, &.{ 1, 2, 3, 4, 5 });
++    try std.testing.expectEqual(@as(u32, 100), nohold.cap());
++    try std.testing.expect(nohold.stop(text, &.{ 6, 7 }, 0) == null);
++}
++
+ test "runner digit stop: the newline is asked for only near the cap or at an arm, once" {
+     var st: stop.State = .{ .limits = .{ .run_max = 1024 } };
+     landAll(&st, &.{ 1, 2, 3 });
+@@ -175,7 +204,9 @@ const Hook = struct {
+ 
+     fn onStop(ptr: *anyopaque, tokens: []const u32, forced: usize) ?stop.Stop {
+         const h: *Hook = @ptrCast(@alignCast(ptr));
+-        return h.st.stop(.{ .of = sevens }, tokens, forced);
++        const hit = h.st.stop(.{ .of = sevens }, tokens, forced) orelse return null;
++        h.st.fired(); // as the runner's onStop
++        return hit;
+     }
+ 
+     fn onWatching(ptr: *anyopaque) bool {
+@@ -227,9 +258,9 @@ fn longestRun(tokens: []const u32) usize {
+ 
+ test "runner digit stop on the fake target: the draw after an owned value is a newline, MTP and pipelined rounds" {
+     for ([_]bool{ true, false }) |mtp| for ([_]bool{ true, false }) |drafts| {
+-        const on = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .run_max = 0 } });
++        const on = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .run_max = 0, .hold_max = 0 } });
+         defer gpa.free(on.tokens);
+-        const off = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .after_value = false, .run_max = 0 } });
++        const off = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .after_value = false, .run_max = 0, .hold_max = 0 } });
+         defer gpa.free(off.tokens);
+         const at = on.value_at.?;
+         try std.testing.expectEqual(at, off.value_at.?);
+@@ -269,3 +300,25 @@ test "runner digit stop on the fake target: outside reasoning the reply is the s
+         try std.testing.expect(!std.mem.eql(u32, bare.tokens, open.tokens));
+     }
+ }
++
++fn longestFrom(tokens: []const u32, from: usize) usize {
++    return longestRun(tokens[@min(from, tokens.len)..]);
++}
++
++test "runner digit stop on the fake target: after the stop past a value the runaway holds at hold_max, not with no hold" {
++    for ([_]bool{ true, false }) |mtp| for ([_]bool{ true, false }) |drafts| {
++        const on = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .run_max = 0, .hold_max = 6 } });
++        defer gpa.free(on.tokens);
++        const off = try run(.{ .mtp = mtp, .drafts = drafts, .limits = .{ .run_max = 0, .hold_max = 0 } });
++        defer gpa.free(off.tokens);
++        const after = on.value_at.? + value.len;
++        try std.testing.expectEqual(nl, on.tokens[after]);
++        try std.testing.expectEqual(nl, off.tokens[after]); // both stop the first draw after the value
++        try std.testing.expect(longestFrom(on.tokens, after) <= 6);
++        try std.testing.expect(std.mem.count(u32, on.tokens[after..], &.{nl}) >= 2); // the hold cut again
++        // negative control: with no hold the model's restarted run goes on past 6
++        try std.testing.expect(longestFrom(off.tokens, after) > 6);
++        // everything up to the value and its stop is untouched by the hold
++        try std.testing.expectEqualSlices(u32, off.tokens[0 .. after + 1], on.tokens[0 .. after + 1]);
++    };
++}
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 2abcd4b08..6ac8f1268 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -29,7 +29,7 @@ pub const Config = struct {
+     guide_max_bytes: usize = 512, // PREFIX_GUIDE_MAX_BYTES: request guide cap, opt-in up to 2048 bytes
+     compile: bool = true, // false: the frontend never builds an ELF (no clang); calc and graph programs only (S3)
+     inline_mark: bool = false, // PREFIX_INLINE_MARK: tag owned inline values; off preserves their bytes
+-    digit_stop: lanes.runner_stop.Limits = .{}, // PREFIX_DIGIT_STOP / _DIGIT_RUN_MAX: no runaway after a value
++    digit_stop: lanes.runner_stop.Limits = .{}, // PREFIX_DIGIT_STOP / _RUN_MAX / _HOLD_MAX: no runaway
+     sync_graph: bool = false, // PREFIX_SYNC_GRAPH: a graph result settles at its trigger token, in that round (no hold)
+     cells: bool = true, // PREFIX_CELLS: the receipt records each owned cell's span, route and landed value (runner_receipt.zig)
+     abstains: bool = false, // PREFIX_ABSTAINS: with cells, each abstained cell's source, reason and stage (runner_abstain.zig)
+@@ -62,6 +62,7 @@ pub const Config = struct {
+         c.inline_mark = try knob(u1, get, prefix ++ "_INLINE_MARK", 0, 0, 1) == 1;
+         c.digit_stop.after_value = try knob(u1, get, prefix ++ "_DIGIT_STOP", 1, 0, 1) == 1;
+         c.digit_stop.run_max = try knob(u32, get, prefix ++ "_DIGIT_RUN_MAX", c.digit_stop.run_max, 0, 1 << 20);
++        c.digit_stop.hold_max = try knob(u32, get, prefix ++ "_DIGIT_HOLD_MAX", c.digit_stop.hold_max, 0, 1 << 20);
+         c.sync_graph = try knob(u1, get, prefix ++ "_SYNC_GRAPH", 0, 0, 1) == 1;
+         if (c.sync_graph and c.backend != .graph) return bad(prefix ++ "_SYNC_GRAPH", "1 (backend is not graph)");
+         c.cells = try knob(u1, get, prefix ++ "_CELLS", 1, 0, 1) == 1;
+@@ -181,7 +182,8 @@ pub const Session = struct {
+         if (s.broken) return null;
+         const tx = s.r.text.?;
+         const hit = s.digits.stop(.{ .ctx = tx.ctx, .of = tx.bytes }, tokens, forced) orelse return null;
+-        log.info("reply {d}: digit stop ({t}): a drawn token replaced by a newline", .{ s.id, hit.why });
++        s.digits.fired();
++        log.info("reply {d}: digit stop ({t}): a drawn token replaced by a newline; later runs cap at {d}", .{ s.id, hit.why, s.digits.cap() });
+         return hit;
+     }
+ 
+diff --git a/zig/src/core/runner_digit_stop_test.zig b/zig/src/core/runner_digit_stop_test.zig
+index 14804b31b..0e8a21e0f 100644
+--- a/zig/src/core/runner_digit_stop_test.zig
++++ b/zig/src/core/runner_digit_stop_test.zig
+@@ -120,7 +120,7 @@ test "runner digit stop: outside reasoning an owned value leaves nothing armed"
+     try std.testing.expect(!seen.digit and !seen.space);
+ }
+ 
+-test "runner digit stop: TF_R_DIGIT_STOP and TF_R_DIGIT_RUN_MAX parse, on with a 1024-digit cap unless set" {
++test "runner digit stop: TF_R_DIGIT_STOP, _RUN_MAX and _HOLD_MAX parse: on, a 1024 cap, a 64 hold unless set" {
+     const K = struct {
+         var set: []const [2][]const u8 = &.{};
+         fn get(name: []const u8) ?[]const u8 {
+@@ -130,10 +130,14 @@ test "runner digit stop: TF_R_DIGIT_STOP and TF_R_DIGIT_RUN_MAX parse, on with a
+     };
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" } };
+     const d = (try runner.Config.parse(&K.get, "TF_R")).?;
+-    try std.testing.expect(d.digit_stop.after_value and d.digit_stop.run_max == 1024);
++    try std.testing.expect(d.digit_stop.after_value and d.digit_stop.run_max == 1024 and d.digit_stop.hold_max == 64);
+     K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_STOP", "0" }, .{ "TF_R_DIGIT_RUN_MAX", "0" } };
+     const off = (try runner.Config.parse(&K.get, "TF_R")).?;
+     try std.testing.expect(!off.digit_stop.after_value and off.digit_stop.run_max == 0);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_HOLD_MAX", "0" } };
++    try std.testing.expectEqual(@as(u32, 0), (try runner.Config.parse(&K.get, "TF_R")).?.digit_stop.hold_max);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_HOLD_MAX", "x" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+     for ([_][]const u8{ "2", "x" }) |v| {
+         K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_DIGIT_STOP", v } };
+         try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
+-- 
+2.56.0
+

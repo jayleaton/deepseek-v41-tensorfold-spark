@@ -1,0 +1,420 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 11:56:19 +0700
+Subject: [PATCH 85/87] runner: an inline span inside an open quotation is quoted
+ text, not a cell to own
+
+(cherry picked from commit b628761851953653f8844872fdd6cd32714d374b)
+---
+ CHANGELOG.md                               |   2 +
+ zig/build/lane_halt_host.zig               |   1 +
+ zig/src/core/runner.zig                    |  11 +-
+ zig/src/core/runner_abstain.zig            |   3 +-
+ zig/src/core/runner_digit_stop_test.zig    |  12 +-
+ zig/src/core/runner_inline_quoted_test.zig | 169 +++++++++++++++++++++
+ zig/src/core/runner_scan.zig               |   5 +-
+ zig/src/core/runner_scan_inline.zig        |  14 ++
+ zig/src/core/runner_tests.zig              |   1 +
+ 9 files changed, 206 insertions(+), 12 deletions(-)
+ create mode 100644 zig/src/core/runner_inline_quoted_test.zig
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 640d58b5f..f7fbbba35 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,8 @@ Each release's page on GitHub has its notes and measurements. See [the 1.0.0 rel
+ 
+ ## Unreleased
+ 
++- In-model runner: an inline `<expr> =` or `A mod M =` that sits inside an open quotation on its line (an odd number of `"` before it, or a `“` with no `”`) is quoted text, and the runner no longer owns its value there (`TF_RUNNER_INLINE_QUOTED`, on by default; 0 restores the earlier trigger). The cell abstains, its abstain record giving the reason `quoted`, and the model's own continuation stands, so nothing is forced and no digit stop is armed. On Qwen3.8-Flash-Next TP1 (MLX 4-bit, one Spark) the model opens its reasoning by quoting the request; when the request itself contained `7^222 =` or `13^150 = <value>`, the runner wrote the 168 to 188 digit value and ` @engine` into the middle of that quotation. In a 9-reply big-power set the first owned span of 7 replies was such a quotation; the model then read the value as the user's text, glued `@engineer…` to the mark and in one reply ran on for 1,024 invented digits. The same expression on the model's own line, or after the quotation closes, is owned as before; of about 12,300 inline spans in 2,506 recorded TP2 replies, 17 sat in an open quotation.
++
+ - In-model runner: in reasoning, the model's next token right after an owned inline integer may no longer start with a digit, and a reasoning digit run stops at 1,024 digits (`TF_RUNNER_DIGIT_STOP`, `TF_RUNNER_DIGIT_RUN_MAX`; on by default, 0 turns each off). The stopped token becomes a newline where it lands. On Qwen3.8-Flash-Next TP2 the model kept extending owned values such as 7^222 by 1,600-29,700 invented digits, so a reply ran into its thinking budget or `max_tokens` before it answered. Thinking-off replies, fence and REPL results are unchanged. Once a stop fired in a reply, its later reasoning digit runs stop at 64 digits (`TF_RUNNER_DIGIT_HOLD_MAX`; 0 turns it off): after the newline the model restarted a fresh 1,000-digit run each line. With `TF_RUNNER_INLINE_MARK=1` an owned value ends in ` @engine`, and the model's next token may no longer glue a letter, digit, `_`, `-` or `/` to it (`TF_RUNNER_MARK_STOP`, on by default): on Qwen3.8-Flash-Next TP1 the model wrote `@engineer` in 4 of 9 replies of a big-power set, and in one it went on to `@engineer-mike/secret-repo!` and a 1,024-digit run. A space, newline or punctuation after the mark lands as drawn, and a mark stop does not shorten the reply's later digit runs, so the model can still write a number of the same digits, a copy of the value included.
+ 
+ - Server: Responses grows each output item in one buffer, and Kimi chat advances its native stream parser through new tokens, so a long reply retains memory in proportion to its length while every reply and streamed event stays the same (#2642).
+diff --git a/zig/build/lane_halt_host.zig b/zig/build/lane_halt_host.zig
+index 521a1fe6f..f8c86025d 100644
+--- a/zig/build/lane_halt_host.zig
++++ b/zig/build/lane_halt_host.zig
+@@ -24,6 +24,7 @@ pub fn steps(b: *std.Build) void {
+     const digit_stop = b.step("test-digit-stop-host", "The runner's digit stop after owned inline values: its rules, the fake target's rounds, sessions");
+     digit_stop.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lanes, .filters = &.{"runner digit stop"} })).step);
+     digit_stop.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner digit stop"} })).step);
++    b.step("test-inline-quoted-host", "Inline spans inside an open quotation: quoted requests are not owned, recorded replies").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner inline quoted"} })).step);
+     b.step("test-runner-host", "The in-model runner: scanner, held results and delivery with a fake circuit backend").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = api, .filters = &.{"runner"} })).step);
+     // proof 2 on the real circuit (TF_RUNNER_CIRCUIT): optimized, since a debug evaluator takes minutes a run
+     const lanes_fast = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = b.graph.host, .optimize = .ReleaseSafe, .link_libc = true });
+diff --git a/zig/src/core/runner.zig b/zig/src/core/runner.zig
+index 03380bffd..52b7fc94f 100644
+--- a/zig/src/core/runner.zig
++++ b/zig/src/core/runner.zig
+@@ -78,6 +78,7 @@ pub const Config = struct {
+         c.scan.inline_mod = try knob(u1, get, prefix ++ "_INLINE_MOD", 1, 0, 1) == 1;
+         c.scan.inline_arith = try knob(u1, get, prefix ++ "_INLINE_ARITH", 1, 0, 1) == 1;
+         c.scan.inline_chain = try knob(u1, get, prefix ++ "_INLINE_CHAIN", 0, 0, 1) == 1;
++        c.scan.inline_quoted = try knob(u1, get, prefix ++ "_INLINE_QUOTED", 1, 0, 1) == 1;
+         c.scan.trace_window = try knob(u32, get, prefix ++ "_TRACE_WINDOW", c.scan.trace_window, 1, 65536);
+         c.scan.trace_whole = try knob(u1, get, prefix ++ "_STATED", 0, 0, 1) == 1;
+         if (get(prefix ++ "_FORMS")) |f| if (f.len > 0) {
+@@ -148,6 +149,7 @@ const Cell = struct {
+     told: enum { none, owned, abstained } = .none, // what its result header got
+     owned_tokens: u32 = 0,
+     stated: ?scan.Stated = null, // form trace: the `[exact: …]` line's expression (text in the arena)
++    quoted: bool = false, // its inline span sat inside an open quotation (scan.Closed.quoted): never owned
+ };
+ 
+ /// One reply's cells, runs and the trigger it waits on; every method runs on the engine thread.
+@@ -300,9 +302,10 @@ pub const Session = struct {
+             };
+             return;
+         }
+-        // exact inline math would contradict a reply reasoning in Python floats
+-        if (c.own_context) {
++        // exact inline math would contradict a reply reasoning in Python floats; a quoted span is not a computation
++        if (c.own_context or c.quoted) {
+             cell.translation = .{ .abstain = .context };
++            cell.quoted = c.quoted;
+             cell.translated.store(true, .release);
+             return;
+         }
+@@ -378,7 +381,7 @@ pub const Session = struct {
+                 c.abstained = true;
+         }
+         if (c.abstained) {
+-            abstain.told(s, c, w.index, held_ms, null);
++            abstain.told(s, c, w.index, held_ms, if (c.quoted) .quoted else null);
+             log.info("reply {d} cell {d} ({s} {t}): abstain ({s}), held {d} ms, ticks {d}", .{ s.id, w.index, c.lang, c.form, why(c), held_ms, s.held_ticks });
+             return try s.r.gpa.alloc(u32, 0);
+         }
+@@ -437,7 +440,7 @@ pub const Session = struct {
+     }
+ 
+     fn why(c: *const Cell) []const u8 {
+-        if (c.translation == .abstain) return @tagName(c.translation.abstain);
++        if (c.translation == .abstain) return if (c.quoted) "quoted" else @tagName(c.translation.abstain);
+         const res = c.result orelse return "backend start";
+         if (res.status == .abstain) return if (res.abstain) |a| @tagName(a) else "backend";
+         if (res.status != .ok) return @tagName(res.status); // inline: budget or fault
+diff --git a/zig/src/core/runner_abstain.zig b/zig/src/core/runner_abstain.zig
+index 93dd00bc9..b14f2d967 100644
+--- a/zig/src/core/runner_abstain.zig
++++ b/zig/src/core/runner_abstain.zig
+@@ -8,6 +8,7 @@ pub const schema = 1;
+ /// Why a cell abstained, as one stable name; its refusal stage follows from it (`stage`).
+ pub const Reason = enum {
+     context, // the reply's own number context (exact inline math in a Python-float reply)
++    quoted, // an inline span inside an open quotation: quoted text, not a computation (the runner's hint)
+     language, // a `calc` / `exact` cell with exact cells off
+     unsupported,
+     syntax,
+@@ -28,7 +29,7 @@ pub const Reason = enum {
+ 
+ pub fn stage(r: Reason) []const u8 {
+     return switch (r) {
+-        .context => "context",
++        .context, .quoted => "context",
+         .language, .unsupported, .syntax, .name, .too_long, .too_big => "frontend",
+         .out_of_memory => "dispatch",
+         .backend_abstain, .budget, .fault => "execute",
+diff --git a/zig/src/core/runner_digit_stop_test.zig b/zig/src/core/runner_digit_stop_test.zig
+index 2376f8d59..304aeaa8c 100644
+--- a/zig/src/core/runner_digit_stop_test.zig
++++ b/zig/src/core/runner_digit_stop_test.zig
+@@ -5,7 +5,7 @@ const runner = @import("runner.zig");
+ 
+ const gpa = std.testing.allocator;
+ 
+-fn bytes(_: ?*anyopaque, token: u32) []const u8 {
++pub fn bytes(_: ?*anyopaque, token: u32) []const u8 {
+     const all = comptime blk: {
+         var t: [128]u8 = undefined;
+         for (&t, 0..) |*c, i| c.* = i;
+@@ -14,18 +14,18 @@ fn bytes(_: ?*anyopaque, token: u32) []const u8 {
+     return if (token < 128) all[token..][0..1] else "";
+ }
+ 
+-fn encode(_: ?*anyopaque, a: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]u32 {
++pub fn encode(_: ?*anyopaque, a: std.mem.Allocator, text: []const u8) std.mem.Allocator.Error![]u32 {
+     const out = try a.alloc(u32, text.len);
+     for (text, out) |c, *t| t.* = c;
+     return out;
+ }
+ 
+-fn translate(_: ?*anyopaque, a: std.mem.Allocator, cell: rapi.Cell) std.mem.Allocator.Error!rapi.Translation {
++pub fn translate(_: ?*anyopaque, a: std.mem.Allocator, cell: rapi.Cell) std.mem.Allocator.Error!rapi.Translation {
+     return .{ .program = .{ .kind = .graph, .bytes = try a.dupe(u8, std.mem.trim(u8, cell.code, " \n")) } };
+ }
+ 
+ /// Every run ends at once: 47*83, 7*6 (REPL) and print(7*6) (a fence) by their values, anything else a fault.
+-const Back = struct {
++pub const Back = struct {
+     jobs: std.ArrayList([]u8) = .empty,
+ 
+     fn answer(prog: []const u8) rapi.Result {
+@@ -33,7 +33,7 @@ const Back = struct {
+         for (answers) |x| if (std.mem.eql(u8, x[0], prog)) return .{ .status = .ok, .out = x[1], .steps = 10 };
+         return .{ .status = .fault };
+     }
+-    fn backend(b: *Back) rapi.Backend {
++    pub fn backend(b: *Back) rapi.Backend {
+         return .{ .ctx = b, .vtable = &.{ .start = start, .poll = poll, .cancel = cancel, .release = release } };
+     }
+     fn start(ctx: *anyopaque, _: u64, p: rapi.Program, _: u64) error{ OutOfMemory, Busy }!rapi.JobId {
+@@ -47,7 +47,7 @@ const Back = struct {
+     }
+     fn cancel(_: *anyopaque, _: rapi.JobId) void {}
+     fn release(_: *anyopaque, _: u64) void {}
+-    fn deinit(b: *Back) void {
++    pub fn deinit(b: *Back) void {
+         for (b.jobs.items) |j| gpa.free(j);
+         b.jobs.deinit(gpa);
+     }
+diff --git a/zig/src/core/runner_inline_quoted_test.zig b/zig/src/core/runner_inline_quoted_test.zig
+new file mode 100644
+index 000000000..754b1657a
+--- /dev/null
++++ b/zig/src/core/runner_inline_quoted_test.zig
+@@ -0,0 +1,169 @@
++//! Inline spans inside an open quotation: the reply quotes text (its request), so the runner owns nothing there.
++const std = @import("std");
++const abstain = @import("runner_abstain.zig");
++const runner = @import("runner.zig");
++const scan = @import("runner_scan.zig");
++const inline_scan = @import("runner_scan_inline.zig");
++const h = @import("runner_digit_stop_test.zig");
++
++const gpa = std.testing.allocator;
++
++/// Whether the inline cell closing at the end of `text` (a byte a token) is quoted; null when none closes there.
++fn at(text: []const u8, on: bool) !?bool {
++    var s: scan.Scanner = .{ .cfg = .{ .inline_math = true, .inline_quoted = on } };
++    defer s.deinit(gpa);
++    var last: scan.Events = .{};
++    for (0..text.len) |i| last = try s.feed(gpa, text[i .. i + 1], true);
++    const c = last.closed orelse return null;
++    if (c.form != .inline_expr or last.trigger == null) return null;
++    return c.quoted;
++}
++
++test "runner inline quoted: a span inside an open straight or curly quotation is quoted; a closed one or none is not" {
++    const yes = [_][]const u8{
++        "We need answer user's request: \"Work out 7^222 exactly in your reasoning: write the line 7^222 =",
++        "The user wants 13^150, written in the form \"13^150 =",
++        "We need answer user: \"In your reasoning write the exact values as lines 3^300 =",
++        "The user asked for \u{201C}the line 47*83 =",
++        "They said \"a\" and then \"compute 7^222 mod 1000003 =",
++    };
++    for (yes) |line| try std.testing.expectEqual(@as(?bool, true), try at(line, true));
++    const no = [_][]const u8{
++        "13^150 =",
++        "Let's present:\n7^222 =",
++        "The \"exact\" value: 47*83 =",
++        "He wrote \u{201C}exact\u{201D} so 47*83 =",
++        "An earlier line \"left open\nSo 47*83 =",
++        "The user's value: 47*83 =",
++    };
++    for (no) |line| try std.testing.expectEqual(@as(?bool, false), try at(line, true));
++    // negative control: PREFIX_INLINE_QUOTED=0 is the base scanner, which called none of them quoted
++    for (yes) |line| try std.testing.expectEqual(@as(?bool, false), try at(line, false));
++}
++
++const Fixture = struct { about: []const u8, owned: []const [2]usize, text: []const u8 };
++
++/// For each span the base engine owned in a recorded reply: whether the scanner now calls its trigger quoted.
++fn recorded(json: []const u8, want: []const bool) !void {
++    const parsed = try std.json.parseFromSlice(Fixture, gpa, json, .{});
++    defer parsed.deinit();
++    const f = parsed.value;
++    try std.testing.expectEqual(want.len, f.owned.len);
++    for (f.owned, want) |span, quoted| {
++        // the span is the value and its mark, after `= `: the text through the `=` ends at the trigger
++        try std.testing.expectEqualStrings("= ", f.text[span[0] - 2 .. span[0]]);
++        try std.testing.expectEqual(@as(?bool, quoted), try at(f.text[0 .. span[0] - 1], true));
++        try std.testing.expectEqual(@as(?bool, false), try at(f.text[0 .. span[0] - 1], false));
++    }
++}
++
++test "runner inline quoted on recorded TP1 replies: the request quoted back is not owned, the model's own line is" {
++    // seed 12: `to write "13^150 =` twice, and `13^150 =` on its own line between them (the computation)
++    try recorded(@embedFile("lanes/testdata/runner-stop-13p150-s12.json"), &.{ true, false, true });
++    // seed 13: `written in the form "13^150 =`; owned, it led to `@engineer-mike/secret-repo!` and 1,024 digits
++    const s13 = try std.json.parseFromSlice(Fixture, gpa, @embedFile("lanes/testdata/runner-stop-13p150-s13.json"), .{});
++    defer s13.deinit();
++    try std.testing.expectEqual(@as(?bool, true), try at(s13.value.text[0 .. s13.value.owned[0][0] - 1], true));
++}
++
++const Seen = struct { owned: []u8, reasons: []?abstain.Reason, armed: bool, cut: usize };
++
++/// `text` through a session (a byte a token, the mark on), each hold settled; then 300 model digits, `cut` stopped.
++fn reply(text: []const u8, on: bool) !Seen {
++    var back: h.Back = .{};
++    defer back.deinit();
++    var r: runner.Runner = .{ .gpa = gpa, .cfg = .{}, .frontend = .{ .translate = h.translate }, .backend = back.backend(), .text = .{ .bytes = h.bytes, .encode = h.encode } };
++    r.cfg.scan.inline_math = true;
++    r.cfg.scan.inline_quoted = on;
++    r.cfg.inline_mark = true;
++    r.cfg.abstains = true; // the receipt's abstain records: the reason a reader of the receipt sees
++    const s = (try r.session(.{})).?;
++    defer s.destroy();
++    const hook = s.hook();
++    var owned: std.ArrayList(u8) = .empty;
++    errdefer owned.deinit(gpa);
++    var reasons: std.ArrayList(?abstain.Reason) = .empty;
++    errdefer reasons.deinit(gpa);
++    for (text) |ch| {
++        if (!hook.token(hook.ptr, ch, true, true, false)) continue;
++        const cell = s.cells.items[s.waiting.?.index];
++        while (!cell.translated.load(.acquire)) std.Thread.yield() catch {};
++        const ids = for (0..64) |_| {
++            if (try s.tick()) |x| break x;
++        } else return error.NeverSettled;
++        defer gpa.free(ids);
++        const told = s.rec.abstains.items;
++        try reasons.append(gpa, if (cell.abstained) told[told.len - 1].reason else null);
++        for (ids) |t| {
++            _ = hook.token(hook.ptr, t, true, false, false);
++            try owned.appendSlice(gpa, h.bytes(null, t));
++        }
++    }
++    const armed = s.digits.lead != null;
++    var cut: usize = 0;
++    for (0..300) |i| {
++        const d: u32 = '0' + @as(u32, @intCast(i % 10));
++        if (hook.stop.?(hook.ptr, &.{d}, 0) != null) cut += 1;
++        _ = hook.token(hook.ptr, d, true, false, false);
++    }
++    return .{ .owned = try owned.toOwnedSlice(gpa), .reasons = try reasons.toOwnedSlice(gpa), .armed = armed, .cut = cut };
++}
++
++fn free(seen: Seen) void {
++    gpa.free(seen.owned);
++    gpa.free(seen.reasons);
++}
++
++test "runner inline quoted: a quoted request is not owned and the model's own long number after it lands whole" {
++    const lead = "The user asks me to write \"47*83 =";
++    const on = try reply(lead, true);
++    defer free(on);
++    try std.testing.expectEqualStrings("", on.owned);
++    try std.testing.expectEqualSlices(?abstain.Reason, &.{.quoted}, on.reasons);
++    // nothing forced, so no stop is armed: 300 digits of the model's own continuation land uncut
++    try std.testing.expect(!on.armed);
++    try std.testing.expectEqual(@as(usize, 0), on.cut);
++    // negative control (the base engine, PREFIX_INLINE_QUOTED=0): the value and its mark go into the quotation
++    const off = try reply(lead, false);
++    defer free(off);
++    try std.testing.expectEqualStrings(" 3901 @engine", off.owned);
++    try std.testing.expectEqualSlices(?abstain.Reason, &.{null}, off.reasons);
++    try std.testing.expect(off.armed and off.cut > 0);
++}
++
++test "runner inline quoted: after the quoted request the same expression on the model's own line is owned" {
++    const seen = try reply("The user asks me to write \"47*83 = <value>\" first.\n47*83 =", true);
++    defer free(seen);
++    try std.testing.expectEqualStrings(" 3901 @engine", seen.owned);
++    try std.testing.expectEqualSlices(?abstain.Reason, &.{ .quoted, null }, seen.reasons);
++    // a quotation closed before the expression is the model's own statement
++    const closed = try reply("The \"exact\" value: 47*83 =", true);
++    defer free(closed);
++    try std.testing.expectEqualStrings(" 3901 @engine", closed.owned);
++    try std.testing.expectEqualSlices(?abstain.Reason, &.{null}, closed.reasons);
++}
++
++test "runner inline quoted: a quoted modular step abstains too, and the rule reads only the text before the span" {
++    const mod = "x \"7^222 mod 1000003 =";
++    try std.testing.expectEqual(@as(?bool, true), try at(mod, true));
++    const closed = "say \"a\" 47*83 = \"b";
++    try std.testing.expect(!inline_scan.quoted(closed, closed[8..13]));
++    const open = "x \"y 47*83 = z\"";
++    try std.testing.expect(inline_scan.quoted(open, open[5..10]));
++}
++
++test "runner inline quoted: TF_R_INLINE_QUOTED parses on by default, 0 off, anything else a bad knob" {
++    const K = struct {
++        var set: []const [2][]const u8 = &.{};
++        fn get(name: []const u8) ?[]const u8 {
++            for (set) |k| if (std.mem.eql(u8, k[0], name)) return k[1];
++            return null;
++        }
++    };
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" } };
++    try std.testing.expect((try runner.Config.parse(&K.get, "TF_R")).?.scan.inline_quoted);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_INLINE_QUOTED", "0" } };
++    try std.testing.expect(!(try runner.Config.parse(&K.get, "TF_R")).?.scan.inline_quoted);
++    K.set = &.{ .{ "TF_R", "1" }, .{ "TF_R_CIRCUIT", "/c.bin" }, .{ "TF_R_INLINE_QUOTED", "2" } };
++    try std.testing.expectError(error.BadKnob, runner.Config.parse(&K.get, "TF_R"));
++}
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index e8c38876b..c4f91579b 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -16,6 +16,7 @@ pub const Config = struct {
+     inline_mod: bool = true, // with inline_math: `A mod M =` and `A % M =` on literals, after any earlier `=`
+     inline_arith: bool = true, // with inline_math: thousands commas (`147,000+73`), a whole `gcd(a, b)` or `0xFF`
+     inline_chain: bool = false, // opt-in, T5 decides: the last `<expr> =` after an earlier `=` statement
++    inline_quoted: bool = true, // PREFIX_INLINE_QUOTED: `<expr> =` inside an open quotation is quoted text, not owned
+     float_window: u32 = 512, // tokens after a Python-float cue in which an inline span with `.` or `/` abstains
+     trace: bool = false, // a computation the reasoning states, owned as `[exact: …]` where its hand trace starts
+     trace_window: u32 = 512, // tokens after a stated computation's line in which a hand-trace cue counts
+@@ -36,7 +37,7 @@ const join_cues = [_][]const u8{ "oncatenat", "join", "Join" };
+ const join_lines = 2;
+ 
+ /// A closed cell; `lang` and `code` live in the scanner until the next `feed`.
+-pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, own_context: bool = false, trace: ?Stated = null }; // own_context: the reply keeps its value
++pub const Closed = struct { index: u32, form: api.Form, lang: []const u8, code: []const u8, own_context: bool = false, quoted: bool = false, trace: ?Stated = null }; // own_context, quoted: the reply keeps its value
+ 
+ /// A trace cell's line text: what `[exact: … = value]` shows, and whether the value is a (quotient, remainder) pair.
+ pub const Stated = struct { display: []const u8, divmod: bool };
+@@ -141,6 +142,7 @@ pub const Scanner = struct {
+                 ev.closed = s.close(.inline_expr);
+                 // Python reads 1e9 as a float: a reply reasoning in floats keeps its own value
+                 ev.closed.?.own_context = floats and std.mem.indexOfScalar(u8, m.modulus, 'e') != null;
++                ev.closed.?.quoted = s.cfg.inline_quoted and inline_scan.quoted(s.line.items, m.left);
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = m.space };
+             } else if (inline_scan.inlineExpr(s.line.items, s.cfg.inline_arith, s.cfg.inline_chain)) |x| {
+                 s.lang.clearRetainingCapacity();
+@@ -158,6 +160,7 @@ pub const Scanner = struct {
+                 const joined = s.join_line != null and s.lines - s.join_line.? <= join_lines and lead.len == 0 and
+                     inline_scan.twoInts(x.expr);
+                 ev.closed.?.own_context = joined or (floats and std.mem.indexOfAny(u8, x.expr, "./") != null);
++                ev.closed.?.quoted = s.cfg.inline_quoted and inline_scan.quoted(s.line.items, x.expr);
+                 ev.trigger = .{ .index = ev.closed.?.index, .inline_space = x.space };
+             } else if (if (s.cfg.trace_whole) inline_scan.stacked(s.line.items, s.above[2].items, s.above[1].items, s.above[0].items) else null) |c| {
+                 // STATED: a stacked column (`264,278,…` / `+771,565,…` / `= ?`), the `=` alone on its line
+diff --git a/zig/src/core/runner_scan_inline.zig b/zig/src/core/runner_scan_inline.zig
+index d35d19189..d08fd964f 100644
+--- a/zig/src/core/runner_scan_inline.zig
++++ b/zig/src/core/runner_scan_inline.zig
+@@ -134,6 +134,20 @@ pub fn inlineExpr(line: []const u8, arith: bool, chain: bool) ?struct { expr: []
+     return .{ .expr = expr, .space = space };
+ }
+ 
++/// Whether `line` opens a quotation before `expr` (a slice of it) and has not closed it: `"` or a curly pair.
++pub fn quoted(line: []const u8, expr: []const u8) bool {
++    const lead = line[0 .. @intFromPtr(expr.ptr) - @intFromPtr(line.ptr)];
++    var straight: usize = 0;
++    var curly: isize = 0;
++    for (lead, 0..) |c, i| {
++        if (c == '"') straight += 1;
++        if (c == 0xE2 and i + 2 < lead.len and lead[i + 1] == 0x80) {
++            if (lead[i + 2] == 0x9C) curly += 1 else if (lead[i + 2] == 0x9D) curly -= 1;
++        }
++    }
++    return straight % 2 == 1 or curly > 0;
++}
++
+ /// A modular step closing a line: `A` as the model wrote it, its literal modulus, and the space flag as inlineExpr.
+ pub const Mod = struct {
+     left: []const u8,
+diff --git a/zig/src/core/runner_tests.zig b/zig/src/core/runner_tests.zig
+index 4444ffa1a..de2765d3b 100644
+--- a/zig/src/core/runner_tests.zig
++++ b/zig/src/core/runner_tests.zig
+@@ -20,4 +20,5 @@ test {
+     _ = @import("runner_graph_edit.zig");
+     _ = @import("runner_commit.zig");
+     _ = @import("runner_digit_stop_test.zig");
++    _ = @import("runner_inline_quoted_test.zig");
+ }
+-- 
+2.56.0
+

@@ -18,9 +18,11 @@ the previously deployed engine and profile.
 | Engine | upstream [TensorFold](https://github.com/ashhart/TensorFold) at [`config/tensorfold.rev`](config/tensorfold.rev), plus this recipe's [`patches/`](patches/) |
 | Serving | 1M context, four slots, vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
-This branch builds the engine the pair serves today (G, `6c4eeccda`). The engine is upstream TensorFold `f212eeabd`
-(on upstream `main`, 2026-11-09) with patches `0001`-`0072` applied ([ENGINE](docs/ENGINE.md#the-patch-series)): the
-content of `6c4eeccda` except for 24 reworded comment lines. Against the previous recipe engine (`12257eb51`, upstream
+This branch builds the engine the pair serves today (G, `6c4eeccda`) plus the Qwen recipe's Compute Lanes commits.
+The engine is upstream TensorFold `f212eeabd` (on upstream `main`, 2026-11-09) with patches `0001`-`0087` applied
+([ENGINE](docs/ENGINE.md#the-patch-series)): `0001`-`0072` are the content of `6c4eeccda` except for 24 reworded
+comment lines, and `0073`-`0087` carry the runner's digit stops, the quoted rule, the stops receipt, the thinking-only
+scope and the compute lane's think-block fixes over from the Qwen recipe ([ENGINE](docs/ENGINE.md#compute-lanes-from-the-qwen-recipe-0073-0087)). Against the previous recipe engine (`12257eb51`, upstream
 `0d51120a8` plus 207 patches) it brings 2,517 newer upstream commits (among them tool-call ids keyed over the
 request, so a replay names its calls again; opt-in chunked prefill admission for long prompts;
 `TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS`; and Engram shards whose direct reads refuse a sector read buffered instead of
