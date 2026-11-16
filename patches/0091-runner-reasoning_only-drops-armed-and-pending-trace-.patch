@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 20:45:00 +0700
+Subject: [PATCH 91/91] runner: reasoning_only drops armed and pending trace cells at
+ think close
+
+With reasoning_only set, every path that opens or fires a cell checked think_open except the armed trigger: the line
+still open when the think block closed is ended as reasoning, so a trace cue on it armed a trigger that fired in the
+first answer token and the engine's [exact: ...] line landed in the answer. Once the think block has closed, the armed
+trigger and any pending trace cell are dropped.
+
+The new test fails without the fix at runtime (the trace trigger fires) and checks that the same boundary still arms
+without reasoning_only.
+---
+ zig/src/core/runner_scan.zig       |  7 ++++++-
+ zig/src/core/runner_trace_test.zig | 18 ++++++++++++++++++
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/zig/src/core/runner_scan.zig b/zig/src/core/runner_scan.zig
+index c4f9157..7f16a16 100644
+--- a/zig/src/core/runner_scan.zig
++++ b/zig/src/core/runner_scan.zig
+@@ -121,9 +121,14 @@ pub const Scanner = struct {
+             try s.keepLine(a);
+             s.line.clearRetainingCapacity();
+         }
++        const allowed = think_open or !s.cfg.reasoning_only;
++        // reasoning_only: nothing armed or stated in the reasoning fires once the think block has closed
++        if (!allowed) {
++            s.armed = null;
++            s.trace_cell = null;
++        }
+         ev.trigger = s.armed;
+         if (ev.trigger) |t| if (t.trace) try s.traceSpent(t.index);
+-        const allowed = think_open or !s.cfg.reasoning_only;
+         if (ev.trigger == null and s.state == .after and allowed and header.ready(s.line.items)) {
+             s.fire(false);
+             ev.trigger = s.armed;
+diff --git a/zig/src/core/runner_trace_test.zig b/zig/src/core/runner_trace_test.zig
+index e82e025..1e8a0c4 100644
+--- a/zig/src/core/runner_trace_test.zig
++++ b/zig/src/core/runner_trace_test.zig
+@@ -299,6 +299,24 @@ test "runner trace: a fence's code lines state nothing, and a trace cell is no n
+     for (ev.items[0..3]) |e| try std.testing.expect(e.closed == null and e.trigger == null);
+ }
+ 
++test "runner trace: reasoning_only drops a trace armed by the last reasoning line when the think block closes" {
++    for ([_]bool{ false, true }) |only| {
++        var s: scan.Scanner = .{ .cfg = .{ .trace = true, .reasoning_only = only } };
++        defer s.deinit(gpa);
++        _ = try s.feed(gpa, bn019 ++ "\n", true);
++        _ = try s.feed(gpa, "We can perform long division.", true); // the cue line, still open as the think block ends
++        const end = try s.feed(gpa, "\n", false);
++        if (!only) { // the boundary path arms without the option
++            try std.testing.expectEqual(scan.Trigger{ .index = 0, .trace = true }, end.trigger.?);
++            continue;
++        }
++        try std.testing.expectEqual(@as(?scan.Trigger, null), end.trigger);
++        try std.testing.expectEqual(@as(?u32, null), s.trace_cell);
++        const later = try s.feed(gpa, "We can perform long division.\n", false);
++        try std.testing.expectEqual(@as(?scan.Trigger, null), later.trigger);
++    }
++}
++
+ /// The circuit's printed values for the trace programs (the fake frontend passes the Python source through).
+ const TraceBack = struct {
+     delay: u32 = 0,
+-- 
+2.56.0
+
