@@ -5,6 +5,10 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
+  `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think
+  block closed and put the engine's `[exact: ...]` line at the start of the answer. Armed and pending trace cells are
+  now dropped at the think close. See [ENGINE](ENGINE.md#the-thinking-only-runner-stops-at-the-think-close-0091).
 - **Identical short prompts repeat exactly under replay prefill** (`patches/0090`). With `TF_DSV41_PREFILL=replay`, a
   prompt of 17 tokens or fewer could give different tokens on the same request, because its replay ran the mHC
   boundaries in place and the kernel's blocks raced. They now write the second streams buffer. Longer prompts are

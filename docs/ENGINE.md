@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089` and `0090` (all
-below); the whole series gives tree `292ded8c5`, and the checkout's last commit is `71863165e` with the fixed
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090` and `0091` (all
+below); the whole series gives tree `d73f715ca`, and the checkout's last commit is `4684b511b` with the fixed
 committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
@@ -102,6 +102,21 @@ Credit, from the issue thread:
 - ashhart (maintainer) narrowed it to the replay step on short prompts and asked for exactly this second-buffer fix.
 `0090` is our commit of BadAd84's fix (Co-authored-by in the patch), with a sampled-row and repeat check at G's
 settings.
+
+### The thinking-only runner stops at the think close (`0091`)
+
+With `TF_DSV41_RUNNER_SPANS=reasoning` (set in the flash17 profile), the runner opens and fires cells only while the
+think block is open, with one gap: the reasoning line still open when the think block closed was ended as reasoning,
+so a trace cue on that line armed a trigger that fired in the first answer token, and the engine's
+`[exact, computed by the engine: ...]` line landed at the start of the answer. `0091` (Jay Leaton, an upstream
+candidate) drops the armed trigger and any pending trace cell once the think block has closed, and adds a host test
+that fails on the unpatched tree (the trace trigger fires) and checks that the same boundary still arms without the
+setting. Inline cells were already gated; replies without the setting are unchanged.
+
+The same change on the engine the pair serves (G, `ec876ff09` + this fix = `b8281d7b2`, 2026-11-16) was gated on the
+pair before it became G. A probe of thinking chats that restate a modular power in the answer found 8 runner cells in
+the answer over 6 chats without the setting and 1 over 9 with the setting alone; with this fix it found 0 of 21 over 9,
+all in reasoning. Two opencode workflows then owned 63 values, 0 outside reasoning, 0 wrong.
 
 ### This engine against the previous recipe engine
 

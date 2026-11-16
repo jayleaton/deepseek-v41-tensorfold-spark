@@ -4,7 +4,7 @@
 # patch change, from a checkout made by docker/zig/fetch-source.sh (docs/ENGINE.md):
 #   python3 scripts/engine_settings.py generate /path/to/patched-checkout
 rev f212eeabde0fc2ac3234ca947a69cc7714abaca2
-tree 292ded8c5196e2a7c21c1626b5b7722687c0da91
+tree d73f715ca9892d6f8801f33d2164780390490746
 TENSORFOLD_AOTRITON
 TENSORFOLD_API_KEY
 TENSORFOLD_BENCHMARK_TOKEN
