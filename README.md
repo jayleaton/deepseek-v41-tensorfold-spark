@@ -16,13 +16,13 @@ the previously deployed engine and profile.
 | Pack | **EXL3 2.8 bpw, 203.8 GB**: [`jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw`](https://huggingface.co/jayleaton/DeepSeek-V4.1-Flash-1017-EXL3-2.8bpw) |
 | Hardware | 2x DGX Spark (GB10, 128 GB each), tensor parallel 2 over the 200 Gb/s CX7 link |
 | Engine | upstream [TensorFold](https://github.com/ashhart/TensorFold) at [`config/tensorfold.rev`](config/tensorfold.rev), plus this recipe's [`patches/`](patches/) |
-| Serving | 1M context, four slots (or [eight slots of 192K](results/c8-slots-20261114/README.md) for more chats at once), vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
+| Serving | 1M context, four slots (or [eight slots of 192K](results/c8-slots-20261114/README.md) for more chats at once, or an opt-in [load-adaptive window](docs/OPERATIONS.md#adaptive-context-window): eight slots, 1M each for 1-4 active chats, down to a 256K floor), vision (native image input), tool calling, structured output, built-in Python tool ([compute lane](docs/OPERATIONS.md#compute-lane-tf_dsv41_compute_lane-on-in-the-flash17-profile)) |
 
 This branch builds the engine the pair serves today (G, `6c4eeccda`) plus the Qwen recipe's Compute Lanes commits.
-The engine is upstream TensorFold `f212eeabd` (on upstream `main`, 2026-11-09) with patches `0001`-`0088` applied
+The engine is upstream TensorFold `f212eeabd` (on upstream `main`, 2026-11-09) with patches `0001`-`0089` applied
 ([ENGINE](docs/ENGINE.md#the-patch-series)): `0001`-`0072` are the content of `6c4eeccda` except for 24 reworded
 comment lines, and `0073`-`0087` carry the runner's digit stops, the quoted rule, the stops receipt, the thinking-only
-scope and the compute lane's think-block fixes over from the Qwen recipe ([ENGINE](docs/ENGINE.md#compute-lanes-from-the-qwen-recipe-0073-0087)); `0088` fixes a DSpark staging panic with more than 12 live slots ([ENGINE](docs/ENGINE.md#dspark-staging-alignment-0088)). Against the previous recipe engine (`12257eb51`, upstream
+scope and the compute lane's think-block fixes over from the Qwen recipe ([ENGINE](docs/ENGINE.md#compute-lanes-from-the-qwen-recipe-0073-0087)); `0088` fixes a DSpark staging panic with more than 12 live slots ([ENGINE](docs/ENGINE.md#dspark-staging-alignment-0088)), and `0089` adds the load-adaptive context window ([ENGINE](docs/ENGINE.md#adaptive-context-window-0089)). Against the previous recipe engine (`12257eb51`, upstream
 `0d51120a8` plus 207 patches) it brings 2,517 newer upstream commits (among them tool-call ids keyed over the
 request, so a replay names its calls again; opt-in chunked prefill admission for long prompts;
 `TENSORFOLD_PROMPT_CACHE_KEEP_OTHERS`; and Engram shards whose direct reads refuse a sector read buffered instead of

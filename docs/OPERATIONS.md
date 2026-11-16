@@ -78,6 +78,38 @@ required one-boot alternating G-off/G1v2 Spark comparison remains unrun: start s
 must be at most 0.3 seconds, and memory minima no more than 0.25 GiB below both
 neighboring off blocks. Keep both options off until those device gates pass.
 
+## Adaptive context window
+
+An option, off in the example profiles (four slots of 1M stay the default, JJ's choice): with `TF_DSV41_SLOTS=8`,
+`TF_DSV41_CONTEXT=1048576` and the three lines the flash17 profile leaves commented, the pair serves up to eight chats
+over one shared 2.1M-token KV pool per rank, with a per-request context window that follows load (patch `0089`).
+The `draft:false` greedy difference once noted for eight slots is not caused by the slot count
+([c8-slots](../results/c8-slots-20261114/README.md)): repeated solo greedy runs vary at four slots too.
+
+```
+window = clamp(TF_DSV41_CONTEXT_BUDGET / active chats, TF_DSV41_CONTEXT_FLOOR, TF_DSV41_CONTEXT)   (256-token pages)
+```
+
+| Active chats | 1-4 | 5 | 6 | 8 | 16+ |
+|---|---:|---:|---:|---:|---:|
+| Window (budget 4,194,304, floor 262,144) | 1,048,576 | 838,656 | 698,880 | 524,288 | 262,144 |
+
+- A chat counts as active from its **second** request within `TF_DSV41_CONTEXT_HOLD_S` (300 s) of the last one, so
+  tool runs between turns keep it counted while a burst of one-shot requests (a benchmark, quick API calls) lowers no
+  one's window once it is done. The requests in flight are always counted. A chat is named by its opening turn after
+  the shared system prompt. Title and other background requests are not counted.
+- A prompt over the current window gets HTTP 400 `context_length_exceeded` ("This server's maximum context length is
+  N tokens while this server serves several chats ..."); opencode and other clients compact on it. `/v1/models`
+  keeps reporting 1M. The open `/health` body shows `context.window` and `context.active_chats`.
+- The window is a cap, not a reservation. A request reserves pool pages for prompt + reply at admission. When the
+  pool is short, idle chats' KV parks on the NVMe tier (`TF_DSV41_SESSION_DISK`, least recently used first) and comes
+  back when that chat resumes, so it is not prefilled again. If the running requests alone fill the pool, the next
+  request waits in order. Running requests' KV is never on NVMe: eight chats at 512K cannot all decode at once (about
+  four at a time do), while eight at 256K fit the pool together (8 x 262,144 <= 2,100,224).
+- `TF_DSV41_CONTEXT_BUDGET=2100224` (the pool) instead guarantees that every admitted chat can run at once (8 chats
+  get 262,400), at the cost of about 512K for 4 chats. Unset `TF_DSV41_CONTEXT_BUDGET` for the static window. The
+  engine's generic names are `TENSORFOLD_CONTEXT_*`; a set generic name wins over its `TF_DSV41_` one.
+
 ## Compute lane (`TF_DSV41_COMPUTE_LANE`, on in the flash17 profile)
 
 The flash17 profile turns the compute lane on (`TF_DSV41_COMPUTE_LANE=1`); the engine's own default is off, and the
