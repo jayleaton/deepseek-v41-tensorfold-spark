@@ -5,6 +5,10 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **Identical short prompts repeat exactly under replay prefill** (`patches/0090`). With `TF_DSV41_PREFILL=replay`, a
+  prompt of 17 tokens or fewer could give different tokens on the same request, because its replay ran the mHC
+  boundaries in place and the kernel's blocks raced. They now write the second streams buffer. Longer prompts are
+  unchanged. See [ENGINE](ENGINE.md#replay-prefill-repeats-short-prompts-0090).
 - **Sixteen slots no longer panic at the 13th live request** (`patches/0088`). With slot drafts, a DSpark pass covers
   at most 12 slots, and 13 or 14 live requests split into passes whose second staging region (region 7) started at a
   misaligned address, so both ranks stopped with `incorrect alignment`. Regions are now padded to 8 bytes. Four and eight slots are unchanged. See

@@ -20,8 +20,9 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088` and `0089` (all below); the whole series gives tree
-`896aaf362`, and the checkout's last commit is `3556c0fb0` with the fixed committer `fetch-source.sh` uses.
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089` and `0090` (all
+below); the whole series gives tree `292ded8c5`, and the checkout's last commit is `71863165e` with the fixed
+committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
 
@@ -78,6 +79,29 @@ The previous recipe engine (`12257eb51`: upstream `0d51120a8` plus `0001`-`0207`
 `1d4482025`) and the engines before it (G `58bece1d3`, F `56200688d`, H `20ad77878`) are prefixes of that earlier
 series, not of this one. To roll back, check out the recipe's previous commit: its `config/` and `patches/` pin it,
 and its ENGINE has the rollback table for the older engines.
+
+### Replay prefill repeats short prompts (`0090`)
+
+With `TF_DSV41_PREFILL=replay` (set in the flash17 profile), the decoder pass reruns layers 20 and up over the last
+min(n - 1, 127) prompt rows. For a prompt of 17 tokens or fewer, that tail is at most 16 rows, and its mHC boundaries
+ran in place through `mhc_cuda`'s boundary kernel. In that kernel each CTA of a column block reads all four streams
+and writes one, so in place a CTA could read a stream another CTA had already rewritten. The same short request then
+gave different tokens from run to run, in drafted and `draft:false` rows alike (ashhart/TensorFold#2715). BadAd84
+found this and posted the cause and the one-line fix first. `0090` (Jay Leaton, co-authored with BadAd84, an upstream
+candidate) writes those boundaries to the second streams buffer, as full prefill and decode already do, and adds a host
+test that fails on the unpatched tree. Longer prompts (an 18-row or larger tail) emit the
+same calls as before.
+
+On upstream `main` plus only this change, with G's switch set at 4 slots, 40 sampled rows of the 10-token prompt that
+parted gave one reply (it had given four), and the code prompt alone ×6 matched 6/6, `draft:false` included.
+
+Credit, from the issue thread:
+- BadAd84 found it: they posted this cause and the same one-line fix first (2026-11-14), with greedy receipts.
+- nuk3s reported it and showed that only the 10-token prompt parted, never prompts of 20 to 32,768 tokens.
+- OsakaTX reproduced it on a second pair. Their runs established sampled rows as the detector.
+- ashhart (maintainer) narrowed it to the replay step on short prompts and asked for exactly this second-buffer fix.
+`0090` is our commit of BadAd84's fix (Co-authored-by in the patch), with a sampled-row and repeat check at G's
+settings.
 
 ### This engine against the previous recipe engine
 

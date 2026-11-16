@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Jay Leaton <58495321+jayleaton@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 07:34:14 +0700
+Subject: [PATCH 90/90] dsv41: CED replay's short decoder boundaries write the
+ spare streams (#2715)
+
+BadAd84 found this first and posted the cause and this same one-line fix on #2715:
+https://github.com/ashhart/TensorFold/issues/2715#issuecomment-6880547869
+https://github.com/ashhart/TensorFold/issues/2715#issuecomment-6885225713
+
+The decoder replay ran its mHC boundaries in place. On a tail of at most 16 rows that is
+mhc_cuda's boundary kernel, where every CTA of a column block reads all four streams and
+CTA j writes stream j, so in place a CTA can read a stream another CTA already rewrote.
+Identical requests then differed run to run with TF_DSV41_PREFILL=replay on prompts of up
+to 17 tokens. The boundary now writes the second streams buffer as the full prefill and
+decode do; the Triton sites past 16 rows stay in place.
+
+Co-authored-by: BadAd84 <598804+BadAd84@users.noreply.github.com>
+---
+ zig/src/families/deepseek_v41/block_moe.zig   |  2 +-
+ .../deepseek_v41/block_prefill_mhc.zig        |  4 +-
+ zig/src/families/deepseek_v41/ced_test.zig    | 51 ++++++++++++++++---
+ 3 files changed, 46 insertions(+), 11 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/block_moe.zig b/zig/src/families/deepseek_v41/block_moe.zig
+index a9ff68162..e835df3b5 100644
+--- a/zig/src/families/deepseek_v41/block_moe.zig
++++ b/zig/src/families/deepseek_v41/block_moe.zig
+@@ -23,7 +23,7 @@ pub fn mhc(e: *E, layer: ?u32, which: []const u8, mode: Mode) !void {
+     return mhcInto(e, layer, which, mode, false);
+ }
+ 
+-/// `mhc`, writing the streams in place when `in_place` (a run without the second streams buffer: CED's replay).
++/// `mhc`, writing the streams in place when `in_place`; not for a `.boundary` here (mhc_cuda's CTAs would race, #2715).
+ pub fn mhcInto(e: *E, layer: ?u32, which: []const u8, mode: Mode, in_place: bool) !void {
+     // past 16 rows or with TF_DSV41_MHC_PFDEC at the knob's rows: the wide path (block_wide.zig)
+     if (e.n > wide.cuda_rows or wide.pfOn(e, mode)) return wide.decode(e, layer, which, mode, in_place);
+diff --git a/zig/src/families/deepseek_v41/block_prefill_mhc.zig b/zig/src/families/deepseek_v41/block_prefill_mhc.zig
+index 8dfebad6d..5a0d9c236 100644
+--- a/zig/src/families/deepseek_v41/block_prefill_mhc.zig
++++ b/zig/src/families/deepseek_v41/block_prefill_mhc.zig
+@@ -45,8 +45,8 @@ pub fn site(s: *Seg, L: u32, which: []const u8, mode: moe.Mode) !void {
+     const e = s.e;
+     const pend = s.pend;
+     s.pend = 0;
+-    // the decoder replay's boundaries write the streams in place (replay.finish's Streams has no `alt`)
+-    if (s.short) return moe.mhcInto(e, L, which, mode, s.part == .decoder);
++    // the decoder replay's boundaries too into the spare streams: mhc_cuda's CTAs race in place (#2715)
++    if (s.short) return moe.mhcInto(e, L, which, mode, false);
+     const n = e.n;
+     if (pend > 1 and mode == .boundary and n >= pend * pf_rows and n > split_rows) return s.sitePieces(L, which, pend, true);
+     // TF_DSV41_MHC_SITE_ROWS: the boundary in row pieces, each piece's inputs still in L2 for its `_finish_k`
+diff --git a/zig/src/families/deepseek_v41/ced_test.zig b/zig/src/families/deepseek_v41/ced_test.zig
+index 9c158b001..78d7378ec 100644
+--- a/zig/src/families/deepseek_v41/ced_test.zig
++++ b/zig/src/families/deepseek_v41/ced_test.zig
+@@ -122,22 +122,57 @@ test "CED: the encoder pass + the decoder pass are the whole segment's calls, la
+             try testing.expectEqual(n, x.arg.t.shape[0]);
+             try testing.expectEqual(n, y.arg.t.shape[0]);
+         }
+-        // no comp_wkv in the decoder (the encoder stored layer 20's rows); every boundary in place
+-        var in_place: usize = 0;
++        // no comp_wkv in the decoder (the encoder stored layer 20's rows); Triton site boundaries in place
++        var boundaries: usize = 0;
+         for (dec) |c| {
+             for (c.args) |x| if (x.arg == .t and x.arg.t.role == .weight) try testing.expect(std.mem.indexOf(u8, x.arg.t.role.weight, "comp_wkv") == null);
+             if (std.mem.eql(u8, c.name, "_site") and named(c, "POST_ON").?.b) {
+                 try testing.expectEqualStrings(roleOf(named(c, "X").?), roleOf(named(c, "XOUT").?));
+                 try testing.expect(!named(c, "SPLIT").?.b);
+-                in_place += 1;
+-            }
+-            if (std.mem.eql(u8, c.name, "tf_dsv41_mhc_cuda_v1.run") and c.args[2].arg.t.role != .empty) {
+-                try testing.expectEqualStrings(roleOf(c.args[0].arg), roleOf(c.args[1].arg));
+-                in_place += 1;
++                boundaries += 1;
+             }
++            if (std.mem.eql(u8, c.name, "tf_dsv41_mhc_cuda_v1.run") and c.args[19].arg.i == 0) boundaries += 1;
+             if (std.mem.eql(u8, c.name, "_fused")) try testing.expectEqualStrings("w.lo", roleOf(named(c, "LO").?));
+         }
+-        try testing.expect(in_place >= 2 * dec_layers.len - 1);
++        try testing.expect(boundaries >= 2 * dec_layers.len - 2);
++    };
++}
++
++/// A short decoder pass's mhc_cuda boundaries: each writes the streams the next reads, never its own input.
++fn decoderSpare(dec: []const calls.Call) !usize {
++    var seen: usize = 0;
++    var prev: ?[]const u8 = null;
++    for (dec) |c| {
++        if (!std.mem.eql(u8, c.name, "tf_dsv41_mhc_cuda_v1.run")) continue;
++        const x = roleOf(c.args[0].arg);
++        if (prev) |p| try testing.expectEqualStrings(p, x);
++        if (c.args[19].arg.i != 0) continue; // a mixing site or the final norm
++        const xout = roleOf(c.args[1].arg);
++        if (std.mem.eql(u8, x, xout)) {
++            std.debug.print("boundary {d} writes its input {s}\n", .{ seen, x });
++            return error.TestBoundaryInPlace;
++        }
++        prev = xout;
++        seen += 1;
++    }
++    return seen;
++}
++
++test "CED: a short decoder pass's mhc_cuda boundaries write the spare streams, not their input (#2715)" {
++    var arena = std.heap.ArenaAllocator.init(testing.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const cfg: Config = .{};
++    var w = try widths(a);
++    var layers: [25]u32 = undefined;
++    for (&layers, 0..) |*l, i| l.* = @intCast(i);
++    const dec_layers = layers[try ced.decoderStart(&cfg)..];
++    // mhc_cuda's boundary CTAs each read all four streams of their columns and write one: in place they race
++    for ([_]?block.Pool{ null, poolOf(true) }) |pool| for ([_]i64{ 1, 9, 13, 16 }) |m| for ([_]i64{ 0, 1000 }) |start| {
++        var o: block.Options = .{ .limit = limit, .rope_rows = limit + 2048 };
++        o.pool = pool;
++        const dec = try bp.emitReplay(a, &cfg, &w, o, dec_layers, m, start, .decoder);
++        try testing.expect(try decoderSpare(dec) >= 2 * dec_layers.len - 2);
+     };
+ }
+ 
+-- 
+2.56.0
+
