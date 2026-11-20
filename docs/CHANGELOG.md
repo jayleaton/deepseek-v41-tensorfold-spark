@@ -5,6 +5,7 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **Tuned `sm_121` `x3gm` v3 defaults and quiet idle RoCE CQ polling** (`patches/0092`). `v3_default` now selects the 16-warp `KS=4` LEAN gate/up instances (`.{ .gu = .{ 5, 3 }, .dn = 9 }`) for `TF_DSV41_GM_V3=1` on GB10 (-4.9% prefill `gateup` GPU time, bit-identical to `v2`), while `Roce.proxyLoop` skips `ibv_poll_cq` when `linkIdle()` holds and extends `idle_spins` to `50_000_000` across speculative verify/draft gaps. See [ENGINE](ENGINE.md#sm_121-x3gm-v3-defaults-and-idle-roce-cq-polling-0092).
 - **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
   `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think
   block closed and put the engine's `[exact: ...]` line at the start of the answer. Armed and pending trace cells are

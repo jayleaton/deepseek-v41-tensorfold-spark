@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090` and `0091` (all
-below); the whole series gives tree `d73f715ca`, and the checkout's last commit is `4684b511b` with the fixed
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090`, `0091` and `0092` (all
+below); the whole series gives tree `236c79984`, and the checkout's last commit is `2d402c3ce` with the fixed
 committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
@@ -117,6 +117,12 @@ The same change on the engine the pair serves (G, `ec876ff09` + this fix = `b828
 pair before it became G. A probe of thinking chats that restate a modular power in the answer found 8 runner cells in
 the answer over 6 chats without the setting and 1 over 9 with the setting alone; with this fix it found 0 of 21 over 9,
 all in reasoning. Two opencode workflows then owned 63 values, 0 outside reasoning, 0 wrong.
+
+### `sm_121` `x3gm` v3 defaults and idle RoCE CQ polling (`0092`)
+
+On GB10 (`sm_121`), opting into `TF_DSV41_GM_V3=1` previously selected `v3_default = .{ .gu = .{ 4, 1 }, .dn = 9 }` (8-warp `MTL=2` gate/up tiles), which measured 0.5%–8.2% slower than `v2` across 2,048- and 4,096-row uniform and Zipf routing distributions, whereas the 16-warp `MTL=1, KS=4` LEAN instances (`v3_variants[5]` for one rotated input and `v3_variants[3]` for two, paired with `dn = 9`) beat `v2` across every distribution while producing bit-identical outputs. On the TP=2 transport side, `Roce.proxyLoop` polled `wire.reap()` (`ibv_poll_cq`) every 64 idle iterations even when `linkIdle()` reported zero posted WQEs in flight, and went to 1 ms sleep after `20_000_000` spins (~5 ms on Cortex-X925), catching speculative verify/draft transitions on wake-up.
+
+`0092` (Anothers, an upstream candidate) switches `v3_default` to `.{ .gu = .{ 5, 3 }, .dn = 9 }`, guards `proxyLoop`'s idle `wire.reap()` on `!r.linkIdle()`, and raises `idle_spins` to `50_000_000`, with host tests in `exl3_block_exl3.zig` and `roce_inflight_test.zig` that fail on the unpatched tree. Paired with `TF_DSV41_GM_V3=1` and `TF_TP_ROCE_CHUNKED_KB=65536` on 2x GB10 over 200 Gb/s ConnectX-7 RoCE, prefill `gateup` GPU time drops by 4.9% and prefill `glue.exchange` time drops by 42.5% (total 42K-row prefill GPU time -7.24%, 20/20 greedy replay SHA-256 bit-exact).
 
 ### This engine against the previous recipe engine
 
