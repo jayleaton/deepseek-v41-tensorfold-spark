@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090` and `0091` (all
-below); the whole series gives tree `d73f715ca`, and the checkout's last commit is `4684b511b` with the fixed
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090`, `0091` and `0092` (all
+below); the whole series gives tree `16b40db05`, and the checkout's last commit is `58f8e3958` with the fixed
 committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
@@ -117,6 +117,12 @@ The same change on the engine the pair serves (G, `ec876ff09` + this fix = `b828
 pair before it became G. A probe of thinking chats that restate a modular power in the answer found 8 runner cells in
 the answer over 6 chats without the setting and 1 over 9 with the setting alone; with this fix it found 0 of 21 over 9,
 all in reasoning. Two opencode workflows then owned 63 values, 0 outside reasoning, 0 wrong.
+
+### In-place `dense3` routing and DSpark `r1` pass fusions (`0092`)
+
+Even with `TF_DSV41_R1=1` and `TF_DSV41_FORMS_INPLACE=1`, three dense EXL3 projections remained on the older `strips` kernel (`tensorfold_exl3_linear_v4.linear`, 7 calls / ~2.17 ms per decode window): the LM `head` (`K2=12`), prefill `L1/L14.engram.wkv` (`K2=10`), and `dspark.main_proj` (`K2=8`). Meanwhile DSpark's `r1` draft pass still launched separate Triton `_site` boundaries, unfused `q_norm`, `widen` + Triton `_rope`, unfused `wo_a -> wo_b` Hadamard rotation, and FP32 `exchange_f32` (`castBf16` + all-gather) on both attention and MoE outputs.
+
+`0092` (Anothers, an upstream candidate) routes `block.Emitter.upstream`, prefill `engram.wkv`, and `dspark.mainProj` (chunked at `dense.rows_max` during ingest) onto `dense3` (`lanes`, converted in place over their trellis tiles at zero extra memory), and brings DSpark's `r1` pass onto `mhcInto`, `fusedNorm` (`q_norm`), `qrope=1` (`ATTN_ROPE`), `woFold`, and direct `.bf16` `exchange` (supported in both `dspark_gpu_device.zig` and `dspark_slots_device.zig`). Together this eliminates `tensorfold_exl3_linear_v4.linear` completely in decode and cuts 23 kernel launches per DSpark round while matching 20/20 greedy replay SHA-256 digests (15,813 tokens) on 2x GB10 TP=2 (+2.7% 1-stream code decode, +4.4% 4-stream code decode).
 
 ### This engine against the previous recipe engine
 
