@@ -1,0 +1,857 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anothers <14343424+Anothers@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 12:10:00 +0800
+Subject: [PATCH 92/92] dsv41: zero-spill sm_121 x3ld decode, fused expert
+ rot_in, and RT=8 router prefetch
+
+Rewrite x3ld's inner decode path to read staged trellis words directly from
+shared memory via 32-bit __funnelshift_l windows instead of holding w[NT][LW]
+and LaneMap in registers across warp shuffles. On sm_121 (nvcc 13.0) this
+eliminates local-memory register spills across K2=10/12 instances (e.g.
+ld_kernel<2,8,1,2,10,0> 166 -> 128 regs, dsv41_x3ld_epi_dn_1_2_10 167 -> 126
+regs) while preserving the exact mma16816 FP32 accumulation order, and
+vectorizes the final shared-memory warp reduction store with float4.
+
+Under r1 decode:
+- pick pd=2 for 2..16-row speculative verification windows and pd=1 for 1-row
+  draft and >=17-row windows, and enable PDL where upstream inputs allow
+  (gate/up when !router_group_rot, down unconditionally);
+- fuse mat=0,1 in rot_in_kernel when gridDim.z == 1 so x and pick are loaded
+  once, vectorize gateup_epilogue_kernel / down_combine_kernel, and skip the
+  unused s.ex.y global writeback (~37-147 MB per window) when y is null;
+- extend router_narrow.cuh's 2-stage x prefetching (XP=2) from RT <= 4 to
+  RT <= 8 so 5..8-row verification windows keep x loads pipelined;
+- refresh sm_121 nvcc 13.0 contract records and clear stale 13.2/13.3 entries
+  for the modified kernels.
+
+Verified bit-exact across 18 x3ld-epi shapes against unmodified grouped_kernel
+and 20/20 greedy replay SHA-256 digests (15,813 tokens) on 2x GB10 TP=2.
+---
+ .../cuda/deepseek_v41/router_narrow.cuh       |   2 +-
+ zig/kernels/cuda/exl3_block/exl3_experts.cu   | 151 ++++++++++++------
+ zig/kernels/cuda/exl3_block/x3ld.cu           | 132 +++++++++++----
+ zig/src/core/contract/dsv41_pending_1.zig     |  64 ++++----
+ zig/src/core/contract/dsv41_pending_2.zig     |   8 +-
+ .../contract/measurements/deepseek_a_132.zig  |  38 -----
+ .../contract/measurements/deepseek_b_132.zig  |   4 -
+ zig/src/core/contract/nvcc_133_records.zig    |  14 --
+ zig/src/cuda/exl3_block_exl3.zig              |   2 +-
+ zig/src/families/deepseek_v41/block_moe.zig   |  33 ++--
+ zig/src/families/deepseek_v41/block_test.zig  |  33 ++++
+ .../deepseek_v41/kernels_replay_experts.zig   |   2 +-
+ .../cuda/deepseek_v41/x3ld_epi_bench.zig      |   9 +-
+ 13 files changed, 300 insertions(+), 192 deletions(-)
+
+diff --git a/zig/kernels/cuda/deepseek_v41/router_narrow.cuh b/zig/kernels/cuda/deepseek_v41/router_narrow.cuh
+index 2b38f41..f3c2ff6 100644
+--- a/zig/kernels/cuda/deepseek_v41/router_narrow.cuh
++++ b/zig/kernels/cuda/deepseek_v41/router_narrow.cuh
+@@ -30,7 +30,7 @@ __device__ __forceinline__ void cp_wait_n(int n) {
+ template <int RT, int NW>
+ __global__ void __launch_bounds__(NW * 32) narrow_kernel(const Args a) {
+     constexpr int PD = NW <= 4 && RT <= 4 ? NV : NV / 2;   // gate vectors in flight a lane
+-    constexpr int XP = RT <= 4 ? 2 : 0;             // steps of x in flight (0: loaded at use, L1)
++    constexpr int XP = RT <= 8 ? 2 : 0;             // steps of x in flight (0: loaded at use, L1)
+     constexpr int TS = (GROUP_INTS * 4 + NW * 512 - 1) / (NW * 512);   // slots the tail needs
+     __shared__ __align__(16) uint4 wsh[NW][PD > TS ? PD : TS][32];
+     const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;
+diff --git a/zig/kernels/cuda/exl3_block/exl3_experts.cu b/zig/kernels/cuda/exl3_block/exl3_experts.cu
+index d870568..3eebdbd 100644
+--- a/zig/kernels/cuda/exl3_block/exl3_experts.cu
++++ b/zig/kernels/cuda/exl3_block/exl3_experts.cu
+@@ -89,25 +89,75 @@ template <typename T> __device__ __forceinline__ float to_f(T v);
+ template <> __device__ __forceinline__ float to_f<__nv_bfloat16>(__nv_bfloat16 v) { return __bfloat162float(v); }
+ template <> __device__ __forceinline__ float to_f<half>(half v) { return __half2float(v); }
+ 
+-// Program (member row, 128-block of K, matrix): Xh = fp16((x * suh) @ H) for gate and up of every routed slot.
++template <typename TIN>
++__device__ __forceinline__ void load4_in(const TIN* p, bool aligned, float (&out)[4]) {
++    if (aligned) {
++        const uint2 u = *reinterpret_cast<const uint2*>(p);
++        const TIN* q = reinterpret_cast<const TIN*>(&u);
++        out[0] = to_f<TIN>(q[0]);
++        out[1] = to_f<TIN>(q[1]);
++        out[2] = to_f<TIN>(q[2]);
++        out[3] = to_f<TIN>(q[3]);
++    } else {
++        out[0] = to_f<TIN>(p[0]);
++        out[1] = to_f<TIN>(p[1]);
++        out[2] = to_f<TIN>(p[2]);
++        out[3] = to_f<TIN>(p[3]);
++    }
++}
++
++__device__ __forceinline__ void load4_h2f(const half* p, float (&out)[4]) {
++    const uint2 u = *reinterpret_cast<const uint2*>(p);
++    const half2 h0 = *reinterpret_cast<const half2*>(&u.x);
++    const half2 h1 = *reinterpret_cast<const half2*>(&u.y);
++    out[0] = __half2float(__low2half(h0));
++    out[1] = __half2float(__high2half(h0));
++    out[2] = __half2float(__low2half(h1));
++    out[3] = __half2float(__high2half(h1));
++}
++
++__device__ __forceinline__ void store4_f2h(half* p, const float (&v)[4], float scale) {
++    half out_h[4];
++#pragma unroll
++    for (int j = 0; j < 4; ++j) out_h[j] = __float2half_rn(v[j] * scale);
++    *reinterpret_cast<uint2*>(p) = *reinterpret_cast<const uint2*>(out_h);
++}
++
++// Program (member row, 128-block of K, matrix [or fused mat=0,1 when gridDim.z == 1]): Xh = fp16((x * suh) @ H).
+ template <typename TIN>
+ __global__ void rot_in_kernel(const TIN* __restrict__ x, int x_stride, const int* __restrict__ pick,
+                               const half* __restrict__ suh0, const half* __restrict__ suh1, half* __restrict__ out0,
+                               half* __restrict__ out1, int K, int slots, int E) {
+-    const int p = blockIdx.x, blk = blockIdx.y, mat = blockIdx.z;
+-    const int row = p / slots;
++    const int p = blockIdx.x, blk = blockIdx.y;
+     const int e = pick[p];
+     if (e < 0 || e >= E) return;
++    const int row = p / slots;
+     const int lane = threadIdx.x;
+-    const half* suh = (mat ? suh1 : suh0) + (size_t)e * K + blk * 128 + 4 * lane;
+-    const TIN* xr = x + (size_t)row * x_stride + blk * 128 + 4 * lane;
+-    float v[4];
++    const int off = blk * 128 + 4 * lane;
++    float xv[4];
++    load4_in<TIN>(x + (size_t)row * x_stride + off, (x_stride & 3) == 0, xv);
++    if (gridDim.z == 1) {
++        float s0[4], s1[4], v0[4], v1[4];
++        load4_h2f(suh0 + (size_t)e * K + off, s0);
++        load4_h2f(suh1 + (size_t)e * K + off, s1);
+ #pragma unroll
+-    for (int j = 0; j < 4; ++j) v[j] = to_f<TIN>(xr[j]) * __half2float(suh[j]);
+-    fwht128(v, lane);
+-    half* o = (mat ? out1 : out0) + (size_t)p * K + blk * 128 + 4 * lane;
++        for (int j = 0; j < 4; ++j) {
++            v0[j] = xv[j] * s0[j];
++            v1[j] = xv[j] * s1[j];
++        }
++        fwht128(v0, lane);
++        fwht128(v1, lane);
++        store4_f2h(out0 + (size_t)p * K + off, v0, HAD_SCALE);
++        store4_f2h(out1 + (size_t)p * K + off, v1, HAD_SCALE);
++    } else {
++        const int mat = blockIdx.z;
++        float s[4], v[4];
++        load4_h2f((mat ? suh1 : suh0) + (size_t)e * K + off, s);
+ #pragma unroll
+-    for (int j = 0; j < 4; ++j) o[j] = __float2half_rn(v[j] * HAD_SCALE);
++        for (int j = 0; j < 4; ++j) v[j] = xv[j] * s[j];
++        fwht128(v, lane);
++        store4_f2h((mat ? out1 : out0) + (size_t)p * K + off, v, HAD_SCALE);
++    }
+ }
+ 
+ __device__ __forceinline__ float bf16r(float x) { return __bfloat162float(__float2bfloat16_rn(x)); }
+@@ -122,39 +172,38 @@ __global__ void gateup_epilogue_kernel(const float* __restrict__ Z, const int* _
+     if (e < 0 || e >= E) return;
+     const int lane = threadIdx.x;
+     const int n = blk * 128 + 4 * lane;
+-    float gv[4], uv[4];
+-#pragma unroll
+-    for (int j = 0; j < 4; ++j) {
+-        float sg = 0.f, su = 0.f;
+-        for (int s = 0; s < SK; ++s) {
+-            sg += Z[((size_t)(0 * SK + s) * P + p) * N + n + j];
+-            su += Z[((size_t)(1 * SK + s) * P + p) * N + n + j];
+-        }
+-        gv[j] = sg;
+-        uv[j] = su;
++    float gv[4] = {0.f, 0.f, 0.f, 0.f}, uv[4] = {0.f, 0.f, 0.f, 0.f};
++    for (int s = 0; s < SK; ++s) {
++        const float4 zg = *reinterpret_cast<const float4*>(Z + (((size_t)(0 * SK + s) * P + p) * N + n));
++        const float4 zu = *reinterpret_cast<const float4*>(Z + (((size_t)(1 * SK + s) * P + p) * N + n));
++        gv[0] += zg.x; gv[1] += zg.y; gv[2] += zg.z; gv[3] += zg.w;
++        uv[0] += zu.x; uv[1] += zu.y; uv[2] += zu.z; uv[3] += zu.w;
+     }
+     fwht128(gv, lane);
+     fwht128(uv, lane);
++    const uint2 ug = *reinterpret_cast<const uint2*>(svh_g + (size_t)e * N + n);
++    const uint2 uu2 = *reinterpret_cast<const uint2*>(svh_u + (size_t)e * N + n);
++    const uint2 ud = *reinterpret_cast<const uint2*>(suh_d + (size_t)e * N + n);
++    const half* hg = reinterpret_cast<const half*>(&ug);
++    const half* hu = reinterpret_cast<const half*>(&uu2);
++    const half* hd = reinterpret_cast<const half*>(&ud);
+     float v[4];
+ #pragma unroll
+     for (int j = 0; j < 4; ++j) {
+         float act;
+         if (act_mode == 0) {
+-            float gg = fminf(bf16r(gv[j] * HAD_SCALE * __half2float(svh_g[(size_t)e * N + n + j])), limit);
+-            float uu = fminf(fmaxf(bf16r(uv[j] * HAD_SCALE * __half2float(svh_u[(size_t)e * N + n + j])), -limit),
+-                             limit);
++            float gg = fminf(bf16r(gv[j] * HAD_SCALE * __half2float(hg[j])), limit);
++            float uu = fminf(fmaxf(bf16r(uv[j] * HAD_SCALE * __half2float(hu[j])), -limit), limit);
+             act = bf16r(bf16r(gg / (1.f + expf(-gg))) * uu);
+         } else {
+-            float gg = fminf(gv[j] * HAD_SCALE * __half2float(svh_g[(size_t)e * N + n + j]), limit);
+-            float uu = fminf(fmaxf(uv[j] * HAD_SCALE * __half2float(svh_u[(size_t)e * N + n + j]), -limit), limit);
++            float gg = fminf(gv[j] * HAD_SCALE * __half2float(hg[j]), limit);
++            float uu = fminf(fmaxf(uv[j] * HAD_SCALE * __half2float(hu[j]), -limit), limit);
+             act = gg / (1.f + expf(-gg)) * uu;
+         }
+-        v[j] = act * __half2float(suh_d[(size_t)e * N + n + j]);
++        v[j] = act * __half2float(hd[j]);
+     }
+     fwht128(v, lane);
+-    half* o = xd + (size_t)p * N + n;
+-#pragma unroll
+-    for (int j = 0; j < 4; ++j) o[j] = __float2half_rn(v[j] * HAD_SCALE);
++    store4_f2h(xd + (size_t)p * N + n, v, HAD_SCALE);
+ }
+ 
+ // Program (member row, 128-block of the model width): Y = (splits summed in order) @ H * svh_d, fp32.
+@@ -190,9 +239,20 @@ __global__ void combine_kernel(const float* __restrict__ y, const float* __restr
+     out[(size_t)r * D + d] = acc;
+ }
+ 
+-// down_epilogue_kernel then combine_kernel in one launch, the same arithmetic in the same order (the same bits).
++// down_epilogue_kernel then combine_kernel in one launch, vectorized and skipping y traffic when y == nullptr.
+ __device__ __forceinline__ void store_out(float* o, float v) { *o = v; }
+ __device__ __forceinline__ void store_out(__nv_bfloat16* o, float v) { *o = __float2bfloat16_rn(v); }
++__device__ __forceinline__ void store4_out(float* o, const float (&acc)[4]) {
++    *reinterpret_cast<float4*>(o) = make_float4(acc[0], acc[1], acc[2], acc[3]);
++}
++__device__ __forceinline__ void store4_out(__nv_bfloat16* o, const float (&acc)[4]) {
++    const __nv_bfloat162 b0 = __float22bfloat162_rn(make_float2(acc[0], acc[1]));
++    const __nv_bfloat162 b1 = __float22bfloat162_rn(make_float2(acc[2], acc[3]));
++    uint2 u;
++    u.x = *reinterpret_cast<const uint32_t*>(&b0);
++    u.y = *reinterpret_cast<const uint32_t*>(&b1);
++    *reinterpret_cast<uint2*>(o) = u;
++}
+ 
+ // OutT bf16: the fp32 sum rounded to nearest even as it is stored (same bits as fp32 out then to bfloat16)
+ template <typename OutT>
+@@ -206,26 +266,24 @@ __global__ void down_combine_kernel(const float* __restrict__ Z, const int* __re
+     const int n = blk * 128 + 4 * lane;
+     const int p = r * slots + k;
+     const int e = pick[p];
+-    float o[4];
++    float4 o4;
+     if (e >= 0 && e < E) {
+-        float v[4];
+-#pragma unroll
+-        for (int j = 0; j < 4; ++j) {
+-            float s = 0.f;
+-            for (int q = 0; q < SK; ++q) s += Z[((size_t)q * P + p) * D + n + j];
+-            v[j] = s;
++        float v[4] = {0.f, 0.f, 0.f, 0.f};
++        for (int q = 0; q < SK; ++q) {
++            const float4 zq = *reinterpret_cast<const float4*>(Z + (((size_t)q * P + p) * D + n));
++            v[0] += zq.x; v[1] += zq.y; v[2] += zq.z; v[3] += zq.w;
+         }
+         fwht128(v, lane);
+-#pragma unroll
+-        for (int j = 0; j < 4; ++j) {
+-            o[j] = v[j] * HAD_SCALE * __half2float(svh_d[(size_t)e * D + n + j]);
+-            y[(size_t)p * D + n + j] = o[j];
+-        }
++        float svd[4];
++        load4_h2f(svh_d + (size_t)e * D + n, svd);
++        o4 = make_float4(v[0] * HAD_SCALE * svd[0], v[1] * HAD_SCALE * svd[1],
++                         v[2] * HAD_SCALE * svd[2], v[3] * HAD_SCALE * svd[3]);
++        if (y != nullptr) *reinterpret_cast<float4*>(y + ((size_t)p * D + n)) = o4;
+     } else {
+-#pragma unroll
+-        for (int j = 0; j < 4; ++j) o[j] = y[(size_t)p * D + n + j];
++        o4 = (y != nullptr) ? *reinterpret_cast<const float4*>(y + ((size_t)p * D + n))
++                            : make_float4(0.f, 0.f, 0.f, 0.f);
+     }
+-    part[k][lane] = make_float4(o[0], o[1], o[2], o[3]);
++    part[k][lane] = o4;
+     __syncthreads();
+     if (k != 0) return;
+     float acc[4] = {0.f, 0.f, 0.f, 0.f};
+@@ -237,8 +295,7 @@ __global__ void down_combine_kernel(const float* __restrict__ Z, const int* __re
+         acc[2] = fmaf(w, u.z, acc[2]);
+         acc[3] = fmaf(w, u.w, acc[3]);
+     }
+-#pragma unroll
+-    for (int j = 0; j < 4; ++j) store_out(out + (size_t)r * D + n + j, acc[j]);
++    store4_out(out + (size_t)r * D + n, acc);
+ }
+ 
+ }  // namespace tf_exl3_experts
+diff --git a/zig/kernels/cuda/exl3_block/x3ld.cu b/zig/kernels/cuda/exl3_block/x3ld.cu
+index c6c0c3b..a180b50 100644
+--- a/zig/kernels/cuda/exl3_block/x3ld.cu
++++ b/zig/kernels/cuda/exl3_block/x3ld.cu
+@@ -1,21 +1,14 @@
+ // Copy of src/tensorfold/families/deepseek_v41/cuda/x3ld.cu (blob 5cd25f2cdf3c): sass_check.sh
+ 
+-
+-
+-// DeepSeek-V4.1-Flash routed experts (TF_DSV41_EXPERT_LOADS=1): grouped EXL3 expert GEMV with a faster load path.
+-
+-// Same bits as grouped_kernel<CB, NT, 4, PF, LO, HI> at any row count; data movement changes (prologue, ring, PDL).
+-
+-// PROBE 3 (timing only, wrong results): no decode and no mma, the load path alone.
++// DeepSeek-V4.1-Flash routed experts (TF_DSV41_EXPERT_LOADS=1): sm_121 direct smem 32-bit funnelshift decode.
+ 
+ #include "experts_grouped.cuh"
+ #include "common/qmm_frag.cuh"
+ 
+ namespace dsv41_x3ld {
+ 
+-using tf_exl3x::decode_tile;
++using tf_exl3x::cb_pair;
+ using tf_exl3x::Fmt;
+-using tf_exl3x::LaneMap;
+ using tf_exl3x::mma16816;
+ 
+ constexpr int W = 4;   // warps a CTA: upstream's default_config, which fixes the K ranges
+@@ -29,7 +22,74 @@ __device__ __forceinline__ uint32_t ldg_pair(const half* x, bool ok) {
+     return v;
+ }
+ 
+-__device__ __forceinline__ void pdl_wait() { qmm_frag::grid_wait(); }
++__device__ __forceinline__ void pdl_wait() {
++#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
++    asm volatile("griddepcontrol.wait;" ::: "memory");
++#endif
++}
++
++template <int K2>
++__host__ __device__ constexpr int stage_lane_words() {
++    int most = 0;
++    for (int l = 0; l < 32; ++l) {
++        const int first = (4 * l * K2 + (K2 >> 1) - 16 + 128 * K2) & 31;
++        const int span = Fmt<K2>::end(7) - Fmt<K2>::end(0) + 16;
++        const int need = first + span;
++        if (need > most) most = need;
++    }
++    return (most + 31) >> 5;
++}
++
++template <int D>
++__device__ __forceinline__ uint32_t win16(uint32_t hi, uint32_t mid, uint32_t lo) {
++    if constexpr (D == 0) return hi >> 16;
++    else if constexpr (D == 8) return __byte_perm(hi, 0u, 0x4421);
++    else if constexpr (D < 16) return (hi >> (16 - D)) & 0xffffu;
++    else if constexpr (D == 16) return hi & 0xffffu;
++    else if constexpr (D < 32) return __funnelshift_l(mid, hi, D) >> 16;
++    else if constexpr (D == 32) return mid >> 16;
++    else if constexpr (D == 40) return __byte_perm(mid, 0u, 0x4421);
++    else if constexpr (D < 48) return (mid >> (48 - D)) & 0xffffu;
++    else if constexpr (D == 48) return mid & 0xffffu;
++    else return __funnelshift_l(lo, mid, D - 32) >> 16;
++}
++
++template <int CB, int K2>
++__device__ __forceinline__ void decode_stage_tile(
++    const uint32_t* tile, int w0, int bit_off,
++    uint32_t (&b0)[2], uint32_t (&b1)[2]) {
++    constexpr int TW = Fmt<K2>::TW;
++    constexpr int LW2 = stage_lane_words<K2>();
++    constexpr int E0 = Fmt<K2>::end(0);
++    constexpr int D7 = Fmt<K2>::end(7) - E0;
++    const int off = (K2 == 8) ? 20 : bit_off;
++    const uint32_t u0 = tile[w0];
++    const uint32_t u1 = tile[(w0 + 1 < TW) ? (w0 + 1) : 0];
++    const uint32_t hi = __funnelshift_l(u1, u0, off);
++    uint32_t mid = 0u, lo = 0u;
++    if constexpr (D7 > 16) {
++        if constexpr (LW2 > 2) {
++            const int w2 = (w0 + 2 < TW) ? (w0 + 2) : (w0 + 2 - TW);
++            const uint32_t u2 = tile[w2];
++            mid = __funnelshift_l(u2, u1, off);
++            if constexpr (D7 > 48) lo = u2 << off;
++        } else {
++            mid = u1 << off;
++        }
++    }
++    const uint32_t s0 = win16<Fmt<K2>::end(0) - E0>(hi, mid, lo);
++    const uint32_t s1 = win16<Fmt<K2>::end(1) - E0>(hi, mid, lo);
++    const uint32_t s2 = win16<Fmt<K2>::end(2) - E0>(hi, mid, lo);
++    const uint32_t s3 = win16<Fmt<K2>::end(3) - E0>(hi, mid, lo);
++    const uint32_t s4 = win16<Fmt<K2>::end(4) - E0>(hi, mid, lo);
++    const uint32_t s5 = win16<Fmt<K2>::end(5) - E0>(hi, mid, lo);
++    const uint32_t s6 = win16<Fmt<K2>::end(6) - E0>(hi, mid, lo);
++    const uint32_t s7 = win16<Fmt<K2>::end(7) - E0>(hi, mid, lo);
++    b0[0] = cb_pair<CB>(s0, s1);
++    b0[1] = cb_pair<CB>(s2, s3);
++    b1[0] = cb_pair<CB>(s4, s5);
++    b1[1] = cb_pair<CB>(s6, s7);
++}
+ 
+ template <int K2, int NT>
+ struct Step {
+@@ -77,7 +137,10 @@ __device__ __forceinline__ void ld_tiles(const uint32_t* __restrict__ T, int NTI
+ #pragma unroll
+     for (int d = 0; d < PD; ++d) issue_a(d, d);
+ 
+-    const LaneMap<K2> map(lane);
++    const int first_bit = 4 * lane * K2 + (K2 >> 1) - 16 + 128 * K2;
++    const int w0 = (K2 == 8) ? ((lane + 31) & 31) : ((first_bit >> 5) % S::TW);
++    const int bit_off = first_bit & 31;
++
+     for (int kb = 0; kb < nkt; kb += PD) {                       // nkt % PD == 0 (host)
+ #pragma unroll
+         for (int d = 0; d < PD; ++d) {
+@@ -91,12 +154,6 @@ __device__ __forceinline__ void ld_tiles(const uint32_t* __restrict__ T, int NTI
+             }
+             if (more) issue_w(d, s + PD);                        // the slot's registers are free again
+             __syncwarp();
+-            uint32_t w[NT][S::LW];
+-#pragma unroll
+-            for (int i = 0; i < NT; ++i)
+-#pragma unroll
+-                for (int l = 0; l < S::LW; ++l)
+-                    w[i][l] = (S::TW % 32 == 0 || l * 32 + lane < S::TW) ? stage[i * S::TW + l * 32 + lane] : 0u;
+             uint32_t a[4];
+ #pragma unroll
+             for (int j = 0; j < 4; ++j) a[j] = a_ring[d][j];
+@@ -106,11 +163,14 @@ __device__ __forceinline__ void ld_tiles(const uint32_t* __restrict__ T, int NTI
+                 if constexpr (PROBE == 3) {
+                     uint32_t x = a[0] ^ a[1] ^ a[2] ^ a[3];
+ #pragma unroll
+-                    for (int l = 0; l < S::LW; ++l) x ^= w[i][l];
++                    for (int l = 0; l < S::LW; ++l) {
++                        const uint32_t wl = (S::TW % 32 == 0 || l * 32 + lane < S::TW) ? stage[i * S::TW + l * 32 + lane] : 0u;
++                        x ^= wl;
++                    }
+                     acc[i][0][0] = __uint_as_float(__float_as_uint(acc[i][0][0]) ^ x);
+                 } else {
+                     uint32_t b0[2], b1[2];
+-                    decode_tile<CB, K2>(w[i], map, lane, b0, b1);
++                    decode_stage_tile<CB, K2>(stage + i * S::TW, w0, bit_off, b0, b1);
+                     mma16816(acc[i][0], a, b0);
+                     mma16816(acc[i][1], a, b1);
+                 }
+@@ -120,7 +180,7 @@ __device__ __forceinline__ void ld_tiles(const uint32_t* __restrict__ T, int NTI
+     __syncwarp();                                                // the staging area becomes red[warp] again
+ }
+ 
+-// Program (u, n block, (mat * SK + split) * MT + member tile): grouped_kernel<CB, NT, 4, *, LO, HI>'s work item.
++// Program (u, n block, (mat * SK + split) * MT + member tile): zero-spill PD=2 on K2<=8, PD=1 on K2>8.
+ template <int CB, int NT, int PD, int LO, int HI, int PROBE>
+ __device__ __forceinline__ void ld_body(
+     const half* __restrict__ X0, const half* __restrict__ X1, const int64_t* __restrict__ TP0,
+@@ -166,12 +226,13 @@ __device__ __forceinline__ void ld_body(
+             for (int c = 0; c < 4; ++c) acc[i][h][c] = 0.f;
+ 
+     switch (k2) {
+-#define DSV41_X3LD_CASE(K2_)                                                                                      \
+-    case K2_:                                                                                                    \
+-        if constexpr (K2_ >= LO && K2_ <= HI)                                                                    \
+-            ld_tiles<CB, K2_, NT, PD, PROBE>(T, NTILES, kt0, per_warp, nt0, X, K, rows_sh, stage, lane, acc);   \
+-        else                                                                                                     \
+-            __trap();                                                                                            \
++#define DSV41_X3LD_CASE(K2_)                                                                                            \
++    case K2_:                                                                                                          \
++        if constexpr (K2_ >= LO && K2_ <= HI)                                                                          \
++            ld_tiles<CB, K2_, NT, ((NT == 8 && K2_ > 8) ? 1 : ((NT == 4 && K2_ > 8) ? 1 : PD)), PROBE>(               \
++                T, NTILES, kt0, per_warp, nt0, X, K, rows_sh, stage, lane, acc);                                       \
++        else                                                                                                           \
++            __trap();                                                                                                  \
+         break;
+         DSV41_X3LD_CASE(2)
+         DSV41_X3LD_CASE(3)
+@@ -193,7 +254,7 @@ __device__ __forceinline__ void ld_body(
+             __trap();
+     }
+ 
+-    // grouped_kernel's reduction, verbatim: the warps' partial sums through shared memory, added in warp order
++    // grouped_kernel's reduction, vectorized by float4 in exact warp order (0 -> 1 -> 2 -> 3)
+     const int g = lane >> 2, t = lane & 3;
+ #pragma unroll
+     for (int i = 0; i < NT; ++i)
+@@ -206,14 +267,21 @@ __device__ __forceinline__ void ld_body(
+             red[warp][g + 8][col + 1] = acc[i][h][3];
+         }
+     __syncthreads();
+-    for (int idx = threadIdx.x; idx < 16 * NT * 16; idx += W * 32) {
+-        const int row = idx / (NT * 16), col = idx % (NT * 16);
++    constexpr int N4 = NT * 4;
++    for (int idx4 = threadIdx.x; idx4 < 16 * N4; idx4 += W * 32) {
++        const int row = idx4 / N4, col = (idx4 % N4) * 4;
+         const int r = rows_sh[row];
+         if (r < 0) continue;
+-        float s = red[0][row][col];
++        float4 s = *reinterpret_cast<const float4*>(&red[0][row][col]);
+ #pragma unroll
+-        for (int w = 1; w < W; ++w) s += red[w][row][col];
+-        Z[(((size_t)mat * SK + split) * P + r) * N + nt0 * 16 + col] = s;
++        for (int w = 1; w < W; ++w) {
++            const float4 v = *reinterpret_cast<const float4*>(&red[w][row][col]);
++            s.x += v.x;
++            s.y += v.y;
++            s.z += v.z;
++            s.w += v.w;
++        }
++        *reinterpret_cast<float4*>(Z + (((size_t)mat * SK + split) * P + r) * N + nt0 * 16 + col) = s;
+     }
+ }
+ 
+diff --git a/zig/src/core/contract/dsv41_pending_1.zig b/zig/src/core/contract/dsv41_pending_1.zig
+index 126af51..112d9e9 100644
+--- a/zig/src/core/contract/dsv41_pending_1.zig
++++ b/zig/src/core/contract/dsv41_pending_1.zig
+@@ -1,45 +1,45 @@
+ //! Binding-derived declarations; missing geometry or compiled usage blocks qualification.
+ const registry = @import("registry.zig");
+ pub const records = [_]registry.CudaRecord{
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 120, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 124, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 64, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 166, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 68, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 130, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 68, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 145, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 79, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 102, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 102, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 80, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 145, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 80, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 145, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 80, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 96, .static = 16448, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 16448, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 16448, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 102, .static = 16448, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3ld", .symbol = "_ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 103, .static = 16448, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 205, .static = 16640, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 229, .static = 16640, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 229, .static = 16640, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 189, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 248, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_x3pf", .symbol = "_ZN10dsv41_x3pf9pf_kernelILi2ELi8ELi2ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 250, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 125, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 117, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 126, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 133, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 132, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 147, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 150, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_gu_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 160, .static = 32848, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 118, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 126, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_2_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 138, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 117, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dn_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 154, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 118, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 126, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_1_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_8_8", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_2_8_8", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 138, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_10", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_2_2_10", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_12", .image = "dsv41_x3ld_epi", .symbol = "dsv41_x3ld_epi_dnb_2_2_12", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 154, .static = 32896, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 114, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi2ELi16EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN8tf_exl3x14grouped_kernelILi2ELi8ELi4ELi1ELi2ELi16EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32832, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+@@ -66,13 +66,13 @@ pub const records = [_]registry.CudaRecord{
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14dequant_kernelILi2ELi16EEEvPKjP6__halfii", .image = "dsv41_exl3_experts", .symbol = "_ZN8tf_exl3x14dequant_kernelILi2ELi16EEEvPKjP6__halfii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts12group_kernelEPKiPiS2_S2_iiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts12group_kernelEPKiPiS2_S2_iiii", .threads = 1024, .dynamic = 49152, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 42, .static = 128, .bound = 1024 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_glue router_group_rot", .image = "dsv41_router_glue", .symbol = "router_group_rot", .threads = 1024, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 25, .static = 6528, .bound = 1024 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI13__nv_bfloat16EEvPKT_iPKiPK6__halfS9_PS7_SA_iii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts13rot_in_kernelI13__nv_bfloat16EEvPKT_iPKiPK6__halfS9_PS7_SA_iii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI6__halfEEvPKT_iPKiPKS1_S8_PS1_S9_iii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts13rot_in_kernelI6__halfEEvPKT_iPKiPKS1_S8_PS1_S9_iii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI13__nv_bfloat16EEvPKT_iPKiPK6__halfS9_PS7_SA_iii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts13rot_in_kernelI13__nv_bfloat16EEvPKT_iPKiPK6__halfS9_PS7_SA_iii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 27, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI6__halfEEvPKT_iPKiPKS1_S8_PS1_S9_iii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts13rot_in_kernelI6__halfEEvPKT_iPKiPKS1_S8_PS1_S9_iii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 27, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts22gateup_epilogue_kernelEPKfPKiPK6__halfS6_S6_PS4_iiiifi", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts22gateup_epilogue_kernelEPKfPKiPK6__halfS6_S6_PS4_iiiifi", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts20down_epilogue_kernelEPKfPKiPK6__halfPfiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts20down_epilogue_kernelEPKfPKiPK6__halfPfiiii", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 48, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts14combine_kernelEPKfS1_Pfii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts14combine_kernelEPKfS1_Pfii", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 38, .static = 0, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelIfEEvPKfPKiPK6__halfPfS2_PT_iiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts19down_combine_kernelIfEEvPKfPKiPK6__halfPfS2_PT_iiiii", .threads = 1024, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 16384, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelI13__nv_bfloat16EEvPKfPKiPK6__halfPfS3_PT_iiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts19down_combine_kernelI13__nv_bfloat16EEvPKfPKiPK6__halfPfS3_PT_iiiii", .threads = 1024, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 16384, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelIfEEvPKfPKiPK6__halfPfS2_PT_iiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts19down_combine_kernelIfEEvPKfPKiPK6__halfPfS2_PT_iiiii", .threads = 1024, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 44, .static = 16384, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelI13__nv_bfloat16EEvPKfPKiPK6__halfPfS3_PT_iiiii", .image = "dsv41_exl3_experts", .symbol = "_ZN15tf_exl3_experts19down_combine_kernelI13__nv_bfloat16EEvPKfPKiPK6__halfPfS3_PT_iiiii", .threads = 1024, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 43, .static = 16384, .bound = 0 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi2ELi8ELi4ELi3ELi4EEEvNS_4ArgsE", .image = "dsv41_x3gm", .symbol = "_ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi2ELi8ELi4ELi3ELi4EEEvNS_4ArgsE", .threads = 256, .dynamic = 33792, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 127, .static = 272, .bound = 256 } }, .later_pending = true, .geometry_pending = false, .optional_shared = true },
+     .{ .launch = .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi2ELi8ELi2ELi4ELi4EEEvNS_4ArgsE", .image = "dsv41_x3gm", .symbol = "_ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi2ELi8ELi2ELi4ELi4EEEvNS_4ArgsE", .threads = 256, .dynamic = 33792, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 127, .static = 272, .bound = 256 } }, .later_pending = true, .geometry_pending = false, .optional_shared = true },
+     .{ .launch = .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi1ELi16ELi2ELi4ELi4EEEvNS_4ArgsE", .image = "dsv41_x3gm", .symbol = "_ZN10dsv41_x3gm9gm_kernelILi2ELi1ELi3ELi1ELi16ELi2ELi4ELi4EEEvNS_4ArgsE", .threads = 512, .dynamic = 38912, .cluster = 1, .opt_in = true, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 127, .static = 528, .bound = 512 } }, .later_pending = true, .geometry_pending = false, .optional_shared = true },
+diff --git a/zig/src/core/contract/dsv41_pending_2.zig b/zig/src/core/contract/dsv41_pending_2.zig
+index d68b6d0..6a0968f 100644
+--- a/zig/src/core/contract/dsv41_pending_2.zig
++++ b/zig/src/core/contract/dsv41_pending_2.zig
+@@ -139,10 +139,10 @@ pub const records = [_]registry.CudaRecord{
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi8ELi4ELi1EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi8ELi4ELi1EEEvNS_4ArgsE", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 105, .static = 16388, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi8ELi8ELi2EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi8ELi8ELi2EEEvNS_4ArgsE", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 106, .static = 16388, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi8ELi4ELi2EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi8ELi4ELi2EEEvNS_4ArgsE", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 118, .static = 16388, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi1EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi1EEEvNS_4ArgsE", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 142, .static = 5636, .bound = 32 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi2EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi2EEEvNS_4ArgsE", .threads = 64, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 10244, .bound = 64 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi4EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi4EEEvNS_4ArgsE", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 20484, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+-    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi8EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi8EEEvNS_4ArgsE", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 142, .static = 40964, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi1EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi1EEEvNS_4ArgsE", .threads = 32, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 5636, .bound = 32 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi2EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi2EEEvNS_4ArgsE", .threads = 64, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 10244, .bound = 64 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi4EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi4EEEvNS_4ArgsE", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 20484, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
++    .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi8EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg13narrow_kernelILi8ELi8EEEvNS_4ArgsE", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 144, .static = 40964, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi16ELi8ELi1EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi16ELi8ELi1EEEvNS_4ArgsE", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 120, .static = 32772, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi16ELi4ELi1EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi16ELi4ELi1EEEvNS_4ArgsE", .threads = 128, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 204, .static = 32772, .bound = 128 } }, .later_pending = true, .geometry_pending = false },
+     .{ .launch = .{ .name = "dsv41_router_gemv _ZN8dsv41_rg11gemv_kernelILi16ELi8ELi2EEEvNS_4ArgsE", .image = "dsv41_router_gemv", .symbol = "_ZN8dsv41_rg11gemv_kernelILi16ELi8ELi2EEEvNS_4ArgsE", .threads = 256, .dynamic = 0, .cluster = 1, .opt_in = false, .min_sm = 121 }, .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 180, .static = 32772, .bound = 256 } }, .later_pending = true, .geometry_pending = false },
+diff --git a/zig/src/core/contract/measurements/deepseek_a_132.zig b/zig/src/core/contract/measurements/deepseek_a_132.zig
+index 9b0c32d..4717669 100644
+--- a/zig/src/core/contract/measurements/deepseek_a_132.zig
++++ b/zig/src/core/contract/measurements/deepseek_a_132.zig
+@@ -29,13 +29,8 @@ pub const records = [_]Override{
+     .{ .name = "dsv41_dense3 _ZN12dsv41_dense319lanes_unpack_kernelILi6ELi2EEEvPKjP6__halfill", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 31, .static = 0, .bound = 32 } } },
+     .{ .name = "dsv41_dense3 _ZN12dsv41_dense319lanes_unpack_kernelILi8ELi2EEEvPKjP6__halfill", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 29, .static = 0, .bound = 32 } } },
+     .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts12group_kernelEPKiPiS2_S2_iiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 42, .static = 128, .bound = 1024 } } },
+-    .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI13__nv_bfloat16EEvPKT_iPKiPK6__halfS9_PS7_SA_iii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 } } },
+-    .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts13rot_in_kernelI6__halfEEvPKT_iPKiPKS1_S8_PS1_S9_iii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 } } },
+     .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts14combine_kernelEPKfS1_Pfii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 38, .static = 0, .bound = 0 } } },
+-    .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelI13__nv_bfloat16EEvPKfPKiPK6__halfPfS3_PT_iiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 16384, .bound = 0 } } },
+-    .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts19down_combine_kernelIfEEvPKfPKiPK6__halfPfS2_PT_iiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 16384, .bound = 0 } } },
+     .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts20down_epilogue_kernelEPKfPKiPK6__halfPfiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } } },
+-    .{ .name = "dsv41_exl3_experts _ZN15tf_exl3_experts22gateup_epilogue_kernelEPKfPKiPK6__halfS6_S6_PS4_iiiifi", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } } },
+     .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14dequant_kernelILi2ELi10EEEvPKjP6__halfii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 30, .static = 0, .bound = 0 } } },
+     .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14dequant_kernelILi2ELi11EEEvPKjP6__halfii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 28, .static = 0, .bound = 0 } } },
+     .{ .name = "dsv41_exl3_experts _ZN8tf_exl3x14dequant_kernelILi2ELi12EEEvPKjP6__halfii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 28, .static = 0, .bound = 0 } } },
+@@ -286,39 +281,6 @@ pub const records = [_]Override{
+     .{ .name = "dsv41_x3gm3 _ZN10dsv41_x3gm10gm3_kernelILi2ELi2ELi2ELi8ELi2ELi4ELi4ELi0EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 544, .bound = 256 } } },
+     .{ .name = "dsv41_x3gm3 _ZN10dsv41_x3gm10gm3_kernelILi2ELi2ELi2ELi8ELi2ELi4ELi4ELi1EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 544, .bound = 256 } } },
+     .{ .name = "dsv41_x3gm_plan _ZN15dsv41_x3gm_plan11plan_kernelEPKiiiiPiS2_S2_S2_S2_", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 60, .static = 38980, .bound = 512 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 16448, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 16448, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 96, .static = 16448, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 121, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi1ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 72, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 164, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi10ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 99, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 99, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 142, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi8ELi8ELi3EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 80, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 121, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 164, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 164, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 140, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 121, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 164, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 164, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 140, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 125, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 166, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_8_8", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 146, .static = 32848, .bound = 128 } } },
+     .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi10EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 238, .static = 16640, .bound = 128 } } },
+     .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 241, .static = 16640, .bound = 128 } } },
+     .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi8ELi8EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 186, .static = 16640, .bound = 128 } } },
+diff --git a/zig/src/core/contract/measurements/deepseek_b_132.zig b/zig/src/core/contract/measurements/deepseek_b_132.zig
+index 089e47d..93967bb 100644
+--- a/zig/src/core/contract/measurements/deepseek_b_132.zig
++++ b/zig/src/core/contract/measurements/deepseek_b_132.zig
+@@ -246,10 +246,6 @@ pub const records = [_]Override{
+     .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi4ELi2EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 192, .static = 20484, .bound = 64 } } },
+     .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi4ELi4EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 205, .static = 40964, .bound = 128 } } },
+     .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi4ELi8EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 128, .static = 40964, .bound = 256 } } },
+-    .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi1EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 142, .static = 5636, .bound = 32 } } },
+-    .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi2EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 140, .static = 10244, .bound = 64 } } },
+-    .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi4EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 140, .static = 20484, .bound = 128 } } },
+-    .{ .name = "dsv41_router_gemv _ZN8dsv41_rg13narrow_kernelILi8ELi8EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 142, .static = 40964, .bound = 256 } } },
+     .{ .name = "dsv41_sampling _ZN14dsv41_sampling11pack_kernelEPKfPKxiiPf", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 18, .static = 0, .bound = 256 } } },
+     .{ .name = "dsv41_sampling _ZN14dsv41_sampling12stats_kernelEPKfxidPd", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 43, .static = 264, .bound = 1024 } } },
+     .{ .name = "dsv41_sampling dsv41_sampling_stats_fin", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 32 } } },
+diff --git a/zig/src/core/contract/nvcc_133_records.zig b/zig/src/core/contract/nvcc_133_records.zig
+index bd166c1..bac494b 100644
+--- a/zig/src/core/contract/nvcc_133_records.zig
++++ b/zig/src/core/contract/nvcc_133_records.zig
+@@ -71,20 +71,6 @@ pub const cuda_133 = [_]registry.Override{
+     .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi2ELi7ELi2ELi8ELi2ELi6ELi4EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 182, .static = 272, .bound = 256 } } },
+     .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi2ELi8ELi1ELi16ELi2ELi4ELi4EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 126, .static = 528, .bound = 512 } } },
+     .{ .name = "dsv41_x3gm _ZN10dsv41_x3gm9gm_kernelILi2ELi2ELi8ELi2ELi16ELi2ELi3ELi4EEEvNS_4ArgsE", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 238, .static = 528, .bound = 256 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi10ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 124, .static = 16448, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi4ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 126, .static = 16448, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld _ZN10dsv41_x3ld9ld_kernelILi2ELi8ELi2ELi2ELi12ELi0EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 166, .static = 32832, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_1_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dn_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_1_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_dnb_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32896, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_1_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 167, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_10", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 163, .static = 32848, .bound = 128 } } },
+-    .{ .name = "dsv41_x3ld_epi dsv41_x3ld_epi_gu_2_2_12", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 168, .static = 32848, .bound = 128 } } },
+     .{ .name = "dsv41_x3pf _ZN10dsv41_x3pf9pf_kernelILi2ELi4ELi4ELi2ELi12EEEvPK6__halfS3_PKlS5_PKiS7_S7_S7_S7_Pfiiiiii", .usage = .{ .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 0, .static = 0, .bound = 0 }, .{ .regs = 240, .static = 16640, .bound = 128 } } },
+     .{ .name = "exl3_candidate tf_exl3_prompt_2", .usage = .{ .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 79, .static = 32768, .bound = 256 }, .{ .regs = 79, .static = 32768, .bound = 256 } } },
+     .{ .name = "exl3_experts tf_exl3_prompt_gu", .usage = .{ .{ .regs = 128, .static = 43264, .bound = 256 }, .{ .regs = 126, .static = 43264, .bound = 256 }, .{ .regs = 126, .static = 43264, .bound = 256 }, .{ .regs = 128, .static = 43264, .bound = 256 }, .{ .regs = 128, .static = 43264, .bound = 256 } } },
+diff --git a/zig/src/cuda/exl3_block_exl3.zig b/zig/src/cuda/exl3_block_exl3.zig
+index bd1ee6f..44e1fd1 100644
+--- a/zig/src/cuda/exl3_block_exl3.zig
++++ b/zig/src/cuda/exl3_block_exl3.zig
+@@ -381,7 +381,7 @@ pub const Ops = struct {
+         a.add(int(x_stride));
+         for ([_]u64{ pick, suh0, suh1, out0, out1 }) |v| a.add(v);
+         for ([_]usize{ K, slots, E }) |v| a.add(int(v));
+-        try go(o.f.rot_in[@backingInt(input)], o.s, .{ rows * slots, K / 128, 2 }, 32, 0, false, &a);
++        try go(o.f.rot_in[@backingInt(input)], o.s, .{ rows * slots, K / 128, 1 }, 32, 0, false, &a);
+     }
+ 
+     /// Independent grouping/rotation CTAs share a launch, with no inter-CTA handoff. Invalid picks leave Xh untouched.
+diff --git a/zig/src/families/deepseek_v41/block_moe.zig b/zig/src/families/deepseek_v41/block_moe.zig
+index e835df3..7f6efdc 100644
+--- a/zig/src/families/deepseek_v41/block_moe.zig
++++ b/zig/src/families/deepseek_v41/block_moe.zig
+@@ -225,7 +225,8 @@ pub fn moe(e: *E, L: u32) !void {
+     const tp_d = try e.buf("{s}.tp_d", .{pre}, .i64, &.{Et});
+     const k2_d = try e.buf("{s}.k2_d", .{pre}, .i32, &.{Et});
+     const svh_d = try e.buf("{s}.svh_d", .{pre}, .f16, &.{ Et, D });
+-    const y = try e.buf("{s}.y", .{sc}, .f32, &.{ rows * slots, D });
++    const y = if (!e.o.r1 or !fold or e.o.x3ld_epi) try e.buf("{s}.y", .{sc}, .f32, &.{ rows * slots, D }) else try e.empty(.f32);
++    const pd_val: i64 = if (e.o.r1 and n >= 2 and n <= 16) 2 else 1;
+     // after a prune, kit_weights' fp16 rounding (a pointwise op the forward runs) gives new weights
+     const cw = if (!fold) try e.buf("L.wts16", .{}, .f32, &.{ n, slots }) else wts;
+     const out = try e.buf("L.moe", .{}, if (e.o.r1 and backbone) .bf16 else .f32, &.{ n, D });
+@@ -249,18 +250,18 @@ pub fn moe(e: *E, L: u32) !void {
+         return;
+     }
+     try e.ext("tf_dsv41_x3ld_v1.grouped", &.{
+-        xg,              xu,
+-        tp_g,            tp_u,
+-        k2_g,            k2_u,
+-        uids,            ucount,
+-        members,         z,
+-        .{ .i = 2 },     .{ .i = D },
+-        .{ .i = I },     .{ .i = P },
+-        .{ .i = 4 },     .{ .i = slots },
+-        .{ .i = 2 },     .{ .i = 8 },
+-        .{ .i = 1 },     .{ .i = 0 },
+-        .{ .i = gu[0] }, .{ .i = gu[1] },
+-        .{ .b = false },
++        xg,                              xu,
++        tp_g,                            tp_u,
++        k2_g,                            k2_u,
++        uids,                            ucount,
++        members,                         z,
++        .{ .i = 2 },                     .{ .i = D },
++        .{ .i = I },                     .{ .i = P },
++        .{ .i = 4 },                     .{ .i = slots },
++        .{ .i = 2 },                     .{ .i = 8 },
++        .{ .i = pd_val },                .{ .i = 0 },
++        .{ .i = gu[0] },                 .{ .i = gu[1] },
++        .{ .b = e.o.r1 and !group_rot },
+     });
+     try e.ext("tensorfold_exl3_experts_v1.gateup_epilogue", &.{
+         z,               pick,
+@@ -272,9 +273,9 @@ pub fn moe(e: *E, L: u32) !void {
+         limit,           .{ .i = 1 },
+     });
+     try e.ext("tf_dsv41_x3ld_v1.grouped", &.{
+-        xd,          xd,          tp_d,        tp_d,        k2_d,            k2_d,            uids,            ucount,
+-        members,     z,           .{ .i = 1 }, .{ .i = I }, .{ .i = D },     .{ .i = P },     .{ .i = 1 },     .{ .i = slots },
+-        .{ .i = 2 }, .{ .i = 8 }, .{ .i = 1 }, .{ .i = 0 }, .{ .i = dn[0] }, .{ .i = dn[1] }, .{ .b = false },
++        xd,          xd,          tp_d,             tp_d,        k2_d,            k2_d,            uids,             ucount,
++        members,     z,           .{ .i = 1 },      .{ .i = I }, .{ .i = D },     .{ .i = P },     .{ .i = 1 },      .{ .i = slots },
++        .{ .i = 2 }, .{ .i = 8 }, .{ .i = pd_val }, .{ .i = 0 }, .{ .i = dn[0] }, .{ .i = dn[1] }, .{ .b = e.o.r1 },
+     });
+     try e.ext("tensorfold_exl3_experts_v1.down_combine", &.{
+         z,               pick,
+diff --git a/zig/src/families/deepseek_v41/block_test.zig b/zig/src/families/deepseek_v41/block_test.zig
+index 93a3589..b27457e 100644
+--- a/zig/src/families/deepseek_v41/block_test.zig
++++ b/zig/src/families/deepseek_v41/block_test.zig
+@@ -107,3 +107,36 @@ test "branch row threshold falls back to the main stream above its limit" {
+     const program = try block.emit(a, &cfg, &w, .{ .branches = true, .branch_rows = 1 }, &.{0}, 8, 0, false);
+     for (program) |call| try std.testing.expect(!call.side and !call.fork and !call.join);
+ }
++
++test "r1 decode experts omit dead y scratch, scale x3ld pd by window rows, and gate PDL on group_rot" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    const w = try widths(a);
++    const cfg: Config = .{};
++    for ([_]struct { rows: i64, pd_want: i64, grot: bool, pdl_gu: bool }{
++        .{ .rows = 1, .pd_want = 1, .grot = false, .pdl_gu = true },
++        .{ .rows = 5, .pd_want = 2, .grot = false, .pdl_gu = true },
++        .{ .rows = 16, .pd_want = 2, .grot = true, .pdl_gu = true },
++        .{ .rows = 20, .pd_want = 1, .grot = false, .pdl_gu = true },
++        .{ .rows = 20, .pd_want = 1, .grot = true, .pdl_gu = false },
++    }) |cs| {
++        const prog = try block.emit(a, &cfg, &w, .{ .r1 = true, .router_group_rot = cs.grot }, &.{0}, cs.rows, 0, false);
++        var plan: @import("buffers.zig").Plan = .{ .a = a };
++        try plan.add(prog);
++        try t.expect(!plan.sizes.contains("s.ex.y"));
++        var gu_seen = false;
++        var dn_seen = false;
++        for (prog) |c| if (std.mem.eql(u8, c.name, "tf_dsv41_x3ld_v1.grouped")) {
++            try t.expectEqual(cs.pd_want, c.args[18].arg.i);
++            if (c.args[10].arg.i == 2) {
++                gu_seen = true;
++                try t.expectEqual(cs.pdl_gu, c.args[22].arg.b);
++            } else {
++                dn_seen = true;
++                try t.expect(c.args[22].arg.b);
++            }
++        };
++        try t.expect(gu_seen and dn_seen);
++    }
++}
+diff --git a/zig/src/families/deepseek_v41/kernels_replay_experts.zig b/zig/src/families/deepseek_v41/kernels_replay_experts.zig
+index 20e0932..6647443 100644
+--- a/zig/src/families/deepseek_v41/kernels_replay_experts.zig
++++ b/zig/src/families/deepseek_v41/kernels_replay_experts.zig
+@@ -232,7 +232,7 @@ pub fn expertsExt(o: exl3.Ops, func: []const u8, args: []const Arg, kwargs: []co
+         const c: Call = .{ .args = args, .kwargs = kwargs, .names = &.{ "Z", "pick", "svh_d", "y", "wts", "out", "rows", "P", "D", "SK", "slots", "E" } };
+         const out = try c.tensor(5);
+         if (out.dtype != .f32 and out.dtype != .bf16) return error.WrongArgument;
+-        try o.downCombine(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptr(3), try c.ptr(4), out.ptr, try c.usz(6), try c.usz(7), try c.usz(8), try c.usz(9), try c.usz(10), try c.usz(11), out.dtype == .bf16);
++        try o.downCombine(try c.ptr(0), try c.ptr(1), try c.ptr(2), try c.ptrOrNull(3), try c.ptr(4), out.ptr, try c.usz(6), try c.usz(7), try c.usz(8), try c.usz(9), try c.usz(10), try c.usz(11), out.dtype == .bf16);
+         return true;
+     }
+     if (is(func, "dequant")) {
+diff --git a/zig/tests/cuda/deepseek_v41/x3ld_epi_bench.zig b/zig/tests/cuda/deepseek_v41/x3ld_epi_bench.zig
+index c2d18e8..1050da0 100644
+--- a/zig/tests/cuda/deepseek_v41/x3ld_epi_bench.zig
++++ b/zig/tests/cuda/deepseek_v41/x3ld_epi_bench.zig
+@@ -189,9 +189,10 @@ const Run = struct {
+     fn unfused(r: *const Run, t: *const Outs) !void {
+         const P = r.R * r.slots;
+         const m = r.m;
+-        try r.o.x3ld(r.grouped(true, 0, t.z.ptr), 8, 1, 0, false);
++        const pd_val: u32 = if (r.R >= 2 and r.R <= 16) 2 else 1;
++        try r.o.x3ld(r.grouped(true, 0, t.z.ptr), 8, pd_val, 0, true);
+         try r.o.gateupEpilogue(t.z.ptr, r.pick, m.svh_g.ptr, m.svh_u.ptr, m.suh_d.ptr, t.xd.ptr, r.R, P, I, SK_GU, r.slots, m.Et, limit, 1);
+-        try r.o.x3ld(r.grouped(false, t.xd.ptr, t.z.ptr), 8, 1, 0, false);
++        try r.o.x3ld(r.grouped(false, t.xd.ptr, t.z.ptr), 8, pd_val, 0, true);
+         try r.o.downCombine(t.z.ptr, r.pick, m.svh_d.ptr, t.y.ptr, r.wts, t.out.ptr, r.R, P, D, 1, r.slots, m.Et, r.bf16);
+     }
+ 
+@@ -324,6 +325,10 @@ pub fn run(gpu: Gpu, k: *const dsv41.Kernels, rows_arg: ?[]const u8, reps_arg: ?
+         var got = try Outs.init(d, P, R, std.mem.sliceAsBytes(y0));
+         defer got.deinit();
+         const r: Run = .{ .o = o, .m = m, .R = R, .slots = slots, .pick = pick_d.ptr, .wts = wts.ptr, .uids = uids.ptr, .ucount = ucount.ptr, .members = members.ptr, .xg = xg.ptr, .xu = xu.ptr, .ticket = ticket.ptr, .bf16 = cs.bf16 };
++        try r.o.grouped(r.grouped(true, 0, got.z.ptr), 8, 4, 1);
++        try r.o.x3ld(r.grouped(true, 0, ref.z.ptr), 8, 1, 0, false);
++        try stream.synchronize();
++        try sameDevice(gpa, "Z vs upstream grouped", ref.z, got.z, 4 * P * 2 * SK_GU * I);
+         for (0..2) |_| {
+             try r.unfused(&ref);
+             try r.fused(&got);
+-- 
+2.50.1 (Apple Git-155)
+

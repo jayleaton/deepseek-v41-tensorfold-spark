@@ -5,6 +5,7 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **Zero-spill `sm_121` `x3ld` expert decode, fused `rot_in`, and `RT=8` router prefetch** (`patches/0092`). `x3ld` now decodes staged trellis words directly from shared memory via 32-bit funnel shifts (cutting `K2=10/12` kernels from 166–168 to 102–160 registers with zero local spills), adapts `pd` by window rows with PDL under `TF_DSV41_R1=1`, fuses `mat=0,1` in `rot_in_kernel`, skips unused `s.ex.y` writes in `down_combine_kernel` (-14.0% epilogue time), and extends `router_narrow` `XP=2` prefetching to `RT <= 8`. 20/20 greedy replay digests match bit-for-bit. See [ENGINE](ENGINE.md#zero-spill-sm_121-x3ld-decode-and-expert-epilogue-fusions-0092).
 - **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
   `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think
   block closed and put the engine's `[exact: ...]` line at the start of the answer. Armed and pending trace cells are

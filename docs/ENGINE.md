@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090` and `0091` (all
-below); the whole series gives tree `d73f715ca`, and the checkout's last commit is `4684b511b` with the fixed
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090`, `0091` and `0092` (all
+below); the whole series gives tree `6698ee527`, and the checkout's last commit is `aaad02e0d` with the fixed
 committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
@@ -117,6 +117,12 @@ The same change on the engine the pair serves (G, `ec876ff09` + this fix = `b828
 pair before it became G. A probe of thinking chats that restate a modular power in the answer found 8 runner cells in
 the answer over 6 chats without the setting and 1 over 9 with the setting alone; with this fix it found 0 of 21 over 9,
 all in reasoning. Two opencode workflows then owned 63 values, 0 outside reasoning, 0 wrong.
+
+### Zero-spill `sm_121` `x3ld` decode and expert epilogue fusions (`0092`)
+
+Routed expert decode (`tf_dsv41_x3ld_v1.grouped` plus `rot_in`, `gateup_epilogue` and `down_combine`) accounts for ~49.7% of decode GPU time on 2x GB10 (`sm_121`). Previously `x3ld` held `w[NT][LW]` and `LaneMap` in registers across warp shuffles and 64-bit dynamic shifts, pushing `K2=10/12` instances to 166–168 registers with local-memory spills, `down_combine_kernel` unconditionally wrote every slot's FP32 intermediate into `s.ex.y` (~37–147 MB per window) even when no downstream consumer read it, and `router_narrow.cuh` dropped 2-stage `x` prefetching (`XP=0`) on `RT=8` (5–8-row speculative verification windows).
+
+`0092` (Anothers, an upstream candidate) rewrites `x3ld` to decode staged trellis words from shared memory via 32-bit `__funnelshift_l` windows and vectorizes the shared-memory warp reduction with `float4` (`ld_kernel<2,8,1,2,10,0>` drops from 166 to 128 registers and `dsv41_x3ld_epi_dn_1_2_10` from 167 to 126 registers on `nvcc 13.0`, 0 spills). Under `TF_DSV41_R1=1`, `block_moe.zig` selects `pd=2` on 2–16-row windows and `pd=1` on 1-row draft and >=17-row windows, enables PDL (`!router_group_rot` on gate/up, always on down), fuses `mat=0,1` in `rot_in_kernel`, vectorizes `gateup_epilogue_kernel` and `down_combine_kernel`, elides `s.ex.y` when `fold` is active without `x3ld_epi`, and extends `router_narrow` `XP=2` to `RT <= 8`. Across 18 `x3ld-epi` test shapes against unmodified `grouped_kernel` and a 20-request greedy replay suite (15,813 tokens) on 2x GB10 TP=2, outputs are 100% bit-exact (epilogue GPU time -14.0%, DSpark 1-row expert latency 100 us -> 85 us, 20-request replay decode +2.5%).
 
 ### This engine against the previous recipe engine
 
