@@ -20,8 +20,8 @@ carrying that commit's message, author and date, with a note that it came from a
 binding in its family; `0010`, engine-owned reply bytes that survive every strip). As this work reaches upstream
 `main`, the pin moves forward and the series gets shorter. Applied to `f212eeabd`, `0001`-`0072` give tree
 `8ea3edd87`, which is the content of `6c4eeccda` except for 24 comment and notes lines in 6 files that named internal
-machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090` and `0091` (all
-below); the whole series gives tree `d73f715ca`, and the checkout's last commit is `4684b511b` with the fixed
+machines, tools and people (checkout `986206947`). `0073`-`0087` follow, then `0088`, `0089`, `0090`, `0091` and `0092` (all
+below); the whole series gives tree `38c68b455`, and the checkout's last commit is `f46f774bd` with the fixed
 committer `fetch-source.sh` uses.
 
 ### Compute Lanes from the Qwen recipe (`0073`-`0087`)
@@ -117,6 +117,12 @@ The same change on the engine the pair serves (G, `ec876ff09` + this fix = `b828
 pair before it became G. A probe of thinking chats that restate a modular power in the answer found 8 runner cells in
 the answer over 6 chats without the setting and 1 over 9 with the setting alone; with this fix it found 0 of 21 over 9,
 all in reasoning. Two opencode workflows then owned 63 values, 0 outside reasoning, 0 wrong.
+
+### 4K prefill workspace retention and AOT-aligned replay tails (`0092`)
+
+With `TF_DSV41_PF_4K=1` and `TF_DSV41_PREFILL=replay`, multi-turn workloads on GB10 unified memory hit two avoidable stalls: prompts and remainders between `prefill_rows + 1` and `4,095` tokens ran as odd-sized single segments that missed the prebuilt 2,048- and 4,096-row AOT captures (stalling 1.5–3.6 s per unseen shape in runtime Triton JIT), and `k4Release` freed the ~2.3 GiB K4 workspace at the end of every prompt, paying `cuMemAlloc` + `memset` + `cuMemFree` page-reclaim latency on every >=4K request.
+
+`0092` (Anothers, an upstream candidate) gates `wsAgreed` on prompts that actually need K4 (`ids.len >= 4096`) or TBO pairs (`ids.len >= 2 * tbo_min`), caps sub-4,096 single segments in `replay` mode at `prefill_rows` (`singleRows`) so every tail lands on AOT-compiled shapes, and retains `k4ws.buf` in `k4Release` whenever all TP ranks agree via `Agreement` that `MemAvailable >= wsFloorGiB()` (`TF_DSV41_PF_WS_FLOOR_GIB`), releasing it synchronously across all ranks as soon as any rank falls below the floor. A new host test in `review_workspace_test.zig` covers both `singleRows` and rank-agreed `keepAboveFloor`. On 2x GB10 TP=2 across the 20-request replay suite (15,813 tokens, 20/20 SHA-256 bit-exact), cumulative TTFT drops from 55.53 s (unretained 4K + JIT tails) and 31.38 s (2K fallback) to 30.29 s while preserving 2,711–2,750 tok/s on 32K prefills.
 
 ### This engine against the previous recipe engine
 
