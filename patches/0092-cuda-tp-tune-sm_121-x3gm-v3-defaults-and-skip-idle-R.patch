@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anothers <14343424+Anothers@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 12:30:00 +0800
+Subject: [PATCH 92/92] cuda,tp: tune sm_121 x3gm v3 defaults and skip idle
+ RoCE CQ polling
+
+Update x3gm's v3_default variant selection from .{ .gu = .{ 4, 1 }, .dn = 9 }
+to .{ .gu = .{ 5, 3 }, .dn = 9 }, selecting the 16-warp KS=4 LEAN gate/up
+instances (v3_variants[5] for shared rotated input and v3_variants[3] for dual
+inputs) alongside down variant 9 on sm_121 when TF_DSV41_GM_V3=1 is enabled.
+Across 2048- and 4096-row uniform and Zipf routing microbenchmarks on GB10,
+these 16-warp KS=4 LEAN variants beat v2 by 1.5%-3.7% (whereas the prior
+.{ 4, 1 } default regressed up to 8.2% on GB10) with bit-exact outputs.
+
+In fabric/tp/roce.zig, guard proxyLoop's periodic wire.reap() call with
+!r.linkIdle() so an idle proxy thread does not hammer ibv_poll_cq when zero
+sends are in flight, and extend idle_spins from 20_000_000 to 50_000_000 so
+the proxy stays awake across short inter-burst gaps between speculative verify
+and draft rounds before sleeping.
+
+Includes host unit tests in exl3_block_exl3.zig and roce_inflight_test.zig
+that fail on unpatched main.
+---
+ zig/src/cuda/exl3_block_exl3.zig         |  9 +++++++
+ zig/src/cuda/exl3_block_x3gm.zig         |  2 +-
+ zig/src/fabric/tp/roce.zig               |  6 ++---
+ zig/src/fabric/tp/roce_inflight_test.zig | 34 ++++++++++++++++++++++++
+ 4 files changed, 47 insertions(+), 4 deletions(-)
+
+diff --git a/zig/src/cuda/exl3_block_exl3.zig b/zig/src/cuda/exl3_block_exl3.zig
+index bd1ee6f..eb700f0 100644
+--- a/zig/src/cuda/exl3_block_exl3.zig
++++ b/zig/src/cuda/exl3_block_exl3.zig
+@@ -522,6 +522,15 @@ test "x3gm shapes, fits and tuning as the reference tuner" {
+     try std.testing.expectEqual([2]usize{ 3, 2 }, gmTuned(&tune_default, null, null, 4096, 6, 384, true, 6, 6));
+     try std.testing.expectEqual([2]usize{ 2, 2 }, gmTuned(&tune_default, null, null, 4096, 6, 384, false, 6, 6));
+     try std.testing.expectEqual([2]usize{ 5, 4 }, gmTuned(&tune_default, 5, 4, 4096, 6, 384, false, 6, 6));
++    try std.testing.expectEqual([2]usize{ 5, 3 }, v3_default.gu);
++    try std.testing.expectEqual(@as(usize, 9), v3_default.dn);
++    for ([_]usize{ v3_default.gu[0], v3_default.gu[1], v3_default.dn }) |vi| {
++        const v = @import("exl3_block_x3gm.zig").v3_variants[vi];
++        const s3 = gm2Shape(v.mats, v.xm, v.t);
++        try std.testing.expectEqual(@as(u32, 1), v.lean);
++        try std.testing.expectEqual(@as(u32, 4), v.t[2]);
++        try std.testing.expect(s3.smem + 4 * 8 * v.t[1] + 4 <= gm_smem_max);
++    }
+ }
+ 
+ test "x3ld_epi checks" {
+diff --git a/zig/src/cuda/exl3_block_x3gm.zig b/zig/src/cuda/exl3_block_x3gm.zig
+index 6b3cb6a..59f1293 100644
+--- a/zig/src/cuda/exl3_block_x3gm.zig
++++ b/zig/src/cuda/exl3_block_x3gm.zig
+@@ -97,7 +97,7 @@ pub fn gmV3() !bool {
+ }
+ 
+ /// v3's default variant of a projection (from per-shape timing).
+-pub const v3_default: struct { gu: [2]usize, dn: usize } = .{ .gu = .{ 4, 1 }, .dn = 9 };
++pub const v3_default: struct { gu: [2]usize, dn: usize } = .{ .gu = .{ 5, 3 }, .dn = 9 };
+ 
+ /// x3gm.tuned2: (gate/up cfg, down cfg) of a v2 block: forced ids where built, else 0 / 1 by rotated inputs; down 0.
+ pub fn gmTuned2(force_gu: ?usize, force_dn: ?usize, shx: bool) [2]usize {
+diff --git a/zig/src/fabric/tp/roce.zig b/zig/src/fabric/tp/roce.zig
+index 6f0821d..e603ec8 100644
+--- a/zig/src/fabric/tp/roce.zig
++++ b/zig/src/fabric/tp/roce.zig
+@@ -30,7 +30,7 @@ const w_abort = 12;
+ const w_proxy_failed = 13;
+ const w_failed = 16;
+ /// Model graphs leave sub-millisecond gaps: the proxy stays hot this many idle polls, then naps 20 us at a time.
+-const idle_spins: u64 = 20_000_000;
++const idle_spins: u64 = 50_000_000;
+ 
+ const Mode = enum(u32) { gather = 0, sum_f32 = 1, sum_bf16 = 2, exchange = 3 };
+ 
+@@ -350,7 +350,7 @@ pub const Roce = struct {
+     }
+ 
+     /// The proxy loop: spin on the doorbell, post each new sequence (at most two pending), reap while idle, then nap.
+-    fn proxyLoop(r: *Roce) void {
++    pub fn proxyLoop(r: *Roce) void {
+         if (r.cpu) |cpu| pin(cpu);
+         var idle: u64 = 0;
+         while (r.running.load(.monotonic)) {
+@@ -358,7 +358,7 @@ pub const Roce = struct {
+             const seq = r.word(w_seq).load(.acquire);
+             if (seq == r.last_seq) {
+                 idle += 1;
+-                if (idle % 64 == 0) r.wire.reap() catch |e| return r.fail("completion: {t}", .{e});
++                if (idle % 64 == 0 and !r.linkIdle()) r.wire.reap() catch |e| return r.fail("completion: {t}", .{e});
+                 if (idle >= idle_spins) sock.sleepNs(20 * std.time.ns_per_us) else std.atomic.spinLoopHint();
+                 continue;
+             }
+diff --git a/zig/src/fabric/tp/roce_inflight_test.zig b/zig/src/fabric/tp/roce_inflight_test.zig
+index f28c183..3980b00 100644
+--- a/zig/src/fabric/tp/roce_inflight_test.zig
++++ b/zig/src/fabric/tp/roce_inflight_test.zig
+@@ -120,3 +120,37 @@ test "the THP enabled file names the mode in force, and only never means no huge
+     try std.testing.expect(!rv.thpEnabledFrom("madvise [never]"));
+     try std.testing.expect(rv.thpEnabledFrom("always madvise never")); // malformed: the advice is attempted as before
+ }
++
++test "proxyLoop skips CQ polling while linkIdle and drains in-flight posts before going quiet" {
++    const sock = @import("sock.zig");
++    const region = try std.testing.allocator.alignedAlloc(u8, .fromByteUnits(4096), Roce.regionBytes(slot));
++    defer std.testing.allocator.free(region);
++    @memset(region, 0);
++    Fake.region = region;
++    Fake.slot_bytes = slot;
++    Fake.reset(3);
++    var hw: fake.Hw = .{};
++    const w = hw.wire(region);
++    var r: Roce = .{ .me = 0, .slot_bytes = slot, .timeout_ns = 1, .region = region, .mapping = region, .wire = .{ .verbs = w }, .cpu = null };
++    const th = try std.Thread.spawn(.{}, Roce.proxyLoop, .{&r});
++    sock.sleepNs(2 * std.time.ns_per_ms);
++    const idle_polls = Fake.polls;
++    r.running.store(false, .release);
++    th.join();
++    try std.testing.expectEqual(@as(u64, 0), idle_polls);
++    r.running.store(true, .release);
++    try r.wire.verbs.post(1, 1, slot);
++    try std.testing.expect(!r.linkIdle());
++    const th2 = try std.Thread.spawn(.{}, Roce.proxyLoop, .{&r});
++    for (0..2_000) |_| {
++        if (r.linkIdle()) break;
++        sock.sleepNs(100 * std.time.ns_per_us);
++    }
++    sock.sleepNs(1 * std.time.ns_per_ms);
++    const settled = Fake.polls;
++    sock.sleepNs(2 * std.time.ns_per_ms);
++    const after = Fake.polls;
++    r.running.store(false, .release);
++    th2.join();
++    try std.testing.expect(r.linkIdle() and settled > 0 and after == settled);
++}
+-- 
+2.50.1 (Apple Git-155)
+
