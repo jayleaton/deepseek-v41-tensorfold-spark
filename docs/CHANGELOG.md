@@ -5,6 +5,7 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **4K prefill workspace retention above floor and AOT-aligned sub-4K replay tails** (`patches/0092`). Under `TF_DSV41_PF_4K=1` and `TF_DSV41_PREFILL=replay`, sub-4K prompts now skip workspace agreement, sub-4,096 remainders cap at `prefill_rows` so incremental turns hit prebuilt AOT kernels without runtime Triton JIT stalls, and `k4Release` keeps the ~2.3 GiB workspace resident while all ranks agree `MemAvailable >= PF_WS_FLOOR_GIB` (cutting 20-request replay TTFT sum from 55.53 s / 31.38 s down to 30.29 s while keeping 4K prefill throughput). See [ENGINE](ENGINE.md#4k-prefill-workspace-retention-and-aot-aligned-replay-tails-0092).
 - **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
   `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think
   block closed and put the engine's `[exact: ...]` line at the start of the answer. Armed and pending trace cells are

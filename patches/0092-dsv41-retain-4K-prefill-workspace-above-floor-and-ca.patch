@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anothers <14343424+Anothers@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 12:40:00 +0800
+Subject: [PATCH 92/92] dsv41: retain 4K prefill workspace above floor and cap
+ sub-4K replay tails to AOT
+
+When TF_DSV41_PF_4K=1 is enabled under replay prefill, two overheads penalised
+multi-turn traffic on unified-memory GB10 nodes:
+1. Prompts and incremental turns shorter than 4,096 tokens still ran wsAgreed
+   and dispatched unaligned 2,049..4,095-row single segments, missing prebuilt
+   2,048- and 4,096-row AOT Triton captures and stalling 1.5-3.6 s in runtime
+   JIT compilation.
+2. k4Release unconditionally freed the ~2.3 GiB K4 workspace after every
+   prefill, paying cuMemAlloc + memset + cuMemFree page-reclaim stalls on
+   every subsequent >= 4,096-token prompt even with ample free memory.
+
+Skip wsAgreed when neither K4 (ids.len >= 4096) nor TBO pair prefill needs it,
+cap sub-4096 single segments in replay mode at prefill_rows (singleRows) so
+every tail hits AOT shapes, and retain k4ws.buf in k4Release whenever all TP
+ranks agree via Agreement that MemAvailable >= wsFloorGiB() (freeing it
+synchronously across all ranks as soon as any rank dips below the floor).
+
+Includes host unit tests in review_workspace_test.zig that fail on unpatched
+main. Verified 20/20 greedy replay SHA-256 bit-exact (15,813 tokens) on 2x
+GB10 TP=2.
+---
+ .../families/deepseek_v41/forward_prefill.zig | 14 ++++++++++---
+ .../deepseek_v41/forward_prefill_k4.zig       | 10 ++++++++-
+ .../deepseek_v41/review_workspace_test.zig    | 21 +++++++++++++++++++
+ 3 files changed, 41 insertions(+), 4 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/forward_prefill.zig b/zig/src/families/deepseek_v41/forward_prefill.zig
+index b1a97b8..99b181a 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill.zig
+@@ -289,8 +289,10 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
+     st.taps_rows = 0;
+     try ready(f);
+     // TF_DSV41_PF_4K / _PF_TBO: the workspace for this call, decided on every rank alike (else 2,048-row segments)
+-    st.ws_ok = true;
+-    if (st.k4 or (st.mode == .replay and f.opts.pf_tbo)) st.ws_ok = try wsAgreed(f);
++    const need_tbo = st.mode == .replay and f.opts.pf_tbo and ids.len >= 2 * @as(usize, @intCast(block_prefill.tbo_min));
++    const need_k4 = st.k4 and ids.len >= K4.rows;
++    st.ws_ok = false;
++    if (need_k4 or need_tbo) st.ws_ok = try wsAgreed(f);
+     const seg: usize = segmentRows(f);
+     defer st.next.clearRetainingCapacity();
+     var at: usize = 0;
+@@ -304,7 +306,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
+                 continue;
+             }
+         }
+-        const n = @min(seg, ids.len - at);
++        const n = singleRows(ids.len - at, st.mode, f.opts.prefill_rows, seg);
+         if (st.ahead) ahead(f, ids, at, n, seg);
+         try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full);
+         at += n;
+@@ -317,6 +319,12 @@ fn pairOf(f: *const Forward, left: usize) ?[2]usize {
+     return pairSplit(segmentRows(f), left);
+ }
+ 
++/// Single-segment rows: replay remainders below K4.rows cap at prefill_rows so every tail hits AOT shapes.
++pub fn singleRows(rem: usize, mode: serve_knobs.PrefillMode, prefill_rows: i64, seg: usize) usize {
++    const cap: usize = if (rem < K4.rows and mode == .replay) @intCast(prefill_rows) else seg;
++    return @min(cap, rem);
++}
++
+ /// `pairOf`'s split of `left` rows at segments of `seg` rows (null: one segment at a time).
+ pub fn pairSplit(seg: usize, left: usize) ?[2]usize {
+     const min: usize = @intCast(block_prefill.tbo_min);
+diff --git a/zig/src/families/deepseek_v41/forward_prefill_k4.zig b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+index e4a636f..d40655c 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill_k4.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+@@ -244,9 +244,17 @@ pub fn hardFloorGiB() !f64 {
+ }
+ 
+ /// The workspace back (a prompt's CED finish: no 4K segment runs until the next prompt's first).
++pub fn keepAboveFloor(avail_gib: ?f64, floor_gib: f64, ag: graphs.gc.Agree) !bool {
++    return ag.all(ag.ctx, (avail_gib orelse 0) >= floor_gib);
++}
++
+ pub fn k4Release(f: *Forward) !void {
+-    const ws = &pf.state(f).k4ws;
++    const st = pf.state(f);
++    const ws = &st.k4ws;
+     var b = ws.buf orelse return;
++    if (st.agreement) |*ag| {
++        if (try keepAboveFloor(graphs.memAvailableGiB(), try wsFloorGiB(), ag.agree())) return;
++    }
+     try f.runner.stream.synchronize();
+     const before = graphs.memAvailableGiB();
+     if (ws.plan) |pl| for (pl.sizes.keys()) |k| {
+diff --git a/zig/src/families/deepseek_v41/review_workspace_test.zig b/zig/src/families/deepseek_v41/review_workspace_test.zig
+index 5fcb0d5..93bbc30 100644
+--- a/zig/src/families/deepseek_v41/review_workspace_test.zig
++++ b/zig/src/families/deepseek_v41/review_workspace_test.zig
+@@ -151,3 +151,24 @@ test "Completion ownership: K4 acquire binds the alias layout and releases every
+     try t.expectEqual(mock.allocated, mock.freed);
+     try t.expectEqual(@as(usize, 0), mock.early_free);
+ }
++
++test "K4 remainder splitting caps sub-4K replay tails at prefill_rows and keepAboveFloor respects rank agreement" {
++    try t.expectEqual(@as(usize, 4096), pf.singleRows(6000, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 2048), pf.singleRows(3500, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 1452), pf.singleRows(1452, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 3500), pf.singleRows(3500, .full, 2048, 4096));
++    const FakeAgree = struct {
++        peer_ok: bool = true,
++        fn all(ctx: *anyopaque, ok: bool) anyerror!bool {
++            const s: *@This() = @ptrCast(@alignCast(ctx));
++            return ok and s.peer_ok;
++        }
++    };
++    var fa: FakeAgree = .{};
++    const ag: @import("graphs.zig").gc.Agree = .{ .ctx = &fa, .all = FakeAgree.all };
++    try t.expect(try ws.keepAboveFloor(4.65, 4.15, ag));
++    try t.expect(!(try ws.keepAboveFloor(4.10, 4.15, ag)));
++    try t.expect(!(try ws.keepAboveFloor(null, 4.15, ag)));
++    fa.peer_ok = false;
++    try t.expect(!(try ws.keepAboveFloor(5.00, 4.15, ag)));
++}
+-- 
+2.50.1 (Apple Git-155)
+
