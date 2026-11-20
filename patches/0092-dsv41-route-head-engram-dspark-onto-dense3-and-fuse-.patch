@@ -1,0 +1,289 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anothers <14343424+Anothers@users.noreply.github.com>
+Date: Fri, 20 Nov 2026 12:20:00 +0800
+Subject: [PATCH 92/92] dsv41: route head/engram/dspark onto dense3 and fuse r1
+ DSpark draft passes
+
+Under r1, three dense EXL3 projections still fell through to the legacy strips
+path (tensorfold_exl3_linear_v4.linear, ~2.17 ms/window across 7 calls): the
+backbone LM head (K2=12), prefill engram.wkv (K2=10), and dspark.main_proj
+(K2=8). Route all three onto the fused dense3 (lanes) path when their shapes
+and widths are supported (chunking dspark.main_proj at dense.rows_max during
+ingest), which forms-in-place converts with zero extra memory.
+
+In addition, bring DSpark's r1 pass in line with the main decoder's fusions:
+- run n <= 16 mHC boundaries directly via mhcInto instead of Triton _site;
+- fold q_norm into wq_b (fusedNorm) and fold Q RoPE into attention (qrope=1),
+  dropping separate rms, widen, and Triton _rope launches;
+- apply woFold across wo_a -> wo_b and emit bf16 directly from wo_b and
+  block_moe so DSpark TP exchanges use direct bf16 all-gather instead of
+  exchange_f32's castBf16 + all-gather pair, cutting 23 kernel launches per
+  draft round.
+
+Includes a host emission regression test in block_test.zig that fails on
+unpatched main. Verified 20/20 greedy replay SHA-256 bit-exact (15,813 tokens)
+on 2x GB10 TP=2.
+---
+ zig/src/families/deepseek_v41/block.zig       |  9 ++
+ zig/src/families/deepseek_v41/block_moe.zig   |  2 +-
+ .../deepseek_v41/block_prefill_moe.zig        |  3 +-
+ zig/src/families/deepseek_v41/block_test.zig  | 23 +++++
+ zig/src/families/deepseek_v41/dspark_emit.zig | 87 +++++++++++++------
+ .../deepseek_v41/dspark_gpu_device.zig        |  4 +
+ .../deepseek_v41/dspark_slots_device.zig      |  4 +
+ 7 files changed, 105 insertions(+), 27 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/block.zig b/zig/src/families/deepseek_v41/block.zig
+index 54bd03e..de60318 100644
+--- a/zig/src/families/deepseek_v41/block.zig
++++ b/zig/src/families/deepseek_v41/block.zig
+@@ -391,6 +391,15 @@ pub const Emitter = struct {
+     /// Upstream's rot_in + linear: one projection, its trellis as strips unless one 128-column block.
+     pub fn upstream(e: *Emitter, w: []const u8, x: Arg, k: i64, n: i64, y: Arg) !void {
+         const k2: i64 = try e.w.k2(w);
++        if (e.o.r1 and n > 128 and e.n <= dense.rows_max and @mod(k, 128) == 0 and @mod(n, 128) == 0 and
++            std.mem.indexOfScalar(u32, &dense.dense3_k2s, @intCast(k2)) != null)
++        {
++            const pl0 = dense.plan(@intCast(k), @intCast(n));
++            const denom: i64 = @intCast(pl0[0] * pl0[1] * dense.groupSteps(@intCast(k2)));
++            if (@mod(@divExact(k, 16), denom) == 0) {
++                return e.fused(w, &.{.{ .w = w, .x = x, .y = y, .k = @intCast(k), .n = @intCast(n) }});
++            }
++        }
+         const xh = try e.buf("L.{s}.xh", .{w}, .f16, &.{ e.n, k });
+         try e.ext("tensorfold_exl3_linear_v4.rot_in", &.{ x, try e.weight("{s}.suh", .{w}, .f16, &.{k}), xh });
+         const pl = dense.plan(@intCast(k), @intCast(n));
+diff --git a/zig/src/families/deepseek_v41/block_moe.zig b/zig/src/families/deepseek_v41/block_moe.zig
+index e835df3..5ed8f35 100644
+--- a/zig/src/families/deepseek_v41/block_moe.zig
++++ b/zig/src/families/deepseek_v41/block_moe.zig
+@@ -228,7 +228,7 @@ pub fn moe(e: *E, L: u32) !void {
+     const y = try e.buf("{s}.y", .{sc}, .f32, &.{ rows * slots, D });
+     // after a prune, kit_weights' fp16 rounding (a pointwise op the forward runs) gives new weights
+     const cw = if (!fold) try e.buf("L.wts16", .{}, .f32, &.{ n, slots }) else wts;
+-    const out = try e.buf("L.moe", .{}, if (e.o.r1 and backbone) .bf16 else .f32, &.{ n, D });
++    const out = try e.buf("L.moe", .{}, if (e.o.r1) .bf16 else .f32, &.{ n, D });
+     const limit: Arg = .{ .f = E.dec(e.cfg.swiglu_limit) };
+     if (e.o.x3ld_epi) {
+         // TF_DSV41_X3LD_EPI: the same x3ld work with the epilogues in its tail behind a last-arrival ticket; same bits
+diff --git a/zig/src/families/deepseek_v41/block_prefill_moe.zig b/zig/src/families/deepseek_v41/block_prefill_moe.zig
+index 74812ee..5fd36c1 100644
+--- a/zig/src/families/deepseek_v41/block_prefill_moe.zig
++++ b/zig/src/families/deepseek_v41/block_prefill_moe.zig
+@@ -214,7 +214,8 @@ pub fn engram(s: *Seg, L: u32) !void {
+     const kv = try e.buf("L.engram.kv", .{}, .bf16, &.{ n, N });
+     const rws = try e.buf("L.engram.rows", .{}, .bf16, &.{ n, K });
+     try e.glue("engram_rows", &.{ rws, .{ .i = L } });
+-    try s.proj(try e.fmt("L{d}.engram.wkv", .{L}), .strips, rws, K, N, kv);
++    const ew = try e.fmt("L{d}.engram.wkv", .{L});
++    try s.proj(ew, if (e.o.r1 and std.mem.indexOfScalar(u32, &@import("dsv41_kernels").dense.dense3_k2s, try e.w.k2(ew)) != null) .lanes else .strips, rws, K, N, kv);
+     const qk = try e.weight("L{d}.engram.qk", .{L}, .f32, &.{ e.cfg.hc_mult, D });
+     // image positions (TF_DSV41_IMAGES=native): the gate times vision.window's keep (0 there)
+     const keep: ?Arg = if (e.o.image_keep) try e.buf("w.engram.keep", .{}, .f32, &.{n}) else null;
+diff --git a/zig/src/families/deepseek_v41/block_test.zig b/zig/src/families/deepseek_v41/block_test.zig
+index 93a3589..9f67292 100644
+--- a/zig/src/families/deepseek_v41/block_test.zig
++++ b/zig/src/families/deepseek_v41/block_test.zig
+@@ -107,3 +107,26 @@ test "branch row threshold falls back to the main stream above its limit" {
+     const program = try block.emit(a, &cfg, &w, .{ .branches = true, .branch_rows = 1 }, &.{0}, 8, 0, false);
+     for (program) |call| try std.testing.expect(!call.side and !call.fork and !call.join);
+ }
++
++test "r1 routes head and DSpark main_proj onto dense3 and fuses DSpark boundaries, q_rope, and bf16 exchanges" {
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    const a = arena.allocator();
++    var w = try widths(a);
++    try w.dense.put(a, "dspark.main_proj", 8);
++    const cfg: Config = .{};
++    const dec = try block.emit(a, &cfg, &w, .{ .r1 = true }, &.{0}, 5, 0, true);
++    for (dec) |c| try t.expect(!std.mem.eql(u8, c.name, "tensorfold_exl3_linear_v4.linear"));
++    const ds = @import("dspark_emit.zig");
++    const pass = try ds.emitPass(a, &cfg, &w, .{ .r1 = true, .rot_fold = 1 }, cfg.dspark_block);
++    var bf16_ex: usize = 0;
++    for (pass) |c| {
++        try t.expect(!std.mem.eql(u8, c.name, "tensorfold_exl3_linear_v4.linear"));
++        try t.expect(!std.mem.eql(u8, c.name, "_rope"));
++        try t.expect(!std.mem.eql(u8, c.name, "glue.exchange_f32"));
++        if (std.mem.eql(u8, c.name, "glue.exchange")) bf16_ex += 1;
++    }
++    try t.expectEqual(@as(usize, 2 * cfg.mtp_layers), bf16_ex);
++    const ing = try ds.emitIngest(a, &cfg, &w, .{ .r1 = true }, 128, 0);
++    for (ing) |c| try t.expect(!std.mem.eql(u8, c.name, "tensorfold_exl3_linear_v4.linear"));
++}
+diff --git a/zig/src/families/deepseek_v41/dspark_emit.zig b/zig/src/families/deepseek_v41/dspark_emit.zig
+index a7d5c0d..bd66176 100644
+--- a/zig/src/families/deepseek_v41/dspark_emit.zig
++++ b/zig/src/families/deepseek_v41/dspark_emit.zig
+@@ -91,6 +91,26 @@ const Ds = struct {
+         const D: i64 = d.cfg().hidden;
+         const K: i64 = @as(i64, @intCast(d.cfg().dspark_targets.items().len)) * D;
+         const k2: i64 = try e.w.k2(w);
++        if (e.o.r1 and std.mem.indexOfScalar(u32, &dense.dense3_k2s, @intCast(k2)) != null) {
++            const pl0 = dense.plan(@intCast(K), @intCast(D));
++            const denom: i64 = @intCast(pl0[0] * pl0[1] * dense.groupSteps(@intCast(k2)));
++            if (@mod(@divExact(K, 16), denom) == 0) {
++                if (e.n <= dense.rows_max) {
++                    return e.fused("ds_mp", &.{.{ .w = w, .x = x, .y = y, .k = @intCast(K), .n = @intCast(D) }});
++                }
++                const total = e.n;
++                var a_row: i64 = 0;
++                while (a_row < total) : (a_row += dense.rows_max) {
++                    const m = @min(total - a_row, dense.rows_max);
++                    e.n = m;
++                    defer e.n = total;
++                    const xv = try e.view(x.t.role, .bf16, &.{ m, K }, &.{ K, 1 }, x.t.offset + a_row * K * 2);
++                    const yv = try e.view(y.t.role, .bf16, &.{ m, D }, &.{ D, 1 }, y.t.offset + a_row * D * 2);
++                    try e.fused("ds_mp", &.{.{ .w = w, .x = xv, .y = yv, .k = @intCast(K), .n = @intCast(D) }});
++                }
++                return;
++            }
++        }
+         const xh = try e.buf("L.{s}.xh", .{w}, .f16, &.{ e.n, K });
+         try e.ext("tensorfold_exl3_linear_v4.rot_in", &.{ x, try e.weight("{s}.suh", .{w}, .f16, &.{K}), xh });
+         const pl = dense.plan(@intCast(K), @intCast(D));
+@@ -154,6 +174,12 @@ const Ds = struct {
+     /// A boundary on the Triton mHC path: `_site` over the exchanged partials `recv`, then `_finish_k`.
+     fn site(d: *Ds, L: u32, which: []const u8, recv: []const u8) !void {
+         const e = d.e;
++        if (e.o.r1 and e.n <= wide.cuda_rows and !wide.pfOn(e, wide.Mode.boundary)) {
++            const saved_taps = e.o.taps;
++            e.o.taps = false;
++            defer e.o.taps = saved_taps;
++            return moe.mhcInto(e, L, which, .boundary, true);
++        }
+         // MHC_DEFER: block 0's site may have left its coefficients on the deferred stream; this boundary reads them
+         moe.awaitCoefs(e);
+         // TF_DSV41_MHC_PFDEC: mhc_pf in place (a CTA reads only what it writes) + coef_kernel (block_wide.zig)
+@@ -222,32 +248,35 @@ const Ds = struct {
+         });
+         const qn = try e.buf("L.qn", .{}, .bf16, &.{ n, cf.q_lora });
+         const kvn = try e.buf("L.kvn", .{}, .bf16, &.{ n, hd });
+-        try d.rms(qa, try e.weight("L{d}.attn.q_norm", .{L}, .f32, &.{cf.q_lora}), qn, cf.q_lora);
++        const qnorm: ?E.Norm = if (e.o.r1) .{ .w = try e.weight("L{d}.attn.q_norm", .{L}, .f32, &.{cf.q_lora}), .eps = E.dec(cf.eps) } else null;
++        if (!e.o.r1) try d.rms(qa, try e.weight("L{d}.attn.q_norm", .{L}, .f32, &.{cf.q_lora}), qn, cf.q_lora);
+         if (!e.kvNormStoreOn()) try d.rms(kv, try e.weight("L{d}.attn.kv_norm", .{L}, .f32, &.{hd}), kvn, hd);
+         const q = try e.buf("L.q", .{}, .bf16, &.{ n, H * hd });
+-        try e.fused("q", &.{.{ .w = try e.fmt("L{d}.attn.wq_b", .{L}), .x = qn, .y = q, .k = cf.q_lora, .n = @intCast(H * hd) }});
+-        // table.apply(q.to(fp32)): the cast is torch's (glue), the rotation copies into bf16
+-        const qf = try e.buf("L.qf", .{}, .f32, &.{ n, H, hd });
+-        try e.glue("widen", &.{ q, qf });
+-        const qr = try e.buf("L.qr", .{}, .bf16, &.{ n, H, hd });
+-        try e.triton("_rope", .{ n, @divExact(H, 4), 1 }, &.{
+-            .{ .name = "X", .arg = qf },                                    .{ .name = "x_rs", .arg = .{ .i = H * hd } },
+-            .{ .name = "x_hs", .arg = .{ .i = hd } },                       .{ .name = "OUT", .arg = qr },
+-            .{ .name = "o_rs", .arg = .{ .i = H * hd } },                   .{ .name = "o_hs", .arg = .{ .i = hd } },
+-            .{ .name = "CS", .arg = try e.ropeTable() },                    .{ .name = "cs_rs", .arg = .{ .i = 64 } },
+-            .{ .name = "POS", .arg = try d.i64s(d.st.positions(), &.{n}) }, .{ .name = "H", .arg = .{ .i = H } },
+-            .{ .name = "NOPE", .arg = .{ .i = hd - 64 } },                  .{ .name = "NB", .arg = .{ .i = 64 } },
+-            .{ .name = "HALF", .arg = .{ .i = 32 } },                       .{ .name = "BH", .arg = .{ .i = 4 } },
+-            .{ .name = "INV", .arg = .{ .b = false } },                     .{ .name = "COPY", .arg = .{ .b = true } },
+-            .{ .name = "PDL", .arg = .{ .b = false } },
+-        });
++        try e.fusedNorm("q", &.{.{ .w = try e.fmt("L{d}.attn.wq_b", .{L}), .x = if (e.o.r1) qa else qn, .y = q, .k = cf.q_lora, .n = @intCast(H * hd) }}, qnorm);
++        const q_attn: Arg = if (e.o.r1) try e.view(q.t.role, .bf16, &.{ n, H, hd }, &.{ H * hd, hd, 1 }, 0) else blk: {
++            const qf = try e.buf("L.qf", .{}, .f32, &.{ n, H, hd });
++            try e.glue("widen", &.{ q, qf });
++            const qr = try e.buf("L.qr", .{}, .bf16, &.{ n, H, hd });
++            try e.triton("_rope", .{ n, @divExact(H, 4), 1 }, &.{
++                .{ .name = "X", .arg = qf },                                    .{ .name = "x_rs", .arg = .{ .i = H * hd } },
++                .{ .name = "x_hs", .arg = .{ .i = hd } },                       .{ .name = "OUT", .arg = qr },
++                .{ .name = "o_rs", .arg = .{ .i = H * hd } },                   .{ .name = "o_hs", .arg = .{ .i = hd } },
++                .{ .name = "CS", .arg = try e.ropeTable() },                    .{ .name = "cs_rs", .arg = .{ .i = 64 } },
++                .{ .name = "POS", .arg = try d.i64s(d.st.positions(), &.{n}) }, .{ .name = "H", .arg = .{ .i = H } },
++                .{ .name = "NOPE", .arg = .{ .i = hd - 64 } },                  .{ .name = "NB", .arg = .{ .i = 64 } },
++                .{ .name = "HALF", .arg = .{ .i = 32 } },                       .{ .name = "BH", .arg = .{ .i = 4 } },
++                .{ .name = "INV", .arg = .{ .b = false } },                     .{ .name = "COPY", .arg = .{ .b = true } },
++                .{ .name = "PDL", .arg = .{ .b = false } },
++            });
++            break :blk qr;
++        };
+         if (e.kvNormStoreOn()) try d.normStore(kv, L, true) else try d.store(kvn, L, true);
+         const r = try d.ring(L, false);
+         const W: i64 = cf.window;
+         const rows_scr = n * 5 * H;
+         const o = try e.buf("L.o", .{}, .bf16, &.{ n, H, hd });
+         try e.ext("tf_dsv41_attn_cuda_v1.attn", &.{
+-            qr,                                                       r[0],
++            q_attn,                                                   r[0],
+             r[1],                                                     try d.i32s(d.st.tokens(), &.{ n, W }, &.{ W, 1 }),
+             try d.i32s(d.st.counts(), &.{n}, &.{1}),                  r[0],
+             r[1],                                                     try d.i32s(d.st.lo(), &.{n}, &.{1}),
+@@ -260,9 +289,7 @@ const Ds = struct {
+             .{ .i = 0 },                                              .{ .i = 0 },
+             .{ .i = 4 },
+         });
+-        // `r1`: the split kernel's CTAs a chunk; q arrives rotated (no ATTN_ROPE fold)
+-        if (e.o.r1) try d.appendArgs(&.{ .{ .i = E.attnSplit(n) }, .{ .i = 0 } }) else if (e.o.r1_sig) try d.appendArgs(&.{ .{ .i = 0 }, .{ .i = 0 } });
+-        // o: wo_a's groups over the heads' columns, then wo_b (this rank's fp32 partial)
++        if (e.o.r1) try d.appendArgs(&.{ .{ .i = E.attnSplit(n) }, .{ .i = 1 } }) else if (e.o.r1_sig) try d.appendArgs(&.{ .{ .i = 0 }, .{ .i = 0 } });
+         const g: usize = try e.rankGroups();
+         const gk: i64 = @divExact(H * hd, @as(i64, @intCast(g)));
+         const oa = try e.buf("L.oa", .{}, .bf16, &.{ n, @as(i64, @intCast(g)) * cf.o_lora });
+@@ -275,8 +302,12 @@ const Ds = struct {
+             .k = @intCast(gk),
+             .n = cf.o_lora,
+         };
+-        try e.fused("o", po[0..g]);
+-        try e.fused("wo_b", &.{.{ .w = try e.fmt("L{d}.attn.wo_b", .{L}), .x = oa, .y = try e.buf("L.part", .{}, .f32, &.{ n, D }), .k = g * cf.o_lora, .n = @intCast(D) }});
++        const wo_b = try e.fmt("L{d}.attn.wo_b", .{L});
++        const kb: i64 = @intCast(g * cf.o_lora);
++        const fold = @import("block_attn.zig").woFold(e, po[0..g]);
++        const rot: E.Rot = if (fold) .{ .out = .{ .suh = try e.weight("{s}.suh", .{wo_b}, .f16, &.{kb}), .xh = try e.buf("L.wo_b.xh", .{}, .f16, &.{n * kb}), .ld = kb } } else .{};
++        try e.fusedRot("o", po[0..g], null, rot);
++        try e.fusedRot("wo_b", &.{.{ .w = wo_b, .x = oa, .y = try e.buf("L.part", .{}, if (e.o.r1) .bf16 else .f32, &.{ n, D }), .k = @intCast(kb), .n = @intCast(D) }}, null, .{ .in = fold });
+     }
+ 
+     /// The final norm with DSpark's weight (mhc_cuda final), its hidden left in "L.mhc.c" for the confidence head.
+@@ -331,10 +362,16 @@ const Ds = struct {
+             e.layer_ratio = 0;
+             if (i == 0) try moe.mhc(e, L, "hc_attn", .site1) else try d.site(L, "hc_attn", "moe");
+             try d.attention(L);
+-            try e.glue("exchange_f32", &.{ try e.buf("L.part", .{}, .f32, &.{ n, D }), try e.buf("w.recv.attn", .{}, .bf16, &.{ e.o.world, n, D }) });
++            if (e.o.r1)
++                try e.glue("exchange", &.{ try e.buf("L.part", .{}, .bf16, &.{ n, D }), try e.buf("w.recv.attn", .{}, .bf16, &.{ e.o.world, n, D }) })
++            else
++                try e.glue("exchange_f32", &.{ try e.buf("L.part", .{}, .f32, &.{ n, D }), try e.buf("w.recv.attn", .{}, .bf16, &.{ e.o.world, n, D }) });
+             try d.site(L, "hc_ffn", "attn");
+             try moe.moe(e, L);
+-            try e.glue("exchange_f32", &.{ try e.buf("L.moe", .{}, .f32, &.{ n, D }), try e.buf("w.recv.moe", .{}, .bf16, &.{ e.o.world, n, D }) });
++            if (e.o.r1)
++                try e.glue("exchange", &.{ try e.buf("L.moe", .{}, .bf16, &.{ n, D }), try e.buf("w.recv.moe", .{}, .bf16, &.{ e.o.world, n, D }) })
++            else
++                try e.glue("exchange_f32", &.{ try e.buf("L.moe", .{}, .f32, &.{ n, D }), try e.buf("w.recv.moe", .{}, .bf16, &.{ e.o.world, n, D }) });
+         }
+         try d.final();
+         const V: i64 = (try @import("partition.zig").share(d.cfg().vocab, e.o.rank, e.o.world)).len;
+diff --git a/zig/src/families/deepseek_v41/dspark_gpu_device.zig b/zig/src/families/deepseek_v41/dspark_gpu_device.zig
+index fc0134a..5162a22 100644
+--- a/zig/src/families/deepseek_v41/dspark_gpu_device.zig
++++ b/zig/src/families/deepseek_v41/dspark_gpu_device.zig
+@@ -170,6 +170,10 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
+         try comm.allGather(rows, recv, n * D, .bf16, s);
+         return k.embedSum(recv, Wd, n, D, try r.tensorAddr(c.args[0].arg.t));
+     }
++    if (std.mem.eql(u8, step, "exchange")) {
++        const part = c.args[0].arg.t;
++        return comm.allGather(try r.tensorAddr(part), try r.tensorAddr(c.args[1].arg.t), numel(part), .bf16, s);
++    }
+     if (std.mem.eql(u8, step, "exchange_f32")) {
+         const part = c.args[0].arg.t;
+         const n = numel(part);
+diff --git a/zig/src/families/deepseek_v41/dspark_slots_device.zig b/zig/src/families/deepseek_v41/dspark_slots_device.zig
+index 062c1fb..d4182f6 100644
+--- a/zig/src/families/deepseek_v41/dspark_slots_device.zig
++++ b/zig/src/families/deepseek_v41/dspark_slots_device.zig
+@@ -454,6 +454,10 @@ pub fn glueFn(ctx: *anyopaque, r: *run.Runner, c: *const calls.Call) anyerror!vo
+         try comm.allGather(rws, recv, n * D, .bf16, s);
+         return k.embedSum(recv, Wd, n, D, try r.tensorAddr(c.args[0].arg.t));
+     }
++    if (std.mem.eql(u8, step, "exchange")) {
++        const part = c.args[0].arg.t;
++        return comm.allGather(try r.tensorAddr(part), try r.tensorAddr(c.args[1].arg.t), numel(part), .bf16, s);
++    }
+     if (std.mem.eql(u8, step, "exchange_f32")) {
+         const part = c.args[0].arg.t;
+         const n = numel(part);
+-- 
+2.50.1 (Apple Git-155)
+

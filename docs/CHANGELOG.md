@@ -5,6 +5,7 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **Full `dense3` (`lanes`) routing and `r1` DSpark pass fusions** (`patches/0092`). Under `TF_DSV41_R1=1`, `head` (`K2=12`), prefill `engram.wkv` (`K2=10`), and `dspark.main_proj` (`K2=8`) now run on `dense3` (`0` remaining `linear_v4` calls, saving ~2.17 ms/window with zero extra memory under `TF_DSV41_FORMS_INPLACE=1`), and DSpark folds `mhcInto`, `q_norm`, `qrope=1`, `woFold`, and direct `.bf16` TP exchanges to remove 23 launches per draft round (20/20 replay SHA-256 bit-exact). See [ENGINE](ENGINE.md#in-place-dense3-routing-and-dspark-r1-pass-fusions-0092).
 - **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
   `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think
   block closed and put the engine's `[exact: ...]` line at the start of the answer. Armed and pending trace cells are
