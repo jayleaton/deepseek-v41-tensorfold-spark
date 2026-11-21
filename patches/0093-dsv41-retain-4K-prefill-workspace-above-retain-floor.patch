@@ -1,0 +1,432 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Anothers <14343424+Anothers@users.noreply.github.com>
+Date: Sun, 22 Nov 2026 02:10:00 +0800
+Subject: [PATCH 93/93] dsv41: retain 4K prefill workspace above retain floor
+ with low-memory eviction
+
+With TF_DSV41_PF_4K=1 and TF_DSV41_PREFILL=replay, cap sub-4,096 single
+segments at min(seg, prefill_rows) via singleRows (and match ahead()
+prefetching) so incremental tails hit AOT shapes instead of triggering
+runtime Triton JIT stalls. Retain the ~2.3 GiB K4 workspace across
+prompts only when all TP ranks agree MemAvailable >= retainFloorGiB()
+(registered setting TF_DSV41_PF_WS_RETAIN_FLOOR_GIB, defaulting to
+max(ws_floor + 1.0, target_floor + 1.5) = 6.5 GiB at prod floors, strictly
+above admission and decode graph-capture floors).
+
+Registers a low-memory eviction hook invoked by graphs.room() and
+sched_host.admit() (retrying admission on mem_waits), re-checks memory in
+wsAgreedWith even when retained, and maintains a symmetric TP collective
+invariant (buf != null or evicted) so unilateral rank-0 eviction never
+deadlocks TP=2 peers. Covered by host tests in review_workspace_test.zig.
+---
+ .../families/deepseek_v41/forward_prefill.zig | 23 ++++-
+ .../deepseek_v41/forward_prefill_k4.zig       | 81 ++++++++++++++--
+ zig/src/families/deepseek_v41/graphs.zig      | 24 ++++-
+ zig/src/families/deepseek_v41/kv/budget.zig   |  8 ++
+ .../deepseek_v41/review_workspace_test.zig    | 97 +++++++++++++++++++
+ zig/src/families/deepseek_v41/sched_host.zig  | 10 +-
+ zig/src/platform/environment.zig              |  1 +
+ 7 files changed, 229 insertions(+), 15 deletions(-)
+
+diff --git a/zig/src/families/deepseek_v41/forward_prefill.zig b/zig/src/families/deepseek_v41/forward_prefill.zig
+index b1a97b8b8..97e7273a3 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill.zig
+@@ -87,9 +87,11 @@ pub fn attach(f: *Forward) !void {
+     const s = try f.gpa.create(State);
+     s.* = .{};
+     f.prefill_state = s;
++    pf_k4.registerEvict(f);
+ }
+ 
+ fn deinitFn(f: *Forward) void {
++    pf_k4.unregisterEvict(f);
+     const s = state(f);
+     s.deinit(f.gpa);
+     f.gpa.destroy(s);
+@@ -288,9 +290,13 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
+     const ids = st.ids.items;
+     st.taps_rows = 0;
+     try ready(f);
++    st.k4ws.in_use = true;
++    defer st.k4ws.in_use = false;
+     // TF_DSV41_PF_4K / _PF_TBO: the workspace for this call, decided on every rank alike (else 2,048-row segments)
+-    st.ws_ok = true;
+-    if (st.k4 or (st.mode == .replay and f.opts.pf_tbo)) st.ws_ok = try wsAgreed(f);
++    const need_tbo = st.mode == .replay and f.opts.pf_tbo and ids.len >= 2 * @as(usize, @intCast(block_prefill.tbo_min));
++    const need_k4 = st.k4 and ids.len >= K4.rows;
++    st.ws_ok = false;
++    if (need_k4 or need_tbo) st.ws_ok = try wsAgreed(f);
+     const seg: usize = segmentRows(f);
+     defer st.next.clearRetainingCapacity();
+     var at: usize = 0;
+@@ -304,7 +310,7 @@ pub fn prompt(f: *Forward, ids_in: []const u32) !void {
+                 continue;
+             }
+         }
+-        const n = @min(seg, ids.len - at);
++        const n = singleRows(ids.len - at, st.mode, f.opts.prefill_rows, seg);
+         if (st.ahead) ahead(f, ids, at, n, seg);
+         try segment(f, ids[at .. at + n], at + n == ids.len and st.mode == .full);
+         at += n;
+@@ -317,6 +323,12 @@ fn pairOf(f: *const Forward, left: usize) ?[2]usize {
+     return pairSplit(segmentRows(f), left);
+ }
+ 
++/// Single-segment rows: replay remainders below K4.rows cap at prefill_rows (bounded by seg) for AOT shapes.
++pub fn singleRows(rem: usize, mode: serve_knobs.PrefillMode, prefill_rows: i64, seg: usize) usize {
++    const cap: usize = if (rem < K4.rows and mode == .replay) @min(seg, @as(usize, @intCast(prefill_rows))) else seg;
++    return @min(cap, rem);
++}
++
+ /// `pairOf`'s split of `left` rows at segments of `seg` rows (null: one segment at a time).
+ pub fn pairSplit(seg: usize, left: usize) ?[2]usize {
+     const min: usize = @intCast(block_prefill.tbo_min);
+@@ -390,7 +402,10 @@ fn segmentPair(f: *Forward, ia: []const u32, ib: []const u32) !bool {
+ /// Read-ahead of the Engram rows after segment ids[at .. at + n] (next segment or piece); a wrong guess costs a read.
+ fn ahead(f: *Forward, ids: []const u32, at: usize, n: usize, seg: usize) void {
+     const st = state(f);
+-    if (at + n < ids.len) return readAhead(f, ids, at, n, ids[at + n .. at + n + @min(seg, ids.len - at - n)]);
++    if (at + n < ids.len) {
++        const next_n = singleRows(ids.len - at - n, st.mode, f.opts.prefill_rows, seg);
++        return readAhead(f, ids, at, n, ids[at + n .. at + n + next_n]);
++    }
+     if (st.next.items.len > 0) readAhead(f, ids, at, n, st.next.items);
+ }
+ 
+diff --git a/zig/src/families/deepseek_v41/forward_prefill_k4.zig b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+index e4a636f62..35508c0d3 100644
+--- a/zig/src/families/deepseek_v41/forward_prefill_k4.zig
++++ b/zig/src/families/deepseek_v41/forward_prefill_k4.zig
+@@ -117,6 +117,8 @@ pub const K4 = struct {
+     keep: block_prefill.Keep = .empty,
+     buf: ?cuda.DeviceBuffer = null,
+     ready: bool = false,
++    evicted: bool = false,
++    in_use: bool = false,
+     alias: bool = false,
+     bytes: u64 = 0,
+     allocs: u64 = 0,
+@@ -134,17 +136,24 @@ pub fn segmentRows(f: *const Forward) usize {
+ 
+ /// Whether this prompt call may use the workspace, agreed by every rank; no: 2,048-row segments, same bits, logged.
+ pub fn wsAgreed(f: *Forward) !bool {
++    const st = pf.state(f);
++    if (st.k4ws.plan == null) return false;
++    if (st.agreement == null) st.agreement = try graphs.Agreement.init(f.runner.d, f.comm, f.runner.stream);
++    return wsAgreedWith(f, graphs.memAvailableGiB(), try wsFloorGiB(), st.agreement.?.agree());
++}
++
++/// Collective room check for `wsAgreed`: re-checks memory even when `ws.buf` is retained, freeing it if any rank fails.
++pub fn wsAgreedWith(f: *Forward, avail: ?f64, hard: f64, ag: graphs.gc.Agree) !bool {
+     const st = pf.state(f);
+     const ws = &st.k4ws;
+-    if (ws.buf != null) return true;
+     const pl = ws.plan orelse return false;
+     const bytes = scratch.Layout.init(&pl, ws.alias).bytes;
+-    const hard = (try wsFloorGiB());
+-    const avail = graphs.memAvailableGiB();
+-    const left = if (avail) |v| v - @as(f64, @floatFromInt(bytes)) / (1 << 30) else hard;
+-    if (st.agreement == null) st.agreement = try graphs.Agreement.init(f.runner.d, f.comm, f.runner.stream);
+-    const ok = try st.agreement.?.agree().all(st.agreement.?.agree().ctx, left >= hard);
++    const need_gib: f64 = if (ws.buf != null) 0 else @as(f64, @floatFromInt(bytes)) / (1 << 30);
++    const left = if (avail) |v| v - need_gib else hard;
++    const ok = try ag.all(ag.ctx, left >= hard);
+     if (!ok) {
++        if (ws.buf != null) try k4FreeNow(f);
++        ws.evicted = false;
+         st.ws_fallbacks += 1;
+         if (st.ws_fallbacks <= 4 or st.ws_fallbacks % 64 == 0)
+             if (!quiet) log.warn("prefill workspace: {d} MiB does not fit on every rank (rank {d}: {d:.2} GiB MemAvailable leaves {d:.2}, floor {d:.1} GiB, TF_DSV41_PF_WS_FLOOR_GIB): this prompt piece runs 2,048-row segments (fallback {d})", .{ bytes >> 20, f.comm.rank(), avail orelse -1, left, hard, st.ws_fallbacks });
+@@ -223,6 +232,7 @@ pub fn k4Acquire(f: *Forward) !void {
+     }
+     try f.runner.stream.synchronize();
+     ws.ready = true;
++    ws.evicted = false;
+     const ms = nowMs() - t0;
+     if (ws.allocs <= 4 or ws.allocs % 64 == 0) log.info("prefill 4K: rank {d}: workspace {d} MiB allocated and zeroed in {d:.1} ms (prompt {d}), held while the prompt prefills", .{ f.comm.rank(), total >> 20, ms, ws.allocs });
+ }
+@@ -243,8 +253,62 @@ pub fn hardFloorGiB() !f64 {
+     return @import("kv").budget.hardFloorGiB();
+ }
+ 
+-/// The workspace back (a prompt's CED finish: no 4K segment runs until the next prompt's first).
++/// TF_DSV41_PF_WS_RETAIN_FLOOR_GIB: MemAvailable every rank needs after a prompt to retain the 4K workspace.
++pub fn retainFloorGiB() !f64 {
++    return @import("kv").budget.workspaceRetainFloorGiB();
++}
++
++pub fn registerEvict(f: *Forward) void {
++    graphs.evict_low_memory = .{ .ctx = f, .free = k4EvictFn };
++}
++
++pub fn unregisterEvict(f: *Forward) void {
++    if (graphs.evict_low_memory) |h| {
++        if (h.ctx == @as(*anyopaque, f)) graphs.evict_low_memory = null;
++    }
++}
++
++fn k4EvictFn(ctx: *anyopaque) bool {
++    const f: *Forward = @ptrCast(@alignCast(ctx));
++    return k4Evict(f);
++}
++
++/// Unilaterally release a retained, idle 4K workspace on this rank under memory pressure (graphs / admission).
++pub fn k4Evict(f: *Forward) bool {
++    if (f.prefill_state == null) return false;
++    const ws = &pf.state(f).k4ws;
++    if (ws.buf == null or ws.in_use) return false;
++    k4FreeNow(f) catch return false;
++    ws.evicted = true;
++    return true;
++}
++
++/// Whether every rank stays above `floor_gib` while holding the workspace (`buf_live` must be true on every rank).
++pub fn keepAboveFloor(buf_live: bool, avail_gib: ?f64, floor_gib: f64, ag: graphs.gc.Agree) !bool {
++    return ag.all(ag.ctx, buf_live and (avail_gib orelse 0) >= floor_gib);
++}
++
++/// The workspace back (a prompt's CED finish: retain above retainFloorGiB when every rank agrees, else free).
+ pub fn k4Release(f: *Forward) !void {
++    const st = pf.state(f);
++    if (st.k4ws.buf == null and !st.k4ws.evicted) return;
++    const ag: ?graphs.gc.Agree = if (st.agreement) |*a| a.agree() else null;
++    return k4ReleaseWith(f, graphs.memAvailableGiB(), try retainFloorGiB(), ag);
++}
++
++/// Testable core of `k4Release`: every rank with `buf != null or evicted` enters `ag` alike, preventing TP drift.
++pub fn k4ReleaseWith(f: *Forward, avail_gib: ?f64, floor_gib: f64, ag: ?graphs.gc.Agree) !void {
++    const ws = &pf.state(f).k4ws;
++    if (ws.buf == null and !ws.evicted) return;
++    if (ag) |a| {
++        if (try keepAboveFloor(ws.buf != null, avail_gib, floor_gib, a)) return;
++    }
++    if (ws.buf != null) try k4FreeNow(f);
++    ws.evicted = false;
++}
++
++/// Unconditionally synchronize, unbind, and free the 4K workspace and its exchange/engram staging buffers.
++pub fn k4FreeNow(f: *Forward) !void {
+     const ws = &pf.state(f).k4ws;
+     var b = ws.buf orelse return;
+     try f.runner.stream.synchronize();
+@@ -255,10 +319,11 @@ pub fn k4Release(f: *Forward) !void {
+     b.free();
+     ws.buf = null;
+     ws.ready = false;
++    ws.evicted = false;
+     // the prefill -> decode handoff: the row graphs' memory floor right after the free (first prompts, then every 64th)
+     ws.releases += 1;
+     if (ws.releases <= 4 or ws.releases % 64 == 0)
+-        log.info("prefill 4K: rank {d}: workspace {d} MiB freed at the prompt's end (release {d}); MemAvailable {d:.2} -> {d:.2} GiB", .{ f.comm.rank(), ws.bytes >> 20, ws.releases, before orelse -1, graphs.memAvailableGiB() orelse -1 });
++        log.info("prefill 4K: rank {d}: workspace {d} MiB freed (release {d}); MemAvailable {d:.2} -> {d:.2} GiB", .{ f.comm.rank(), ws.bytes >> 20, ws.releases, before orelse -1, graphs.memAvailableGiB() orelse -1 });
+     if (ws.send) |*x| x.free();
+     if (ws.gathered) |*x| x.free();
+     ws.send = null;
+diff --git a/zig/src/families/deepseek_v41/graphs.zig b/zig/src/families/deepseek_v41/graphs.zig
+index cdc7b6f85..bf25995b1 100644
+--- a/zig/src/families/deepseek_v41/graphs.zig
++++ b/zig/src/families/deepseek_v41/graphs.zig
+@@ -124,13 +124,33 @@ pub const Room = struct {
+ /// The rule every graph cache asks (`room`): set once from the environment by the first cache made.
+ pub var rule: ?Room = null;
+ 
+-/// This rank's room for one more graph (true where /proc/meminfo cannot be read).
++pub const EvictHook = struct {
++    ctx: *anyopaque,
++    free: *const fn (*anyopaque) bool,
++};
++
++/// Low-memory reclamation hook (e.g. a retained 4K prefill workspace), run before refusing a graph or admission.
++pub var evict_low_memory: ?EvictHook = null;
++
++pub fn evictLowMemory() bool {
++    const h = evict_low_memory orelse return false;
++    return h.free(h.ctx);
++}
++
++/// This rank's room for one more graph (true if /proc/meminfo is unreadable); evicts retained workspace on pressure.
+ pub fn room() bool {
++    return roomWith(memAvailableGiB);
++}
++
++pub fn roomWith(meter_fn: *const fn () ?f64) bool {
+     const r = rule orelse blk: {
+         rule = Room.fromEnv() catch Room{};
+         break :blk rule.?;
+     };
+-    return r.fits(memAvailableGiB() orelse return true);
++    const avail = meter_fn() orelse return true;
++    if (r.fits(avail)) return true;
++    if (!evictLowMemory()) return false;
++    return r.fits(meter_fn() orelse return true);
+ }
+ 
+ /// MemAvailable now, in GiB, for a capture's measured cost (null: unknown).
+diff --git a/zig/src/families/deepseek_v41/kv/budget.zig b/zig/src/families/deepseek_v41/kv/budget.zig
+index d1bfb960a..c44c534e2 100644
+--- a/zig/src/families/deepseek_v41/kv/budget.zig
++++ b/zig/src/families/deepseek_v41/kv/budget.zig
+@@ -529,3 +529,11 @@ pub fn workspaceFloorGiB() !f64 {
+ pub fn targetFloorGiB(hard: f64) !f64 {
+     return @import("sys").environment.read(f64, "TF_DSV41_FLOOR_GIB", @max(5.0, hard));
+ }
++
++/// MemAvailable every rank must stay above after a prompt to retain the 4K prefill workspace across prompts.
++pub fn workspaceRetainFloorGiB() !f64 {
++    const hard = try hardFloorGiB();
++    const ws = try workspaceFloorGiB();
++    const target = try targetFloorGiB(hard);
++    return @import("sys").environment.read(f64, "TF_DSV41_PF_WS_RETAIN_FLOOR_GIB", @max(ws + 1.0, target + 1.5));
++}
+diff --git a/zig/src/families/deepseek_v41/review_workspace_test.zig b/zig/src/families/deepseek_v41/review_workspace_test.zig
+index 5fcb0d5a3..3d9e7fefa 100644
+--- a/zig/src/families/deepseek_v41/review_workspace_test.zig
++++ b/zig/src/families/deepseek_v41/review_workspace_test.zig
+@@ -151,3 +151,100 @@ test "Completion ownership: K4 acquire binds the alias layout and releases every
+     try t.expectEqual(mock.allocated, mock.freed);
+     try t.expectEqual(@as(usize, 0), mock.early_free);
+ }
++
++test "K4 remainder splitting caps sub-4K replay tails at prefill_rows bounded by seg" {
++    try t.expectEqual(@as(usize, 4096), pf.singleRows(6000, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 2048), pf.singleRows(3500, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 1452), pf.singleRows(1452, .replay, 2048, 4096));
++    try t.expectEqual(@as(usize, 3500), pf.singleRows(3500, .full, 2048, 4096));
++    try t.expectEqual(@as(usize, 1024), pf.singleRows(1500, .replay, 2048, 1024));
++    try t.expectApproxEqAbs(@as(f64, 6.5), try ws.retainFloorGiB(), 1e-9);
++}
++
++test "K4 retention respects retain floor, re-checks memory in wsAgreedWith, and evicts on graph pressure" {
++    const graphs = @import("graphs.zig");
++    const FakeAgree = struct {
++        peer_ok: bool = true,
++        calls: usize = 0,
++        last_vote: bool = false,
++        fn all(ctx: *anyopaque, ok: bool) anyerror!bool {
++            const s: *@This() = @ptrCast(@alignCast(ctx));
++            s.calls += 1;
++            s.last_vote = ok;
++            return ok and s.peer_ok;
++        }
++    };
++    var d = mock.init();
++    var runner: run.Runner = .{ .gpa = t.allocator, .d = &d, .stream = .{ .d = &d, .handle = null }, .kernels = undefined, .triton = undefined, .weights = undefined };
++    defer runner.deinit();
++    var arena = std.heap.ArenaAllocator.init(t.allocator);
++    defer arena.deinit();
++    var plan: @import("buffers.zig").Plan = .{ .a = arena.allocator() };
++    try plan.sizes.put(arena.allocator(), "w.k4~one", 256);
++    var state: pf.State = .{ .ws_fallbacks = 4 };
++    state.k4ws = .{ .plan = plan, .allocs = 4, .releases = 4 };
++    var f: fwd.Forward = undefined;
++    f.prefill_state = &state;
++    f.runner = &runner;
++    ws.registerEvict(&f);
++    defer {
++        ws.unregisterEvict(&f);
++        ws.k4FreeNow(&f) catch unreachable;
++    }
++
++    var fa: FakeAgree = .{};
++    const ag: graphs.gc.Agree = .{ .ctx = &fa, .all = FakeAgree.all };
++
++    // Retain above retain floor (6.5 GiB); free below retain floor even if above wsFloor (4.75 GiB).
++    try ws.k4Acquire(&f);
++    try ws.k4ReleaseWith(&f, 6.80, 6.50, ag);
++    try t.expect(state.k4ws.buf != null);
++    try t.expect(runner.addressOf("w.k4~one") != null);
++    try t.expectEqual(@as(usize, 0), mock.freed);
++
++    // wsAgreedWith re-checks memory even while retained, freeing workspace when a rank dips below hard floor.
++    try t.expect(try ws.wsAgreedWith(&f, 5.20, 4.75, ag));
++    try t.expect(state.k4ws.buf != null);
++    try t.expect(!(try ws.wsAgreedWith(&f, 4.50, 4.75, ag)));
++    try t.expect(state.k4ws.buf == null);
++    try t.expect(runner.addressOf("w.k4~one") == null);
++    try t.expectEqual(mock.allocated, mock.freed);
++
++    // Below retain floor frees on release; peer disagreement frees on release.
++    try ws.k4Acquire(&f);
++    try ws.k4ReleaseWith(&f, 5.80, 6.50, ag);
++    try t.expect(state.k4ws.buf == null);
++    try ws.k4Acquire(&f);
++    fa.peer_ok = false;
++    try ws.k4ReleaseWith(&f, 7.50, 6.50, ag);
++    try t.expect(state.k4ws.buf == null);
++    fa.peer_ok = true;
++
++    // Graph pressure triggers k4Evict; in_use blocks it; evicted rank still joins k4Release collective.
++    try ws.k4Acquire(&f);
++    state.k4ws.in_use = true;
++    try t.expect(!ws.k4Evict(&f));
++    try t.expect(state.k4ws.buf != null);
++    state.k4ws.in_use = false;
++
++    const Probe = struct {
++        var k4: *ws.K4 = undefined;
++        fn avail() ?f64 {
++            return if (k4.buf != null) 4.50 else 6.80;
++        }
++    };
++    Probe.k4 = &state.k4ws;
++    const saved_rule = graphs.rule;
++    defer graphs.rule = saved_rule;
++    graphs.rule = .{ .keep_gib = 4.8125, .cost_gib = 0.0625 };
++    try t.expect(graphs.roomWith(Probe.avail));
++    try t.expect(state.k4ws.buf == null);
++    try t.expect(state.k4ws.evicted);
++    try t.expectEqual(mock.allocated, mock.freed);
++
++    const calls_before = fa.calls;
++    try ws.k4ReleaseWith(&f, 7.50, 6.50, ag);
++    try t.expectEqual(calls_before + 1, fa.calls);
++    try t.expect(!fa.last_vote);
++    try t.expect(!state.k4ws.evicted);
++}
+diff --git a/zig/src/families/deepseek_v41/sched_host.zig b/zig/src/families/deepseek_v41/sched_host.zig
+index 7d6bcc7d4..c21435e78 100644
+--- a/zig/src/families/deepseek_v41/sched_host.zig
++++ b/zig/src/families/deepseek_v41/sched_host.zig
+@@ -4,6 +4,7 @@ const std = @import("std");
+ const api = @import("engine_api");
+ const kv = @import("kv");
+ const target = @import("target.zig");
++const graphs = @import("graphs.zig");
+ const sg = @import("sessions_gpu.zig");
+ 
+ const sched = kv.sched;
+@@ -87,10 +88,17 @@ pub const SchedHost = struct {
+         h.cur = ask;
+         const store: ?sched.Store = if (h.gt.sessions != null) .{ .ctx = h, .vtable = &.{ .find = findFn, .pool = poolFn } } else null;
+         const before = h.p.counts;
+-        const v = h.p.admit(&h.round, .{ .key = ask.key, .n = ask.prompt.len, .max_new = ask.max_tokens, .submitted = ask.submitted_s }, store, h.now(), h.memory()) catch |e| {
++        var v = h.p.admit(&h.round, .{ .key = ask.key, .n = ask.prompt.len, .max_new = ask.max_tokens, .submitted = ask.submitted_s }, store, h.now(), h.memory()) catch |e| {
+             words.* = @errorName(e);
+             return .refuse;
+         };
++        if (h.p.counts.mem_waits > before.mem_waits and graphs.evictLowMemory()) {
++            h.p.counts = before;
++            v = h.p.admit(&h.round, .{ .key = ask.key, .n = ask.prompt.len, .max_new = ask.max_tokens, .submitted = ask.submitted_s }, store, h.now(), h.memory()) catch |e| {
++                words.* = @errorName(e);
++                return .refuse;
++            };
++        }
+         h.logWait(ask, v, before);
+         switch (v) {
+             .admit => |a| {
+diff --git a/zig/src/platform/environment.zig b/zig/src/platform/environment.zig
+index d28d6b16d..c2079867b 100644
+--- a/zig/src/platform/environment.zig
++++ b/zig/src/platform/environment.zig
+@@ -141,6 +141,7 @@ pub const rules = [_]Rule{
+     .{ .name = "TF_DSV41_PREFILL_ADAPT_MIN", .scope = .dsv41, .kind = .u64, .trim = " ", .min = 16, .forms = "a whole row count of at least 16" },
+     .{ .name = "TF_DSV41_FLOOR_HARD_GIB", .scope = .dsv41, .kind = .positive_real, .trim = " ", .forms = "a finite GiB amount greater than 0" },
+     .{ .name = "TF_DSV41_PF_WS_FLOOR_GIB", .scope = .dsv41, .kind = .real, .forms = "a finite GiB amount of at least 0" },
++    .{ .name = "TF_DSV41_PF_WS_RETAIN_FLOOR_GIB", .scope = .dsv41, .kind = .real, .forms = "a finite GiB amount of at least 0" },
+     .{ .name = "TF_DSV41_GRAPH_FLOOR_GIB", .scope = .dsv41, .kind = .real, .forms = "a finite GiB amount of at least 0" },
+     .{ .name = "TF_DSV41_GRAPH_COST_MIB", .scope = .dsv41, .kind = .real, .forms = "a finite MiB amount of at least 0" },
+     .{ .name = "TF_DSV41_EXPERT_TOPP", .scope = .dsv41, .kind = .signed_real, .forms = "a finite number" },
+-- 
+2.43.0
+
