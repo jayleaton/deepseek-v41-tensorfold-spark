@@ -5,6 +5,7 @@ The production engine went `767ad9f` (G13) -> `356a188` (G14) -> `7954c1d` (G15a
 
 ## Engine: the engine G serves (pin `6c4eeccda`)
 
+- **4K prefill workspace retention above retain floor with low-memory eviction and AOT-aligned replay tails** (`patches/0093`). Under `TF_DSV41_PF_4K=1` and `TF_DSV41_PREFILL=replay`, sub-4K prompts skip K4 agreement, sub-4,096 single segments cap at `min(seg, prefill_rows)` (matching `ahead()` prefetch), and `k4Release` retains the ~2.3 GiB workspace only above `TF_DSV41_PF_WS_RETAIN_FLOOR_GIB` (default `6.5 GiB` at prod floors, above admission and graph-capture floors), with a low-memory eviction hook called by `graphs.room` and `sched_host.admit` and a symmetric TP collective invariant. See [ENGINE](ENGINE.md#4k-prefill-workspace-retention-and-aot-aligned-replay-tails-0093).
 - **Tuned `sm_121` `x3gm` v3 defaults and quiet idle RoCE CQ polling** (`patches/0092`). `v3_default` now selects the 16-warp `KS=4` LEAN gate/up instances (`.{ .gu = .{ 5, 3 }, .dn = 9 }`) for `TF_DSV41_GM_V3=1` on GB10 (bit-identical to `v2`), while `Roce.proxyLoop` skips `ibv_poll_cq` when `linkIdle()` holds (keeping `idle_spins` at `20_000_000` and the idle sleep at 20 us). See [ENGINE](ENGINE.md#sm_121-x3gm-v3-defaults-and-idle-roce-cq-polling-0092).
 - **The thinking-only runner no longer writes into the answer** (`patches/0091`). With
   `TF_DSV41_RUNNER_SPANS=reasoning`, a stated computation cued on the last line of thinking could fire as the think

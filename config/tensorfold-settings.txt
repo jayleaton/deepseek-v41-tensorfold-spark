@@ -4,7 +4,7 @@
 # patch change, from a checkout made by docker/zig/fetch-source.sh (docs/ENGINE.md):
 #   python3 scripts/engine_settings.py generate /path/to/patched-checkout
 rev f212eeabde0fc2ac3234ca947a69cc7714abaca2
-tree 32fcc3a7b89d6daca13d69052dac7c2bf3ab4056
+tree 4c17069cc41beab703856ab08d4b8e5b55deaa58
 TENSORFOLD_AOTRITON
 TENSORFOLD_API_KEY
 TENSORFOLD_BENCHMARK_TOKEN
@@ -332,6 +332,7 @@ TF_DSV41_PF_SCRATCH_ALIAS
 TF_DSV41_PF_TBO
 TF_DSV41_PF_TBO_GM_SMS
 TF_DSV41_PF_WS_FLOOR_GIB
+TF_DSV41_PF_WS_RETAIN_FLOOR_GIB
 TF_DSV41_PF_WS_SHARE
 TF_DSV41_PHASES
 TF_DSV41_PHASES_OUT
