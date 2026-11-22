@@ -121,6 +121,35 @@ class StabilityTests(LadderFixture, unittest.TestCase):
             with self.subTest(output=output), self.assertRaisesRegex(ValueError, "ladder cap"):
                 backend.actual_clock()
 
+    def test_backend_reads_the_cap_from_thermal_env(self):
+        backend = Backend(backend_config(clock_ladder_mhz=list(LADDER3)))
+        unit = ("ExecStart=/usr/bin/nvidia-smi -lgc ${SPARK_CLOCK_MIN_MHZ},${SPARK_CLOCK_MAX_MHZ} ;\n"
+                "EnvironmentFiles=/etc/spark/thermal.env (ignore_errors=no)\n"
+                "ActiveState=active\nUnitFileState=enabled\nResult=success\nExecMainStatus=0\n")
+        good = "# limits\nGUARD_PAUSE_C=92\nSPARK_CLOCK_MIN_MHZ=300\nSPARK_CLOCK_MAX_MHZ=2100\n"
+
+        def node(env, service=unit):
+            return lambda rank, args, **_: service if args[0] == "systemctl" else env
+
+        backend.run = node(good)
+        self.assertEqual(backend.actual_clock(), 2100)
+        refused = (
+            "SPARK_CLOCK_MIN_MHZ=300\n",
+            good + "SPARK_CLOCK_MAX_MHZ=2100\n",
+            good.replace("=2100", '="2100"'),
+            good.replace("=2100", "=2150"),
+            good.replace("MIN_MHZ=300", "MIN_MHZ=0"),
+            good + "garbled line\n",
+            "",
+        )
+        for env in refused:
+            backend.run = node(env)
+            with self.subTest(env=env), self.assertRaisesRegex(ValueError, "ladder cap"):
+                backend.actual_clock()
+        backend.run = node(good, unit.replace("/etc/spark/thermal.env", "/etc/other.env"))
+        with self.assertRaisesRegex(ValueError, "ladder cap"):
+            backend.actual_clock()
+
     def test_backend_step_refuses_durable_cap_mismatch_before_any_node_change(self):
         backend = Backend(backend_config(clock_ladder_mhz=list(LADDER3)))
         calls = []

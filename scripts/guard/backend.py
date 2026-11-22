@@ -14,6 +14,28 @@ from common import RANKS, container_names, inference_environment
 from safe_exec import run as supervised_run
 from safe_quote import join_checked
 
+THERMAL_ENV = "/etc/spark/thermal.env"
+ENV_FORM = "-lgc ${SPARK_CLOCK_MIN_MHZ},${SPARK_CLOCK_MAX_MHZ} "
+
+
+def env_cap(text, ladder):
+    """thermal.env's SPARK_CLOCK_MAX_MHZ when MIN is 300 and MAX a ladder cap, each set once; None otherwise."""
+    values = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep:
+            return None
+        if key in ("SPARK_CLOCK_MIN_MHZ", "SPARK_CLOCK_MAX_MHZ"):
+            if key in values or not value.isdigit():
+                return None
+            values[key] = int(value)
+    cap = values.get("SPARK_CLOCK_MAX_MHZ")
+    return cap if values.get("SPARK_CLOCK_MIN_MHZ") == 300 and cap in ladder else None
+
+
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time
 from pathlib import Path
@@ -221,10 +243,14 @@ class Backend:
 
     def actual_clock(self):
         caps = []
-        props = ["-p", "ExecStart", "-p", "ActiveState", "-p", "UnitFileState", "-p", "Result", "-p", "ExecMainStatus"]
+        props = ["-p", "ExecStart", "-p", "ActiveState", "-p", "UnitFileState", "-p", "Result", "-p", "ExecMainStatus",
+                 "-p", "EnvironmentFiles"]
         for rank in RANKS:
             output = self.run(rank, ["systemctl", "show", self.config["clock_service"], *props])
             matches = [cap for cap in self.ladder if "300," + str(cap) + " " in output]
+            if not matches and ENV_FORM in output and "EnvironmentFiles=" + THERMAL_ENV + " " in output:
+                cap = env_cap(self.run(rank, ["cat", THERMAL_ENV]), self.ladder)
+                matches = [] if cap is None else [cap]
             if len(matches) != 1 or not all(
                 word in output
                 for word in ("ActiveState=active", "UnitFileState=enabled", "Result=success", "ExecMainStatus=0")
