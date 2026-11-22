@@ -36,6 +36,28 @@ def env_cap(text, ladder):
     return cap if values.get("SPARK_CLOCK_MIN_MHZ") == 300 and cap in ladder else None
 
 
+def native_health(body):
+    """The guard's view of native /health: the recorded wire unchanged, or the pinned engine's wire mapped onto it.
+
+    The pinned engine reports status, warming, max_batch_size and live {connections (running + waiting), waiting}.
+    It maps to ok, queued, requests_running, inflight and streams.max. A count that is missing, not a plain
+    non-negative integer, or inconsistent stays absent, so admission and idle proofs fail closed.
+    """
+    if not isinstance(body, dict) or "ok" in body or "live" not in body:
+        return body
+    view = dict(body)
+    view["ok"] = body.get("status") == "ok" and body.get("warming") is False
+    live = body["live"]
+    if isinstance(live, dict):
+        connections, waiting = live.get("connections"), live.get("waiting")
+        if all(type(value) is int and value >= 0 for value in (connections, waiting)) and waiting <= connections:
+            view.update(queued=waiting, requests_running=connections - waiting, inflight=connections)
+    lanes = body.get("max_batch_size")
+    if type(lanes) is int and lanes > 0:
+        view["streams"] = {"max": lanes}
+    return view
+
+
 CLOCK_PROGRAM = r"""
 import json,os,subprocess,sys,time
 from pathlib import Path
@@ -213,7 +235,7 @@ class Backend:
             response = connection.getresponse()
             if response.status != 200:
                 raise ValueError("native health not200")
-            return json.loads(response.read(1048576))
+            return native_health(json.loads(response.read(1048576)))
         finally:
             connection.close()
 

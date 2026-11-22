@@ -200,7 +200,7 @@ def load_config(path):
     validate_profiles(config["profiles"])
     limits = config["limits"]
     for name, lower, upper in [
-        ("max_inflight", 1, 4),
+        ("max_inflight", 1, 8),
         ("max_pending", 1, 16),
         ("max_connections", 8, 64),
         ("max_body_bytes", 1, 64 * 1024 * 1024),

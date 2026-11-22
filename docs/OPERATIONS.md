@@ -38,6 +38,11 @@ a hold and 78 is durable STOP/invalid state. It must never be overridden by auto
 cancellation or container actions; maintenance leases relinquish ownership, and profile/image/mount/environment
 changes invalidate ownership. `CPUSET_CPUS` is optional and rank-local; no host CPU topology is assumed.
 
+The guard reads the pinned engine's `/health` (`status`, `warming`, `max_batch_size`, `live.connections`,
+`live.waiting`) as ok, queued (`waiting`), running (`connections - waiting`) and `streams.max`; a missing,
+non-integer or inconsistent count holds admission and fails idle proofs. `limits.max_inflight` (1–8) must equal the
+engine's slots (`TF_DSV41_SLOTS`), so the eight-slot adaptive window needs 8.
+
 `sampler.py --config <local JSON>` and `daemon.py --config <local JSON>` run the guard. The provided user-service
 files are templates for an explicitly approved deployment. `guard-watch-zig.sh` is the optional guarded watchdog;
 its container prefix must match the launcher, and it respects both its own stop marker and the native supervisor's

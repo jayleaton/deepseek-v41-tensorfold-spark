@@ -165,13 +165,13 @@ class ConfigTests(unittest.TestCase):
         self.refused(lambda c: c.update(state_path="relative/state"))
 
     def test_bounded_limits(self):
-        for key, value in (("max_inflight", 0), ("max_inflight", 5), ("max_inflight", True), ("max_pending", 17),
+        for key, value in (("max_inflight", 0), ("max_inflight", 9), ("max_inflight", True), ("max_pending", 17),
                            ("max_connections", 7), ("body_buffers", 5), ("memory_transient_reserve_gib", 0.49),
                            ("memory_transient_reserve_gib", 4.01), ("memory_transient_reserve_gib", True),
                            ("queue_seconds", 1201), ("queue_seconds", 0)):
             with self.subTest(key=key, value=value):
                 self.refused(lambda c, k=key, v=value: c["limits"].update({k: v}))
-        for inflight in (1, 2, 4):
+        for inflight in (1, 2, 4, 8):
             config = copy.deepcopy(self.config)
             config["limits"]["max_inflight"] = inflight
             self.assertEqual(self.load(config)["limits"]["max_inflight"], inflight)
